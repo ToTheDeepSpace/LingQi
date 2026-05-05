@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  /* 金 (Metal) — warm golds, creams, ivories */
+  --color-gold-50: #fdf9f2;
+  --color-gold-100: #f9eedb;
+  --color-gold-200: #f2dbb4;
+  --color-gold-300: #e8c484;
+  --color-gold-400: #d9a857;
+  --color-gold-500: #c9922e;
+  --color-gold-600: #b0781b;
+  --color-gold-700: #925f18;
+  --color-gold-800: #794d1b;
+  --color-gold-900: #65401c;
+
+  /* 水 (Water) — deep ink blues, cerulean, navy */
+  --color-ink-50: #f0f5fb;
+  --color-ink-100: #dce6f3;
+  --color-ink-200: #bacfe7;
+  --color-ink-300: #8badd3;
+  --color-ink-400: #5587ba;
+  --color-ink-500: #3469a1;
+  --color-ink-600: #275389;
+  --color-ink-700: #1c3d66;
+  --color-ink-800: #132b4a;
+  --color-ink-900: #0b1a30;
+
+  /* Surface tones — 金之白 */
+  --color-cream: #faf8f5;
+  --color-warm-white: #fdfcf9;
+
+  /* 字体 */
+  --font-serif: "Noto Serif SC", serif;
+  --font-sans: "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+
+  /* 阴影 — 金之锐利 */
+  --shadow-gold: 0 1px 3px rgba(146, 95, 24, 0.08), 0 1px 2px rgba(146, 95, 24, 0.06);
+  --shadow-card: 0 4px 24px rgba(11, 26, 48, 0.06), 0 1px 3px rgba(11, 26, 48, 0.04);
+  --shadow-elevated: 0 12px 40px rgba(11, 26, 48, 0.1), 0 4px 12px rgba(11, 26, 48, 0.06);
+
+  /* 圆角 */
+  --radius-card: 1rem;
+  --radius-button: 0.75rem;
+}

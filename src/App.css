@@ -1,0 +1,95 @@
+/* 灵契 — 金生水设计系统 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #faf8f5;
+  color: #0b1a30;
+}
+
+/* 波浪装饰 */
+.wave-divider {
+  position: relative;
+  height: 4rem;
+  overflow: hidden;
+}
+.wave-divider::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -5%;
+  width: 110%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 40px,
+    rgba(200, 180, 140, 0.15) 40px,
+    rgba(200, 180, 140, 0.15) 42px
+  );
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath d='M0,40 C300,100 600,0 900,80 C1050,120 1150,60 1200,40 L1200,120 L0,120 Z' fill='black'/%3E%3C/svg%3E");
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  mask-position: bottom;
+}
+
+/* 金线装饰 */
+.gold-line {
+  width: 3rem;
+  height: 2px;
+  background: linear-gradient(90deg, #c9922e 0%, #c9922e 60%, transparent 100%);
+  border-radius: 1px;
+}
+
+/* 卡片悬浮效果 */
+.card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(11, 26, 48, 0.1), 0 4px 12px rgba(11, 26, 48, 0.06);
+  border-color: #d9a857;
+}
+
+/* 水波纹 */
+@keyframes ripple {
+  0% { transform: scale(0.8); opacity: 0.4; }
+  50% { transform: scale(1.05); opacity: 0.2; }
+  100% { transform: scale(0.8); opacity: 0.4; }
+}
+.ripple-bg {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(201, 146, 46, 0.15);
+  animation: ripple 6s ease-in-out infinite;
+}
+
+/* 渐变文字 — 金生水 */
+.text-gold-water {
+  background: linear-gradient(135deg, #c9922e 0%, #d9a857 30%, #5587ba 70%, #1c3d66 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #faf8f5; }
+::-webkit-scrollbar-thumb { background: #d9a857; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #c9922e; }
+
+/* react-calendar 覆盖 */
+.react-calendar {
+  font-family: inherit !important;
+  border: none !important;
+  background: transparent !important;
+}
+.react-calendar__tile--active {
+  background: #c9922e !important;
+  color: white !important;
+}
+.react-calendar__tile:hover {
+  background: #f9eedb !important;
+}
