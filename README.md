@@ -1,73 +1,76 @@
-# React + TypeScript + Vite
+# 灵契 LingQi
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+> 让每个把纸片人带到现实的人都被看见。
 
-Currently, two official plugins are available:
+**灵契**是面向泛二次元创作者的专属主页平台。卡司/DM、Coser、摄影师、妆造师可以创建个人主页，展示作品、管理档期、连接粉丝。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 设计理念
 
-## React Compiler
+### 金生水（Gold & Water）
+- **金**：暖白底色、金色点缀、干净线条、精致感
+- **水**：深邃蓝黑（ink）、流动感、留白与呼吸感
+- **金生水**：金色渐变过渡到蓝色，贯穿整套 UI
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 品牌色板
+| Token | 色值 | 用途 |
+|---|---|---|
+| `gold-500` | `#c9922e` | 主金色强调 |
+| `ink-800` | `#132b4a` | 深水色背景/按钮 |
+| `cream` | `#faf8f5` | 页面底色 |
+| `warm-white` | `#fdfcf9` | 卡片底色 |
 
-## Expanding the ESLint configuration
+## 技术栈
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+| 层 | 技术 |
+|---|---|
+| 前端框架 | **React 19** + **TypeScript** |
+| 构建工具 | **Vite 8** |
+| 样式 | **TailwindCSS v4** (CSS `@theme` 设计令牌) |
+| 字体 | Noto Serif SC / Noto Sans SC |
+| 后端 | **Vercel Serverless Functions** (Express) |
+| 数据库 | **Supabase** (PostgreSQL + Storage) |
+| 认证 | JWT (jsonwebtoken + bcryptjs) |
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 页面
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+| 路由 | 页面 | 说明 |
+|---|---|---|
+| `/` | Home | 落地页，介绍平台 |
+| `/explore` | Explore | 发现创作者，筛选+分页 |
+| `/explore/:id` | CreatorProfile | 创作者公开主页 |
+| `/login` | Login | 登录/注册（分屏布局） |
+| `/dashboard` | Dashboard | 创作者后台（资料/服务/档期/作品） |
+| `/admin` | Admin | 管理后台（审核创作者/联系申请） |
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## 开发
+
+```bash
+# 安装依赖
+npm install
+
+# 启动开发服务器
+npm run dev
+
+# 构建生产版本
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 环境变量
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+复制 `.env.example` 到 `.env` 并填入实际值：
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+VITE_SUPABASE_URL=       # Supabase 项目地址
+VITE_SUPABASE_ANON_KEY=  # Supabase 匿名密钥
+SUPABASE_SERVICE_ROLE_KEY= # Supabase 服务角色密钥
+JWT_SECRET=              # JWT 签名密钥
+ADMIN_PASSWORD=          # 管理后台密码
+```
+
+## 部署
+
+项目部署在 **Vercel**：[https://lingqi.vercel.app](https://lingqi.vercel.app)
+
+```bash
+vercel --prod
 ```
