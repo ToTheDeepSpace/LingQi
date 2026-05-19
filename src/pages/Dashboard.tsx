@@ -154,7 +154,7 @@ export default function Dashboard() {
   if (loading) return (
     <div className="min-h-screen bg-cream flex items-center justify-center">
       <div className="text-center">
-        <div className="w-8 h-8 border-2 border-gold-300 border-t-gold-500 rounded-full animate-spin mx-auto mb-4" />
+        <div className="w-10 h-10 border-2 border-gold-300 border-t-gold-500 rounded-full animate-spin mx-auto mb-5" />
         <p className="text-base text-ink-300">加载中...</p>
       </div>
     </div>
@@ -163,9 +163,9 @@ export default function Dashboard() {
   if (!creator) return (
     <div className="min-h-screen bg-cream flex items-center justify-center">
       <div className="text-center">
-        <div className="text-6xl mb-5 opacity-25">🌊</div>
-        <p className="text-base text-ink-400 mb-4">{error || '加载失败'}</p>
-        <button onClick={() => navigate('/login')} className="text-sm text-gold-600 underline hover:text-gold-500">返回登录</button>
+        <div className="text-6xl mb-6 opacity-20">🌊</div>
+        <p className="text-lg text-ink-400 mb-5">{error || '加载失败'}</p>
+        <button onClick={() => navigate('/login')} className="text-sm text-gold-600 underline hover:text-gold-500 font-medium">返回登录</button>
       </div>
     </div>
   );
@@ -176,29 +176,31 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-xl lg:text-2xl font-bold text-ink-900">我的主页</h1>
-            <p className="text-sm text-ink-400 mt-1">{creator.display_name}</p>
+            <h1 className="text-2xl lg:text-3xl font-bold text-ink-900">我的主页</h1>
+            <p className="text-sm text-ink-400 mt-1.5">{creator.display_name}</p>
           </div>
           <Link to={`/explore/${creator.id}`}
-            className="text-sm text-gold-600 hover:text-gold-500 transition-colors">
+            className="btn-glass !text-ink-600 !border-gold-200/40 !bg-white/60 px-5 py-2 text-sm">
             查看公开页 →
           </Link>
         </div>
 
         {error && (
-          <div className="mb-5 p-4 bg-red-50 text-red-600 rounded-[0.75rem] text-sm border border-red-100">{error}</div>
+          <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-[0.75rem] text-sm border border-red-100 animate-fade-in">
+            {error}
+          </div>
         )}
 
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Sidebar tabs */}
-          <div className="lg:w-52 shrink-0">
-            <div className="flex lg:flex-col gap-1 bg-warm-white rounded-[1rem] p-1.5 border border-gold-200/40 shadow-gold overflow-x-auto lg:overflow-visible">
+          <div className="lg:w-56 shrink-0">
+            <div className="glass-card rounded-[1.25rem] p-2 flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
               {TABS.map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)}
-                  className={`flex items-center gap-2.5 flex-1 lg:flex-none py-2.5 px-4 text-sm font-medium rounded-[0.75rem] transition-colors whitespace-nowrap ${
+                  className={`flex items-center gap-2.5 flex-1 lg:flex-none py-3 px-4 text-sm font-semibold rounded-[0.75rem] transition-all whitespace-nowrap ${
                     tab === t.id
-                      ? 'bg-ink-800 text-white'
-                      : 'text-ink-500 hover:text-ink-700 hover:bg-gold-50'
+                      ? 'bg-gradient-to-r from-ink-800 to-ink-700 text-white shadow-md'
+                      : 'text-ink-500 hover:text-ink-700 hover:bg-gold-50/70'
                   }`}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d={t.icon} />
@@ -214,47 +216,47 @@ export default function Dashboard() {
 
             {/* ======== Profile ======== */}
             {tab === 'profile' && (
-              <div className="bg-warm-white rounded-[1rem] p-6 lg:p-8 border border-gold-200/40 shadow-gold space-y-5">
-                <h2 className="text-base font-semibold text-ink-800">编辑资料</h2>
+              <div className="glass-card rounded-[1.25rem] p-6 lg:p-8 space-y-5">
+                <h2 className="text-lg font-bold text-ink-800">编辑资料</h2>
                 <div className="grid sm:grid-cols-2 gap-5">
                   <div>
-                    <label className="text-xs text-ink-500 mb-2 block font-medium">昵称 / 艺名</label>
+                    <label className="text-xs text-ink-500 mb-2 block font-semibold">昵称 / 艺名</label>
                     <input type="text" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gold-200 rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream focus:outline-none focus:border-gold-400 focus:ring-1 focus:ring-gold-400/30 transition-colors" />
+                      className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70" />
                   </div>
                   <div>
-                    <label className="text-xs text-ink-500 mb-2 block font-medium">城市</label>
+                    <label className="text-xs text-ink-500 mb-2 block font-semibold">城市</label>
                     <input type="text" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gold-200 rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream focus:outline-none focus:border-gold-400 focus:ring-1 focus:ring-gold-400/30 transition-colors"
+                      className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
                       placeholder="如：上海" />
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-ink-500 mb-2 block font-medium">简介</label>
+                  <label className="text-xs text-ink-500 mb-2 block font-semibold">简介</label>
                   <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-gold-200 rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream focus:outline-none focus:border-gold-400 focus:ring-1 focus:ring-gold-400/30 transition-colors h-24 resize-none" />
+                    className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70 h-24 resize-none" />
                 </div>
                 <div className="grid sm:grid-cols-2 gap-5">
                   <div>
-                    <label className="text-xs text-ink-500 mb-2 block font-medium">标签</label>
+                    <label className="text-xs text-ink-500 mb-2 block font-semibold">标签</label>
                     <input type="text" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gold-200 rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream focus:outline-none focus:border-gold-400 focus:ring-1 focus:ring-gold-400/30 transition-colors"
+                      className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
                       placeholder="用逗号分隔，如：恋陪, 情感本, 日系" />
                   </div>
                   <div>
-                    <label className="text-xs text-ink-500 mb-2 block font-medium">微信</label>
+                    <label className="text-xs text-ink-500 mb-2 block font-semibold">微信</label>
                     <input type="text" value={form.wechat} onChange={e => setForm({ ...form, wechat: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gold-200 rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream focus:outline-none focus:border-gold-400 focus:ring-1 focus:ring-gold-400/30 transition-colors"
+                      className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
                       placeholder="粉丝可通过申请联系你" />
                     <p className="text-xs text-ink-400 mt-1.5">粉丝需要通过申请才能看到你的微信</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 pt-1">
                   <button onClick={saveProfile} disabled={saving}
-                    className="px-6 py-2.5 bg-ink-800 text-white text-sm rounded-[0.75rem] hover:bg-ink-700 disabled:opacity-50 transition-colors">
+                    className="btn-dark px-7 py-2.5 text-sm rounded-[0.75rem] disabled:opacity-50">
                     {saving ? '保存中...' : '保存资料'}
                   </button>
-                  {msg && <span className="text-sm text-green-600">{msg}</span>}
+                  {msg && <span className="text-sm text-green-600 font-medium animate-fade-in">{msg}</span>}
                 </div>
               </div>
             )}
@@ -262,36 +264,38 @@ export default function Dashboard() {
             {/* ======== Services ======== */}
             {tab === 'services' && (
               <div className="space-y-4">
-                {services.map(s => (
+                {services.map((s, i) => (
                   <div key={s.id}
-                    className="bg-warm-white rounded-[1rem] p-5 border border-gold-200/40 shadow-gold flex items-center justify-between">
+                    className={`glass-card rounded-[1.25rem] p-5 flex items-center justify-between ${
+                      i % 2 === 0 ? 'bg-white/80' : 'bg-white/60'
+                    }`}>
                     <div>
                       <span className="text-sm font-semibold text-ink-800">{s.service_type}</span>
                       {s.duration && <span className="text-sm text-ink-400 ml-2">· {s.duration}</span>}
-                      {s.description && <p className="text-xs text-ink-400 mt-0.5">{s.description}</p>}
+                      {s.description && <p className="text-xs text-ink-400 mt-1">{s.description}</p>}
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="text-base font-bold text-gold-600">¥{s.price}</span>
+                      <span className="text-base font-bold gradient-text-gold">¥{s.price}</span>
                       <button onClick={() => deleteService(s.id)}
-                        className="text-xs text-red-400 hover:text-red-600 transition-colors">删除</button>
+                        className="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">删除</button>
                     </div>
                   </div>
                 ))}
-                <div className="bg-warm-white rounded-[1rem] p-5 border border-gold-200/40 border-dashed shadow-gold space-y-4">
-                  <p className="text-sm font-semibold text-ink-800">添加服务</p>
+                <div className="glass-card rounded-[1.25rem] p-5 border-dashed border-gold-200/60 space-y-4">
+                  <p className="text-sm font-bold text-ink-800">添加服务</p>
                   <div className="grid grid-cols-2 gap-4">
                     <input type="text" value={newSvc.service_type} onChange={e => setNewSvc({ ...newSvc, service_type: e.target.value })}
-                      className="px-4 py-2.5 border border-gold-200 rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream focus:outline-none focus:border-gold-400 transition-colors"
+                      className="px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
                       placeholder="服务类型" />
                     <input type="number" value={newSvc.price} onChange={e => setNewSvc({ ...newSvc, price: e.target.value })}
-                      className="px-4 py-2.5 border border-gold-200 rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream focus:outline-none focus:border-gold-400 transition-colors"
+                      className="px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
                       placeholder="价格（元）" />
                   </div>
                   <input type="text" value={newSvc.duration} onChange={e => setNewSvc({ ...newSvc, duration: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-gold-200 rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream focus:outline-none focus:border-gold-400 transition-colors"
+                    className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
                     placeholder="时长" />
                   <button onClick={addService}
-                    className="px-5 py-2 bg-gold-50 text-gold-700 text-sm rounded-[0.75rem] hover:bg-gold-100 transition-colors border border-gold-200/60">
+                    className="btn-gold px-5 py-2 text-sm">
                     添加
                   </button>
                 </div>
@@ -300,8 +304,8 @@ export default function Dashboard() {
 
             {/* ======== Availability ======== */}
             {tab === 'availability' && (
-              <div className="bg-warm-white rounded-[1rem] p-6 border border-gold-200/40 shadow-gold">
-                <p className="text-sm font-semibold text-ink-800 mb-5">点击选择可约日期</p>
+              <div className="glass-card rounded-[1.25rem] p-6 lg:p-7">
+                <p className="text-sm font-bold text-ink-800 mb-5">点击选择可约日期</p>
                 <div className="max-w-md">
                   <Calendar
                     onClickDay={toggleDate}
@@ -315,7 +319,7 @@ export default function Dashboard() {
                 </div>
                 <div className="mt-5 flex flex-wrap gap-2">
                   {availDates.map(d => (
-                    <span key={d} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gold-50 text-gold-700 text-sm rounded-lg border border-gold-200/60">
+                    <span key={d} className="tag-pill inline-flex items-center gap-1.5">
                       {d}
                       <button onClick={() => { const date = new Date(d + 'T00:00:00'); toggleDate(date); }}
                         className="ml-1 hover:text-red-500 transition-colors">✕</button>
@@ -333,18 +337,18 @@ export default function Dashboard() {
                   <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
                     {portfolio.map(p => (
                       <div key={p.id}
-                        className="aspect-square rounded-lg bg-gold-100 overflow-hidden relative group">
+                        className="aspect-square rounded-xl bg-gold-100 overflow-hidden relative group shadow-sm img-zoom">
                         <img src={p.image_url} alt={p.caption || ''} className="w-full h-full object-cover" />
                         <button onClick={() => deletePortfolio(p.id)}
-                          className="absolute top-1.5 right-1.5 bg-red-500 text-white w-6 h-6 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          className="absolute top-2 right-2 bg-red-500/90 text-white w-7 h-7 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
                           ✕
                         </button>
                       </div>
                     ))}
                   </div>
                 )}
-                <div className="bg-warm-white rounded-[1rem] p-6 border border-gold-200/40 border-dashed shadow-gold space-y-4">
-                  <p className="text-sm font-semibold text-ink-800">添加作品</p>
+                <div className="glass-card rounded-[1.25rem] p-6 border-dashed border-gold-200/60 space-y-4">
+                  <p className="text-sm font-bold text-ink-800">添加作品</p>
                   <ImageUpload onUploaded={addPortfolio} token={token} api={API} />
                   <p className="text-xs text-ink-400">支持 JPG、PNG、GIF，最大 10MB</p>
                 </div>

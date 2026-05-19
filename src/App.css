@@ -9,7 +9,7 @@ body {
   color: #0b1a30;
 }
 
-/* 波浪装饰 */
+/* ============ 波浪装饰 ============ */
 .wave-divider {
   position: relative;
   height: 4rem;
@@ -35,7 +35,7 @@ body {
   mask-position: bottom;
 }
 
-/* 金线装饰 */
+/* ============ 金线装饰 ============ */
 .gold-line {
   width: 3rem;
   height: 2px;
@@ -43,17 +43,17 @@ body {
   border-radius: 1px;
 }
 
-/* 卡片悬浮效果 */
+/* ============ 卡片悬浮效果 ============ */
 .card-hover {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(11, 26, 48, 0.1), 0 4px 12px rgba(11, 26, 48, 0.06);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(11, 26, 48, 0.12), 0 4px 12px rgba(11, 26, 48, 0.08);
   border-color: #d9a857;
 }
 
-/* 水波纹 */
+/* ============ 水波纹 ============ */
 @keyframes ripple {
   0% { transform: scale(0.8); opacity: 0.4; }
   50% { transform: scale(1.05); opacity: 0.2; }
@@ -66,7 +66,7 @@ body {
   animation: ripple 6s ease-in-out infinite;
 }
 
-/* 渐变文字 — 金生水 */
+/* ============ 渐变文字 — 金生水 ============ */
 .text-gold-water {
   background: linear-gradient(135deg, #c9922e 0%, #d9a857 30%, #5587ba 70%, #1c3d66 100%);
   -webkit-background-clip: text;
@@ -74,13 +74,60 @@ body {
   background-clip: text;
 }
 
-/* 滚动条 */
+/* ============ 序列渐入动画 ============ */
+.fade-in-up {
+  opacity: 0;
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 延迟工具类 */
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-400 { animation-delay: 0.4s; }
+.delay-500 { animation-delay: 0.5s; }
+.delay-600 { animation-delay: 0.6s; }
+
+/* ============ 图片悬浮缩放 ============ */
+.img-zoom {
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.img-zoom:hover {
+  transform: scale(1.06);
+}
+
+/* ============ 闪光扫过效果 ============ */
+@keyframes shine {
+  0% { left: -100%; }
+  100% { left: 200%; }
+}
+.shine-overlay {
+  position: relative;
+  overflow: hidden;
+}
+.shine-overlay::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  transform: skewX(-20deg);
+  animation: shine 2.5s ease-in-out infinite;
+}
+
+/* ============ 滚动条 ============ */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: #faf8f5; }
 ::-webkit-scrollbar-thumb { background: #d9a857; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #c9922e; }
 
-/* react-calendar 覆盖 */
+/* ============ react-calendar 覆盖 ============ */
 .react-calendar {
   font-family: inherit !important;
   border: none !important;
@@ -92,4 +139,15 @@ body {
 }
 .react-calendar__tile:hover {
   background: #f9eedb !important;
+}
+
+/* ============ 头像光环 ============ */
+.avatar-glow {
+  box-shadow: 0 0 0 3px rgba(201, 146, 46, 0.15), 0 4px 16px rgba(201, 146, 46, 0.1);
+}
+
+/* ============ 网格背景纹理 ============ */
+.bg-dot-pattern {
+  background-image: radial-gradient(circle, #d9a857 1px, transparent 1px);
+  background-size: 32px 32px;
 }
