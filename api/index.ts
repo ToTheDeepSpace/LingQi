@@ -51,6 +51,22 @@ function getReq<T extends string = string>(req: express.Request, key: string): T
   return (req as Record<string, unknown>)[key] as T;
 }
 
+function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefined) {
+  const links = socialLinks || {};
+  const entries = Object.entries(links).filter(([, url]) => typeof url === 'string' && url.trim());
+  return entries.reduce<Record<string, { url: string; platform: string; title: string; description: string; captured_at: string }>>((acc, [key, url]) => {
+    const platform = key === 'douyin' ? '抖音' : key === 'xiaohongshu' ? '小红书' : '社交主页';
+    acc[key] = {
+      url: url.trim(),
+      platform,
+      title: `${platform}主页`,
+      description: '已添加到灵契主页，后续可接入真实网页快照服务。',
+      captured_at: new Date().toISOString(),
+    };
+    return acc;
+  }, {});
+}
+
 async function getAuthedProfile(req: express.Request) {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
@@ -164,10 +180,19 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
     if (getReq(req, 'creatorId') !== req.params.id) {
       return res.status(403).json(err(new Error('只能修改自己的资料')));
     }
-    const { display_name, avatar, bio, tags, city, social_links, wechat } = req.body;
+    const {
+      display_name, avatar, bio, tags, city, social_links, wechat,
+      available_cities, travel_status, contact_unlock_enabled, contact_intent_amount,
+    } = req.body;
+    const socialSnapshots = makeSocialSnapshots(social_links);
 
     await supabase.from('lc_profiles').update({
       display_name, avatar, bio, tags, city, social_links, wechat,
+      available_cities: Array.isArray(available_cities) ? available_cities : [],
+      travel_status: travel_status || '常驻本地',
+      contact_unlock_enabled: !!contact_unlock_enabled,
+      contact_intent_amount: Math.max(0, parseInt(contact_intent_amount || 0) || 0),
+      social_snapshots: socialSnapshots,
       updated_at: new Date().toISOString(),
     }).eq('id', req.params.id);
     res.json(ok());
@@ -187,12 +212,13 @@ app.get('/api/lc/creators/:id/availability', async (req, res) => {
 
 app.post('/api/lc/availability', authMiddleware, async (req, res) => {
   try {
-    const { creatorId, date, startTime, endTime, note } = req.body;
+    const { creatorId, date, startTime, endTime, note, city, location } = req.body;
     if (getReq(req, 'creatorId') !== creatorId) {
       return res.status(403).json(err(new Error('只能管理自己的档期')));
     }
     const { data } = await supabase.from('lc_availability').insert({
       creator_id: creatorId, date, start_time: startTime, end_time: endTime, note,
+      city: city || null, location: location || null,
     }).select().single();
     res.json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
@@ -290,14 +316,78 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
 
 app.post('/api/lc/contact-request', async (req, res) => {
   try {
-    const { creatorId, requesterName, requesterWechat, message } = req.body;
+    const { creatorId, requesterName, requesterWechat, message, intentAmount, paymentProof } = req.body;
     if (!creatorId || !requesterName || !requesterWechat) {
       return res.status(400).json(err(new Error('缺少必填信息')));
     }
     const { data } = await supabase.from('lc_contact_requests').insert({
       creator_id: creatorId, requester_name: requesterName, requester_wechat: requesterWechat, requester_message: message || null,
+      intent_amount: Math.max(0, parseInt(intentAmount || 0) || 0),
+      payment_proof: paymentProof || null,
     }).select().single();
     res.json(ok(data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ==================== 委托需求墙 ====================
+
+app.get('/api/lc/commissions', async (req, res) => {
+  try {
+    const city = req.query.city as string;
+    const targetType = req.query.targetType as string;
+    let query = supabase.from('lc_commissions')
+      .select('*')
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false });
+    if (city && city !== 'all') query = query.eq('city', city);
+    if (targetType && targetType !== 'all') query = query.eq('target_type', targetType);
+    const { data, error: qErr } = await query;
+    if (qErr) throw qErr;
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/commissions/mine', authMiddleware, async (req, res) => {
+  try {
+    const posterId = getReq(req, 'creatorId');
+    const { data, error: qErr } = await supabase.from('lc_commissions')
+      .select('*')
+      .eq('poster_id', posterId)
+      .order('created_at', { ascending: false });
+    if (qErr) throw qErr;
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
+  try {
+    const {
+      title, content, desiredRole, targetType, neededDate,
+      city, location, budget, contactNote, aiAssistContext,
+    } = req.body;
+    if (!title || !content) return res.status(400).json(err(new Error('请填写标题和需求内容')));
+
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const { data, error: insErr } = await supabase.from('lc_commissions').insert({
+      poster_id: profile.id,
+      poster_name: profile.display_name,
+      poster_is_realname: !!profile.is_realname,
+      title,
+      content,
+      desired_role: desiredRole || null,
+      target_type: targetType || null,
+      needed_date: neededDate || null,
+      city: city || null,
+      location: location || null,
+      budget: budget || null,
+      contact_note: contactNote || null,
+      ai_assist_context: aiAssistContext || {},
+    }).select().single();
+    if (insErr) throw insErr;
+
+    res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -326,14 +416,22 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_comments').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_claims').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_commissions').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
     ]);
-    res.json(ok({ profiles: profiles || [], contactRequests: requests || [], rankings: rankings || [], comments: comments || [], claims: claims || [] }));
+    res.json(ok({
+      profiles: profiles || [],
+      contactRequests: requests || [],
+      rankings: rankings || [],
+      comments: comments || [],
+      claims: claims || [],
+      commissions: commissions || [],
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -566,6 +664,25 @@ app.put('/api/lc/admin/claims/:id/approve', authMiddleware, adminMiddleware, asy
 app.put('/api/lc/admin/claims/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     await supabase.from('lc_claims').update({ status: 'rejected' }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/commissions/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    await supabase.from('lc_commissions')
+      .update({ status: 'approved', updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/commissions/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const rejectReason = req.body?.rejectReason || null;
+    await supabase.from('lc_commissions')
+      .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });

@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import ImageUpload from '../components/ImageUpload';
-import type { Creator, Service, Portfolio, AuthData } from '../types';
+import type { Creator, Service, Portfolio, AuthData, Availability } from '../types';
 
 const API  = '/api';
 const C    = '#0b1a30';
@@ -60,9 +60,16 @@ export default function Dashboard() {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(true);
 
-  const [form, setForm] = useState({ display_name: '', bio: '', city: '', wechat: '', tags: '' });
+  const [form, setForm] = useState({
+    display_name: '', bio: '', city: '', wechat: '', tags: '',
+    douyin: '', xiaohongshu: '', available_cities: '', travel_status: '常驻本地',
+    contact_unlock_enabled: false, contact_intent_amount: '',
+  });
   const [newSvc, setNewSvc] = useState({ service_type: '', price: '', duration: '', description: '' });
   const [availDates, setAvailDates] = useState<string[]>([]);
+  const [availItems, setAvailItems] = useState<Availability[]>([]);
+  const [availCity, setAvailCity] = useState('');
+  const [availLocation, setAvailLocation] = useState('');
 
   const token = getToken();
 
@@ -74,6 +81,7 @@ export default function Dashboard() {
     if (!data.id || !data.token) { navigate('/login'); return; }
     if (isTokenExpired(data.token)) {
       localStorage.removeItem('lc_creator');
+      window.dispatchEvent(new Event('lc-auth-changed'));
       navigate('/login');
       return;
     }
@@ -93,9 +101,18 @@ export default function Dashboard() {
           city: profile.city || '',
           wechat: profile.wechat || '',
           tags: (profile.tags || []).join(', '),
+          douyin: profile.social_links?.douyin || '',
+          xiaohongshu: profile.social_links?.xiaohongshu || '',
+          available_cities: (profile.available_cities || []).join(', '),
+          travel_status: profile.travel_status || '常驻本地',
+          contact_unlock_enabled: !!profile.contact_unlock_enabled,
+          contact_intent_amount: profile.contact_intent_amount ? String(profile.contact_intent_amount) : '',
         });
       } else { setError(profileData.error || '加载失败'); }
-      if (availData.success) setAvailDates((availData.data || []).map((a: { date: string }) => a.date));
+      if (availData.success) {
+        setAvailItems(availData.data || []);
+        setAvailDates((availData.data || []).map((a: { date: string }) => a.date));
+      }
     }).catch(() => setError('网络错误')).finally(() => setLoading(false));
   }, [navigate]);
 
@@ -104,10 +121,26 @@ export default function Dashboard() {
     setSaving(true); setError('');
     try {
       const tags = form.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+      const available_cities = form.available_cities.split(',').map((t: string) => t.trim()).filter(Boolean);
+      const social_links = {
+        douyin: form.douyin.trim(),
+        xiaohongshu: form.xiaohongshu.trim(),
+      };
       const r = await fetch(`${API}/lc/creators/${creator.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ...form, tags }),
+        body: JSON.stringify({
+          display_name: form.display_name,
+          bio: form.bio,
+          city: form.city,
+          wechat: form.wechat,
+          tags,
+          social_links,
+          available_cities,
+          travel_status: form.travel_status,
+          contact_unlock_enabled: form.contact_unlock_enabled,
+          contact_intent_amount: form.contact_intent_amount,
+        }),
       });
       const d = await r.json();
       if (d.success) { setMsg('已保存'); setTimeout(() => setMsg(''), 2500); }
@@ -157,26 +190,36 @@ export default function Dashboard() {
     const dateStr = date.toISOString().split('T')[0];
     const isSet = availDates.includes(dateStr);
     if (isSet) {
-      const { data } = await fetch(`${API}/lc/creators/${creator.id}/availability`).then(r => r.json());
-      const item = (data || []).find((a: { date: string; id: string }) => a.date === dateStr);
+      const item = availItems.find(a => a.date === dateStr);
       if (item) {
         const r = await fetch(`${API}/lc/availability/${item.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
         const d = await r.json();
-        if (d.success) setAvailDates(availDates.filter(ds => ds !== dateStr));
+        if (d.success) {
+          setAvailDates(availDates.filter(ds => ds !== dateStr));
+          setAvailItems(availItems.filter(a => a.id !== item.id));
+        }
       }
     } else {
       const r = await fetch(`${API}/lc/availability`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ creatorId: creator.id, date: dateStr, startTime: '09:00', endTime: '22:00' }),
+        body: JSON.stringify({
+          creatorId: creator.id, date: dateStr, startTime: '09:00', endTime: '22:00',
+          city: availCity || form.city || null,
+          location: availLocation || null,
+        }),
       });
       const d = await r.json();
-      if (d.success) setAvailDates([...availDates, dateStr]);
+      if (d.success) {
+        setAvailDates([...availDates, dateStr]);
+        setAvailItems([...availItems, d.data]);
+      }
     }
   };
 
   const logout = () => {
     localStorage.removeItem('lc_creator');
+    window.dispatchEvent(new Event('lc-auth-changed'));
     navigate('/login');
   };
 
@@ -303,6 +346,21 @@ export default function Dashboard() {
                     <input type="text" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="如：上海" style={inputStyle} />
                   </div>
                 </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                  <div>
+                    <label style={labelStyle}>流动状态</label>
+                    <select value={form.travel_status} onChange={e => setForm({ ...form, travel_status: e.target.value })} style={inputStyle}>
+                      <option value="常驻本地">常驻本地</option>
+                      <option value="全国流动">全国流动</option>
+                      <option value="巡游中">巡游中</option>
+                      <option value="远程可接">远程可接</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>可接城市（逗号分隔）</label>
+                    <input type="text" value={form.available_cities} onChange={e => setForm({ ...form, available_cities: e.target.value })} placeholder="北京, 上海, 杭州" style={inputStyle} />
+                  </div>
+                </div>
                 <div style={{ marginBottom: 16 }}>
                   <label style={labelStyle}>简介</label>
                   <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} rows={4}
@@ -319,6 +377,26 @@ export default function Dashboard() {
                     <input type="text" value={form.wechat} onChange={e => setForm({ ...form, wechat: e.target.value })}
                       placeholder="粉丝通过申请后可见" style={inputStyle} />
                   </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                  <div>
+                    <label style={labelStyle}>抖音主页链接</label>
+                    <input type="url" value={form.douyin} onChange={e => setForm({ ...form, douyin: e.target.value })} placeholder="https://v.douyin.com/..." style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>小红书主页链接</label>
+                    <input type="url" value={form.xiaohongshu} onChange={e => setForm({ ...form, xiaohongshu: e.target.value })} placeholder="https://www.xiaohongshu.com/..." style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ padding: '14px 16px', borderRadius: 12, marginBottom: 24, backgroundColor: 'rgba(217,168,87,0.07)', border: '1px solid rgba(217,168,87,0.18)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'rgba(220,230,243,0.82)', fontSize: '0.86rem', fontWeight: 700, marginBottom: 12 }}>
+                    <input type="checkbox" checked={form.contact_unlock_enabled} onChange={e => setForm({ ...form, contact_unlock_enabled: e.target.checked })} />
+                    开启预约意向金
+                  </label>
+                  <input type="number" value={form.contact_intent_amount} onChange={e => setForm({ ...form, contact_intent_amount: e.target.value })} placeholder="意向金金额，0 表示不收" style={inputStyle} />
+                  <p style={{ color: 'rgba(220,230,243,0.55)', fontSize: '0.78rem', lineHeight: 1.7, marginTop: 10 }}>
+                    这不是“加微信门槛费”，页面会写成预约意向确认，用来减少无效打扰。
+                  </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                   <button onClick={saveProfile} disabled={saving}
@@ -373,7 +451,11 @@ export default function Dashboard() {
             {tab === 'availability' && (
               <div style={card}>
                 <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: 'rgba(186,207,231,0.85)' }}>点击选择可约日期</p>
-                <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.55)', marginBottom: 20 }}>已选中的日期将显示在你的公开主页上</p>
+                <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.55)', marginBottom: 16 }}>已选中的日期和地点将显示在你的公开主页上</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 520, marginBottom: 18 }}>
+                  <input value={availCity} onChange={e => setAvailCity(e.target.value)} placeholder="这批档期所在城市（默认用常驻城市）" style={inputStyle} />
+                  <input value={availLocation} onChange={e => setAvailLocation(e.target.value)} placeholder="地点补充，如展会/区县/可商量" style={inputStyle} />
+                </div>
                 <div style={{ maxWidth: 380 }}>
                   <Calendar
                     onClickDay={toggleDate}
@@ -386,10 +468,10 @@ export default function Dashboard() {
                   />
                 </div>
                 <div style={{ marginTop: 20, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {availDates.map(d => (
-                    <span key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.25)', color: GOLD }}>
-                      {d}
-                      <button onClick={() => toggleDate(new Date(d + 'T00:00:00'))}
+                  {availItems.map(item => (
+                    <span key={item.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.25)', color: GOLD }}>
+                      {item.date}{item.city ? ` · ${item.city}` : ''}{item.location ? ` · ${item.location}` : ''}
+                      <button onClick={() => toggleDate(new Date(item.date + 'T00:00:00'))}
                         style={{ background: 'none', border: 'none', color: 'rgba(217,168,87,0.6)', cursor: 'pointer', padding: 0, lineHeight: 1 }}>✕</button>
                     </span>
                   ))}

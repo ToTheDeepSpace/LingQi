@@ -1,38 +1,54 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { Creator, PaginatedResponse } from '../types';
 import { CITIES } from '../constants/cities';
 
 const API = '/api';
+const C = '#0b1a30';
+const C2 = '#0f2239';
+const GOLD = '#d9a857';
+const PAPER = 'rgba(245,243,238,0.94)';
+const PAPER_DIM = 'rgba(226,238,252,0.78)';
 
 const FILTERS = [
-  { key: 'all',          label: '全部' },
-  { key: 'creator',      label: '🎭 卡司/DM' },
-  { key: 'coser',        label: '⭐ cos委托人' },
-  { key: 'photographer', label: '📸 摄影师' },
-  { key: 'makeup',       label: '💄 妆造师' },
+  { key: 'all', label: '全部' },
+  { key: 'creator', label: '灵契师' },
+  { key: 'photographer', label: '摄影师' },
+  { key: 'makeup', label: '妆造师' },
+  { key: 'costume', label: '服装商' },
+  { key: 'prop', label: '道具师' },
 ];
 
 const ROLE_EMOJI: Record<string, string> = {
-  creator: '🎭', coser: '⭐', photographer: '📸', makeup: '💄',
-};
-const ROLE_LABEL: Record<string, string> = {
-  creator: '卡司/DM', coser: 'cos委托人', photographer: '摄影师', makeup: '妆造师',
+  creator: '✦',
+  photographer: '◐',
+  makeup: '◇',
+  costume: '◈',
+  prop: '◆',
+  coser: '✦',
 };
 
-const C    = '#0b1a30';
-const C2   = '#0f2239';
-const GOLD = '#d9a857';
+const ROLE_LABEL: Record<string, string> = {
+  creator: '灵契师',
+  photographer: '摄影师',
+  makeup: '妆造师',
+  costume: '服装商',
+  prop: '道具师',
+  coser: '委托人',
+};
+
+const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
 
 export default function Explore() {
-  const [creators, setCreators]     = useState<Creator[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState('');
-  const [filter, setFilter]         = useState('all');
-  const [city, setCity]             = useState('all');
-  const [page, setPage]             = useState(1);
+  const [creators, setCreators] = useState<Creator[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [city, setCity] = useState('all');
+  const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [cityOpen, setCityOpen]     = useState(false);
+  const [cityOpen, setCityOpen] = useState(false);
+  const [cityQuery, setCityQuery] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -62,46 +78,72 @@ export default function Explore() {
     };
   }, [page, city]);
 
-  const setFilterAndReset = (f: string) => { setFilter(f); setPage(1); };
-  const setCityAndReset   = (c: string) => { setCity(c); setPage(1); setCityOpen(false); };
+  const setFilterAndReset = (f: string) => {
+    setFilter(f);
+    setPage(1);
+  };
+
+  const setCityAndReset = (c: string) => {
+    setCity(c);
+    setPage(1);
+    setCityOpen(false);
+    setCityQuery('');
+  };
 
   const filtered = filter === 'all' ? creators : creators.filter(c => c.role_type === filter);
+  const creatorCountText = loading ? '正在加载' : `${filtered.length} 位可查看`;
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
-
-      {/* ── 顶部 Header ── */}
-      <div style={{ backgroundColor: C2, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '48px 20px 40px' }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+      <div style={{
+        background: `radial-gradient(circle at 16% 0%, rgba(107,63,160,0.24), transparent 34%), linear-gradient(135deg, ${C2}, #132b4a)`,
+        borderBottom: '1px solid rgba(217,168,87,0.16)',
+        padding: '52px 20px 34px',
+      }}>
+        <div style={{ maxWidth: 1080, margin: '0 auto' }}>
           <div className="gold-line" style={{ marginBottom: 16 }} />
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 8 }}>
-            灵契大厅
-          </h1>
-          <p style={{ color: 'rgba(186,207,231,0.65)', fontSize: '1rem' }}>
-            找到你喜欢的卡司、cos委托人、摄影师、妆造师
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 24, flexWrap: 'wrap' }}>
+            <div style={{ maxWidth: 690 }}>
+              <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.85rem, 4vw, 2.75rem)', marginBottom: 10, color: PAPER }}>
+                灵契大厅
+              </h1>
+              <p style={{ color: PAPER_DIM, fontSize: '1rem', lineHeight: 1.85 }}>
+                查看灵契师的主页、档期、可接城市和社交展示。想要指定角色或日期，也可以先去委托需求墙挂一段愿望。
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <Link to="/commissions" style={secondaryAction}>委托需求墙</Link>
+              <Link to="/login" className="btn-gold" style={{ padding: '10px 20px', textDecoration: 'none', fontSize: '0.9rem' }}>
+                入驻灵契
+              </Link>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 28 }}>
+            <Metric label="当前筛选" value={filter === 'all' ? '全部身份' : FILTERS.find(f => f.key === filter)?.label || filter} />
+            <Metric label="城市" value={city === 'all' ? '全国' : city} />
+            <Metric label="结果" value={creatorCountText} />
+          </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '32px 20px 80px' }}>
-
-        {/* ── 职业筛选 + 城市选择 ── */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
-
-          {/* 职业筛选 */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, flex: 1 }}>
+      <div style={{ maxWidth: 1080, margin: '0 auto', padding: '28px 20px 80px' }}>
+        <div style={{ display: 'flex', gap: 14, marginBottom: 24, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, minWidth: 0 }}>
             {FILTERS.map(({ key, label }) => {
               const active = filter === key;
               return (
                 <button key={key} onClick={() => setFilterAndReset(key)}
                   style={{
-                    padding: '8px 18px', borderRadius: 999, fontSize: '0.875rem', cursor: 'pointer',
-                    fontWeight: active ? 600 : 400, border: 'none', transition: 'all 0.2s',
-                    background: active
-                      ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`
-                      : 'rgba(255,255,255,0.06)',
-                    color: active ? C : 'rgba(186,207,231,0.65)',
-                    boxShadow: active ? '0 2px 12px rgba(201,146,46,0.3)' : 'none',
+                    minHeight: 36,
+                    padding: '8px 15px',
+                    borderRadius: 999,
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    fontWeight: active ? 800 : 600,
+                    border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.14)',
+                    background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.055)',
+                    color: active ? GOLD : 'rgba(226,238,252,0.78)',
                   }}>
                   {label}
                 </button>
@@ -109,161 +151,74 @@ export default function Explore() {
             })}
           </div>
 
-          {/* 城市下拉 */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <button onClick={() => setCityOpen(!cityOpen)}
-              style={{
-                padding: '8px 16px', borderRadius: 999, fontSize: '0.875rem', cursor: 'pointer',
-                border: city !== 'all' ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.25)',
-                background: city !== 'all' ? 'rgba(201,146,46,0.1)' : 'rgba(255,255,255,0.06)',
-                color: city !== 'all' ? GOLD : 'rgba(186,207,231,0.65)',
-                display: 'flex', alignItems: 'center', gap: 6, fontWeight: city !== 'all' ? 600 : 400,
-              }}>
-              📍 {city === 'all' ? '全部城市' : city}
-              <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>▼</span>
-            </button>
-
-            {cityOpen && (
-              <div style={{
-                position: 'absolute', top: '110%', right: 0, zIndex: 50,
-                backgroundColor: '#0d1f38', border: '1px solid rgba(201,146,46,0.2)',
-                borderRadius: 14, padding: '8px', width: 280,
-                maxHeight: 320, overflowY: 'auto',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-              }}>
-                <button onClick={() => setCityAndReset('all')}
-                  style={{ width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: city === 'all' ? 'rgba(201,146,46,0.12)' : 'transparent', color: city === 'all' ? GOLD : 'rgba(186,207,231,0.75)', fontSize: '0.85rem', marginBottom: 4, fontWeight: city === 'all' ? 600 : 400 }}>
-                  全部城市
-                </button>
-                <div style={{ height: 1, backgroundColor: 'rgba(201,146,46,0.1)', margin: '4px 0 8px' }} />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                  {CITIES.map(c => (
-                    <button key={c} onClick={() => setCityAndReset(c)}
-                      style={{ padding: '7px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', background: city === c ? 'rgba(201,146,46,0.12)' : 'transparent', color: city === c ? GOLD : 'rgba(186,207,231,0.7)', fontSize: '0.82rem', textAlign: 'left', fontWeight: city === c ? 600 : 400 }}>
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <SearchableCitySelect
+            open={cityOpen}
+            city={city}
+            query={cityQuery}
+            onToggle={() => setCityOpen(!cityOpen)}
+            onQuery={setCityQuery}
+            onSelect={setCityAndReset}
+            onClose={() => setCityOpen(false)}
+          />
         </div>
 
-        {/* 点击其他地方关闭城市下拉 */}
-        {cityOpen && (
-          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setCityOpen(false)} />
-        )}
-
-        {/* ── 错误 ── */}
         {error && (
-          <div style={{ textAlign: 'center', padding: '80px 0' }}>
-            <p style={{ color: '#f87171', marginBottom: 16 }}>{error}</p>
-            <button onClick={() => window.location.reload()}
-              style={{ background: 'none', border: 'none', color: GOLD, textDecoration: 'underline', cursor: 'pointer', fontSize: '0.875rem' }}>
-              重新加载
-            </button>
-          </div>
-        )}
-
-        {/* ── 加载中 ── */}
-        {loading && !error && (
-          <div style={{ textAlign: 'center', padding: '100px 0' }}>
-            <div style={{ width: 40, height: 40, border: `2px solid rgba(201,146,46,0.3)`, borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 20px', animation: 'spin 0.8s linear infinite' }} />
-            <p style={{ color: 'rgba(186,207,231,0.55)' }}>正在召唤创作者...</p>
-          </div>
-        )}
-
-        {/* ── 空状态 ── */}
-        {!loading && !error && filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '100px 0' }}>
-            <div style={{ fontSize: 56, marginBottom: 20, opacity: 0.3 }}>🌌</div>
-            <p style={{ color: 'rgba(186,207,231,0.55)', fontSize: '1.05rem', marginBottom: 24 }}>
-              {city !== 'all' ? `${city} 暂无创作者` : filter === 'all' ? '还没有创作者入驻' : '该职业暂无创作者'}
+          <div style={stateWrap}>
+            <div style={{ fontSize: 34, marginBottom: 14, color: GOLD }}>✦</div>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', fontWeight: 900, color: PAPER, marginBottom: 8 }}>
+              大厅暂时没连上
+            </h2>
+            <p style={{ color: PAPER_DIM, lineHeight: 1.8, marginBottom: 18 }}>
+              可能是网络或服务接口短暂波动。你可以刷新重试，或者先去委托需求墙挂一条需求。
             </p>
-            <Link to="/login" className="btn-gold" style={{ display: 'inline-block', padding: '10px 28px', fontSize: '0.9rem' }}>
-              成为第一个 →
-            </Link>
+            <p style={{ color: 'rgba(252,165,165,0.86)', fontSize: '0.84rem', marginBottom: 22 }}>{error}</p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button onClick={() => window.location.reload()} style={textButton}>重新加载</button>
+              <Link to="/commissions/new" style={secondaryAction}>发布委托需求</Link>
+            </div>
           </div>
         )}
 
-        {/* ── 创作者卡片网格 ── */}
+        {loading && !error && (
+          <div style={stateWrap}>
+            <div style={{ width: 40, height: 40, border: '2px solid rgba(217,168,87,0.26)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 20px', animation: 'spin 0.8s linear infinite' }} />
+            <p style={{ color: PAPER_DIM }}>正在召唤灵契师...</p>
+          </div>
+        )}
+
+        {!loading && !error && filtered.length === 0 && (
+          <div style={{ padding: '56px 20px', border: '1px dashed rgba(217,168,87,0.22)', borderRadius: 8, background: 'rgba(255,255,255,0.035)' }}>
+            <div style={{ maxWidth: 580, margin: '0 auto', textAlign: 'center' }}>
+              <div style={{ fontSize: 42, marginBottom: 16, color: GOLD }}>✦</div>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.35rem', fontWeight: 900, color: PAPER, marginBottom: 10 }}>
+                {city !== 'all' ? `${city} 暂无公开主页` : filter === 'all' ? '大厅还在等待第一批灵契师' : '这个身份暂时没有公开主页'}
+              </h2>
+              <p style={{ color: PAPER_DIM, lineHeight: 1.8, marginBottom: 22 }}>
+                可以先发布一条委托需求，让合适的人来回应你；也可以自己入驻，把主页先挂出来。
+              </p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <Link to="/commissions/new" className="btn-gold" style={{ padding: '10px 20px', textDecoration: 'none' }}>发布委托需求</Link>
+                <Link to="/login" style={secondaryAction}>我要入驻</Link>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!loading && !error && filtered.length > 0 && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
-              {filtered.map((c) => (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+              {filtered.map(c => (
                 <Link key={c.id} to={`/explore/${c.id}`} style={{ textDecoration: 'none' }}>
-                  <div style={{
-                    backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,146,46,0.12)',
-                    borderRadius: 16, padding: '20px', transition: 'all 0.25s', cursor: 'pointer',
-                  }}
-                    onMouseEnter={e => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.07)';
-                      (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.3)';
-                      (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)';
-                    }}
-                    onMouseLeave={e => {
-                      (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.04)';
-                      (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.12)';
-                      (e.currentTarget as HTMLElement).style.transform = 'none';
-                    }}>
-
-                    {/* 头像 + 名字 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
-                      <div style={{
-                        width: 52, height: 52, borderRadius: 14, flexShrink: 0,
-                        background: 'linear-gradient(135deg, rgba(201,146,46,0.2) 0%, rgba(201,146,46,0.1) 100%)',
-                        border: '1px solid rgba(201,146,46,0.2)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        overflow: 'hidden', fontSize: 22,
-                      }}>
-                        {c.avatar
-                          ? <img src={c.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : ROLE_EMOJI[c.role_type || ''] || '🎭'
-                        }
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {c.display_name}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.6)', marginTop: 3 }}>
-                          {c.city || '未知城市'} · {ROLE_LABEL[c.role_type || ''] || c.role_type}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 简介 */}
-                    {c.bio && (
-                      <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.65)', lineHeight: 1.7, marginBottom: 12, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {c.bio}
-                      </p>
-                    )}
-
-                    {/* 标签 */}
-                    {c.tags && c.tags.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {c.tags.slice(0, 4).map((t, i) => (
-                          <span key={i} style={{ padding: '3px 10px', borderRadius: 999, fontSize: '0.72rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.2)', color: GOLD }}>
-                            {t}
-                          </span>
-                        ))}
-                        {c.tags.length > 4 && (
-                          <span style={{ fontSize: '0.72rem', color: 'rgba(186,207,231,0.45)', alignSelf: 'center' }}>
-                            +{c.tags.length - 4}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <CreatorCard creator={c} />
                 </Link>
               ))}
             </div>
 
-            {/* ── 翻页 ── */}
             {totalPages > 1 && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginTop: 48 }}>
-                <PageBtn onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>← 上一页</PageBtn>
-                <span style={{ fontSize: '0.875rem', color: 'rgba(186,207,231,0.55)' }}>{page} / {totalPages}</span>
-                <PageBtn onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>下一页 →</PageBtn>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginTop: 42 }}>
+                <PageBtn onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>上一页</PageBtn>
+                <span style={{ fontSize: '0.875rem', color: PAPER_DIM }}>{page} / {totalPages}</span>
+                <PageBtn onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>下一页</PageBtn>
               </div>
             )}
           </>
@@ -275,16 +230,264 @@ export default function Explore() {
   );
 }
 
+function SearchableCitySelect({
+  open, city, query, onToggle, onQuery, onSelect, onClose,
+}: {
+  open: boolean;
+  city: string;
+  query: string;
+  onToggle: () => void;
+  onQuery: (value: string) => void;
+  onSelect: (city: string) => void;
+  onClose: () => void;
+}) {
+  const matchedCities = useMemo(() => {
+    const q = query.trim();
+    if (!q) return CITIES;
+    return CITIES.filter(c => c.includes(q));
+  }, [query]);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button onClick={onToggle}
+        style={{
+          minHeight: 36,
+          padding: '8px 15px',
+          borderRadius: 999,
+          fontSize: '0.875rem',
+          cursor: 'pointer',
+          border: city !== 'all' ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.22)',
+          background: city !== 'all' ? 'rgba(217,168,87,0.14)' : 'rgba(255,255,255,0.055)',
+          color: city !== 'all' ? GOLD : 'rgba(226,238,252,0.78)',
+          fontWeight: 800,
+          whiteSpace: 'nowrap',
+        }}>
+        {city === 'all' ? '全部城市' : city} ▾
+      </button>
+
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={onClose} />
+          <div style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            right: 0,
+            zIndex: 50,
+            width: 'min(360px, calc(100vw - 32px))',
+            padding: 12,
+            borderRadius: 8,
+            background: '#0d1f38',
+            border: '1px solid rgba(217,168,87,0.24)',
+            boxShadow: '0 18px 48px rgba(0,0,0,0.48)',
+          }}>
+            <input
+              autoFocus
+              value={query}
+              onChange={e => onQuery(e.target.value)}
+              placeholder="搜索城市，例如：保定、上海"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: '1px solid rgba(217,168,87,0.24)',
+                background: 'rgba(255,255,255,0.06)',
+                color: PAPER,
+                outline: 'none',
+                marginBottom: 10,
+              }}
+            />
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              <CityOption active={city === 'all'} onClick={() => onSelect('all')}>全部</CityOption>
+              {POPULAR_CITIES.map(c => (
+                <CityOption key={c} active={city === c} onClick={() => onSelect(c)}>{c}</CityOption>
+              ))}
+            </div>
+            <div style={{ height: 1, background: 'rgba(217,168,87,0.12)', marginBottom: 8 }} />
+            <div style={{ maxHeight: 260, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>
+              {matchedCities.length > 0 ? matchedCities.map(c => (
+                <button key={c} onClick={() => onSelect(c)}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: city === c ? 'rgba(217,168,87,0.16)' : 'transparent',
+                    color: city === c ? GOLD : 'rgba(226,238,252,0.78)',
+                    fontSize: '0.84rem',
+                    fontWeight: city === c ? 800 : 500,
+                    textAlign: 'left',
+                  }}>
+                  {c}
+                </button>
+              )) : (
+                <p style={{ gridColumn: '1 / -1', color: 'rgba(226,238,252,0.62)', fontSize: '0.84rem', padding: '16px 4px' }}>
+                  没搜到这个城市，可以先选全部城市。
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CreatorCard({ creator }: { creator: Creator }) {
+  const role = ROLE_LABEL[creator.role_type || ''] || creator.role_type || '灵契师';
+  const tags = creator.tags || [];
+  const travelStatus = creator.travel_status;
+  const availableCities = creator.available_cities || [];
+
+  return (
+    <article style={{
+      minHeight: 210,
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035))',
+      border: '1px solid rgba(217,168,87,0.18)',
+      borderRadius: 8,
+      padding: 18,
+      transition: 'transform 0.18s ease, border-color 0.18s ease, background 0.18s ease',
+      cursor: 'pointer',
+    }}
+      onMouseEnter={e => {
+        e.currentTarget.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05))';
+        e.currentTarget.style.borderColor = 'rgba(217,168,87,0.42)';
+        e.currentTarget.style.transform = 'translateY(-2px)';
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035))';
+        e.currentTarget.style.borderColor = 'rgba(217,168,87,0.18)';
+        e.currentTarget.style.transform = 'none';
+      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+        <div style={{
+          width: 58,
+          height: 58,
+          borderRadius: 8,
+          flexShrink: 0,
+          background: 'linear-gradient(135deg, rgba(217,168,87,0.24), rgba(107,63,160,0.16))',
+          border: '1px solid rgba(217,168,87,0.28)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          fontSize: 23,
+          color: GOLD,
+          fontWeight: 900,
+        }}>
+          {creator.avatar
+            ? <img src={creator.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : ROLE_EMOJI[creator.role_type || ''] || '✦'
+          }
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <h2 style={{ fontWeight: 900, fontSize: '1rem', color: PAPER, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+              {creator.display_name}
+            </h2>
+            {creator.is_realname && <span style={{ color: GOLD, fontSize: '0.74rem', flexShrink: 0 }}>⭐</span>}
+          </div>
+          <div style={{ fontSize: '0.8rem', color: PAPER_DIM, marginTop: 4 }}>
+            {creator.city || '地点待补'} · {role}
+          </div>
+        </div>
+      </div>
+
+      {creator.bio ? (
+        <p style={{ fontSize: '0.86rem', color: 'rgba(226,238,252,0.76)', lineHeight: 1.75, marginBottom: 14, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          {creator.bio}
+        </p>
+      ) : (
+        <p style={{ fontSize: '0.86rem', color: 'rgba(226,238,252,0.64)', lineHeight: 1.75, marginBottom: 14 }}>
+          主页资料还在补全中，可以先查看档期、服务与联系方式入口。
+        </p>
+      )}
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+        {travelStatus && <Tag>{travelStatus}</Tag>}
+        {creator.contact_unlock_enabled && <Tag>预约意向金</Tag>}
+        {availableCities.slice(0, 2).map(c => <Tag key={c}>{c}</Tag>)}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {tags.slice(0, 4).map(t => <Tag key={t} muted>{t}</Tag>)}
+        {tags.length > 4 && <span style={{ color: 'rgba(226,238,252,0.55)', fontSize: '0.75rem', alignSelf: 'center' }}>+{tags.length - 4}</span>}
+      </div>
+    </article>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ border: '1px solid rgba(217,168,87,0.14)', background: 'rgba(255,255,255,0.045)', borderRadius: 8, padding: '12px 14px' }}>
+      <div style={{ color: 'rgba(226,238,252,0.62)', fontSize: '0.76rem', marginBottom: 4 }}>{label}</div>
+      <div style={{ color: PAPER, fontWeight: 900, fontSize: '0.96rem' }}>{value}</div>
+    </div>
+  );
+}
+
+function CityOption({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      style={{ padding: '6px 10px', borderRadius: 999, border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.14)', background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.04)', color: active ? GOLD : 'rgba(226,238,252,0.72)', cursor: 'pointer', fontSize: '0.78rem', fontWeight: active ? 800 : 600 }}>
+      {children}
+    </button>
+  );
+}
+
+function Tag({ children, muted }: { children: React.ReactNode; muted?: boolean }) {
+  return (
+    <span style={{ padding: '4px 9px', borderRadius: 999, fontSize: '0.73rem', background: muted ? 'rgba(255,255,255,0.045)' : 'rgba(217,168,87,0.12)', border: muted ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(217,168,87,0.22)', color: muted ? 'rgba(226,238,252,0.7)' : GOLD }}>
+      {children}
+    </span>
+  );
+}
+
 function PageBtn({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled: boolean }) {
   return (
     <button onClick={onClick} disabled={disabled}
       style={{
-        padding: '9px 22px', borderRadius: 10, fontSize: '0.875rem', cursor: disabled ? 'not-allowed' : 'pointer',
-        background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(201,146,46,0.15)',
-        color: disabled ? 'rgba(186,207,231,0.3)' : 'rgba(186,207,231,0.75)',
-        transition: 'all 0.2s',
+        minHeight: 38,
+        padding: '9px 18px',
+        borderRadius: 8,
+        fontSize: '0.875rem',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        background: 'rgba(255,255,255,0.055)',
+        border: '1px solid rgba(217,168,87,0.16)',
+        color: disabled ? 'rgba(226,238,252,0.36)' : PAPER_DIM,
       }}>
       {children}
     </button>
   );
 }
+
+const secondaryAction: React.CSSProperties = {
+  padding: '10px 18px',
+  borderRadius: 8,
+  border: '1px solid rgba(217,168,87,0.28)',
+  color: GOLD,
+  textDecoration: 'none',
+  fontSize: '0.9rem',
+  fontWeight: 800,
+};
+
+const stateWrap: React.CSSProperties = {
+  textAlign: 'center',
+  maxWidth: 560,
+  margin: '42px auto 0',
+  padding: '48px 22px',
+  borderRadius: 8,
+  border: '1px solid rgba(217,168,87,0.2)',
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.032))',
+};
+
+const textButton: React.CSSProperties = {
+  background: 'rgba(217,168,87,0.14)',
+  border: '1px solid rgba(217,168,87,0.32)',
+  borderRadius: 8,
+  color: GOLD,
+  cursor: 'pointer',
+  fontWeight: 800,
+  fontSize: '0.875rem',
+  padding: '10px 18px',
+};

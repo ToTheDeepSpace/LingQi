@@ -37,6 +37,7 @@ export default function Login() {
       const d = await r.json();
       if (d.success) {
         localStorage.setItem('lc_creator', JSON.stringify(d.data));
+        window.dispatchEvent(new Event('lc-auth-changed'));
         navigate('/dashboard');
       } else {
         if (!isRegister && d.error?.includes('未设置密码')) {

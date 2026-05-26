@@ -9,12 +9,14 @@ import Dashboard from './pages/Dashboard';
 import Admin from './pages/Admin';
 import Rankings from './pages/Rankings';
 import CreateRanking from './pages/CreateRanking';
+import Commissions from './pages/Commissions';
+import CreateCommission from './pages/CreateCommission';
 import './App.css';
 
 function AppLayout() {
   const { pathname } = useLocation();
   // Login has its own full-screen layout
-  const showNavbar = pathname !== '/login' && pathname !== '/rankings/new';
+  const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new';
 
   return (
     <>
@@ -28,6 +30,8 @@ function AppLayout() {
         <Route path="/admin" element={<Admin />} />
         <Route path="/rankings" element={<Rankings />} />
         <Route path="/rankings/new" element={<CreateRanking />} />
+        <Route path="/commissions" element={<Commissions />} />
+        <Route path="/commissions/new" element={<CreateCommission />} />
       </Routes>
     </>
   );

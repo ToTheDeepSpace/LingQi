@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import type { Creator, Service, Portfolio } from '../types';
+import type { Availability, Creator, Service, Portfolio, SocialSnapshot } from '../types';
 
 const API  = '/api';
 const C    = '#0b1a30';
@@ -11,7 +11,7 @@ const ROLE_EMOJI: Record<string, string> = {
   creator: '🎭', coser: '⭐', photographer: '📸', makeup: '💄',
 };
 const ROLE_LABEL: Record<string, string> = {
-  creator: '卡司/DM', coser: 'cos委托人', photographer: '摄影师', makeup: '妆造师',
+  creator: '灵契师', coser: '委托人', photographer: '摄影师', makeup: '妆造师',
 };
 
 const card: React.CSSProperties = {
@@ -26,12 +26,14 @@ export default function CreatorProfile() {
   const [services, setServices]   = useState<Service[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
   const [availDates, setAvailDates] = useState<string[]>([]);
+  const [availability, setAvailability] = useState<Availability[]>([]);
   const [loading, setLoading]     = useState(true);
 
   const [contactShown, setContactShown] = useState(false);
   const [formName, setFormName]         = useState('');
   const [formWechat, setFormWechat]     = useState('');
   const [formMsg, setFormMsg]           = useState('');
+  const [paymentProof, setPaymentProof] = useState('');
   const [contactSent, setContactSent]   = useState(false);
 
   useEffect(() => {
@@ -46,7 +48,10 @@ export default function CreatorProfile() {
         setServices(svc || []);
         setPortfolio(port || []);
       }
-      if (availData.success) setAvailDates((availData.data || []).map((a: { date: string }) => a.date));
+      if (availData.success) {
+        setAvailability(availData.data || []);
+        setAvailDates((availData.data || []).map((a: { date: string }) => a.date));
+      }
     }).finally(() => setLoading(false));
   }, [id]);
 
@@ -55,7 +60,14 @@ export default function CreatorProfile() {
     await fetch(`${API}/lc/contact-request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creatorId: id, requesterName: formName, requesterWechat: formWechat, message: formMsg }),
+      body: JSON.stringify({
+        creatorId: id,
+        requesterName: formName,
+        requesterWechat: formWechat,
+        message: formMsg,
+        intentAmount: creator?.contact_unlock_enabled ? creator.contact_intent_amount || 0 : 0,
+        paymentProof,
+      }),
     });
     setContactSent(true);
   };
@@ -90,19 +102,23 @@ export default function CreatorProfile() {
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
 
       {/* 顶部 Header */}
-      <div style={{ backgroundColor: C2, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '32px 20px 28px' }}>
+      <div style={{
+        background: `radial-gradient(circle at 18% 0%, rgba(107,63,160,0.28), transparent 32%), linear-gradient(135deg, ${C2}, #132b4a)`,
+        borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '34px 20px 30px',
+      }}>
         <div style={{ maxWidth: 1000, margin: '0 auto' }}>
           <Link to="/explore" style={{ color: 'rgba(186,207,231,0.6)', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}
             onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
             onMouseLeave={e => (e.currentTarget.style.color = 'rgba(186,207,231,0.6)')}>
             ← 返回灵契大厅
           </Link>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
             <div style={{
-              width: 80, height: 80, borderRadius: 20, flexShrink: 0,
-              background: 'linear-gradient(135deg, rgba(201,146,46,0.2) 0%, rgba(201,146,46,0.1) 100%)',
-              border: '2px solid rgba(201,146,46,0.3)',
+              width: 92, height: 92, borderRadius: 22, flexShrink: 0,
+              background: 'linear-gradient(135deg, rgba(217,168,87,0.24), rgba(107,63,160,0.2))',
+              border: '2px solid rgba(217,168,87,0.38)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, overflow: 'hidden',
+              boxShadow: '0 18px 52px rgba(0,0,0,0.28)',
             }}>
               {creator.avatar
                 ? <img src={creator.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -113,9 +129,14 @@ export default function CreatorProfile() {
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.4rem, 3vw, 2rem)', marginBottom: 6 }}>
                 {creator.display_name}
               </h1>
-              <p style={{ color: 'rgba(186,207,231,0.65)', fontSize: '0.9rem' }}>
+              <p style={{ color: 'rgba(220,230,243,0.76)', fontSize: '0.92rem', marginBottom: 10 }}>
                 {creator.city || '未知城市'} · {ROLE_LABEL[creator.role_type || ''] || creator.role_type}
               </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {creator.is_realname && <Badge>⭐ 实名</Badge>}
+                {creator.travel_status && <Badge>{creator.travel_status}</Badge>}
+                {creator.contact_unlock_enabled && <Badge>预约意向金 ¥{creator.contact_intent_amount || 0}</Badge>}
+              </div>
             </div>
           </div>
         </div>
@@ -129,8 +150,9 @@ export default function CreatorProfile() {
 
             {/* 简介卡 */}
             <div style={card}>
+              <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: 'rgba(220,230,243,0.88)' }}>灵契师档案</h3>
               {creator.bio && (
-                <p style={{ fontSize: '0.875rem', color: 'rgba(186,207,231,0.8)', lineHeight: 1.8, marginBottom: creator.tags?.length ? 16 : 0 }}>
+                <p style={{ fontSize: '0.875rem', color: 'rgba(220,230,243,0.78)', lineHeight: 1.8, marginBottom: creator.tags?.length ? 16 : 0 }}>
                   {creator.bio}
                 </p>
               )}
@@ -146,17 +168,43 @@ export default function CreatorProfile() {
               {!creator.bio && !creator.tags?.length && (
                 <p style={{ color: 'rgba(186,207,231,0.45)', fontSize: '0.875rem' }}>创作者还没有填写简介</p>
               )}
+              {creator.available_cities && creator.available_cities.length > 0 && (
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(217,168,87,0.12)' }}>
+                  <p style={{ color: 'rgba(220,230,243,0.55)', fontSize: '0.78rem', marginBottom: 8 }}>可接城市</p>
+                  <p style={{ color: GOLD, fontSize: '0.86rem', lineHeight: 1.7 }}>{creator.available_cities.join(' / ')}</p>
+                </div>
+              )}
             </div>
+
+            {/* 社交快照 */}
+            {creator.social_links && Object.values(creator.social_links).some(Boolean) && (
+              <div style={card}>
+                <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: 'rgba(220,230,243,0.88)' }}>社交主页</h3>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {Object.entries(creator.social_links).filter(([, url]) => url).map(([key, url]) => (
+                    <SocialCard key={key} kind={key} url={url} snapshot={creator.social_snapshots?.[key]} />
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 联系卡 */}
             <div style={card}>
-              <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.9)' }}>联系创作者</h3>
+              <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: 'rgba(186,207,231,0.9)' }}>发起委托</h3>
+              {creator.contact_unlock_enabled && (
+                <p style={{ color: 'rgba(220,230,243,0.58)', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 12 }}>
+                  对方开启了预约意向金，金额 ¥{creator.contact_intent_amount || 0}。用于确认真实委托意向，申请仍需人工处理。
+                </p>
+              )}
               {contactShown ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <input value={formName} onChange={e => setFormName(e.target.value)} placeholder="你的称呼" style={inputStyle} />
                   <input value={formWechat} onChange={e => setFormWechat(e.target.value)} placeholder="你的微信号" style={inputStyle} />
                   <textarea value={formMsg} onChange={e => setFormMsg(e.target.value)} placeholder="想预约什么？（可选）" rows={3}
                     style={{ ...inputStyle, resize: 'none' }} />
+                  {creator.contact_unlock_enabled && (
+                    <input value={paymentProof} onChange={e => setPaymentProof(e.target.value)} placeholder="预约意向金支付凭证/备注（可选）" style={inputStyle} />
+                  )}
                   <button onClick={submitContact} disabled={contactSent}
                     style={{
                       padding: '10px', borderRadius: 10, border: 'none', cursor: contactSent ? 'default' : 'pointer',
@@ -164,11 +212,11 @@ export default function CreatorProfile() {
                       color: contactSent ? 'rgba(186,207,231,0.6)' : C,
                       fontWeight: 600, fontSize: '0.875rem',
                     }}>
-                    {contactSent ? '已发送 ✓ 等待回复' : '发送申请'}
+                    {contactSent ? '已发送 ✓ 等待回复' : '提交预约意向'}
                   </button>
                   {!contactSent && (
                     <p style={{ fontSize: '0.75rem', color: 'rgba(186,207,231,0.5)', textAlign: 'center' }}>
-                      创作者通过后你将看到对方的微信
+                      通过后再进入联系方式沟通，不引导公开暴露微信。
                     </p>
                   )}
                 </div>
@@ -179,7 +227,7 @@ export default function CreatorProfile() {
                     background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
                     color: C, fontWeight: 600, fontSize: '0.875rem',
                   }}>
-                  申请联系方式
+                  申请预约
                 </button>
               )}
             </div>
@@ -213,16 +261,18 @@ export default function CreatorProfile() {
             {/* 可约日期 */}
             {availDates.length > 0 && (
               <div style={card}>
-                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.9)' }}>可约日期</h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {availDates.slice(0, 40).map(d => (
-                    <span key={d} style={{ padding: '5px 12px', borderRadius: 999, fontSize: '0.8rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.25)', color: GOLD }}>
-                      {d.slice(5)}
+                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.9)' }}>可约日期与地点</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+                  {availability.slice(0, 40).map(item => (
+                    <span key={item.id} style={{ padding: '8px 12px', borderRadius: 12, fontSize: '0.8rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.25)', color: GOLD }}>
+                      <strong>{item.date.slice(5)}</strong>
+                      <br />
+                      <span style={{ color: 'rgba(220,230,243,0.64)', fontSize: '0.75rem' }}>{item.city || creator.city || '地点可议'}{item.location ? ` · ${item.location}` : ''}</span>
                     </span>
                   ))}
-                  {availDates.length > 40 && (
+                  {availability.length > 40 && (
                     <span style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.55)', alignSelf: 'center' }}>
-                      +{availDates.length - 40} 天
+                      +{availability.length - 40} 天
                     </span>
                   )}
                 </div>
@@ -255,5 +305,29 @@ export default function CreatorProfile() {
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
+  );
+}
+
+function Badge({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(217,168,87,0.14)', border: '1px solid rgba(217,168,87,0.25)', color: GOLD, fontSize: '0.75rem', fontWeight: 800 }}>
+      {children}
+    </span>
+  );
+}
+
+function SocialCard({ kind, url, snapshot }: { kind: string; url: string; snapshot?: SocialSnapshot }) {
+  const platform = kind === 'douyin' ? '抖音' : kind === 'xiaohongshu' ? '小红书' : '社交主页';
+  return (
+    <a href={url} target="_blank" rel="noreferrer"
+      style={{ display: 'block', padding: 12, borderRadius: 12, border: '1px solid rgba(217,168,87,0.16)', background: 'linear-gradient(135deg, rgba(217,168,87,0.08), rgba(107,63,160,0.08))', textDecoration: 'none' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+        <strong style={{ color: '#fff', fontSize: '0.86rem' }}>{snapshot?.title || `${platform}主页`}</strong>
+        <span style={{ color: GOLD, fontSize: '0.74rem' }}>{platform}</span>
+      </div>
+      <p style={{ color: 'rgba(220,230,243,0.56)', fontSize: '0.76rem', lineHeight: 1.55, wordBreak: 'break-all' }}>
+        {snapshot?.description || url}
+      </p>
+    </a>
   );
 }

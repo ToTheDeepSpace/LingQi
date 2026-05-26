@@ -76,8 +76,24 @@ type ClaimReview = {
   lc_rankings?: { subject_name?: string; type?: 'red' | 'black' };
 };
 
-type RejectType = 'profile' | 'ranking' | 'comment' | 'claim';
-type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims';
+type CommissionReview = {
+  id: string;
+  poster_name: string;
+  poster_is_realname?: boolean;
+  title: string;
+  content: string;
+  desired_role?: string | null;
+  target_type?: string | null;
+  needed_date?: string | null;
+  city?: string | null;
+  location?: string | null;
+  budget?: string | null;
+  contact_note?: string | null;
+  created_at: string;
+};
+
+type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission';
+type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions';
 
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.04)',
@@ -97,6 +113,7 @@ export default function Admin() {
   const [rankings, setRankings] = useState<Ranking[]>([]);
   const [comments, setComments] = useState<CommentReview[]>([]);
   const [claims, setClaims] = useState<ClaimReview[]>([]);
+  const [commissions, setCommissions] = useState<CommissionReview[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<Tab>('pending');
@@ -120,6 +137,7 @@ export default function Admin() {
         setRankings((d.data as { rankings: Ranking[] }).rankings || []);
         setComments((d.data as { comments: CommentReview[] }).comments || []);
         setClaims((d.data as { claims: ClaimReview[] }).claims || []);
+        setCommissions((d.data as { commissions: CommissionReview[] }).commissions || []);
       } else {
         setError(d.error || '加载失败');
       }
@@ -152,6 +170,8 @@ export default function Admin() {
       const d = await r.json();
       if (d.success) {
         localStorage.setItem('lc_admin_token', d.data.token);
+        localStorage.setItem('lc_admin_last_login_at', new Date().toISOString());
+        window.dispatchEvent(new Event('lc-auth-changed'));
         setAuthed(true);
       } else {
         setError(d.error || '密码错误');
@@ -209,6 +229,11 @@ export default function Admin() {
     void loadData();
   };
 
+  const approveCommission = async (id: string) => {
+    await fetch(`${API}/lc/admin/commissions/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    void loadData();
+  };
+
   const openRejectModal = (id: string, type: RejectType) => {
     setRejectModal({ open: true, id, reason: '', type });
   };
@@ -229,20 +254,25 @@ export default function Admin() {
     } else if (type === 'comment') {
       await fetch(`${API}/lc/admin/comments/${id}/reject`, { method: 'PUT', headers });
       setComments(prev => prev.filter(c => c.id !== id));
-    } else {
+    } else if (type === 'claim') {
       await fetch(`${API}/lc/admin/claims/${id}/reject`, { method: 'PUT', headers });
       setClaims(prev => prev.filter(c => c.id !== id));
+    } else {
+      await fetch(`${API}/lc/admin/commissions/${id}/reject`, { method: 'PUT', headers, body });
+      setCommissions(prev => prev.filter(c => c.id !== id));
     }
   };
 
   const logout = () => {
     localStorage.removeItem('lc_admin_token');
+    window.dispatchEvent(new Event('lc-auth-changed'));
     setAuthed(false);
     setProfiles([]);
     setRequests([]);
     setRankings([]);
     setComments([]);
     setClaims([]);
+    setCommissions([]);
   };
 
   const pendingProfiles = profiles.filter(p => !p.is_visible && !p.reject_reason);
@@ -299,11 +329,12 @@ export default function Admin() {
       </div>
 
       <div style={{ maxWidth: 980, margin: '0 auto', padding: '28px 20px 80px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 12, marginBottom: 28 }}>
           {[
             { label: '待审核创作者', value: pendingProfiles.length, color: '#fb7185' },
             { label: '已上线创作者', value: activeProfiles.length, color: '#34d399' },
             { label: '联系申请', value: requests.length, color: GOLD },
+            { label: '委托需求', value: commissions.length, color: '#fbbf24' },
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
             { label: '评论', value: comments.length, color: '#38bdf8' },
             { label: '相关方', value: claims.length, color: '#f97316' },
@@ -319,6 +350,7 @@ export default function Admin() {
           <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>待审核 {pendingProfiles.length > 0 && `(${pendingProfiles.length})`}</button>
           <button style={tabStyle(tab === 'active')} onClick={() => setTab('active')}>已上线 ({activeProfiles.length})</button>
           <button style={tabStyle(tab === 'requests')} onClick={() => setTab('requests')}>联系 {requests.length > 0 && `(${requests.length})`}</button>
+          <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
           <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
           <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
@@ -403,6 +435,38 @@ export default function Admin() {
                     <Actions vertical>
                       <ActionButton kind="ok" onClick={() => approveRanking(r.id)}>通过</ActionButton>
                       <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'commissions' && (
+              <ListEmpty empty={commissions.length === 0} text="暂无待审核委托需求">
+                {commissions.map(c => (
+                  <Row key={c.id} accent="#fbbf24">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={c.title} pill="委托需求" />
+                      <Meta>
+                        发布人：{c.poster_is_realname ? `⭐ ${c.poster_name}` : c.poster_name}
+                        {c.needed_date ? ` · 日期：${c.needed_date}` : ''}
+                        {c.city ? ` · 城市：${c.city}` : ''}
+                        {c.location ? ` · ${c.location}` : ''}
+                        {c.created_at ? ` · ${c.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      {(c.desired_role || c.target_type || c.budget || c.contact_note) && (
+                        <Meta>
+                          {c.target_type ? `类型：${c.target_type} ` : ''}
+                          {c.desired_role ? `角色：${c.desired_role} ` : ''}
+                          {c.budget ? `预算：${c.budget} ` : ''}
+                          {c.contact_note ? `联系：${c.contact_note}` : ''}
+                        </Meta>
+                      )}
+                      <ContentBox>{c.content}</ContentBox>
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveCommission(c.id)}>通过</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'commission')}>拒绝</ActionButton>
                     </Actions>
                   </Row>
                 ))}
