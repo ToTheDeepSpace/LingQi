@@ -92,6 +92,31 @@ app.post('/api/lc/auth', async (req, res) => {
 
     if (existing) {
       if (!existing.password_hash) {
+        if (displayName) {
+          const passwordHash = await bcrypt.hash(password, 10);
+          const { data: upgraded, error: upgradeError } = await supabase
+            .from('lc_profiles')
+            .update({
+              display_name: displayName,
+              password_hash: passwordHash,
+              is_visible: true,
+              reject_reason: null,
+            })
+            .eq('id', existing.id)
+            .select()
+            .single();
+
+          if (upgradeError) throw upgradeError;
+
+          const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+          return res.json(ok({
+            id: existing.id,
+            display_name: upgraded?.display_name || displayName,
+            phone: existing.phone,
+            token,
+          }));
+        }
+
         return res.status(401).json(err(new Error('该账号未设置密码，请先注册')));
       }
       const valid = await bcrypt.compare(password, existing.password_hash);
