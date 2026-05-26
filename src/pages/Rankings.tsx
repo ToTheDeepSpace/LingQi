@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 const API = '/api';
@@ -10,8 +10,8 @@ const RED2 = '#dc2626';
 const BLK = '#94a3b8';
 
 const SUBJECT_LABEL: Record<string, string> = {
-  creator: '灵契师',
-  dm: 'DM/卡司',
+  creator: '灵契师（委托师）',
+  dm: 'DM（卡司）',
   store: '店家',
   player: '玩家',
 };
@@ -147,14 +147,15 @@ export default function Rankings() {
     return current;
   };
 
-  const fetchWallet = () => {
-    if (!auth) return;
+  const fetchWallet = useCallback(() => {
+    const current = getAuth();
+    if (!current) return;
     setWalletLoading(true);
-    fetch(`${API}/lc/wallet`, { headers: { Authorization: `Bearer ${auth.token}` } })
+    fetch(`${API}/lc/wallet`, { headers: { Authorization: `Bearer ${current.token}` } })
       .then(r => r.json())
       .then(d => { if (d.success) setBalance(d.data.balance); })
       .finally(() => setWalletLoading(false));
-  };
+  }, []);
 
   const fetchMentions = async (list: Ranking[]) => {
     const names = new Set<string>();
@@ -177,8 +178,7 @@ export default function Rankings() {
     let alive = true;
     const loadRankings = async () => {
       setLoading(true);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-        fetchWallet();
+      fetchWallet();
       try {
         const params = new URLSearchParams({ type: tab });
         if (subjectTab !== 'all') params.set('subjectType', subjectTab);
@@ -194,7 +194,7 @@ export default function Rankings() {
     };
     void loadRankings();
     return () => { alive = false; };
-  }, [tab, subjectTab]);
+  }, [tab, subjectTab, fetchWallet]);
 
   const daysLeft = (item: Ranking) => {
     if (item.type !== 'black' || !item.expires_at) return null;
@@ -210,7 +210,7 @@ export default function Rankings() {
       if (!p.mention) return <span key={i}>{p.text}</span>;
       const profileId = mentionMap[p.name];
       if (profileId) {
-        return <Link key={i} to={`/creator/${profileId}`} style={{ color: GOLD, fontWeight: 600, textDecoration: 'none' }}
+        return <Link key={i} to={`/explore/${profileId}`} style={{ color: GOLD, fontWeight: 600, textDecoration: 'none' }}
           onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
           onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}>
           {p.text}

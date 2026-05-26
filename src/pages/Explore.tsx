@@ -39,6 +39,13 @@ const ROLE_LABEL: Record<string, string> = {
 
 const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
 
+const cityScrollStyle: React.CSSProperties = {
+  maxHeight: 260,
+  overflowY: 'auto',
+  overscrollBehavior: 'contain',
+  WebkitOverflowScrolling: 'touch',
+};
+
 export default function Explore() {
   const [creators, setCreators] = useState<Creator[]>([]);
   const [loading, setLoading] = useState(true);
@@ -279,7 +286,9 @@ function SearchableCitySelect({
             background: '#0d1f38',
             border: '1px solid rgba(217,168,87,0.24)',
             boxShadow: '0 18px 48px rgba(0,0,0,0.48)',
-          }}>
+          }}
+            onWheel={e => e.stopPropagation()}
+            onTouchMove={e => e.stopPropagation()}>
             <input
               autoFocus
               value={query}
@@ -304,7 +313,7 @@ function SearchableCitySelect({
               ))}
             </div>
             <div style={{ height: 1, background: 'rgba(217,168,87,0.12)', marginBottom: 8 }} />
-            <div style={{ maxHeight: 260, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>
+            <div style={{ ...cityScrollStyle, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>
               {matchedCities.length > 0 ? matchedCities.map(c => (
                 <button key={c} onClick={() => onSelect(c)}
                   style={{

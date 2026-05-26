@@ -492,13 +492,20 @@ app.get('/api/lc/rankings', async (req, res) => {
     if (subjectType && subjectType !== 'all') query = query.eq('subject_type', subjectType);
     if (city && city !== 'all') query = query.eq('subject_city', city);
 
-    // 过滤已过期的黑榜（除非被豁免）
-    query = query.or(
-      `type.eq.red,and(type.eq.black,or(expires_at.gt.now(),expiry_override.not.is.null))`
-    );
+    const { data, error } = await query;
+    if (error) throw error;
 
-    const { data } = await query;
-    res.json(ok(data || []));
+    const now = Date.now();
+    const visible = (data || []).filter((row: Record<string, unknown>) => {
+      if (row.type !== 'black') return true;
+      if (row.expiry_override) return true;
+      const expiresAt = row.expires_at
+        ? new Date(row.expires_at as string).getTime()
+        : new Date(row.created_at as string).getTime() + 30 * 24 * 60 * 60 * 1000;
+      return Number.isFinite(expiresAt) && expiresAt > now;
+    });
+
+    res.json(ok(visible));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

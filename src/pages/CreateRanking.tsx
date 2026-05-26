@@ -1,15 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { PROVINCE_CITIES } from '../constants/cities';
 
 const API = '/api';
 const C = '#0F1117';
 const GOLD = '#d9a857';
 
 const SUBJECT_LABEL: Record<string, string> = {
-  creator: '灵契师',
-  dm: 'DM/卡司',
+  creator: '灵契师（委托师）',
+  dm: 'DM（卡司）',
   store: '店家',
   player: '玩家',
+};
+
+const PROVINCES = Object.keys(PROVINCE_CITIES);
+const ALL_CITY_OPTIONS = Object.entries(PROVINCE_CITIES).flatMap(([province, cities]) =>
+  cities.map(city => ({ province, city }))
+);
+
+const scrollPanelStyle: React.CSSProperties = {
+  overflowY: 'auto',
+  overscrollBehavior: 'contain',
+  WebkitOverflowScrolling: 'touch',
 };
 
 function getAuth() {
@@ -26,12 +38,15 @@ function getAuth() {
 
 export default function CreateRanking() {
   const navigate = useNavigate();
-  const auth = getAuth();
+  const [auth] = useState(() => getAuth());
 
   const [type, setType] = useState<'red' | 'black'>('red');
   const [subjectType, setSubjectType] = useState<string>('store');
   const [subjectName, setSubjectName] = useState('');
   const [subjectCity, setSubjectCity] = useState('');
+  const [selectedProvince, setSelectedProvince] = useState(PROVINCES[0] || '');
+  const [cityOpen, setCityOpen] = useState(false);
+  const [cityQuery, setCityQuery] = useState('');
   const [subjectUrl, setSubjectUrl] = useState('');
   const [content, setContent] = useState('');
   const [initialAmount, setInitialAmount] = useState(10);
@@ -47,7 +62,22 @@ export default function CreateRanking() {
     fetch(`${API}/lc/wallet`, { headers: { Authorization: `Bearer ${auth.token}` } })
       .then(r => r.json())
       .then(d => { if (d.success) setBalance(d.data.balance); });
-  }, []);
+  }, [auth, navigate]);
+
+  const matchedCityOptions = useMemo(() => {
+    const q = cityQuery.trim();
+    if (q) {
+      return ALL_CITY_OPTIONS.filter(({ province, city }) => province.includes(q) || city.includes(q));
+    }
+    return (PROVINCE_CITIES[selectedProvince] || []).map(city => ({ province: selectedProvince, city }));
+  }, [cityQuery, selectedProvince]);
+
+  const pickCity = (province: string, city: string) => {
+    setSelectedProvince(province);
+    setSubjectCity(city);
+    setCityOpen(false);
+    setCityQuery('');
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
@@ -193,7 +223,78 @@ export default function CreateRanking() {
             <Input label="对象名称 *" value={subjectName} onChange={setSubjectName} placeholder="店名 / 人名 / DM名 / 灵契师名" />
 
             {/* 城市 */}
-            <Input label="所在城市" value={subjectCity} onChange={setSubjectCity} placeholder="如：上海" />
+            <div style={{ position: 'relative' }}>
+              <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>所在城市</p>
+              <button type="button" onClick={() => setCityOpen(v => !v)}
+                style={{
+                  width: '100%', padding: '12px 16px', borderRadius: 12, border: '1px solid rgba(201,146,46,0.2)',
+                  background: 'rgba(255,255,255,0.05)', color: subjectCity ? '#fff' : 'rgba(186,207,231,0.45)',
+                  fontSize: '0.9rem', textAlign: 'left', cursor: 'pointer', boxSizing: 'border-box',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                }}>
+                <span>{subjectCity ? `${selectedProvince} · ${subjectCity}` : '选择省份 / 城市'}</span>
+                <span style={{ color: GOLD }}>▾</span>
+              </button>
+
+              {cityOpen && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setCityOpen(false)} />
+                  <div style={{
+                    position: 'absolute', left: 0, right: 0, top: 'calc(100% + 8px)', zIndex: 50,
+                    padding: 12, borderRadius: 12, background: '#0d1f38',
+                    border: '1px solid rgba(217,168,87,0.24)', boxShadow: '0 18px 48px rgba(0,0,0,0.48)',
+                  }}
+                    onWheel={e => e.stopPropagation()}
+                    onTouchMove={e => e.stopPropagation()}>
+                    <input
+                      autoFocus
+                      value={cityQuery}
+                      onChange={e => setCityQuery(e.target.value)}
+                      placeholder="搜索城市，例如：河北、保定、上海"
+                      style={{
+                        width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8,
+                        border: '1px solid rgba(217,168,87,0.24)', background: 'rgba(255,255,255,0.06)',
+                        color: '#fff', outline: 'none', marginBottom: 10,
+                      }}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 10, minHeight: 0 }}>
+                      <div style={{ ...scrollPanelStyle, maxHeight: 260, borderRight: '1px solid rgba(217,168,87,0.12)', paddingRight: 8 }}>
+                        {PROVINCES.map(province => (
+                          <button key={province} type="button" onClick={() => { setSelectedProvince(province); setCityQuery(''); }}
+                            style={{
+                              width: '100%', padding: '8px 9px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                              background: selectedProvince === province && !cityQuery ? 'rgba(217,168,87,0.16)' : 'transparent',
+                              color: selectedProvince === province && !cityQuery ? GOLD : 'rgba(226,238,252,0.72)',
+                              fontSize: '0.8rem', fontWeight: selectedProvince === province && !cityQuery ? 800 : 500,
+                              textAlign: 'left',
+                            }}>
+                            {province}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ ...scrollPanelStyle, maxHeight: 260, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>
+                        {matchedCityOptions.length > 0 ? matchedCityOptions.map(({ province, city }) => (
+                          <button key={`${province}-${city}`} type="button" onClick={() => pickCity(province, city)}
+                            style={{
+                              padding: '8px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                              background: subjectCity === city && selectedProvince === province ? 'rgba(217,168,87,0.16)' : 'transparent',
+                              color: subjectCity === city && selectedProvince === province ? GOLD : 'rgba(226,238,252,0.78)',
+                              fontSize: '0.84rem', fontWeight: subjectCity === city && selectedProvince === province ? 800 : 500,
+                              textAlign: 'left',
+                            }}>
+                            {cityQuery ? `${province} · ${city}` : city}
+                          </button>
+                        )) : (
+                          <p style={{ gridColumn: '1 / -1', color: 'rgba(226,238,252,0.62)', fontSize: '0.84rem', padding: '16px 4px' }}>
+                            没搜到这个城市，也可以先不填。
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* 社交主页 */}
             <Input label="社交主页链接" value={subjectUrl} onChange={setSubjectUrl} placeholder="小红书/微博/抖音链接" />
