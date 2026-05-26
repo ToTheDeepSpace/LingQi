@@ -457,13 +457,14 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_comments').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_claims').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_commissions').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_transactions').select('*, lc_profiles(display_name, phone)').eq('type', 'recharge').eq('status', 'pending').order('created_at', { ascending: false }),
     ]);
     res.json(ok({
       profiles: profiles || [],
@@ -472,6 +473,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       comments: comments || [],
       claims: claims || [],
       commissions: commissions || [],
+      transactions: transactions || [],
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -784,6 +786,26 @@ app.put('/api/lc/admin/commissions/:id/reject', authMiddleware, adminMiddleware,
     await supabase.from('lc_commissions')
       .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
       .eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/transactions/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data, error } = await supabase.rpc('approve_lc_recharge', { p_transaction_id: req.params.id });
+    if (error) throw error;
+    res.json(ok(data?.[0] || null));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/transactions/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const rejectReason = req.body?.rejectReason || null;
+    await supabase.from('lc_transactions')
+      .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .eq('type', 'recharge')
+      .eq('status', 'pending');
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });

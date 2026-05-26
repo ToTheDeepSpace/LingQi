@@ -88,7 +88,8 @@ export default function Navbar() {
           + (data.rankings || []).length
           + (data.comments || []).length
           + (data.claims || []).length
-          + (data.commissions || []).length;
+          + (data.commissions || []).length
+          + (data.transactions || []).length;
         setPendingCount(total);
       } catch {
         if (alive) setPendingCount(0);

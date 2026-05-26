@@ -92,8 +92,18 @@ type CommissionReview = {
   created_at: string;
 };
 
-type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission';
-type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions';
+type TransactionReview = {
+  id: string;
+  profile_id: string;
+  amount: number;
+  description: string;
+  payment_proof?: string | null;
+  created_at: string;
+  lc_profiles?: { display_name?: string; phone?: string };
+};
+
+type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'transaction';
+type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions' | 'wallet';
 
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.04)',
@@ -114,6 +124,7 @@ export default function Admin() {
   const [comments, setComments] = useState<CommentReview[]>([]);
   const [claims, setClaims] = useState<ClaimReview[]>([]);
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
+  const [transactions, setTransactions] = useState<TransactionReview[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<Tab>('pending');
@@ -138,6 +149,7 @@ export default function Admin() {
         setComments((d.data as { comments: CommentReview[] }).comments || []);
         setClaims((d.data as { claims: ClaimReview[] }).claims || []);
         setCommissions((d.data as { commissions: CommissionReview[] }).commissions || []);
+        setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
       } else {
         setError(d.error || '加载失败');
       }
@@ -234,6 +246,11 @@ export default function Admin() {
     void loadData();
   };
 
+  const approveTransaction = async (id: string) => {
+    await fetch(`${API}/lc/admin/transactions/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    void loadData();
+  };
+
   const openRejectModal = (id: string, type: RejectType) => {
     setRejectModal({ open: true, id, reason: '', type });
   };
@@ -257,9 +274,12 @@ export default function Admin() {
     } else if (type === 'claim') {
       await fetch(`${API}/lc/admin/claims/${id}/reject`, { method: 'PUT', headers });
       setClaims(prev => prev.filter(c => c.id !== id));
-    } else {
+    } else if (type === 'commission') {
       await fetch(`${API}/lc/admin/commissions/${id}/reject`, { method: 'PUT', headers, body });
       setCommissions(prev => prev.filter(c => c.id !== id));
+    } else {
+      await fetch(`${API}/lc/admin/transactions/${id}/reject`, { method: 'PUT', headers, body });
+      setTransactions(prev => prev.filter(t => t.id !== id));
     }
   };
 
@@ -273,6 +293,7 @@ export default function Admin() {
     setComments([]);
     setClaims([]);
     setCommissions([]);
+    setTransactions([]);
   };
 
   const pendingProfiles = profiles.filter(p => !p.is_visible && !p.reject_reason);
@@ -329,11 +350,12 @@ export default function Admin() {
       </div>
 
       <div style={{ maxWidth: 980, margin: '0 auto', padding: '28px 20px 80px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 12, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginBottom: 28 }}>
           {[
             { label: '待审核创作者', value: pendingProfiles.length, color: '#fb7185' },
             { label: '已上线创作者', value: activeProfiles.length, color: '#34d399' },
             { label: '联系申请', value: requests.length, color: GOLD },
+            { label: '充值', value: transactions.length, color: '#22c55e' },
             { label: '委托需求', value: commissions.length, color: '#fbbf24' },
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
             { label: '评论', value: comments.length, color: '#38bdf8' },
@@ -350,6 +372,7 @@ export default function Admin() {
           <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>待审核 {pendingProfiles.length > 0 && `(${pendingProfiles.length})`}</button>
           <button style={tabStyle(tab === 'active')} onClick={() => setTab('active')}>已上线 ({activeProfiles.length})</button>
           <button style={tabStyle(tab === 'requests')} onClick={() => setTab('requests')}>联系 {requests.length > 0 && `(${requests.length})`}</button>
+          <button style={tabStyle(tab === 'wallet')} onClick={() => setTab('wallet')}>充值 {transactions.length > 0 && `(${transactions.length})`}</button>
           <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
           <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
@@ -415,6 +438,28 @@ export default function Admin() {
                     <Actions vertical>
                       <ActionButton kind="ok" onClick={() => approveReq(r.id)}>通过</ActionButton>
                       <ActionButton kind="bad" onClick={() => rejectReq(r.id)}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'wallet' && (
+              <ListEmpty empty={transactions.length === 0} text="暂无待审核充值">
+                {transactions.map(tx => (
+                  <Row key={tx.id} accent="#22c55e">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={`充值 ¥${tx.amount}`} pill="钱包充值" />
+                      <Meta>
+                        用户：{tx.lc_profiles?.display_name || '未知用户'}
+                        {tx.lc_profiles?.phone ? ` · ${tx.lc_profiles.phone}` : ''}
+                        {tx.created_at ? ` · ${tx.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      {tx.payment_proof && <Proof>支付凭证：{tx.payment_proof}</Proof>}
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveTransaction(tx.id)}>到账</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(tx.id, 'transaction')}>拒绝</ActionButton>
                     </Actions>
                   </Row>
                 ))}
