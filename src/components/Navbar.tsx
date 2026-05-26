@@ -5,6 +5,13 @@ const BG = 'rgba(11,26,48,0.96)';
 const GOLD = '#d9a857';
 const API = '/api';
 
+function handleLogout() {
+  localStorage.removeItem('lc_creator');
+  localStorage.removeItem('lc_admin_token');
+  window.dispatchEvent(new Event('lc-auth-changed'));
+  window.location.href = '/';
+}
+
 type CreatorAuth = {
   display_name?: string;
   phone?: string;
@@ -127,7 +134,19 @@ export default function Navbar() {
           {creatorAuth && <IdentityChip tone="user">用户：{creatorAuth.display_name || creatorAuth.phone || '已登录'}</IdentityChip>}
           {isAdmin && <IdentityChip tone="admin">管理员{pendingCount > 0 ? ` · 待审 ${pendingCount}` : ' · 已登录'}</IdentityChip>}
           {isLoggedIn
-            ? <NavLink to="/dashboard">我的主页</NavLink>
+            ? <>
+              <NavLink to="/dashboard">我的主页</NavLink>
+              <button onClick={handleLogout}
+                style={{
+                  padding: '8px 14px', borderRadius: 8, fontSize: '0.85rem',
+                  background: 'none', border: '1px solid rgba(248,113,113,0.2)', color: 'rgba(248,113,113,0.7)',
+                  cursor: 'pointer', fontWeight: 500, transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.5)'; e.currentTarget.style.color = '#fca5a5'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.2)'; e.currentTarget.style.color = 'rgba(248,113,113,0.7)'; }}>
+                退出
+              </button>
+            </>
             : (
               <Link to="/login" className="btn-gold" style={{ marginLeft: 8, padding: '8px 20px', fontSize: '0.875rem', display: 'inline-block' }}>
                 入驻灵契
@@ -176,7 +195,17 @@ export default function Navbar() {
           {creatorAuth && <MobileStatus tone="user">当前用户：{creatorAuth.display_name || creatorAuth.phone || '已登录'}</MobileStatus>}
           {isAdmin && <MobileStatus tone="admin">管理员已登录{pendingCount > 0 ? `，待审 ${pendingCount}` : ''}</MobileStatus>}
           {isLoggedIn
-            ? <MobileLink to="/dashboard" onClick={() => setMenuOpen(false)}>我的主页</MobileLink>
+            ? <>
+              <MobileLink to="/dashboard" onClick={() => setMenuOpen(false)}>我的主页</MobileLink>
+              <button onClick={() => { setMenuOpen(false); handleLogout(); }}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '10px 0', fontSize: '0.9rem',
+                  background: 'none', border: 'none', borderBottom: '1px solid rgba(201,146,46,0.06)',
+                  color: 'rgba(248,113,113,0.7)', cursor: 'pointer', fontWeight: 500,
+                }}>
+                退出登录
+              </button>
+            </>
             : <MobileLink to="/login" gold onClick={() => setMenuOpen(false)}>入驻灵契 →</MobileLink>
           }
           <MobileLink to="/admin" gold={isAdmin} onClick={() => setMenuOpen(false)}>管理后台{pendingCount > 0 ? ` (${pendingCount})` : ''}</MobileLink>
