@@ -11,6 +11,7 @@ import Rankings from './pages/Rankings';
 import CreateRanking from './pages/CreateRanking';
 import Commissions from './pages/Commissions';
 import CreateCommission from './pages/CreateCommission';
+import Wallet from './pages/Wallet';
 import './App.css';
 
 function AppLayout() {
@@ -32,6 +33,7 @@ function AppLayout() {
         <Route path="/rankings/new" element={<CreateRanking />} />
         <Route path="/commissions" element={<Commissions />} />
         <Route path="/commissions/new" element={<CreateCommission />} />
+        <Route path="/wallet" element={<Wallet />} />
       </Routes>
     </>
   );

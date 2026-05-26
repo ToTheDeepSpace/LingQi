@@ -1,29 +1,18 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { PROVINCE_CITIES } from '../constants/cities';
+import { Link, useNavigate } from 'react-router-dom';
 
-const API  = '/api';
-const C    = '#0F1117';
-const C2   = '#1A1D27';
+const API = '/api';
+const C = '#0F1117';
 const GOLD = '#d9a857';
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '11px 14px', borderRadius: 10,
-  border: '1px solid rgba(201,146,46,0.2)', outline: 'none',
-  backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff',
-  fontSize: '0.875rem', boxSizing: 'border-box',
+const SUBJECT_LABEL: Record<string, string> = {
+  creator: '灵契师',
+  dm: 'DM/卡司',
+  store: '店家',
+  player: '玩家',
 };
-const labelStyle: React.CSSProperties = {
-  display: 'block', fontSize: '0.78rem', fontWeight: 600,
-  color: 'rgba(186,207,231,0.7)', marginBottom: 8,
-};
-const selectStyle: React.CSSProperties = {
-  padding: '11px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)',
-  outline: 'none', backgroundColor: '#0d1f38', color: '#fff',
-  fontSize: '0.875rem', boxSizing: 'border-box', width: '100%', cursor: 'pointer',
-} as React.CSSProperties;
 
-function getAuth(): { token: string; displayName: string } | null {
+function getAuth() {
   try {
     const stored = localStorage.getItem('lc_creator');
     if (!stored) return null;
@@ -31,341 +20,263 @@ function getAuth(): { token: string; displayName: string } | null {
     if (!data?.token) return null;
     const payload = JSON.parse(atob(data.token.split('.')[1]));
     if (payload.exp * 1000 < Date.now()) return null;
-    return { token: data.token, displayName: data.display_name || '用户' };
+    return data;
   } catch { return null; }
 }
 
 export default function CreateRanking() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<1 | 2>(1);
-  const [auth] = useState(() => getAuth());
+  const auth = getAuth();
 
-  // 表单状态
-  const [type, setType]               = useState<'red' | 'black'>('red');
-  const [subjectType, setSubjectType] = useState<'creator' | 'dm' | 'store' | 'player'>('creator');
+  const [type, setType] = useState<'red' | 'black'>('red');
+  const [subjectType, setSubjectType] = useState<string>('store');
   const [subjectName, setSubjectName] = useState('');
-  const [subjectProvince, setSubjectProvince] = useState('');
   const [subjectCity, setSubjectCity] = useState('');
-  const [content, setContent]         = useState('');
+  const [subjectUrl, setSubjectUrl] = useState('');
+  const [content, setContent] = useState('');
   const [initialAmount, setInitialAmount] = useState(10);
-
-  // 主体社交链接（可选）
-  const [showUrlField, setShowUrlField] = useState(false);
-  const [subjectUrl, setSubjectUrl]     = useState('');
-
-  // 顺手提交主体信息
-  const [addNew, setAddNew]   = useState(false);
-  const [newDesc, setNewDesc] = useState('');
-
-  // 支付步骤
-  const [paymentProof, setPaymentProof] = useState('');
-  const [submitting, setSubmitting]     = useState(false);
-  const [error, setError]               = useState('');
-  const [success, setSuccess]           = useState(false);
+  const [files, setFiles] = useState<{ name: string; url: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState('');
+  const [balance, setBalance] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!auth) navigate('/login');
-  }, [auth, navigate]);
+    if (!auth) { navigate('/login'); return; }
+    fetch(`${API}/lc/wallet`, { headers: { Authorization: `Bearer ${auth.token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.success) setBalance(d.data.balance); });
+  }, []);
 
-  const canProceed = subjectName.trim() && content.trim();
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    setUploading(true);
+    try {
+      const newFiles: { name: string; url: string }[] = [];
+      for (let i = 0; i < fileList.length; i++) {
+        const f = fileList[i];
+        if (f.size > 10 * 1024 * 1024) { alert(`${f.name} 超过 10MB 限制`); continue; }
+        // 存储为 base64 data URL（简化方案，适用于小文件）
+        const url = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(f);
+        });
+        newFiles.push({ name: f.name, url });
+      }
+      setFiles(prev => [...prev, ...newFiles]);
+    } finally { setUploading(false); }
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== idx));
+  };
 
   const submit = async () => {
-    if (!auth) { navigate('/login'); return; }
-    if (!paymentProof.trim()) { setError('请填写支付凭证'); return; }
-    setSubmitting(true); setError('');
+    if (!auth) return navigate('/login');
+    if (!subjectName.trim()) return setError('请填写对象名称');
+    if (!content.trim()) return setError('请填写评价内容');
+    if (!subjectType) return setError('请选择对象类型');
+    if ((balance || 0) < initialAmount) return setError('余额不足，请先充值');
+
+    setSubmitting(true);
+    setError('');
     try {
-      const body: Record<string, unknown> = {
-        type, subjectName: subjectName.trim(), subjectType,
-        subjectCity: subjectCity || null,
-        subjectUrl: subjectUrl.trim() || null,
-        content: content.trim(),
-        initialAmount, paymentProof: paymentProof.trim(),
-      };
-      if (addNew && newDesc) {
-        body.newSubject = {
-          name: subjectName.trim(), subject_type: subjectType,
-          city: subjectCity || null, description: newDesc.trim() || null,
-          contact: subjectUrl.trim() || null,
-        };
-      }
       const r = await fetch(`${API}/lc/rankings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          type, subjectName: subjectName.trim(), subjectType, subjectCity: subjectCity.trim() || null,
+          subjectUrl: subjectUrl.trim() || null, content: content.trim(), initialAmount, files,
+        }),
       });
       const d = await r.json();
-      if (d.success) { setSuccess(true); }
-      else { setError(d.error || '提交失败'); }
-    } catch { setError('网络错误'); }
+      if (d.success) {
+        setDone(true);
+        setBalance(prev => (prev || 0) - initialAmount);
+      } else {
+        setError(d.error || '提交失败');
+      }
+    } catch { setError('网络错误，请重试'); }
     finally { setSubmitting(false); }
   };
 
   if (!auth) return null;
 
-  if (success) return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ textAlign: 'center', maxWidth: 400 }}>
-        <div style={{ fontSize: 64, marginBottom: 20 }}>✅</div>
-        <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 12 }}>提交成功</h2>
-        <p style={{ color: 'rgba(186,207,231,0.7)', lineHeight: 1.8, marginBottom: 28 }}>
-          内容正在等待管理员审核，通过后将显示在红黑榜上。
-        </p>
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <Link to="/rankings" style={{ padding: '11px 24px', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, fontSize: '0.875rem', textDecoration: 'none' }}>
-            查看红黑榜
-          </Link>
-          <button onClick={() => { setSuccess(false); setStep(1); setPaymentProof(''); setSubjectName(''); setContent(''); }}
-            style={{ padding: '11px 24px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', background: 'none', color: 'rgba(186,207,231,0.7)', cursor: 'pointer', fontSize: '0.875rem' }}>
-            继续发布
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
-
-      {/* Header */}
-      <div style={{ backgroundColor: C2, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '32px 20px 28px' }}>
-        <div style={{ maxWidth: 680, margin: '0 auto' }}>
-          <Link to="/rankings" style={{ color: 'rgba(186,207,231,0.6)', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}
-            onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
-            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(186,207,231,0.6)')}>
-            ← 返回红黑榜
+      <div style={{ backgroundColor: '#1A1D27', borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '32px 20px' }}>
+        <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>发布红黑榜</h1>
+            <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.55)' }}>一人一票 · 真实口碑 · 余额 ¥{initialAmount} 起发</p>
+          </div>
+          <Link to="/wallet" style={{
+            padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)',
+            background: 'rgba(201,146,46,0.06)', color: GOLD, textDecoration: 'none',
+            fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <span>💰</span> 余额 ¥{balance ?? '...'}
           </Link>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.8rem', marginBottom: 6 }}>发布评价</h1>
-          <p style={{ color: 'rgba(186,207,231,0.65)', fontSize: '0.875rem' }}>内容经审核后上线 · 初始点赞值 ¥10~100</p>
         </div>
       </div>
 
-      <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 20px 80px' }}>
-
-        {/* 发布身份 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', backgroundColor: 'rgba(201,146,46,0.06)', border: '1px solid rgba(201,146,46,0.15)', borderRadius: 10, marginBottom: 24 }}>
-          <span style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.6)' }}>以</span>
-          <span style={{ fontWeight: 700, color: GOLD, fontSize: '0.9rem' }}>{auth.displayName}</span>
-          <span style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.6)' }}>的身份发布</span>
-        </div>
-
-        {/* 步骤指示 */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 28 }}>
-          {[{ n: 1, label: '填写内容' }, { n: 2, label: '支付上线' }].map(s => (
-            <div key={s.n} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontWeight: 700, fontSize: '0.82rem',
-                background: step >= s.n ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'rgba(255,255,255,0.06)',
-                color: step >= s.n ? C : 'rgba(186,207,231,0.4)',
-                border: step >= s.n ? 'none' : '1px solid rgba(201,146,46,0.15)',
-              }}>{s.n}</div>
-              <span style={{ fontSize: '0.82rem', color: step >= s.n ? 'rgba(186,207,231,0.85)' : 'rgba(186,207,231,0.4)', fontWeight: step === s.n ? 600 : 400 }}>{s.label}</span>
-              {s.n < 2 && <span style={{ color: 'rgba(186,207,231,0.25)', fontSize: '0.8rem', marginLeft: 4 }}>→</span>}
+      <div style={{ maxWidth: 640, margin: '0 auto', padding: '36px 20px 80px' }}>
+        {done ? (
+          <div style={{ textAlign: 'center', padding: '60px 0' }}>
+            <div style={{ fontSize: 64, marginBottom: 20 }}>✅</div>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.6rem', marginBottom: 12 }}>发布成功</h2>
+            <p style={{ color: 'rgba(186,207,231,0.65)', lineHeight: 1.8, marginBottom: 32 }}>
+              你的{type === 'red' ? '红榜' : '黑榜'}已提交审核。审核通过后将上线展示，人民币 ¥{initialAmount} 已从余额扣除。
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <Link to="/rankings" style={{ padding: '12px 32px', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, textDecoration: 'none' }}>
+                回红黑榜
+              </Link>
+              <button onClick={() => { setDone(false); setSubjectName(''); setContent(''); setFiles([]); setError(''); }}
+                style={{ padding: '12px 32px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.3)', background: 'none', color: GOLD, fontWeight: 600, cursor: 'pointer' }}>
+                再发一条
+              </button>
             </div>
-          ))}
-        </div>
-
-        {error && (
-          <div style={{ padding: '12px 16px', backgroundColor: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', borderRadius: 10, fontSize: '0.875rem', color: '#f87171', marginBottom: 20 }}>
-            {error}
           </div>
-        )}
-
-        {/* ── Step 1: 内容填写 ── */}
-        {step === 1 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-            {/* 红榜 / 黑榜 */}
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* 类型选择 */}
             <div>
-              <label style={labelStyle}>榜单类型</label>
-              <div style={{ display: 'flex', gap: 10 }}>
-                {([['red', '🏅 红榜', '#dc2626'], ['black', '👎 黑榜', '#475569']] as const).map(([v, label, color]) => (
-                  <button key={v} onClick={() => setType(v)}
+              <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>红榜 / 黑榜</p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(['red', 'black'] as const).map(t => (
+                  <button key={t} onClick={() => setType(t)}
                     style={{
-                      flex: 1, padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                      fontWeight: 600, fontSize: '0.9rem',
-                      background: type === v ? color : 'rgba(255,255,255,0.04)',
-                      color: type === v ? '#fff' : 'rgba(186,207,231,0.55)',
-                      boxShadow: type === v ? `0 4px 16px ${color}50` : 'none',
-                    }}>{label}</button>
+                      flex: 1, padding: '12px 0', borderRadius: 12, cursor: 'pointer', fontWeight: 700, fontSize: '0.95rem',
+                      border: type === t ? `2px solid ${t === 'red' ? '#dc2626' : '#64748b'}` : '2px solid rgba(255,255,255,0.08)',
+                      background: type === t ? `${t === 'red' ? 'rgba(220,38,38,0.15)' : 'rgba(100,116,139,0.12)'}` : 'rgba(255,255,255,0.03)',
+                      color: type === t ? '#fff' : 'rgba(186,207,231,0.4)',
+                    }}>{t === 'red' ? '🏅 红榜（夸）' : '👎 黑榜（踩）'}</button>
                 ))}
               </div>
             </div>
 
             {/* 对象类型 */}
             <div>
-              <label style={labelStyle}>评价对象类型</label>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {([['creator', '灵契师（委托师）'], ['dm', 'DM（卡司）'], ['store', '店家'], ['player', '玩家']] as const).map(([v, label]) => (
-                  <button key={v} onClick={() => setSubjectType(v)}
+              <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>对象类型</p>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {Object.entries(SUBJECT_LABEL).map(([k, v]) => (
+                  <button key={k} onClick={() => setSubjectType(k)}
                     style={{
-                      padding: '10px 12px', borderRadius: 10, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
-                      border: subjectType === v ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.18)',
-                      background: subjectType === v ? 'rgba(201,146,46,0.12)' : 'transparent',
-                      color: subjectType === v ? GOLD : 'rgba(186,207,231,0.6)',
-                    }}>{label}</button>
+                      padding: '8px 18px', borderRadius: 999, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
+                      border: subjectType === k ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.15)',
+                      background: subjectType === k ? 'rgba(201,146,46,0.12)' : 'transparent',
+                      color: subjectType === k ? GOLD : 'rgba(186,207,231,0.45)',
+                    }}>{v}</button>
                 ))}
               </div>
             </div>
 
-            {/* 名字 + 城市 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div>
-                <label style={labelStyle}>名字 / 昵称 <span style={{ color: '#f87171' }}>*</span></label>
-                <input value={subjectName} onChange={e => setSubjectName(e.target.value)}
-                  placeholder="DM昵称、店家名称等" style={inputStyle} />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <label style={labelStyle}>所在城市</label>
-                <select value={subjectProvince} onChange={e => { setSubjectProvince(e.target.value); setSubjectCity(''); }} style={selectStyle}>
-                  <option value="">选择省份 / 地区</option>
-                  {Object.keys(PROVINCE_CITIES).map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-                {subjectProvince && (
-                  <select value={subjectCity} onChange={e => setSubjectCity(e.target.value)} style={selectStyle}>
-                    <option value="">选择城市</option>
-                    {(PROVINCE_CITIES[subjectProvince] || []).map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                )}
+            {/* 金额 */}
+            <div>
+              <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>
+                初始投入 · <span style={{ color: GOLD }}>¥{initialAmount}</span>
+              </p>
+              <input type="range" min={10} max={100} step={10} value={initialAmount}
+                onChange={e => setInitialAmount(Number(e.target.value))}
+                style={{ width: '100%', accentColor: GOLD }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'rgba(186,207,231,0.4)', marginTop: 4 }}>
+                <span>¥10（最低）</span>
+                <span>¥100（最高）</span>
               </div>
             </div>
 
-            {/* 社交主页链接（可选） */}
-            <div>
-              <button onClick={() => setShowUrlField(!showUrlField)}
-                style={{ background: 'none', border: '1px dashed rgba(201,146,46,0.25)', borderRadius: 8, cursor: 'pointer', color: 'rgba(201,146,46,0.6)', fontSize: '0.8rem', padding: '7px 14px', transition: 'all 0.2s' }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = GOLD)}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(201,146,46,0.25)')}>
-                {showUrlField ? '− 取消添加链接' : '+ 添加 ta 的社交主页链接（可选）'}
-              </button>
-              {showUrlField && (
-                <input value={subjectUrl} onChange={e => setSubjectUrl(e.target.value)}
-                  placeholder="如抖音、B站、小红书主页链接..."
-                  style={{ ...inputStyle, marginTop: 10 }} />
-              )}
-            </div>
+            {/* 对象名称 */}
+            <Input label="对象名称 *" value={subjectName} onChange={setSubjectName} placeholder="店名 / 人名 / DM名 / 灵契师名" />
 
-            {/* 评价内容 */}
+            {/* 城市 */}
+            <Input label="所在城市" value={subjectCity} onChange={setSubjectCity} placeholder="如：上海" />
+
+            {/* 社交主页 */}
+            <Input label="社交主页链接" value={subjectUrl} onChange={setSubjectUrl} placeholder="小红书/微博/抖音链接" />
+
+            {/* 内容 */}
             <div>
-              <label style={labelStyle}>评价内容 <span style={{ color: '#f87171' }}>*</span></label>
+              <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>
+                评价内容 * <span style={{ fontSize: '0.72rem', color: 'rgba(186,207,231,0.4)' }}>（支持 @用户名 艾特已注册账户）</span>
+              </p>
               <textarea value={content} onChange={e => setContent(e.target.value)}
-                placeholder={type === 'red' ? '分享你的好评体验，描述让你印象深刻的细节...' : '描述问题事件，尽量客观具体，保留证据...'}
-                rows={5} style={{ ...inputStyle, resize: 'vertical' }} />
+                placeholder="写下你的真实体验..." rows={8}
+                style={{
+                  width: '100%', padding: '14px', borderRadius: 12, border: '1px solid rgba(201,146,46,0.2)',
+                  background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '0.9rem',
+                  resize: 'none', outline: 'none', boxSizing: 'border-box', lineHeight: 1.8,
+                }} />
             </div>
 
-            {/* 可选：顺手补充主体介绍 */}
-            <div style={{ borderTop: '1px solid rgba(201,146,46,0.1)', paddingTop: 20 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: addNew ? 16 : 0 }}>
-                <div onClick={() => setAddNew(!addNew)}
-                  style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${addNew ? GOLD : 'rgba(201,146,46,0.3)'}`, background: addNew ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}>
-                  {addNew && <span style={{ color: C, fontSize: '0.7rem', fontWeight: 900 }}>✓</span>}
-                </div>
-                <span style={{ fontSize: '0.875rem', color: 'rgba(186,207,231,0.75)', userSelect: 'none' }}>
-                  顺手补充这位 {subjectType === 'store' ? '店家' : 'ta'} 的简介，帮助其他人了解
-                </span>
+            {/* 文件上传 */}
+            <div>
+              <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>
+                上传证据文件 <span style={{ fontSize: '0.72rem', color: 'rgba(186,207,231,0.4)' }}>（PDF/图片，单文件 ≤10MB）</span>
+              </p>
+              <label style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '10px 20px', borderRadius: 10, cursor: 'pointer',
+                border: '1px dashed rgba(201,146,46,0.3)', background: 'rgba(201,146,46,0.04)',
+                color: GOLD, fontSize: '0.85rem', fontWeight: 600,
+              }}>
+                📎 选择文件
+                <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={handleFileUpload} style={{ display: 'none' }} />
               </label>
-              {addNew && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid rgba(201,146,46,0.12)' }}>
-                  <div>
-                    <label style={labelStyle}>补充介绍（可选）</label>
-                    <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)}
-                      placeholder="擅长风格、开本类型、特点等..." rows={2}
-                      style={{ ...inputStyle, resize: 'none' }} />
-                  </div>
-                  <p style={{ fontSize: '0.75rem', color: 'rgba(186,207,231,0.45)' }}>
-                    提交的信息将由管理员审核后决定是否收录到灵契创作者库
-                  </p>
+              {uploading && <span style={{ marginLeft: 12, fontSize: '0.82rem', color: GOLD }}>上传中...</span>}
+              {files.length > 0 && (
+                <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {files.map((f, i) => (
+                    <span key={i} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '5px 12px', borderRadius: 8, fontSize: '0.78rem', fontWeight: 500,
+                      border: '1px solid rgba(201,146,46,0.2)', background: 'rgba(255,255,255,0.04)',
+                      color: 'rgba(186,207,231,0.75)',
+                    }}>
+                      📎 {f.name}
+                      <button onClick={() => removeFile(i)} style={{ border: 'none', background: 'none', color: 'rgba(248,113,113,0.7)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>×</button>
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
 
-            <button onClick={() => setStep(2)} disabled={!canProceed}
+            {error && (
+              <div style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', color: '#fca5a5', fontSize: '0.85rem' }}>
+                {error}
+              </div>
+            )}
+
+            <button onClick={submit} disabled={submitting}
               style={{
-                padding: '13px', borderRadius: 10, border: 'none',
-                cursor: canProceed ? 'pointer' : 'not-allowed',
-                background: canProceed ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'rgba(255,255,255,0.06)',
-                color: canProceed ? C : 'rgba(186,207,231,0.4)', fontWeight: 700, fontSize: '0.925rem',
+                width: '100%', padding: '16px', borderRadius: 14, fontWeight: 800, fontSize: '1rem',
+                cursor: submitting ? 'not-allowed' : 'pointer',
+                background: submitting ? 'rgba(201,146,46,0.15)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                color: submitting ? 'rgba(201,146,46,0.4)' : C,
+                border: 'none', opacity: submitting ? 0.7 : 1,
               }}>
-              下一步：支付上线费用 →
+              {submitting ? '提交中...' : `发布 · 余额扣 ¥${initialAmount}`}
             </button>
           </div>
         )}
-
-        {/* ── Step 2: 支付 ── */}
-        {step === 2 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,146,46,0.15)', borderRadius: 14, padding: '20px 24px' }}>
-              <p style={{ fontWeight: 700, marginBottom: 8 }}>确认发布内容</p>
-              <p style={{ fontSize: '0.875rem', color: 'rgba(186,207,231,0.65)' }}>
-                {type === 'red' ? '🏅 红榜' : '👎 黑榜'} · <strong style={{ color: '#fff' }}>{subjectName}</strong> · {subjectCity || '未知城市'}
-              </p>
-              <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.55)', marginTop: 8, lineHeight: 1.7 }}>
-                {content.slice(0, 100)}{content.length > 100 ? '...' : ''}
-              </p>
-            </div>
-
-            {/* 金额选择 */}
-            <div>
-              <label style={labelStyle}>初始点赞值（¥10~100）</label>
-              <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.55)', marginBottom: 12 }}>
-                你选择的金额将作为帖子的初始点赞数，金额越高帖子越靠前
-              </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {[10, 20, 30, 50, 100].map(v => (
-                  <button key={v} onClick={() => setInitialAmount(v)}
-                    style={{
-                      padding: '10px 20px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
-                      border: initialAmount === v ? `2px solid ${GOLD}` : '1px solid rgba(201,146,46,0.2)',
-                      background: initialAmount === v ? 'rgba(201,146,46,0.15)' : 'transparent',
-                      color: initialAmount === v ? GOLD : 'rgba(186,207,231,0.6)',
-                    }}>
-                    ¥{v}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 收款码 */}
-            <div style={{ textAlign: 'center', padding: '24px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(201,146,46,0.25)', borderRadius: 14 }}>
-              <p style={{ fontWeight: 700, marginBottom: 16, color: 'rgba(186,207,231,0.85)' }}>
-                请扫码支付 <span style={{ color: GOLD, fontSize: '1.2rem' }}>¥{initialAmount}</span>
-              </p>
-              <div style={{ width: 180, height: 180, borderRadius: 12, border: '1px dashed rgba(201,146,46,0.3)', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.02)' }}>
-                <p style={{ color: 'rgba(186,207,231,0.3)', fontSize: '0.78rem', textAlign: 'center', padding: '0 16px' }}>
-                  管理员在此放置<br />微信/支付宝收款码
-                </p>
-              </div>
-              <p style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.45)' }}>
-                转账时请备注：灵契红黑榜 + 你的昵称
-              </p>
-            </div>
-
-            {/* 支付凭证 */}
-            <div>
-              <label style={labelStyle}>支付凭证 <span style={{ color: '#f87171' }}>*</span></label>
-              <input value={paymentProof} onChange={e => setPaymentProof(e.target.value)}
-                placeholder="填写转账时间 / 备注 / 订单号，如：13:45 备注灵契红黑榜"
-                style={inputStyle} />
-            </div>
-
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => setStep(1)}
-                style={{ flex: 1, padding: '12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', background: 'none', color: 'rgba(186,207,231,0.65)', cursor: 'pointer', fontSize: '0.875rem' }}>
-                ← 返回修改
-              </button>
-              <button onClick={submit} disabled={submitting || !paymentProof.trim()}
-                style={{
-                  flex: 2, padding: '12px', borderRadius: 10, border: 'none',
-                  cursor: paymentProof.trim() && !submitting ? 'pointer' : 'not-allowed',
-                  background: paymentProof.trim() ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'rgba(255,255,255,0.06)',
-                  color: paymentProof.trim() ? C : 'rgba(186,207,231,0.4)', fontWeight: 700, fontSize: '0.925rem',
-                }}>
-                {submitting ? '提交中...' : '提交审核'}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+    </div>
+  );
+}
+
+function Input({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div>
+      <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>{label}</p>
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        style={{
+          width: '100%', padding: '12px 16px', borderRadius: 12, border: '1px solid rgba(201,146,46,0.2)',
+          background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '0.9rem',
+          outline: 'none', boxSizing: 'border-box',
+        }} />
     </div>
   );
 }

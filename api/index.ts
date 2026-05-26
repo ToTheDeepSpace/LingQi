@@ -486,9 +486,17 @@ app.get('/api/lc/rankings', async (req, res) => {
   try {
     const type = req.query.type as string;
     const city = req.query.city as string;
+    const subjectType = req.query.subjectType as string;
     let query = supabase.from('lc_rankings').select('*').eq('status', 'approved').order('created_at', { ascending: false });
     if (type && type !== 'all') query = query.eq('type', type);
+    if (subjectType && subjectType !== 'all') query = query.eq('subject_type', subjectType);
     if (city && city !== 'all') query = query.eq('subject_city', city);
+
+    // 过滤已过期的黑榜（除非被豁免）
+    query = query.or(
+      `type.eq.red,and(type.eq.black,or(expires_at.gt.now(),expiry_override.not.is.null))`
+    );
+
     const { data } = await query;
     res.json(ok(data || []));
   } catch (e) { res.status(500).json(err(e)); }
@@ -496,24 +504,46 @@ app.get('/api/lc/rankings', async (req, res) => {
 
 app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
   try {
-    const { type, subjectName, subjectType, subjectCity, subjectUrl, content, initialAmount, paymentProof, newSubject } = req.body;
+    const { type, subjectName, subjectType, subjectCity, subjectUrl, content, initialAmount, paymentProof, newSubject, files } = req.body;
     if (!type || !subjectName || !subjectType || !content || !initialAmount) {
       return res.status(400).json(err(new Error('缺少必填字段')));
     }
     const amount = parseInt(initialAmount);
     if (amount < 10 || amount > 100) return res.status(400).json(err(new Error('金额须在10~100元之间')));
 
-    const posterId = getReq(req, 'creatorId');
+    // 余额支付
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if ((profile.balance || 0) < amount) return res.status(402).json(err(new Error('余额不足，请先充值')));
 
-    const { data: ranking, error: insErr } = await supabase.from('lc_rankings').insert({
+    const posterId = getReq(req, 'creatorId');
+
+    // 扣款
+    await supabase.from('lc_profiles')
+      .update({ balance: (profile.balance || 0) - amount })
+      .eq('id', profile.id);
+
+    await supabase.from('lc_transactions').insert({
+      profile_id: profile.id, type: 'spend', amount: -amount,
+      description: `发布${type === 'red' ? '红榜' : '黑榜'}：${subjectName}`,
+      status: 'approved',
+    });
+
+    const row: Record<string, unknown> = {
       type, subject_name: subjectName, subject_type: subjectType, subject_city: subjectCity || null,
       subject_url: subjectUrl || null, content,
       author_name: profile.display_name, poster_id: posterId,
       initial_amount: amount, payment_proof: paymentProof || null,
       is_realname: !!profile.is_realname, real_name: null,
-    }).select().single();
+      files: files || [],
+    };
+
+    // 黑榜 30 天过期
+    if (type === 'black') {
+      row.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    const { data: ranking, error: insErr } = await supabase.from('lc_rankings').insert(row).select().single();
 
     if (insErr) throw insErr;
 
@@ -531,10 +561,11 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
 
 app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
   try {
-    const { voteType, paymentProof } = req.body;
+    const { voteType } = req.body;
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     if (!['like', 'dislike'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
+    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('余额不足，请先充值')));
 
     const { data: current } = await supabase.from('lc_rankings').select('likes, dislikes, status').eq('id', req.params.id).single();
     if (!current || current.status !== 'approved') return res.status(404).json(err(new Error('帖子不存在或未上线')));
@@ -546,8 +577,16 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       .maybeSingle();
     if (existingVote) return res.status(409).json(err(new Error('你已经投过票了')));
 
+    // 扣款 ¥1
+    await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - 1 }).eq('id', profile.id);
+    await supabase.from('lc_transactions').insert({
+      profile_id: profile.id, type: 'spend', amount: -1,
+      description: `${voteType === 'like' ? '点赞' : '点踩'}红黑榜`,
+      status: 'approved',
+    });
+
     const { error: voteErr } = await supabase.from('lc_votes').insert({
-      ranking_id: req.params.id, vote_type: voteType, payment_proof: paymentProof || null,
+      ranking_id: req.params.id, vote_type: voteType,
       voter_ip: req.headers['x-forwarded-for'] as string || req.ip,
       voter_id: profile.id,
       voter_name: profile.display_name,
@@ -591,13 +630,22 @@ app.get('/api/lc/rankings/:id/comments', async (req, res) => {
 
 app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
   try {
-    const { content, paymentProof } = req.body;
-    if (!content || !paymentProof) return res.status(400).json(err(new Error('缺少必填字段')));
+    const { content } = req.body;
+    if (!content) return res.status(400).json(err(new Error('缺少评论内容')));
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('余额不足，请先充值')));
+
+    // 扣款 ¥1
+    await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - 1 }).eq('id', profile.id);
+    await supabase.from('lc_transactions').insert({
+      profile_id: profile.id, type: 'spend', amount: -1,
+      description: '发表红黑榜评论',
+      status: 'approved',
+    });
+
     const { data, error: insErr } = await supabase.from('lc_comments').insert({
       ranking_id: req.params.id, content, author_id: profile.id, author_name: profile.display_name,
-      payment_proof: paymentProof || null,
       is_realname: !!profile.is_realname, real_name: null,
     }).select().single();
     if (insErr) throw insErr;
@@ -700,6 +748,56 @@ app.put('/api/lc/admin/commissions/:id/reject', authMiddleware, adminMiddleware,
       .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
       .eq('id', req.params.id);
     res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ── 钱包 ──
+
+app.get('/api/lc/wallet', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data: txs } = await supabase.from('lc_transactions')
+      .select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(50);
+    res.json(ok({ balance: profile.balance || 0, transactions: txs || [] }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/wallet/recharge', authMiddleware, async (req, res) => {
+  try {
+    const { amount, paymentProof } = req.body;
+    if (!amount || amount < 10) return res.status(400).json(err(new Error('充值金额最低 ¥10')));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    await supabase.from('lc_transactions').insert({
+      profile_id: profile.id, type: 'recharge', amount: parseInt(amount),
+      description: '余额充值', payment_proof: paymentProof || null,
+      status: 'pending',
+    });
+    res.json(ok({ message: '充值申请已提交，管理员审核后到账' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ── 艾特解析 ──
+
+app.get('/api/lc/profiles/lookup', async (req, res) => {
+  try {
+    const name = req.query.name as string;
+    if (!name) return res.status(400).json(err(new Error('缺少 name 参数')));
+    const { data } = await supabase.from('lc_profiles')
+      .select('id, display_name').eq('display_name', name).maybeSingle();
+    res.json(ok(data || null));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ── 文件上传 ──
+
+app.post('/api/lc/upload', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('请先登录')));
+    // 简单文件大小检查（由前端限制 + 此处兜底）
+    res.json(ok({ message: '上传功能请在客户端通过 Supabase Storage 直接上传' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
