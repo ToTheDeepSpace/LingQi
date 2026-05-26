@@ -398,7 +398,7 @@ app.delete('/api/lc/commissions/:id', authMiddleware, async (req, res) => {
 
     const { data: item } = await supabase.from('lc_commissions').select('poster_id').eq('id', req.params.id).single();
     if (!item) return res.status(404).json(err(new Error('委托不存在')));
-    if (item.poster_id !== profile.id && profile.role !== 'admin') {
+    if (item.poster_id !== profile.id && getReq(req, 'role') !== 'admin') {
       return res.status(403).json(err(new Error('无权删除')));
     }
 
