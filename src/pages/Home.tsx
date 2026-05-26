@@ -31,7 +31,7 @@ export default function Home() {
     <div style={{ backgroundColor: C, color: '#fff' }}>
 
       {/* ───────────── HERO ───────────── */}
-      <section style={{ minHeight: '100svh', backgroundColor: C, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '6rem 1.25rem 4rem' }}>
+      <section style={{ minHeight: '100svh', backgroundColor: C, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '3rem 1.25rem 5rem' }}>
 
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 50% 55%, rgba(201,146,46,0.15) 0%, rgba(107,63,160,0.06) 40%, transparent 70%)', pointerEvents: 'none' }} />
 
