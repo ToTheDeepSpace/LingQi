@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { CITIES } from '../constants/cities';
 
 const API = '/api';
 const C = '#0F1117';
@@ -10,13 +11,14 @@ const RED2 = '#dc2626';
 const BLK = '#94a3b8';
 
 const SUBJECT_LABEL: Record<string, string> = {
-  creator: '灵契师（委托师）',
-  dm: 'DM（卡司）',
+  creator: '委托师',
+  dm: '卡司',
   store: '店家',
   player: '玩家',
 };
 
-const SUBJECT_TYPES = ['store', 'player', 'dm', 'creator'] as const;
+const SUBJECT_TYPES = ['creator', 'dm', 'store', 'player'] as const;
+const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
 
 type AuthSession = { token: string; displayName: string };
 
@@ -63,8 +65,15 @@ type CommentModal = { rankingId: string } | null;
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.05)',
   border: '1px solid rgba(201,146,46,0.15)',
-  borderRadius: 16,
-  padding: '20px 24px',
+  borderRadius: 12,
+  padding: '14px 16px',
+};
+
+const cityPanelScroll: React.CSSProperties = {
+  maxHeight: 240,
+  overflowY: 'auto',
+  overscrollBehavior: 'contain',
+  WebkitOverflowScrolling: 'touch',
 };
 
 const inputStyle: React.CSSProperties = {
@@ -105,12 +114,136 @@ function parseMentions(text: string): { text: string; mention: boolean; name: st
   return parts;
 }
 
+function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        minHeight: 34,
+        padding: '7px 13px',
+        borderRadius: 999,
+        cursor: 'pointer',
+        fontSize: '0.78rem',
+        fontWeight: active ? 800 : 600,
+        border: active ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.15)',
+        background: active ? 'rgba(201,146,46,0.12)' : 'rgba(255,255,255,0.035)',
+        color: active ? GOLD : 'rgba(186,207,231,0.58)',
+        whiteSpace: 'nowrap',
+      }}>
+      {children}
+    </button>
+  );
+}
+
+function CityFilter({
+  city, open, query, options, onToggle, onQuery, onSelect, onClose,
+}: {
+  city: string;
+  open: boolean;
+  query: string;
+  options: string[];
+  onToggle: () => void;
+  onQuery: (value: string) => void;
+  onSelect: (city: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <button onClick={onToggle}
+        style={{
+          minHeight: 34,
+          padding: '7px 13px',
+          borderRadius: 999,
+          cursor: 'pointer',
+          border: city !== 'all' ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.2)',
+          background: city !== 'all' ? 'rgba(201,146,46,0.12)' : 'rgba(255,255,255,0.035)',
+          color: city !== 'all' ? GOLD : 'rgba(186,207,231,0.62)',
+          fontSize: '0.78rem',
+          fontWeight: 800,
+          whiteSpace: 'nowrap',
+        }}>
+        📍 {city === 'all' ? '全部城市' : city} ▾
+      </button>
+
+      {open && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={onClose} />
+          <div style={{
+            position: 'absolute',
+            right: 0,
+            top: 'calc(100% + 8px)',
+            zIndex: 50,
+            width: 'min(340px, calc(100vw - 32px))',
+            padding: 12,
+            borderRadius: 12,
+            background: '#0d1f38',
+            border: '1px solid rgba(217,168,87,0.24)',
+            boxShadow: '0 18px 48px rgba(0,0,0,0.48)',
+          }}
+            onWheel={e => e.stopPropagation()}
+            onTouchMove={e => e.stopPropagation()}>
+            <input
+              autoFocus
+              value={query}
+              onChange={e => onQuery(e.target.value)}
+              placeholder="搜索城市，例如：保定、上海"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: '1px solid rgba(217,168,87,0.24)',
+                background: 'rgba(255,255,255,0.06)',
+                color: '#fff',
+                outline: 'none',
+                marginBottom: 10,
+              }}
+            />
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              <FilterPill active={city === 'all'} onClick={() => onSelect('all')}>全部</FilterPill>
+              {POPULAR_CITIES.map(c => (
+                <FilterPill key={c} active={city === c} onClick={() => onSelect(c)}>{c}</FilterPill>
+              ))}
+            </div>
+            <div style={{ height: 1, background: 'rgba(217,168,87,0.12)', marginBottom: 8 }} />
+            <div style={{ ...cityPanelScroll, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>
+              {options.length > 0 ? options.map(c => (
+                <button key={c} onClick={() => onSelect(c)}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: city === c ? 'rgba(217,168,87,0.16)' : 'transparent',
+                    color: city === c ? GOLD : 'rgba(226,238,252,0.78)',
+                    fontSize: '0.84rem',
+                    fontWeight: city === c ? 800 : 500,
+                    textAlign: 'left',
+                  }}>
+                  {c}
+                </button>
+              )) : (
+                <p style={{ gridColumn: '1 / -1', color: 'rgba(226,238,252,0.62)', fontSize: '0.84rem', padding: '16px 4px' }}>
+                  没搜到这个城市，可以先看全部城市。
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Rankings() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<'red' | 'black'>('red');
   const [subjectTab, setSubjectTab] = useState<string>('all');
+  const [city, setCity] = useState('all');
+  const [cityOpen, setCityOpen] = useState(false);
+  const [cityQuery, setCityQuery] = useState('');
   const [items, setItems] = useState<Ranking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [mentionMap, setMentionMap] = useState<Record<string, string>>({});
 
   const [balance, setBalance] = useState<number | null>(null);
@@ -178,23 +311,50 @@ export default function Rankings() {
     let alive = true;
     const loadRankings = async () => {
       setLoading(true);
+      setError('');
       fetchWallet();
       try {
         const params = new URLSearchParams({ type: tab });
         if (subjectTab !== 'all') params.set('subjectType', subjectTab);
+        if (city !== 'all') params.set('city', city);
         const r = await fetch(`${API}/lc/rankings?${params}`);
+        if (!r.ok) throw new Error(`请求失败 (${r.status})`);
         const d = await r.json();
         if (alive && d.success) {
           setItems(d.data || []);
           void fetchMentions(d.data || []);
+        } else if (alive) {
+          setError(d.error || '加载失败');
         }
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : '网络错误');
       } finally {
         if (alive) setLoading(false);
       }
     };
     void loadRankings();
     return () => { alive = false; };
-  }, [tab, subjectTab, fetchWallet]);
+  }, [tab, subjectTab, city, fetchWallet]);
+
+  const setCityAndClose = (nextCity: string) => {
+    setCity(nextCity);
+    setCityOpen(false);
+    setCityQuery('');
+  };
+
+  const cityOptions = useMemo(() => {
+    const q = cityQuery.trim();
+    if (!q) return CITIES;
+    return CITIES.filter(c => c.includes(q));
+  }, [cityQuery]);
+
+  const rankedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const byLikes = (b.likes || 0) - (a.likes || 0);
+      if (byLikes !== 0) return byLikes;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [items]);
 
   const daysLeft = (item: Ranking) => {
     if (item.type !== 'black' || !item.expires_at) return null;
@@ -376,13 +536,13 @@ export default function Rankings() {
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
-      <div style={{ backgroundColor: C2, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '48px 20px 40px' }}>
-        <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+      <div style={{ backgroundColor: C2, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '34px 20px 28px' }}>
+        <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 20 }} />
+            <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 14 }} />
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 8 }}>灵契红黑榜</h1>
             <p style={{ color: 'rgba(186,207,231,0.65)', fontSize: '0.95rem' }}>
-              一人一票 · 真实口碑 · 每条内容均经审核上线
+              委托师、卡司、店家、玩家都可以被评价 · 点赞越高越靠前
             </p>
           </div>
           {auth && (
@@ -400,11 +560,19 @@ export default function Rankings() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 800, margin: '0 auto', padding: '32px 20px 80px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <div style={{ flex: 1, display: 'flex', gap: 4, padding: 4, backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,146,46,0.12)', borderRadius: 14 }}>
+      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '24px 20px 80px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+          <div style={{ width: 'min(100%, 340px)', display: 'flex', gap: 4, padding: 4, backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,146,46,0.12)', borderRadius: 14 }}>
             {tabBtn('red', '🏅 红榜', '#dc2626')}
             {tabBtn('black', '👎 黑榜', '#475569')}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 320px' }}>
+            <FilterPill active={subjectTab === 'all'} onClick={() => setSubjectTab('all')}>全部</FilterPill>
+            {SUBJECT_TYPES.map(st => (
+              <FilterPill key={st} active={subjectTab === st} onClick={() => setSubjectTab(st)}>
+                {SUBJECT_LABEL[st]}
+              </FilterPill>
+            ))}
           </div>
           <Link to="/rankings/new"
             style={{ padding: '12px 24px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none', flexShrink: 0 }}>
@@ -412,24 +580,20 @@ export default function Rankings() {
           </Link>
         </div>
 
-        {/* 分类筛选 */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 28, flexWrap: 'wrap' }}>
-          <button onClick={() => setSubjectTab('all')}
-            style={{
-              padding: '6px 14px', borderRadius: 999, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600,
-              border: subjectTab === 'all' ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.15)',
-              background: subjectTab === 'all' ? 'rgba(201,146,46,0.12)' : 'transparent',
-              color: subjectTab === 'all' ? GOLD : 'rgba(186,207,231,0.5)',
-            }}>全部</button>
-          {SUBJECT_TYPES.map(st => (
-            <button key={st} onClick={() => setSubjectTab(st)}
-              style={{
-                padding: '6px 14px', borderRadius: 999, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600,
-                border: subjectTab === st ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.15)',
-                background: subjectTab === st ? 'rgba(201,146,46,0.12)' : 'transparent',
-                color: subjectTab === st ? GOLD : 'rgba(186,207,231,0.5)',
-              }}>{SUBJECT_LABEL[st]}</button>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+          <p style={{ color: 'rgba(186,207,231,0.5)', fontSize: '0.78rem' }}>
+            当前排序：点赞数优先 · 同赞按发布时间
+          </p>
+          <CityFilter
+            city={city}
+            open={cityOpen}
+            query={cityQuery}
+            options={cityOptions}
+            onToggle={() => setCityOpen(v => !v)}
+            onQuery={setCityQuery}
+            onSelect={setCityAndClose}
+            onClose={() => setCityOpen(false)}
+          />
         </div>
 
         {loading && (
@@ -439,7 +603,19 @@ export default function Rankings() {
           </div>
         )}
 
-        {!loading && items.length === 0 && (
+        {!loading && error && (
+          <div style={{ textAlign: 'center', padding: '72px 20px', border: '1px dashed rgba(217,168,87,0.18)', borderRadius: 12, background: 'rgba(255,255,255,0.025)' }}>
+            <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.45 }}>✦</div>
+            <p style={{ color: 'rgba(186,207,231,0.62)', marginBottom: 8 }}>红黑榜暂时没连上</p>
+            <p style={{ color: 'rgba(248,113,113,0.78)', fontSize: '0.8rem', marginBottom: 16 }}>{error}</p>
+            <button onClick={() => window.location.reload()}
+              style={{ padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.25)', background: 'rgba(217,168,87,0.08)', color: GOLD, cursor: 'pointer', fontWeight: 700 }}>
+              重新加载
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && rankedItems.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 0' }}>
             <div style={{ fontSize: 52, marginBottom: 16, opacity: 0.3 }}>{tab === 'red' ? '🏅' : '👎'}</div>
             <p style={{ color: 'rgba(186,207,231,0.5)', marginBottom: 20 }}>
@@ -451,9 +627,9 @@ export default function Rankings() {
           </div>
         )}
 
-        {!loading && items.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {items.map((item, idx) => {
+        {!loading && !error && rankedItems.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start' }}>
+            {rankedItems.map((item, idx) => {
               const accentColor = item.type === 'red' ? RED2 : BLK;
               const comments = commentsMap[item.id] || [];
               const votes = votesMap[item.id] || [];
@@ -469,16 +645,16 @@ export default function Rankings() {
                     borderColor: item.type === 'red' ? 'rgba(220,38,38,0.3)' : 'rgba(148,163,184,0.2)',
                     borderLeftColor: accentColor,
                   }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
                     <div style={{
-                      width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                      width: 30, height: 30, borderRadius: 8, flexShrink: 0,
                       background: item.type === 'red' ? 'linear-gradient(135deg, #dc2626, #ef4444)' : 'linear-gradient(135deg, #374151, #4b5563)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontWeight: 900, fontSize: '0.82rem', color: '#fff',
                     }}>{idx + 1}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-                        <span style={{ fontWeight: 800, fontSize: '1.05rem' }}>{item.subject_name}</span>
+                        <span style={{ fontWeight: 800, fontSize: '1rem' }}>{item.subject_name}</span>
                         <span style={{
                           padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600,
                           background: item.type === 'red' ? 'rgba(220,38,38,0.12)' : 'rgba(148,163,184,0.12)',
@@ -511,7 +687,16 @@ export default function Rankings() {
                     </div>
                   </div>
 
-                  <p style={{ fontSize: '0.9rem', color: 'rgba(186,207,231,0.85)', lineHeight: 1.8, marginBottom: 16 }}>
+                  <p style={{
+                    fontSize: '0.86rem',
+                    color: 'rgba(186,207,231,0.85)',
+                    lineHeight: 1.65,
+                    marginBottom: 12,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 4,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}>
                     {renderContent(item.content)}
                   </p>
 
@@ -532,25 +717,25 @@ export default function Rankings() {
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                     <span style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.45)', display: 'flex', alignItems: 'center', gap: 6 }}>
                       — {renderName(item.author_name, item.is_realname)}
                       <span>· {item.created_at?.slice(0, 10)}</span>
                       <span>· 初始 {item.initial_amount}</span>
                     </span>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => openVoteModal(item.id, 'like')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.25)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.25)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
                         👍 {item.likes} <span style={{ fontSize: '0.7rem', color: 'rgba(52,211,153,0.6)' }}>¥1</span>
                       </button>
                       <button onClick={() => openVoteModal(item.id, 'dislike')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.07)', color: RED, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.07)', color: RED, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
                         👎 {item.dislikes} <span style={{ fontSize: '0.7rem', color: 'rgba(248,113,113,0.5)' }}>¥1</span>
                       </button>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 12, borderTop: '1px solid rgba(201,146,46,0.08)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 10, borderTop: '1px solid rgba(201,146,46,0.08)' }}>
                     <button onClick={() => toggleComments(item.id)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(186,207,231,0.5)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#fff')}

@@ -487,7 +487,12 @@ app.get('/api/lc/rankings', async (req, res) => {
     const type = req.query.type as string;
     const city = req.query.city as string;
     const subjectType = req.query.subjectType as string;
-    let query = supabase.from('lc_rankings').select('*').eq('status', 'approved').order('created_at', { ascending: false });
+    let query = supabase
+      .from('lc_rankings')
+      .select('*')
+      .eq('status', 'approved')
+      .order('likes', { ascending: false })
+      .order('created_at', { ascending: false });
     if (type && type !== 'all') query = query.eq('type', type);
     if (subjectType && subjectType !== 'all') query = query.eq('subject_type', subjectType);
     if (city && city !== 'all') query = query.eq('subject_city', city);

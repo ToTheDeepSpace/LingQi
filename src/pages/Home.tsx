@@ -141,8 +141,8 @@ export default function Home() {
             {[              
               { icon: '🏪', label: '店家榜', desc: '店面环境、服务质量、管理水平' },
               { icon: '🎭', label: '玩家榜', desc: '素质、迟到率、历史评价' },
-              { icon: '🎬', label: 'DM/卡司榜', desc: '带本水平、演绎能力、控场能力' },
-              { icon: '🌙', label: '灵契师榜', desc: '还原度、陪伴体验、专业程度' },
+              { icon: '🎬', label: '卡司榜', desc: '带本水平、演绎能力、控场能力' },
+              { icon: '🌙', label: '委托师榜', desc: '还原度、陪伴体验、专业程度' },
             ].map(({ icon, label, desc }) => (
               <div key={label} style={{ padding: '22px 16px', borderRadius: 14, border: '1px solid rgba(192,57,43,0.18)', background: 'linear-gradient(180deg, rgba(192,57,43,0.08), rgba(255,255,255,0.03))', textAlign: 'center' }}>
                 <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>

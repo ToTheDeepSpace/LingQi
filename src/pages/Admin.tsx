@@ -16,8 +16,8 @@ function isTokenExpired(token: string): boolean {
 }
 
 const SUBJECT_LABEL: Record<string, string> = {
-  creator: '灵契师（委托师）',
-  dm: 'DM（卡司）',
+  creator: '委托师',
+  dm: '卡司',
   store: '店家',
   player: '玩家',
 };
