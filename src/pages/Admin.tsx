@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 const API = '/api';
-const C = '#0b1a30';
-const C2 = '#0f2239';
+const C = '#0F1117';
+const C2 = '#1A1D27';
 const GOLD = '#d9a857';
 
 function getToken() { return localStorage.getItem('lc_admin_token') || ''; }

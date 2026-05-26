@@ -391,6 +391,22 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.delete('/api/lc/commissions/:id', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('请先登录')));
+
+    const { data: item } = await supabase.from('lc_commissions').select('poster_id').eq('id', req.params.id).single();
+    if (!item) return res.status(404).json(err(new Error('委托不存在')));
+    if (item.poster_id !== profile.id && profile.role !== 'admin') {
+      return res.status(403).json(err(new Error('无权删除')));
+    }
+
+    await supabase.from('lc_commissions').delete().eq('id', req.params.id);
+    res.json(ok({ deleted: true }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.get('/api/lc/contact-requests/:creatorId', authMiddleware, async (req, res) => {
   try {
     if (getReq(req, 'creatorId') !== req.params.creatorId && getReq(req, 'role') !== 'admin') {

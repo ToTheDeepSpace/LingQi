@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const API = '/api';
-const C    = '#0b1a30';
-const C2   = '#0f2239';
+const C    = '#0F1117';
+const C2   = '#1A1D27';
 const GOLD = '#d9a857';
 
 const inputStyle: React.CSSProperties = {

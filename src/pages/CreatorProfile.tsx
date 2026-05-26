@@ -3,8 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import type { Availability, Creator, Service, Portfolio, SocialSnapshot } from '../types';
 
 const API  = '/api';
-const C    = '#0b1a30';
-const C2   = '#0f2239';
+const C    = '#0F1117';
+const C2   = '#1A1D27';
 const GOLD = '#d9a857';
 
 const ROLE_EMOJI: Record<string, string> = {
@@ -103,7 +103,7 @@ export default function CreatorProfile() {
 
       {/* 顶部 Header */}
       <div style={{
-        background: `radial-gradient(circle at 18% 0%, rgba(107,63,160,0.28), transparent 32%), linear-gradient(135deg, ${C2}, #132b4a)`,
+        background: `radial-gradient(circle at 18% 0%, rgba(107,63,160,0.28), transparent 32%), linear-gradient(135deg, ${C2}, #21262d)`,
         borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '34px 20px 30px',
       }}>
         <div style={{ maxWidth: 1000, margin: '0 auto' }}>

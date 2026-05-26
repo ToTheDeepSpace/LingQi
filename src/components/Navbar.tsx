@@ -136,7 +136,7 @@ export default function Navbar() {
           }
           <Link to="/admin" style={{
             marginLeft: 4, padding: '6px 12px', borderRadius: 8, fontSize: '0.78rem',
-            color: isAdmin ? '#0b1a30' : 'rgba(201,146,46,0.4)',
+            color: isAdmin ? '#0F1117' : 'rgba(201,146,46,0.4)',
             textDecoration: 'none',
             border: isAdmin ? '1px solid rgba(217,168,87,0.75)' : '1px solid rgba(201,146,46,0.15)',
             background: isAdmin ? 'linear-gradient(135deg, #f4c873 0%, #d9a857 100%)' : 'transparent',

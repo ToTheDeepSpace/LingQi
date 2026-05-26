@@ -18,8 +18,8 @@ const steps = [
   { n: '03', title: '见证一次降临', desc: '与灵契师、摄影师、妆造师一起，完成这场跨越次元的相遇' },
 ];
 
-const C = '#0b1a30';
-const C2 = '#0f2239';
+const C = '#0F1117';
+const C2 = '#1A1D27';
 const GOLD = '#d9a857';
 
 export default function Home() {
@@ -134,7 +134,7 @@ export default function Home() {
       </section>
 
       {/* ───────────── CTA ───────────── */}
-      <section style={{ padding: '5rem 1.25rem', background: `linear-gradient(135deg, #132b4a 0%, ${C} 50%, #132b4a 100%)`, position: 'relative', overflow: 'hidden' }}>
+      <section style={{ padding: '5rem 1.25rem', background: `linear-gradient(135deg, #21262d 0%, ${C} 50%, #21262d 100%)`, position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 50% 100%, rgba(201,146,46,0.1) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ position: 'relative', maxWidth: 560, margin: '0 auto', textAlign: 'center' }}>
           <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 3rem)', marginBottom: 16, lineHeight: 1.2 }}>开始你的灵契之旅</h2>

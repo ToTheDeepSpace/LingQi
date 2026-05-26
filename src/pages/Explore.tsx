@@ -4,8 +4,8 @@ import type { Creator, PaginatedResponse } from '../types';
 import { CITIES } from '../constants/cities';
 
 const API = '/api';
-const C = '#0b1a30';
-const C2 = '#0f2239';
+const C = '#0F1117';
+const C2 = '#1A1D27';
 const GOLD = '#d9a857';
 const PAPER = 'rgba(245,243,238,0.94)';
 const PAPER_DIM = 'rgba(226,238,252,0.78)';
@@ -96,7 +96,7 @@ export default function Explore() {
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
       <div style={{
-        background: `radial-gradient(circle at 16% 0%, rgba(107,63,160,0.24), transparent 34%), linear-gradient(135deg, ${C2}, #132b4a)`,
+        background: `radial-gradient(circle at 16% 0%, rgba(107,63,160,0.24), transparent 34%), linear-gradient(135deg, ${C2}, #21262d)`,
         borderBottom: '1px solid rgba(217,168,87,0.16)',
         padding: '52px 20px 34px',
       }}>

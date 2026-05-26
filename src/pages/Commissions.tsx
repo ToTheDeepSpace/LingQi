@@ -4,8 +4,8 @@ import type { AuthData, Commission } from '../types';
 import { CITIES } from '../constants/cities';
 
 const API = '/api';
-const C = '#0b1a30';
-const C2 = '#0f2239';
+const C = '#0F1117';
+const C2 = '#1A1D27';
 const GOLD = '#d9a857';
 
 const TARGET_LABEL: Record<string, string> = {
@@ -85,6 +85,27 @@ export default function Commissions() {
 
   const privateItems = myItems.filter(item => item.status !== 'approved');
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('确定要删除这条委托需求吗？')) return;
+    const auth = getAuth();
+    if (!auth) return;
+    try {
+      const r = await fetch(`${API}/lc/commissions/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${auth.token}` },
+      });
+      const d = await r.json();
+      if (d.success) {
+        setMyItems(prev => prev.filter(item => item.id !== id));
+        setItems(prev => prev.filter(item => item.id !== id));
+      } else {
+        alert(d.error || '删除失败');
+      }
+    } catch {
+      alert('网络错误，请重试');
+    }
+  };
+
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
       <div style={{ background: `radial-gradient(circle at 20% 0%, rgba(107,63,160,0.28), transparent 34%), ${C2}`, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '52px 20px 42px' }}>
@@ -126,7 +147,7 @@ export default function Commissions() {
               <Link to="/commissions/new" style={{ color: GOLD, textDecoration: 'none', fontSize: '0.84rem', fontWeight: 800 }}>继续发布</Link>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-              {privateItems.map(item => <CommissionCard key={item.id} item={item} showStatus />)}
+              {privateItems.map(item => <CommissionCard key={item.id} item={item} showStatus onDelete={() => handleDelete(item.id)} />)}
             </div>
           </section>
         )}
@@ -192,7 +213,7 @@ export default function Commissions() {
   );
 }
 
-function CommissionCard({ item, showStatus }: { item: Commission; showStatus?: boolean }) {
+function CommissionCard({ item, showStatus, onDelete }: { item: Commission; showStatus?: boolean; onDelete?: () => void }) {
   return (
     <article style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.16)', background: 'linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035))' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -214,6 +235,12 @@ function CommissionCard({ item, showStatus }: { item: Commission; showStatus?: b
         <span>{item.poster_is_realname ? '⭐ ' : ''}{item.poster_name}</span>
         <span>{item.created_at?.slice(0, 10)}</span>
       </div>
+      {onDelete && (
+        <button onClick={onDelete}
+          style={{ marginTop: 12, padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#fca5a5', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
+          删除
+        </button>
+      )}
     </article>
   );
 }

@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 const API = '/api';
-const C = '#0b1a30';
-const C2 = '#0f2239';
+const C = '#0F1117';
+const C2 = '#1A1D27';
 const GOLD = '#d9a857';
 const RED = '#f87171';
 const RED2 = '#dc2626';
