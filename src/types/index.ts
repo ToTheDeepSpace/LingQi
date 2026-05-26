@@ -10,6 +10,8 @@ export interface Creator {
   social_links: Record<string, string>;
   wechat: string | null;
   is_visible: boolean;
+  is_realname: boolean;
+  reject_reason: string | null;
   created_at: string;
 }
 

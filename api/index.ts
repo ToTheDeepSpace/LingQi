@@ -51,6 +51,15 @@ function getReq<T extends string = string>(req: express.Request, key: string): T
   return (req as Record<string, unknown>)[key] as T;
 }
 
+async function getAuthedProfile(req: express.Request) {
+  const creatorId = getReq(req, 'creatorId');
+  const { data } = await supabase.from('lc_profiles')
+    .select('id, display_name, is_realname')
+    .eq('id', creatorId)
+    .single();
+  return data;
+}
+
 // --- 健康检查 ---
 app.get('/api/health', (_req, res) => res.json(ok({ status: '灵契 running' })));
 
@@ -83,13 +92,28 @@ app.post('/api/lc/auth', async (req, res) => {
     // 注册
     const passwordHash = await bcrypt.hash(password, 10);
     const { data: profile } = await supabase.from('lc_profiles')
-      .insert({ phone, display_name: displayName || '用户', password_hash: passwordHash })
+      .insert({ phone, display_name: displayName || '用户', password_hash: passwordHash, is_visible: true })
       .select().single();
 
     if (!profile) return res.status(500).json(err(new Error('注册失败')));
 
     const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
     res.json(ok({ id: profile.id, display_name: profile.display_name, phone: profile.phone, token }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/me', authMiddleware, async (req, res) => {
+  try {
+    const { data } = await supabase.from('lc_profiles').select('id, display_name, is_realname, city').eq('id', getReq(req, 'creatorId')).single();
+    res.json(ok(data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/profile/:id/realname', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { value } = req.body;
+    await supabase.from('lc_profiles').update({ is_realname: !!value }).eq('id', req.params.id);
+    res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -302,17 +326,21 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_comments').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_claims').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
     ]);
-    res.json(ok({ profiles: profiles || [], contactRequests: requests || [] }));
+    res.json(ok({ profiles: profiles || [], contactRequests: requests || [], rankings: rankings || [], comments: comments || [], claims: claims || [] }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.put('/api/lc/admin/profile/:id/flag', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    await supabase.from('lc_profiles').update({ is_visible: false }).eq('id', req.params.id);
+    const rejectReason = req.body?.rejectReason || null;
+    await supabase.from('lc_profiles').update({ is_visible: false, reject_reason: rejectReason }).eq('id', req.params.id);
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -334,6 +362,210 @@ app.put('/api/lc/contact-requests/:id/approve', authMiddleware, adminMiddleware,
 app.put('/api/lc/contact-requests/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     await supabase.from('lc_contact_requests').update({ status: 'rejected' }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ==================== 红黑榜 ====================
+
+app.get('/api/lc/rankings', async (req, res) => {
+  try {
+    const type = req.query.type as string;
+    const city = req.query.city as string;
+    let query = supabase.from('lc_rankings').select('*').eq('status', 'approved').order('created_at', { ascending: false });
+    if (type && type !== 'all') query = query.eq('type', type);
+    if (city && city !== 'all') query = query.eq('subject_city', city);
+    const { data } = await query;
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
+  try {
+    const { type, subjectName, subjectType, subjectCity, subjectUrl, content, initialAmount, paymentProof, newSubject } = req.body;
+    if (!type || !subjectName || !subjectType || !content || !initialAmount) {
+      return res.status(400).json(err(new Error('缺少必填字段')));
+    }
+    const amount = parseInt(initialAmount);
+    if (amount < 10 || amount > 100) return res.status(400).json(err(new Error('金额须在10~100元之间')));
+
+    const posterId = getReq(req, 'creatorId');
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const { data: ranking, error: insErr } = await supabase.from('lc_rankings').insert({
+      type, subject_name: subjectName, subject_type: subjectType, subject_city: subjectCity || null,
+      subject_url: subjectUrl || null, content,
+      author_name: profile.display_name, poster_id: posterId,
+      initial_amount: amount, payment_proof: paymentProof || null,
+      is_realname: !!profile.is_realname, real_name: null,
+    }).select().single();
+
+    if (insErr) throw insErr;
+
+    if (newSubject && ranking && newSubject.name) {
+      await supabase.from('lc_submitted_subjects').insert({
+        name: newSubject.name, subject_type: newSubject.subject_type || subjectType,
+        city: newSubject.city || subjectCity, description: newSubject.description || null,
+        contact: newSubject.contact || null, ranking_id: ranking.id,
+      });
+    }
+
+    res.json(ok({ id: ranking?.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
+  try {
+    const { voteType, paymentProof } = req.body;
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if (!['like', 'dislike'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
+
+    const { data: current } = await supabase.from('lc_rankings').select('likes, dislikes, status').eq('id', req.params.id).single();
+    if (!current || current.status !== 'approved') return res.status(404).json(err(new Error('帖子不存在或未上线')));
+
+    const { data: existingVote } = await supabase.from('lc_votes')
+      .select('id')
+      .eq('ranking_id', req.params.id)
+      .eq('voter_id', profile.id)
+      .maybeSingle();
+    if (existingVote) return res.status(409).json(err(new Error('你已经投过票了')));
+
+    const { error: voteErr } = await supabase.from('lc_votes').insert({
+      ranking_id: req.params.id, vote_type: voteType, payment_proof: paymentProof || null,
+      voter_ip: req.headers['x-forwarded-for'] as string || req.ip,
+      voter_id: profile.id,
+      voter_name: profile.display_name,
+      voter_is_realname: !!profile.is_realname,
+    });
+    if (voteErr) {
+      if (voteErr.code === '23505') return res.status(409).json(err(new Error('你已经投过票了')));
+      throw voteErr;
+    }
+
+    const field = voteType === 'like' ? 'likes' : 'dislikes';
+    const val   = voteType === 'like' ? (current.likes || 0) + 1 : (current.dislikes || 0) + 1;
+    await supabase.from('lc_rankings').update({ [field]: val }).eq('id', req.params.id);
+
+    res.json(ok({ likes: voteType === 'like' ? val : current.likes, dislikes: voteType === 'dislike' ? val : current.dislikes }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/rankings/:id/votes', async (req, res) => {
+  try {
+    const { data } = await supabase.from('lc_votes')
+      .select('id, vote_type, voter_name, voter_is_realname, created_at')
+      .eq('ranking_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ── 评论 ──
+
+app.get('/api/lc/rankings/:id/comments', async (req, res) => {
+  try {
+    const { data } = await supabase.from('lc_comments')
+      .select('id, content, author_name, is_realname, real_name, likes, created_at')
+      .eq('ranking_id', req.params.id).eq('status', 'approved')
+      .order('created_at', { ascending: true });
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
+  try {
+    const { content, paymentProof } = req.body;
+    if (!content || !paymentProof) return res.status(400).json(err(new Error('缺少必填字段')));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data, error: insErr } = await supabase.from('lc_comments').insert({
+      ranking_id: req.params.id, content, author_id: profile.id, author_name: profile.display_name,
+      payment_proof: paymentProof || null,
+      is_realname: !!profile.is_realname, real_name: null,
+    }).select().single();
+    if (insErr) throw insErr;
+    res.json(ok({ id: data?.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/rankings/:id/comments/:cid/like', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data: c } = await supabase.from('lc_comments').select('likes').eq('id', req.params.cid).eq('ranking_id', req.params.id).single();
+    if (!c) return res.status(404).json(err(new Error('评论不存在')));
+    const { error: voteErr } = await supabase.from('lc_comment_votes').insert({ comment_id: req.params.cid, voter_id: profile.id });
+    if (voteErr) {
+      if (voteErr.code === '23505') return res.status(409).json(err(new Error('你已经赞过这条评论了')));
+      throw voteErr;
+    }
+    const newLikes = (c.likes || 0) + 1;
+    await supabase.from('lc_comments').update({ likes: newLikes }).eq('id', req.params.cid);
+    res.json(ok({ likes: newLikes }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ── 我是相关方 ──
+
+app.post('/api/lc/rankings/:id/claim', authMiddleware, async (req, res) => {
+  try {
+    const { contact, message } = req.body;
+    if (!contact) return res.status(400).json(err(new Error('请填写联系方式')));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    await supabase.from('lc_claims').insert({
+      ranking_id: req.params.id, contact, message: message || null,
+      claimant_id: profile.id, claimant_name: profile.display_name,
+    });
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ── 管理 ──
+
+app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data: r } = await supabase.from('lc_rankings').select('initial_amount').eq('id', req.params.id).single();
+    if (!r) return res.status(404).json(err(new Error('帖子不存在')));
+    await supabase.from('lc_rankings').update({ status: 'approved', likes: r.initial_amount }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/rankings/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    await supabase.from('lc_rankings').update({ status: 'rejected' }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/comments/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    await supabase.from('lc_comments').update({ status: 'approved' }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/comments/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    await supabase.from('lc_comments').update({ status: 'rejected' }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/claims/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    await supabase.from('lc_claims').update({ status: 'approved' }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/claims/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    await supabase.from('lc_claims').update({ status: 'rejected' }).eq('id', req.params.id);
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });

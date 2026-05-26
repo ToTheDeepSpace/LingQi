@@ -7,12 +7,14 @@ import CreatorProfile from './pages/CreatorProfile';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Admin from './pages/Admin';
+import Rankings from './pages/Rankings';
+import CreateRanking from './pages/CreateRanking';
 import './App.css';
 
 function AppLayout() {
   const { pathname } = useLocation();
   // Login has its own full-screen layout
-  const showNavbar = pathname !== '/login';
+  const showNavbar = pathname !== '/login' && pathname !== '/rankings/new';
 
   return (
     <>
@@ -24,6 +26,8 @@ function AppLayout() {
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/rankings" element={<Rankings />} />
+        <Route path="/rankings/new" element={<CreateRanking />} />
       </Routes>
     </>
   );

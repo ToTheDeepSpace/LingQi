@@ -5,10 +5,10 @@ import 'react-calendar/dist/Calendar.css';
 import ImageUpload from '../components/ImageUpload';
 import type { Creator, Service, Portfolio, AuthData } from '../types';
 
-const API = '/api';
-
-type ValuePiece = Date | null;
-type CalendarValue = ValuePiece | [ValuePiece, ValuePiece];
+const API  = '/api';
+const C    = '#0b1a30';
+const C2   = '#0f2239';
+const GOLD = '#d9a857';
 
 function getToken(): string {
   try {
@@ -17,23 +17,48 @@ function getToken(): string {
   } catch { return ''; }
 }
 
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000 < Date.now();
+  } catch { return true; }
+}
+
 const TABS = [
-  { id: 'profile', label: '资料', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0z M12 14c-3.3 0-6 1.8-6 4v1h12v-1c0-2.2-2.7-4-6-4z' },
-  { id: 'services', label: '服务', icon: 'M4 6h16M4 10h16M4 14h12 M8 18l2 2 4-4' },
-  { id: 'availability', label: '档期', icon: 'M8 2v4M16 2v4M3 10h18M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2v-7' },
-  { id: 'portfolio', label: '作品', icon: 'M4 16l4.6-4.6 3.4 3.4L18 9l4 4V6a2 2 0 00-2-2H6a2 2 0 00-2 2v10a2 2 0 002 2h12 M6 7h.01' },
+  { id: 'profile',      label: '资料',   icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0z M12 14c-3.3 0-6 1.8-6 4v1h12v-1c0-2.2-2.7-4-6-4z' },
+  { id: 'services',    label: '服务',   icon: 'M4 6h16M4 10h16M4 14h12 M8 18l2 2 4-4' },
+  { id: 'availability',label: '档期',   icon: 'M8 2v4M16 2v4M3 10h18M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2v-7' },
+  { id: 'portfolio',   label: '作品',   icon: 'M4 16l4.6-4.6 3.4 3.4L18 9l4 4V6a2 2 0 00-2-2H6a2 2 0 00-2 2v10a2 2 0 002 2h12 M6 7h.01' },
 ] as const;
+
+const card: React.CSSProperties = {
+  backgroundColor: 'rgba(255,255,255,0.05)',
+  border: '1px solid rgba(201,146,46,0.18)',
+  borderRadius: 16, padding: 24,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '11px 14px', borderRadius: 10,
+  border: '1px solid rgba(201,146,46,0.2)', outline: 'none',
+  backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff',
+  fontSize: '0.875rem', boxSizing: 'border-box',
+};
+
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontSize: '0.78rem', fontWeight: 600,
+  color: 'rgba(186,207,231,0.7)', marginBottom: 8,
+};
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [creator, setCreator] = useState<Creator | null>(null);
+  const [creator, setCreator]   = useState<Creator | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
-  const [tab, setTab] = useState('profile');
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [tab, setTab]           = useState('profile');
+  const [saving, setSaving]     = useState(false);
+  const [msg, setMsg]           = useState('');
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(true);
 
   const [form, setForm] = useState({ display_name: '', bio: '', city: '', wechat: '', tags: '' });
   const [newSvc, setNewSvc] = useState({ service_type: '', price: '', duration: '', description: '' });
@@ -44,8 +69,14 @@ export default function Dashboard() {
   useEffect(() => {
     const stored = localStorage.getItem('lc_creator');
     if (!stored) { navigate('/login'); return; }
-    const data: AuthData = JSON.parse(stored);
-    if (!data.id) { navigate('/login'); return; }
+    let data: AuthData;
+    try { data = JSON.parse(stored); } catch { navigate('/login'); return; }
+    if (!data.id || !data.token) { navigate('/login'); return; }
+    if (isTokenExpired(data.token)) {
+      localStorage.removeItem('lc_creator');
+      navigate('/login');
+      return;
+    }
 
     Promise.all([
       fetch(`${API}/lc/creators/${data.id}`).then(r => r.json()),
@@ -63,29 +94,26 @@ export default function Dashboard() {
           wechat: profile.wechat || '',
           tags: (profile.tags || []).join(', '),
         });
-      } else {
-        setError(profileData.error || '加载创作者数据失败');
-      }
-      if (availData.success) {
-        setAvailDates((availData.data || []).map((a: { date: string }) => a.date));
-      }
-    }).catch(() => setError('网络错误，请检查后端是否在运行')).finally(() => setLoading(false));
+      } else { setError(profileData.error || '加载失败'); }
+      if (availData.success) setAvailDates((availData.data || []).map((a: { date: string }) => a.date));
+    }).catch(() => setError('网络错误')).finally(() => setLoading(false));
   }, [navigate]);
 
   const saveProfile = async () => {
     if (!creator) return;
-    setSaving(true);
-    setError('');
-    const tags = form.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
-    const r = await fetch(`${API}/lc/creators/${creator.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ ...form, tags }),
-    });
-    const d = await r.json();
-    setSaving(false);
-    if (d.success) { setMsg('已保存'); setTimeout(() => setMsg(''), 2000); }
-    else setError(d.error || '保存失败');
+    setSaving(true); setError('');
+    try {
+      const tags = form.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+      const r = await fetch(`${API}/lc/creators/${creator.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...form, tags }),
+      });
+      const d = await r.json();
+      if (d.success) { setMsg('已保存'); setTimeout(() => setMsg(''), 2500); }
+      else setError(d.error || '保存失败');
+    } catch { setError('网络错误，请重试'); }
+    finally { setSaving(false); }
   };
 
   const addService = async () => {
@@ -105,12 +133,10 @@ export default function Dashboard() {
     const r = await fetch(`${API}/lc/services/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     const d = await r.json();
     if (d.success) setServices(services.filter(s => s.id !== id));
-    else setError(d.error || '删除失败');
   };
 
   const addPortfolio = async (url: string) => {
     if (!creator) return;
-    setError('');
     const r = await fetch(`${API}/lc/portfolio`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -118,14 +144,12 @@ export default function Dashboard() {
     });
     const d = await r.json();
     if (d.success) setPortfolio([...portfolio, d.data]);
-    else setError(d.error || '添加失败');
   };
 
   const deletePortfolio = async (id: string) => {
     const r = await fetch(`${API}/lc/portfolio/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     const d = await r.json();
     if (d.success) setPortfolio(portfolio.filter(p => p.id !== id));
-    else setError(d.error || '删除失败');
   };
 
   const toggleDate = async (date: Date) => {
@@ -138,7 +162,7 @@ export default function Dashboard() {
       if (item) {
         const r = await fetch(`${API}/lc/availability/${item.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
         const d = await r.json();
-        if (d.success) setAvailDates(availDates.filter(d => d !== dateStr));
+        if (d.success) setAvailDates(availDates.filter(ds => ds !== dateStr));
       }
     } else {
       const r = await fetch(`${API}/lc/availability`, {
@@ -151,212 +175,281 @@ export default function Dashboard() {
     }
   };
 
+  const logout = () => {
+    localStorage.removeItem('lc_creator');
+    navigate('/login');
+  };
+
   if (loading) return (
-    <div className="min-h-screen bg-cream flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-10 h-10 border-2 border-gold-300 border-t-gold-500 rounded-full animate-spin mx-auto mb-5" />
-        <p className="text-base text-ink-300">加载中...</p>
+    <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: 40, height: 40, border: '2px solid rgba(201,146,46,0.3)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 20px', animation: 'spin 0.8s linear infinite' }} />
+        <p style={{ color: 'rgba(186,207,231,0.65)' }}>加载中...</p>
       </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 
   if (!creator) return (
-    <div className="min-h-screen bg-cream flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-6xl mb-6 opacity-20">🌊</div>
-        <p className="text-lg text-ink-400 mb-5">{error || '加载失败'}</p>
-        <button onClick={() => navigate('/login')} className="text-sm text-gold-600 underline hover:text-gold-500 font-medium">返回登录</button>
+    <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 56, marginBottom: 20, opacity: 0.3 }}>🌊</div>
+        <p style={{ color: 'rgba(186,207,231,0.7)', marginBottom: 20 }}>{error || '加载失败'}</p>
+        <button onClick={() => navigate('/login')} style={{ background: 'none', border: 'none', color: GOLD, cursor: 'pointer', textDecoration: 'underline', fontSize: '0.875rem' }}>返回登录</button>
       </div>
     </div>
   );
 
+  const tabBtn = (id: string, label: string, iconPath: string) => (
+    <button key={id} onClick={() => setTab(id)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '11px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+        fontWeight: 600, fontSize: '0.875rem', textAlign: 'left', width: '100%',
+        background: tab === id ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'transparent',
+        color: tab === id ? C : 'rgba(186,207,231,0.7)',
+        transition: 'all 0.2s',
+      }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d={iconPath} />
+      </svg>
+      {label}
+    </button>
+  );
+
   return (
-    <div className="min-h-screen bg-cream">
-      <div className="max-w-6xl mx-auto px-5 lg:px-8 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+    <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
+
+      {/* Header */}
+      <div style={{ backgroundColor: C2, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '24px 20px' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <h1 className="text-2xl lg:text-3xl font-bold text-ink-900">我的主页</h1>
-            <p className="text-sm text-ink-400 mt-1.5">{creator.display_name}</p>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的主页</h1>
+            <p style={{ fontSize: '0.85rem', color: 'rgba(186,207,231,0.65)' }}>{creator.display_name}</p>
           </div>
-          <Link to={`/explore/${creator.id}`}
-            className="btn-glass !text-ink-600 !border-gold-200/40 !bg-white/60 px-5 py-2 text-sm">
-            查看公开页 →
-          </Link>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <Link to={`/explore/${creator.id}`}
+              style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)', color: GOLD, fontSize: '0.82rem', textDecoration: 'none', fontWeight: 600 }}>
+              查看公开页 →
+            </Link>
+            <button onClick={logout}
+              style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: 'rgba(186,207,231,0.55)', cursor: 'pointer', fontSize: '0.82rem' }}>
+              退出
+            </button>
+          </div>
         </div>
+      </div>
+
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-[0.75rem] text-sm border border-red-100 animate-fade-in">
+          <div style={{ padding: '12px 16px', backgroundColor: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', borderRadius: 10, fontSize: '0.875rem', color: '#f87171', marginBottom: 20 }}>
             {error}
           </div>
         )}
 
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Sidebar tabs */}
-          <div className="lg:w-56 shrink-0">
-            <div className="glass-card rounded-[1.25rem] p-2 flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
-              {TABS.map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)}
-                  className={`flex items-center gap-2.5 flex-1 lg:flex-none py-3 px-4 text-sm font-semibold rounded-[0.75rem] transition-all whitespace-nowrap ${
-                    tab === t.id
-                      ? 'bg-gradient-to-r from-ink-800 to-ink-700 text-white shadow-md'
-                      : 'text-ink-500 hover:text-ink-700 hover:bg-gold-50/70'
-                  }`}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d={t.icon} />
-                  </svg>
-                  <span className="hidden sm:inline">{t.label}</span>
-                </button>
-              ))}
-            </div>
+        {/* 审核状态 banner */}
+        {!creator.is_visible && (
+          <div style={{
+            padding: '14px 18px', borderRadius: 12, marginBottom: 20,
+            backgroundColor: creator.reject_reason ? 'rgba(248,113,113,0.08)' : 'rgba(201,146,46,0.08)',
+            border: `1px solid ${creator.reject_reason ? 'rgba(248,113,113,0.25)' : 'rgba(201,146,46,0.25)'}`,
+            fontSize: '0.875rem',
+            color: creator.reject_reason ? '#f87171' : GOLD,
+          }}>
+            {creator.reject_reason
+              ? `您的入驻申请已被拒绝。原因：${creator.reject_reason}`
+              : '您的主页当前未公开。账号仍可正常使用，发布到红黑榜的内容会单独进入人工审核。'}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+
+          {/* ── 左侧 Tab 栏 ── */}
+          <div style={{ width: 180, flexShrink: 0, ...card, padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {TABS.map(t => tabBtn(t.id, t.label, t.icon))}
           </div>
 
-          {/* Main content */}
-          <div className="flex-1 min-w-0">
+          {/* ── 主内容区 ── */}
+          <div style={{ flex: 1, minWidth: 0 }}>
 
-            {/* ======== Profile ======== */}
+            {/* 资料 */}
             {tab === 'profile' && (
-              <div className="glass-card rounded-[1.25rem] p-6 lg:p-8 space-y-5">
-                <h2 className="text-lg font-bold text-ink-800">编辑资料</h2>
-                <div className="grid sm:grid-cols-2 gap-5">
+              <div style={card}>
+                <h2 style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 24, color: 'rgba(186,207,231,0.9)' }}>编辑资料</h2>
+                <div style={{
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  marginBottom: 20,
+                  backgroundColor: creator.is_realname ? 'rgba(201,146,46,0.08)' : 'rgba(255,255,255,0.035)',
+                  border: `1px solid ${creator.is_realname ? 'rgba(201,146,46,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ color: creator.is_realname ? GOLD : 'rgba(186,207,231,0.65)', fontWeight: 800, fontSize: '0.9rem' }}>
+                      {creator.is_realname ? '⭐ 已完成实名认证' : '未完成实名认证'}
+                    </span>
+                  </div>
+                  <p style={{ color: 'rgba(186,207,231,0.6)', fontSize: '0.8rem', lineHeight: 1.7 }}>
+                    实名由后台审核，前台只显示星标和昵称，不公开真实姓名。需要认证时请联系管理员提交材料。
+                  </p>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>
-                    <label className="text-xs text-ink-500 mb-2 block font-semibold">昵称 / 艺名</label>
-                    <input type="text" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })}
-                      className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70" />
+                    <label style={labelStyle}>昵称 / 艺名</label>
+                    <input type="text" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} style={inputStyle} />
                   </div>
                   <div>
-                    <label className="text-xs text-ink-500 mb-2 block font-semibold">城市</label>
-                    <input type="text" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })}
-                      className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
-                      placeholder="如：上海" />
+                    <label style={labelStyle}>城市</label>
+                    <input type="text" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="如：上海" style={inputStyle} />
                   </div>
                 </div>
-                <div>
-                  <label className="text-xs text-ink-500 mb-2 block font-semibold">简介</label>
-                  <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })}
-                    className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70 h-24 resize-none" />
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>简介</label>
+                  <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} rows={4}
+                    style={{ ...inputStyle, resize: 'none' }} />
                 </div>
-                <div className="grid sm:grid-cols-2 gap-5">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
                   <div>
-                    <label className="text-xs text-ink-500 mb-2 block font-semibold">标签</label>
+                    <label style={labelStyle}>标签（逗号分隔）</label>
                     <input type="text" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })}
-                      className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
-                      placeholder="用逗号分隔，如：恋陪, 情感本, 日系" />
+                      placeholder="恋陪, 情感本, 日系" style={inputStyle} />
                   </div>
                   <div>
-                    <label className="text-xs text-ink-500 mb-2 block font-semibold">微信</label>
+                    <label style={labelStyle}>微信</label>
                     <input type="text" value={form.wechat} onChange={e => setForm({ ...form, wechat: e.target.value })}
-                      className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
-                      placeholder="粉丝可通过申请联系你" />
-                    <p className="text-xs text-ink-400 mt-1.5">粉丝需要通过申请才能看到你的微信</p>
+                      placeholder="粉丝通过申请后可见" style={inputStyle} />
                   </div>
                 </div>
-                <div className="flex items-center gap-4 pt-1">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                   <button onClick={saveProfile} disabled={saving}
-                    className="btn-dark px-7 py-2.5 text-sm rounded-[0.75rem] disabled:opacity-50">
+                    style={{
+                      padding: '11px 28px', borderRadius: 10, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
+                      background: saving ? 'rgba(255,255,255,0.07)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                      color: saving ? 'rgba(186,207,231,0.5)' : C, fontWeight: 700, fontSize: '0.9rem',
+                    }}>
                     {saving ? '保存中...' : '保存资料'}
                   </button>
-                  {msg && <span className="text-sm text-green-600 font-medium animate-fade-in">{msg}</span>}
+                  {msg && <span style={{ fontSize: '0.875rem', color: '#34d399', fontWeight: 600 }}>{msg}</span>}
                 </div>
               </div>
             )}
 
-            {/* ======== Services ======== */}
+            {/* 服务 */}
             {tab === 'services' && (
-              <div className="space-y-4">
-                {services.map((s, i) => (
-                  <div key={s.id}
-                    className={`glass-card rounded-[1.25rem] p-5 flex items-center justify-between ${
-                      i % 2 === 0 ? 'bg-white/80' : 'bg-white/60'
-                    }`}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {services.map(s => (
+                  <div key={s.id} style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <span className="text-sm font-semibold text-ink-800">{s.service_type}</span>
-                      {s.duration && <span className="text-sm text-ink-400 ml-2">· {s.duration}</span>}
-                      {s.description && <p className="text-xs text-ink-400 mt-1">{s.description}</p>}
+                      <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{s.service_type}</span>
+                      {s.duration && <span style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.6)', marginLeft: 8 }}>· {s.duration}</span>}
+                      {s.description && <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.6)', marginTop: 4 }}>{s.description}</p>}
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className="text-base font-bold gradient-text-gold">¥{s.price}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      <span style={{ fontWeight: 700, color: GOLD }}>¥{s.price}</span>
                       <button onClick={() => deleteService(s.id)}
-                        className="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">删除</button>
+                        style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.82rem' }}>删除</button>
                     </div>
                   </div>
                 ))}
-                <div className="glass-card rounded-[1.25rem] p-5 border-dashed border-gold-200/60 space-y-4">
-                  <p className="text-sm font-bold text-ink-800">添加服务</p>
-                  <div className="grid grid-cols-2 gap-4">
+                <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
+                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.85)' }}>添加服务</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                     <input type="text" value={newSvc.service_type} onChange={e => setNewSvc({ ...newSvc, service_type: e.target.value })}
-                      className="px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
-                      placeholder="服务类型" />
+                      placeholder="服务类型" style={inputStyle} />
                     <input type="number" value={newSvc.price} onChange={e => setNewSvc({ ...newSvc, price: e.target.value })}
-                      className="px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
-                      placeholder="价格（元）" />
+                      placeholder="价格（元）" style={inputStyle} />
                   </div>
                   <input type="text" value={newSvc.duration} onChange={e => setNewSvc({ ...newSvc, duration: e.target.value })}
-                    className="w-full px-4 py-2.5 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
-                    placeholder="时长" />
+                    placeholder="时长（如：2小时）" style={{ ...inputStyle, marginBottom: 16 }} />
                   <button onClick={addService}
-                    className="btn-gold px-5 py-2 text-sm">
+                    style={{ padding: '10px 24px', borderRadius: 10, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, fontSize: '0.875rem' }}>
                     添加
                   </button>
                 </div>
               </div>
             )}
 
-            {/* ======== Availability ======== */}
+            {/* 档期 */}
             {tab === 'availability' && (
-              <div className="glass-card rounded-[1.25rem] p-6 lg:p-7">
-                <p className="text-sm font-bold text-ink-800 mb-5">点击选择可约日期</p>
-                <div className="max-w-md">
+              <div style={card}>
+                <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: 'rgba(186,207,231,0.85)' }}>点击选择可约日期</p>
+                <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.55)', marginBottom: 20 }}>已选中的日期将显示在你的公开主页上</p>
+                <div style={{ maxWidth: 380 }}>
                   <Calendar
                     onClickDay={toggleDate}
                     tileClassName={({ date }) => {
-                      const dateStr = date.toISOString().split('T')[0];
-                      return availDates.includes(dateStr) ? 'bg-gold-100 text-gold-700 rounded-full font-bold' : '';
+                      const ds = date.toISOString().split('T')[0];
+                      return availDates.includes(ds) ? 'avail-tile' : '';
                     }}
-                    className="border-0 w-full"
+                    className="dark-cal"
                     minDate={new Date()}
                   />
                 </div>
-                <div className="mt-5 flex flex-wrap gap-2">
+                <div style={{ marginTop: 20, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {availDates.map(d => (
-                    <span key={d} className="tag-pill inline-flex items-center gap-1.5">
+                    <span key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.25)', color: GOLD }}>
                       {d}
-                      <button onClick={() => { const date = new Date(d + 'T00:00:00'); toggleDate(date); }}
-                        className="ml-1 hover:text-red-500 transition-colors">✕</button>
+                      <button onClick={() => toggleDate(new Date(d + 'T00:00:00'))}
+                        style={{ background: 'none', border: 'none', color: 'rgba(217,168,87,0.6)', cursor: 'pointer', padding: 0, lineHeight: 1 }}>✕</button>
                     </span>
                   ))}
+                  {availDates.length === 0 && (
+                    <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.45)' }}>还没有标记可约日期</p>
+                  )}
                 </div>
-                {availDates.length === 0 && <p className="text-sm text-ink-300 mt-5">还没有标记可约日期</p>}
               </div>
             )}
 
-            {/* ======== Portfolio ======== */}
+            {/* 作品集 */}
             {tab === 'portfolio' && (
-              <div className="space-y-5">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {portfolio.length > 0 && (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                    {portfolio.map(p => (
-                      <div key={p.id}
-                        className="aspect-square rounded-xl bg-gold-100 overflow-hidden relative group shadow-sm img-zoom">
-                        <img src={p.image_url} alt={p.caption || ''} className="w-full h-full object-cover" />
-                        <button onClick={() => deletePortfolio(p.id)}
-                          className="absolute top-2 right-2 bg-red-500/90 text-white w-7 h-7 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-                          ✕
-                        </button>
-                      </div>
-                    ))}
+                  <div style={card}>
+                    <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.85)' }}>已上传作品</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 10 }}>
+                      {portfolio.map(p => (
+                        <div key={p.id} style={{ aspectRatio: '1', borderRadius: 10, overflow: 'hidden', position: 'relative', border: '1px solid rgba(201,146,46,0.15)' }}
+                          onMouseEnter={e => { const btn = e.currentTarget.querySelector('button') as HTMLElement | null; if (btn) btn.style.opacity = '1'; }}
+                          onMouseLeave={e => { const btn = e.currentTarget.querySelector('button') as HTMLElement | null; if (btn) btn.style.opacity = '0'; }}>
+                          <img src={p.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <button onClick={() => deletePortfolio(p.id)}
+                            style={{ position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: '50%', background: 'rgba(239,68,68,0.9)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '0.75rem', opacity: 0, transition: 'opacity 0.15s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-                <div className="glass-card rounded-[1.25rem] p-6 border-dashed border-gold-200/60 space-y-4">
-                  <p className="text-sm font-bold text-ink-800">添加作品</p>
+                <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
+                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.85)' }}>上传作品</p>
                   <ImageUpload onUploaded={addPortfolio} token={token} api={API} />
-                  <p className="text-xs text-ink-400">支持 JPG、PNG、GIF，最大 10MB</p>
+                  <p style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.45)', marginTop: 12 }}>支持 JPG、PNG、GIF，最大 10MB</p>
                 </div>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Dark calendar overrides */
+        .dark-cal { background: transparent !important; border: none !important; width: 100% !important; color: #fff !important; }
+        .dark-cal .react-calendar__navigation { background: transparent !important; margin-bottom: 12px; }
+        .dark-cal .react-calendar__navigation button { color: rgba(186,207,231,0.85) !important; background: transparent !important; font-size: 0.9rem !important; font-weight: 600 !important; border-radius: 8px !important; }
+        .dark-cal .react-calendar__navigation button:hover { background: rgba(255,255,255,0.06) !important; }
+        .dark-cal .react-calendar__navigation button:disabled { color: rgba(186,207,231,0.3) !important; }
+        .dark-cal .react-calendar__month-view__weekdays { color: rgba(186,207,231,0.5) !important; font-size: 0.72rem !important; }
+        .dark-cal .react-calendar__tile { background: transparent !important; color: rgba(186,207,231,0.8) !important; border-radius: 8px !important; padding: 8px !important; }
+        .dark-cal .react-calendar__tile:hover { background: rgba(255,255,255,0.07) !important; }
+        .dark-cal .react-calendar__tile--now { background: rgba(201,146,46,0.12) !important; color: ${GOLD} !important; }
+        .dark-cal .react-calendar__tile--active { background: rgba(201,146,46,0.12) !important; }
+        .dark-cal .react-calendar__tile.avail-tile { background: rgba(201,146,46,0.2) !important; color: ${GOLD} !important; font-weight: 700 !important; border: 1px solid rgba(201,146,46,0.4) !important; }
+        .dark-cal .react-calendar__month-view__days__day--neighboringMonth { color: rgba(186,207,231,0.2) !important; }
+        .dark-cal abbr { text-decoration: none !important; }
+      `}</style>
     </div>
   );
 }

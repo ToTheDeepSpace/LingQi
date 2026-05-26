@@ -1,211 +1,531 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 const API = '/api';
+const C = '#0b1a30';
+const C2 = '#0f2239';
+const GOLD = '#d9a857';
 
-function getToken(): string {
-  return localStorage.getItem('lc_admin_token') || '';
+function getToken() { return localStorage.getItem('lc_admin_token') || ''; }
+
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000 < Date.now();
+  } catch { return true; }
 }
 
+const SUBJECT_LABEL: Record<string, string> = {
+  creator: '灵契师（委托师）',
+  dm: 'DM（卡司）',
+  store: '店家',
+  player: '玩家',
+};
+
+type Profile = {
+  id: string;
+  display_name: string;
+  phone: string;
+  created_at: string;
+  updated_at?: string;
+  is_visible: boolean;
+  is_realname?: boolean;
+  reject_reason?: string | null;
+  role_type?: string;
+};
+
+type ContactReq = {
+  id: string;
+  requester_name: string;
+  requester_wechat: string;
+  requester_message?: string;
+  created_at: string;
+  lc_profiles?: { display_name?: string };
+};
+
+type Ranking = {
+  id: string;
+  type: 'red' | 'black';
+  subject_name: string;
+  subject_type: string;
+  subject_city: string | null;
+  subject_url?: string | null;
+  content: string;
+  author_name: string;
+  initial_amount: number;
+  payment_proof: string | null;
+  created_at: string;
+};
+
+type CommentReview = {
+  id: string;
+  content: string;
+  author_name: string;
+  is_realname?: boolean;
+  payment_proof?: string | null;
+  created_at: string;
+  lc_rankings?: { subject_name?: string; type?: 'red' | 'black' };
+};
+
+type ClaimReview = {
+  id: string;
+  claimant_name?: string | null;
+  contact: string;
+  message?: string | null;
+  created_at: string;
+  lc_rankings?: { subject_name?: string; type?: 'red' | 'black' };
+};
+
+type RejectType = 'profile' | 'ranking' | 'comment' | 'claim';
+type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims';
+
+const card: React.CSSProperties = {
+  backgroundColor: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(201,146,46,0.15)',
+  borderRadius: 14,
+  padding: '16px 20px',
+};
+
 export default function Admin() {
-  const navigate = useNavigate();
-  const [authed, setAuthed] = useState(false);
+  const [authed, setAuthed] = useState(() => {
+    const t = getToken();
+    return !!t && !isTokenExpired(t);
+  });
   const [password, setPassword] = useState('');
-  const [profiles, setProfiles] = useState<Record<string, unknown>[]>([]);
-  const [requests, setRequests] = useState<Record<string, unknown>[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [requests, setRequests] = useState<ContactReq[]>([]);
+  const [rankings, setRankings] = useState<Ranking[]>([]);
+  const [comments, setComments] = useState<CommentReview[]>([]);
+  const [claims, setClaims] = useState<ClaimReview[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState('profiles');
+  const [tab, setTab] = useState<Tab>('pending');
+  const [rejectModal, setRejectModal] = useState<{ open: boolean; id: string; reason: string; type: RejectType }>({
+    open: false,
+    id: '',
+    reason: '',
+    type: 'profile',
+  });
+
+  async function loadData(token?: string) {
+    const t = token || getToken();
+    setLoading(true);
+    setError('');
+    try {
+      const r = await fetch(`${API}/lc/admin/pending`, { headers: { Authorization: `Bearer ${t}` } });
+      const d = await r.json();
+      if (d.success) {
+        setProfiles((d.data as { profiles: Profile[] }).profiles || []);
+        setRequests((d.data as { contactRequests: ContactReq[] }).contactRequests || []);
+        setRankings((d.data as { rankings: Ranking[] }).rankings || []);
+        setComments((d.data as { comments: CommentReview[] }).comments || []);
+        setClaims((d.data as { claims: ClaimReview[] }).claims || []);
+      } else {
+        setError(d.error || '加载失败');
+      }
+    } catch {
+      setError('网络错误');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!authed) return;
+    const t = getToken();
+    if (!t || isTokenExpired(t)) {
+      localStorage.removeItem('lc_admin_token');
+      return;
+    }
+    const timer = window.setTimeout(() => void loadData(t), 0);
+    return () => window.clearTimeout(timer);
+  }, [authed]);
 
   const login = async () => {
     setError('');
-    const r = await fetch(`${API}/lc/admin/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    });
-    const d = await r.json();
-    if (d.success) {
-      localStorage.setItem('lc_admin_token', d.data.token);
-      setAuthed(true);
-      loadData(d.data.token);
-    } else {
-      setError(d.error || '密码错误');
+    try {
+      const r = await fetch(`${API}/lc/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        localStorage.setItem('lc_admin_token', d.data.token);
+        setAuthed(true);
+      } else {
+        setError(d.error || '密码错误');
+      }
+    } catch {
+      setError('网络错误');
     }
   };
 
-  const loadData = async (token?: string) => {
-    const t = token || getToken();
-    setLoading(true);
-    const r = await fetch(`${API}/lc/admin/pending`, {
-      headers: { Authorization: `Bearer ${t}` },
-    });
-    const d = await r.json();
-    if (d.success) {
-      setProfiles((d.data as { profiles: Record<string, unknown>[] }).profiles || []);
-      setRequests((d.data as { contactRequests: Record<string, unknown>[] }).contactRequests || []);
-    }
-    setLoading(false);
-  };
-
-  const flagProfile = async (id: string) => {
-    await fetch(`${API}/lc/admin/profile/${id}/flag`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
-    loadData();
-  };
-  const unflagProfile = async (id: string) => {
+  const approveProfile = async (id: string) => {
     await fetch(`${API}/lc/admin/profile/${id}/unflag`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
-    loadData();
-  };
-  const approveRequest = async (id: string) => {
-    await fetch(`${API}/lc/contact-requests/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
-    loadData();
-  };
-  const rejectRequest = async (id: string) => {
-    await fetch(`${API}/lc/contact-requests/${id}/reject`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
-    loadData();
+    void loadData();
   };
 
-  if (!authed) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-cream to-ink-50/30 flex items-center justify-center px-4">
-        <div className="w-full max-w-sm">
-          <div className="text-center mb-8">
-            <span className="font-serif text-4xl font-black gradient-text">灵契</span>
-            <p className="text-sm text-ink-400 mt-3">管理后台</p>
+  const hideProfile = async (id: string) => {
+    await fetch(`${API}/lc/admin/profile/${id}/flag`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rejectReason: '管理员下线' }),
+    });
+    void loadData();
+  };
+
+  const toggleRealname = async (id: string, value: boolean) => {
+    await fetch(`${API}/lc/admin/profile/${id}/realname`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    });
+    void loadData();
+  };
+
+  const approveReq = async (id: string) => {
+    await fetch(`${API}/lc/contact-requests/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    void loadData();
+  };
+
+  const rejectReq = async (id: string) => {
+    await fetch(`${API}/lc/contact-requests/${id}/reject`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    void loadData();
+  };
+
+  const approveRanking = async (id: string) => {
+    await fetch(`${API}/lc/admin/rankings/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    void loadData();
+  };
+
+  const approveComment = async (id: string) => {
+    await fetch(`${API}/lc/admin/comments/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    void loadData();
+  };
+
+  const approveClaim = async (id: string) => {
+    await fetch(`${API}/lc/admin/claims/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    void loadData();
+  };
+
+  const openRejectModal = (id: string, type: RejectType) => {
+    setRejectModal({ open: true, id, reason: '', type });
+  };
+
+  const confirmReject = async () => {
+    const { id, reason, type } = rejectModal;
+    setRejectModal({ open: false, id: '', reason: '', type: 'profile' });
+
+    const headers = { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
+    const body = JSON.stringify({ rejectReason: reason });
+
+    if (type === 'profile') {
+      await fetch(`${API}/lc/admin/profile/${id}/flag`, { method: 'PUT', headers, body });
+      setProfiles(prev => prev.filter(p => p.id !== id));
+    } else if (type === 'ranking') {
+      await fetch(`${API}/lc/admin/rankings/${id}/reject`, { method: 'PUT', headers, body });
+      setRankings(prev => prev.filter(r => r.id !== id));
+    } else if (type === 'comment') {
+      await fetch(`${API}/lc/admin/comments/${id}/reject`, { method: 'PUT', headers });
+      setComments(prev => prev.filter(c => c.id !== id));
+    } else {
+      await fetch(`${API}/lc/admin/claims/${id}/reject`, { method: 'PUT', headers });
+      setClaims(prev => prev.filter(c => c.id !== id));
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('lc_admin_token');
+    setAuthed(false);
+    setProfiles([]);
+    setRequests([]);
+    setRankings([]);
+    setComments([]);
+    setClaims([]);
+  };
+
+  const pendingProfiles = profiles.filter(p => !p.is_visible && !p.reject_reason);
+  const activeProfiles = profiles.filter(p => p.is_visible);
+
+  if (!authed) return (
+    <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <Link to="/" style={{ textDecoration: 'none', fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '2.5rem', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            灵契
+          </Link>
+          <p style={{ color: 'rgba(186,207,231,0.65)', fontSize: '0.875rem', marginTop: 8 }}>管理后台</p>
+        </div>
+        <div style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,146,46,0.15)', borderRadius: 20, padding: '32px 28px' }}>
+          <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 24px' }} />
+          <h2 style={{ textAlign: 'center', fontWeight: 700, marginBottom: 24, color: 'rgba(186,207,231,0.8)' }}>管理员登录</h2>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && login()}
+            placeholder="管理密码"
+            style={{ width: '100%', padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', marginBottom: 16 }} />
+          <button onClick={login}
+            style={{ width: '100%', padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, fontSize: '0.9rem' }}>
+            登录
+          </button>
+          {error && <p style={{ textAlign: 'center', color: '#f87171', fontSize: '0.82rem', marginTop: 12 }}>{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1, padding: '10px 8px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, transition: 'all 0.2s',
+    background: active ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'transparent',
+    color: active ? C : 'rgba(186,207,231,0.5)',
+  });
+
+  return (
+    <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
+      <div style={{ backgroundColor: C2, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '24px 20px' }}>
+        <div style={{ maxWidth: 980, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>灵契管理后台</h1>
+            <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.65)' }}>主页、红黑榜、评论、相关方申请审核</p>
           </div>
-          <div className="glass-card rounded-[1.5rem] p-8 space-y-5">
-            <div className="text-center">
-              <div className="gold-line mx-auto mb-4" />
-              <h2 className="text-base font-bold text-ink-800">管理员登录</h2>
-            </div>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-              className="w-full px-4 py-3 input-enhanced rounded-[0.75rem] text-sm text-ink-800 placeholder:text-ink-300 bg-cream/70"
-              placeholder="管理密码"
-              onKeyDown={e => e.key === 'Enter' && login()} />
-            <button onClick={login}
-              className="btn-dark w-full py-3 text-sm rounded-[0.75rem] font-semibold">
-              登录
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <Link to="/" style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.65)', textDecoration: 'none' }}>返回首页</Link>
+            <button onClick={logout}
+              style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid rgba(201,146,46,0.2)', background: 'none', color: 'rgba(186,207,231,0.5)', cursor: 'pointer', fontSize: '0.82rem' }}>
+              退出
             </button>
-            {error && <p className="text-xs text-red-500 text-center animate-fade-in">{error}</p>}
           </div>
         </div>
       </div>
-    );
-  }
 
-  const profileList = profiles as Array<{ id: string; display_name: string; phone: string; created_at: string; is_visible: boolean }>;
-  const requestList = requests as Array<{ id: string; requester_name: string; requester_wechat: string; requester_message?: string; lc_profiles?: { display_name?: string } }>;
-
-  return (
-    <div className="min-h-screen bg-cream">
-      <div className="max-w-4xl mx-auto px-5 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="font-serif text-2xl font-bold text-ink-900">灵契管理后台</h1>
-            <p className="text-sm text-ink-400 mt-1.5">创作者管理 & 联系申请审核</p>
-          </div>
-          <button onClick={() => navigate('/')}
-            className="text-sm text-gold-600 hover:text-gold-500 transition-colors font-medium">
-            返回首页
-          </button>
+      <div style={{ maxWidth: 980, margin: '0 auto', padding: '28px 20px 80px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 28 }}>
+          {[
+            { label: '待审核创作者', value: pendingProfiles.length, color: '#fb7185' },
+            { label: '已上线创作者', value: activeProfiles.length, color: '#34d399' },
+            { label: '联系申请', value: requests.length, color: GOLD },
+            { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
+            { label: '评论', value: comments.length, color: '#38bdf8' },
+            { label: '相关方', value: claims.length, color: '#f97316' },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={{ ...card, textAlign: 'center' }}>
+              <div style={{ fontSize: '1.8rem', fontWeight: 900, color, marginBottom: 4 }}>{value}</div>
+              <div style={{ fontSize: '0.75rem', color: 'rgba(186,207,231,0.55)' }}>{label}</div>
+            </div>
+          ))}
         </div>
 
-        {/* Tab switcher — 玻璃态 */}
-        <div className="glass-card rounded-[1.25rem] p-2 flex gap-1 mb-6">
-          <button onClick={() => setTab('profiles')}
-            className={`flex-1 py-3 text-sm font-semibold rounded-[0.75rem] transition-all ${
-              tab === 'profiles'
-                ? 'bg-gradient-to-r from-ink-800 to-ink-700 text-white shadow-md'
-                : 'text-ink-500 hover:text-ink-700 hover:bg-gold-50/50'
-            }`}>
-            创作者 ({profileList.length})
-          </button>
-          <button onClick={() => setTab('requests')}
-            className={`flex-1 py-3 text-sm font-semibold rounded-[0.75rem] transition-all ${
-              tab === 'requests'
-                ? 'bg-gradient-to-r from-ink-800 to-ink-700 text-white shadow-md'
-                : 'text-ink-500 hover:text-ink-700 hover:bg-gold-50/50'
-            }`}>
-            联系申请 ({requestList.length})
-          </button>
+        <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(201,146,46,0.1)', borderRadius: 14, marginBottom: 20 }}>
+          <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>待审核 {pendingProfiles.length > 0 && `(${pendingProfiles.length})`}</button>
+          <button style={tabStyle(tab === 'active')} onClick={() => setTab('active')}>已上线 ({activeProfiles.length})</button>
+          <button style={tabStyle(tab === 'requests')} onClick={() => setTab('requests')}>联系 {requests.length > 0 && `(${requests.length})`}</button>
+          <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
+          <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
+          <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
         </div>
+
+        {error && <p style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: 16 }}>{error}</p>}
 
         {loading ? (
-          <div className="text-center py-24">
-            <div className="w-10 h-10 border-2 border-gold-300 border-t-gold-500 rounded-full animate-spin mx-auto mb-5" />
-            <p className="text-base text-ink-300">加载中...</p>
+          <div style={{ textAlign: 'center', padding: '80px 0' }}>
+            <div style={{ width: 36, height: 36, border: '2px solid rgba(201,146,46,0.3)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+            <p style={{ color: 'rgba(186,207,231,0.65)' }}>加载中...</p>
           </div>
         ) : (
           <>
-            {tab === 'profiles' && (
-              <div className="space-y-3">
-                {profileList.map((p, i) => (
-                  <div key={p.id}
-                    className={`glass-card rounded-[1.25rem] p-5 flex items-center justify-between ${
-                      i % 2 === 0 ? 'bg-white/80' : 'bg-white/60'
-                    }`}>
+            {tab === 'pending' && (
+              <ListEmpty empty={pendingProfiles.length === 0} text="没有待审核的创作者">
+                {pendingProfiles.map(p => (
+                  <Row key={p.id}>
                     <div>
-                      <p className="text-sm font-semibold text-ink-800">{p.display_name}</p>
-                      <p className="text-sm text-ink-400 mt-0.5">{p.phone} · {p.created_at?.slice(0, 10)}</p>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 4 }}>{p.display_name}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.65)' }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.role_type && ` · ${p.role_type}`}</div>
                     </div>
-                    <div className="flex gap-3">
-                      {p.is_visible ? (
-                        <button onClick={() => flagProfile(p.id)}
-                          className="text-sm text-red-500 hover:text-red-700 transition-colors font-medium">隐藏</button>
-                      ) : (
-                        <button onClick={() => unflagProfile(p.id)}
-                          className="text-sm text-green-600 hover:text-green-800 transition-colors font-medium">显示</button>
-                      )}
-                    </div>
-                  </div>
+                    <Actions>
+                      <ActionButton kind="ok" onClick={() => approveProfile(p.id)}>通过</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(p.id, 'profile')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
                 ))}
-                {profileList.length === 0 && (
-                  <div className="text-center py-24">
-                    <div className="text-5xl mb-5 opacity-20">📋</div>
-                    <p className="text-base text-ink-300">暂无创作者</p>
-                  </div>
-                )}
-              </div>
+              </ListEmpty>
+            )}
+
+            {tab === 'active' && (
+              <ListEmpty empty={activeProfiles.length === 0} text="还没有上线的创作者">
+                {activeProfiles.map(p => (
+                  <Row key={p.id}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{p.display_name}</span>
+                        {p.is_realname && <span style={{ fontSize: '0.72rem', color: GOLD }}>⭐ 实名</span>}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.65)' }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}</div>
+                    </div>
+                    <Actions>
+                      <Link to={`/explore/${p.id}`} target="_blank" style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(201,146,46,0.2)', color: GOLD, fontSize: '0.82rem', textDecoration: 'none', fontWeight: 600 }}>主页</Link>
+                      <ActionButton onClick={() => toggleRealname(p.id, !p.is_realname)}>{p.is_realname ? '取消实名' : '设为实名'}</ActionButton>
+                      <ActionButton kind="bad" onClick={() => hideProfile(p.id)}>下线</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
             )}
 
             {tab === 'requests' && (
-              <div className="space-y-3">
-                {requestList.map((r) => (
-                  <div key={r.id}
-                    className="glass-card rounded-[1.25rem] p-5 lg:p-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-ink-800">{r.requester_name}</p>
-                        <p className="text-sm text-ink-400 mt-1">微信: {r.requester_wechat}</p>
-                        <p className="text-sm text-ink-400">发给: {r.lc_profiles?.display_name || '未知'}</p>
-                        {r.requester_message && (
-                          <p className="text-sm text-ink-500 mt-3 bg-cream/80 rounded-xl p-3.5 leading-relaxed">{r.requester_message}</p>
-                        )}
-                      </div>
-                      <div className="flex gap-2.5 shrink-0">
-                        <button onClick={() => approveRequest(r.id)}
-                          className="px-5 py-2.5 bg-gradient-to-r from-green-600 to-green-500 text-white text-sm rounded-[0.75rem] hover:from-green-500 hover:to-green-400 transition-all font-semibold shadow-md shadow-green-500/20">
-                          通过
-                        </button>
-                        <button onClick={() => rejectRequest(r.id)}
-                          className="px-5 py-2.5 bg-gradient-to-r from-red-500 to-red-400 text-white text-sm rounded-[0.75rem] hover:from-red-400 hover:to-red-300 transition-all font-semibold shadow-md shadow-red-500/20">
-                          拒绝
-                        </button>
-                      </div>
+              <ListEmpty empty={requests.length === 0} text="暂无待审核的联系申请">
+                {requests.map(r => (
+                  <Row key={r.id}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 6 }}>{r.requester_name}</div>
+                      <Meta>微信: {r.requester_wechat} · 发给: {r.lc_profiles?.display_name || '未知创作者'} · {r.created_at?.slice(0, 10)}</Meta>
+                      {r.requester_message && <ContentBox>{r.requester_message}</ContentBox>}
                     </div>
-                  </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveReq(r.id)}>通过</ActionButton>
+                      <ActionButton kind="bad" onClick={() => rejectReq(r.id)}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
                 ))}
-                {requestList.length === 0 && (
-                  <div className="text-center py-24">
-                    <div className="text-5xl mb-5 opacity-20">✅</div>
-                    <p className="text-base text-ink-300">暂无待审核申请</p>
-                  </div>
-                )}
-              </div>
+              </ListEmpty>
+            )}
+
+            {tab === 'rankings' && (
+              <ListEmpty empty={rankings.length === 0} text="暂无待审核的红黑榜帖子">
+                {rankings.map(r => (
+                  <Row key={r.id} accent={r.type === 'red' ? '#dc2626' : '#475569'}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={r.subject_name} pill={r.type === 'red' ? '🏅 红榜' : '👎 黑榜'} />
+                      <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · 初始金额：¥{r.initial_amount} · {r.created_at?.slice(0, 10)}</Meta>
+                      {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
+                      <ContentBox>{r.content}</ContentBox>
+                      {r.payment_proof && <Proof>支付凭证：{r.payment_proof}</Proof>}
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveRanking(r.id)}>通过</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'comments' && (
+              <ListEmpty empty={comments.length === 0} text="暂无待审核评论">
+                {comments.map(c => (
+                  <Row key={c.id}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={c.lc_rankings?.subject_name || '未知帖子'} pill={c.lc_rankings?.type === 'black' ? '👎 黑榜评论' : '🏅 红榜评论'} />
+                      <Meta>作者：{c.is_realname ? `⭐ ${c.author_name}` : c.author_name} · {c.created_at?.slice(0, 10)}</Meta>
+                      <ContentBox>{c.content}</ContentBox>
+                      {c.payment_proof && <Proof>支付凭证：{c.payment_proof}</Proof>}
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveComment(c.id)}>通过</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'comment')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'claims' && (
+              <ListEmpty empty={claims.length === 0} text="暂无相关方申请">
+                {claims.map(c => (
+                  <Row key={c.id}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={c.lc_rankings?.subject_name || '未知帖子'} pill="相关方申请" />
+                      <Meta>申请人：{c.claimant_name || '未知用户'} · 联系方式：{c.contact} · {c.created_at?.slice(0, 10)}</Meta>
+                      {c.message && <ContentBox>{c.message}</ContentBox>}
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveClaim(c.id)}>标记已处理</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'claim')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
             )}
           </>
         )}
       </div>
+
+      {rejectModal.open && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
+          <div style={{ backgroundColor: C2, border: '1px solid rgba(201,146,46,0.2)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420 }}>
+            <h3 style={{ fontWeight: 700, fontSize: '1rem', marginBottom: 8, color: 'rgba(186,207,231,0.9)' }}>填写拒绝原因</h3>
+            <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.5)', marginBottom: 16 }}>原因可不填，主要给自己留审核记录。</p>
+            <textarea value={rejectModal.reason} onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}
+              placeholder="请说明拒绝原因（选填）..." rows={4}
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: '0.875rem', boxSizing: 'border-box', resize: 'none', outline: 'none' }} />
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button onClick={() => setRejectModal({ open: false, id: '', reason: '', type: 'profile' })}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: 'rgba(186,207,231,0.6)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
+                取消
+              </button>
+              <button onClick={confirmReject}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.12)', color: '#f87171', cursor: 'pointer', fontWeight: 700, fontSize: '0.875rem' }}>
+                确认拒绝
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
+}
+
+function Row({ children, accent }: { children: React.ReactNode; accent?: string }) {
+  return (
+    <div style={{ ...card, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderLeft: accent ? `3px solid ${accent}` : card.border }}>
+      {children}
+    </div>
+  );
+}
+
+function Actions({ children, vertical }: { children: React.ReactNode; vertical?: boolean }) {
+  return <div style={{ display: 'flex', flexDirection: vertical ? 'column' : 'row', gap: 8, flexShrink: 0 }}>{children}</div>;
+}
+
+function ActionButton({ children, onClick, kind }: { children: React.ReactNode; onClick: () => void; kind?: 'ok' | 'bad' }) {
+  const ok = kind === 'ok';
+  const bad = kind === 'bad';
+  return (
+    <button onClick={onClick}
+      style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${ok ? 'rgba(52,211,153,0.3)' : bad ? 'rgba(248,113,113,0.25)' : 'rgba(201,146,46,0.2)'}`, cursor: 'pointer', background: ok ? 'rgba(52,211,153,0.12)' : bad ? 'rgba(248,113,113,0.08)' : 'transparent', color: ok ? '#34d399' : bad ? '#f87171' : GOLD, fontWeight: 600, fontSize: '0.82rem' }}>
+      {children}
+    </button>
+  );
+}
+
+function ListEmpty({ empty, text, children }: { empty: boolean; text: string; children: React.ReactNode }) {
+  if (empty) return (
+    <div style={{ textAlign: 'center', padding: '80px 0' }}>
+      <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>✅</div>
+      <p style={{ color: 'rgba(186,207,231,0.65)' }}>{text}</p>
+    </div>
+  );
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>;
+}
+
+function TitleLine({ title, pill }: { title: string; pill: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+      <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{title}</span>
+      <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', background: 'rgba(201,146,46,0.08)', color: GOLD, border: '1px solid rgba(201,146,46,0.2)' }}>{pill}</span>
+    </div>
+  );
+}
+
+function Meta({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.55)', marginBottom: 8 }}>{children}</div>;
+}
+
+function ContentBox({ children }: { children: React.ReactNode }) {
+  return <div style={{ padding: '10px 14px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(201,146,46,0.1)', borderRadius: 8, fontSize: '0.82rem', color: 'rgba(186,207,231,0.7)', lineHeight: 1.7, marginTop: 8 }}>{children}</div>;
+}
+
+function Proof({ children }: { children: React.ReactNode }) {
+  return <div style={{ marginTop: 8, padding: '8px 12px', backgroundColor: 'rgba(201,146,46,0.06)', border: '1px solid rgba(201,146,46,0.15)', borderRadius: 8, fontSize: '0.78rem', color: 'rgba(186,207,231,0.65)' }}>{children}</div>;
 }
