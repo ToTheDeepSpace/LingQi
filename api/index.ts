@@ -70,7 +70,7 @@ function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefi
 async function getAuthedProfile(req: express.Request) {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname')
+    .select('id, display_name, is_realname, balance')
     .eq('id', creatorId)
     .single();
   return data;
