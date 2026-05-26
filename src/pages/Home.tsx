@@ -71,7 +71,7 @@ export default function Home() {
             }}
               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(192,57,43,0.22)'; e.currentTarget.style.borderColor = '#e74c3c'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'rgba(192,57,43,0.12)'; e.currentTarget.style.borderColor = 'rgba(192,57,43,0.35)'; }}>
-              ⚖ 红黑榜
+              ⚖ 红黑榜 · 一人一票 · 真实口碑
             </Link>
           </div>
 
@@ -124,7 +124,47 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ───────────── 红黑榜（已移至 Hero 按钮） ───────────── */}
+      {/* ───────────── 红黑榜 ───────────── */}
+      <section style={{ backgroundColor: C, padding: '5rem 1.25rem' }}>
+        <div style={{ maxWidth: 800, margin: '0 auto', textAlign: 'center' }}>
+
+          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: '#c0392b', marginBottom: 12 }}>一人一票 · 真实口碑</p>
+          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>红黑榜</h2>
+          <div className="gold-line" style={{ margin: '0 auto 48px' }} />
+
+          <p style={{ fontSize: '1rem', color: 'rgba(245,243,238,0.78)', lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
+            店、灵契师、玩家——三类红黑榜，用真金白银投票。<br />
+            每条评价都经过人工审核，实名发布带星标。不是有钱就能删帖。
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 36 }}>
+            {[
+              { icon: '🏪', label: '店家榜', desc: '店面环境、服务质量、管理水平' },
+              { icon: '🌙', label: '灵契师榜', desc: '还原度、陪伴体验、专业程度' },
+              { icon: '🎭', label: '玩家榜', desc: '素质、迟到率、历史评价' },
+            ].map(({ icon, label, desc }) => (
+              <div key={label} style={{ padding: '22px 16px', borderRadius: 14, border: '1px solid rgba(192,57,43,0.18)', background: 'linear-gradient(180deg, rgba(192,57,43,0.08), rgba(255,255,255,0.03))', textAlign: 'center' }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>
+                <h3 style={{ fontWeight: 700, fontSize: '0.92rem', color: '#fff', marginBottom: 6 }}>{label}</h3>
+                <p style={{ fontSize: '0.78rem', color: 'rgba(245,243,238,0.62)', lineHeight: 1.6 }}>{desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <Link to="/rankings" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '12px 32px', borderRadius: 10,
+            background: 'linear-gradient(135deg, #c0392b 0%, #a93226 100%)',
+            color: '#fff', textDecoration: 'none', fontWeight: 700, fontSize: '0.95rem',
+            boxShadow: '0 4px 20px rgba(192,57,43,0.3)',
+            transition: 'all 0.3s',
+          }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(192,57,43,0.45)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(192,57,43,0.3)'; }}>
+            进入红黑榜
+          </Link>
+        </div>
+      </section>
 
       {/* ───────────── 三步完成委托 ───────────── */}
       <section style={{ backgroundColor: C2, padding: '5rem 1.25rem' }}>
