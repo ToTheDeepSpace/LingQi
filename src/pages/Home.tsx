@@ -21,9 +21,10 @@ const steps = [
 const C = '#0F1117';
 const C2 = '#1A1D27';
 const GOLD = '#d9a857';
-const WARM_BG = '#F5F3EE';
-const WARM_TEXT = '#1a1d27';
-const WARM_SUB = '#5a5d67';
+const WARM_BG = '#151210';
+const WARM_CARD = '#1C1916';
+const WARM_TEXT = '#F0EBE1';
+const WARM_SUB = '#8A857B';
 
 export default function Home() {
   return (
@@ -63,6 +64,15 @@ export default function Home() {
             <Link to="/login" className="btn-glass" style={{ width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem' }}>
               我是灵契师，免费入驻
             </Link>
+            <Link to="/rankings" style={{
+              width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem', fontWeight: 600,
+              borderRadius: 12, border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.12)',
+              color: '#e74c3c', textDecoration: 'none', transition: 'all 0.3s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(192,57,43,0.22)'; e.currentTarget.style.borderColor = '#e74c3c'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(192,57,43,0.12)'; e.currentTarget.style.borderColor = 'rgba(192,57,43,0.35)'; }}>
+              ⚖ 红黑榜
+            </Link>
           </div>
 
           <p style={{ marginTop: 24, fontSize: 11, letterSpacing: '0.08em', color: 'rgba(245,243,238,0.55)', textAlign: 'center' }}>
@@ -94,17 +104,17 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ───────────── 为什么选灵契（暖色段） ───────────── */}
-      <section style={{ backgroundColor: WARM_BG, padding: '5rem 1.25rem' }}>
+      {/* ───────────── 为什么选灵契（暖调深色） ───────────── */}
+      <section style={{ padding: '5rem 1.25rem', background: `linear-gradient(180deg, ${C} 0%, #151210 8%, ${WARM_BG} 30%, ${WARM_BG} 70%, #151210 92%, ${C} 100%)` }}>
         <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
 
-          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(146,95,24,0.7)', marginBottom: 12 }}>为什么选择灵契</p>
+          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.65)', marginBottom: 12 }}>为什么选择灵契</p>
           <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16, color: WARM_TEXT }}>不只是个人主页</h2>
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 32 }}>
             {features.map(({ icon, title, desc }) => (
-              <div key={title} style={{ textAlign: 'center' }}>
+              <div key={title} style={{ textAlign: 'center', backgroundColor: WARM_CARD, borderRadius: 16, padding: '28px 20px', border: '1px solid rgba(255,255,255,0.04)' }}>
                 <div style={{ fontSize: 44, marginBottom: 16 }}>{icon}</div>
                 <h3 style={{ fontWeight: 700, fontSize: '1rem', color: WARM_TEXT, marginBottom: 10 }}>{title}</h3>
                 <p style={{ fontSize: '0.82rem', color: WARM_SUB, lineHeight: 1.8 }}>{desc}</p>
@@ -114,47 +124,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ───────────── 红黑榜 ───────────── */}
-      <section style={{ backgroundColor: C, padding: '5rem 1.25rem' }}>
-        <div style={{ maxWidth: 800, margin: '0 auto', textAlign: 'center' }}>
-
-          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: '#c0392b', marginBottom: 12 }}>口碑基础设施</p>
-          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>红黑榜</h2>
-          <div className="gold-line" style={{ margin: '0 auto 48px' }} />
-
-          <p style={{ fontSize: '1rem', color: 'rgba(245,243,238,0.78)', lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
-            店、灵契师、玩家——三类红黑榜，用真金白银投票。<br />
-            每条评价都经过人工审核，实名发布带星标。不是有钱就能删帖。
-          </p>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 36 }}>
-            {[
-              { icon: '🏪', label: '店家榜', desc: '店面环境、服务质量、管理水平' },
-              { icon: '🌙', label: '灵契师榜', desc: '还原度、陪伴体验、专业程度' },
-              { icon: '🎭', label: '玩家榜', desc: '素质、迟到率、历史评价' },
-            ].map(({ icon, label, desc }) => (
-              <div key={label} style={{ padding: '22px 16px', borderRadius: 14, border: '1px solid rgba(192,57,43,0.18)', background: 'linear-gradient(180deg, rgba(192,57,43,0.08), rgba(255,255,255,0.03))', textAlign: 'center' }}>
-                <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>
-                <h3 style={{ fontWeight: 700, fontSize: '0.92rem', color: '#fff', marginBottom: 6 }}>{label}</h3>
-                <p style={{ fontSize: '0.78rem', color: 'rgba(245,243,238,0.62)', lineHeight: 1.6 }}>{desc}</p>
-              </div>
-            ))}
-          </div>
-
-          <Link to="/rankings" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: '12px 32px', borderRadius: 10,
-            background: 'linear-gradient(135deg, #c0392b 0%, #a93226 100%)',
-            color: '#fff', textDecoration: 'none', fontWeight: 700, fontSize: '0.95rem',
-            boxShadow: '0 4px 20px rgba(192,57,43,0.3)',
-            transition: 'all 0.3s',
-          }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(192,57,43,0.45)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(192,57,43,0.3)'; }}>
-            进入红黑榜
-          </Link>
-        </div>
-      </section>
+      {/* ───────────── 红黑榜（已移至 Hero 按钮） ───────────── */}
 
       {/* ───────────── 三步完成委托 ───────────── */}
       <section style={{ backgroundColor: C2, padding: '5rem 1.25rem' }}>
