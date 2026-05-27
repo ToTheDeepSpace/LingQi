@@ -102,8 +102,20 @@ type TransactionReview = {
   lc_profiles?: { display_name?: string; phone?: string };
 };
 
-type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'transaction';
-type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions' | 'wallet';
+type CertReview = {
+  id: string;
+  profile_id: string;
+  type: 'dm' | 'shop';
+  status: 'pending' | 'approved' | 'rejected';
+  files: { name: string; url: string }[];
+  description: string | null;
+  reject_reason: string | null;
+  created_at: string;
+  lc_profiles?: { display_name?: string; phone?: string };
+};
+
+type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'transaction' | 'cert';
+type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions' | 'wallet' | 'certs';
 
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.04)',
@@ -125,7 +137,10 @@ export default function Admin() {
   const [claims, setClaims] = useState<ClaimReview[]>([]);
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
   const [transactions, setTransactions] = useState<TransactionReview[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [certs, setCerts] = useState<CertReview[]>([]);
+const [loading, setLoading] = useState(false);
+const [transactionLoading, setTransactionLoading] = useState(false);
+const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<Tab>('pending');
   const [rejectModal, setRejectModal] = useState<{ open: boolean; id: string; reason: string; type: RejectType }>({
@@ -150,8 +165,10 @@ export default function Admin() {
         setClaims((d.data as { claims: ClaimReview[] }).claims || []);
         setCommissions((d.data as { commissions: CommissionReview[] }).commissions || []);
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
+        setCerts((d.data as { certifications: CertReview[] }).certifications || []);
       } else {
-        setError(d.error || '加载失败');
+        const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '加载失败');
+        setError(errMsg);
       }
     } catch {
       setError('网络错误');
@@ -186,7 +203,8 @@ export default function Admin() {
         window.dispatchEvent(new Event('lc-auth-changed'));
         setAuthed(true);
       } else {
-        setError(d.error || '密码错误');
+        const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '密码错误');
+        setError(errMsg);
       }
     } catch {
       setError('网络错误');
@@ -247,7 +265,30 @@ export default function Admin() {
   };
 
   const approveTransaction = async (id: string) => {
-    await fetch(`${API}/lc/admin/transactions/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    setTransactionLoading(true);
+    setTransactionMsg(null);
+    try {
+      const r = await fetch(`${API}/lc/admin/transactions/${id}/approve`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      const d = await r.json();
+      if (!r.ok || !d.success) {
+        const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '到账失败，请重试');
+        setTransactionMsg({ text: errMsg, ok: false });
+      } else {
+        setTransactionMsg({ text: '已到账', ok: true });
+      }
+    } catch {
+      setTransactionMsg({ text: '网络错误，请重试', ok: false });
+    } finally {
+      setTransactionLoading(false);
+      void loadData();
+    }
+  };
+
+  const approveCert = async (id: string) => {
+    await fetch(`${API}/lc/admin/certifications/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
     void loadData();
   };
 
@@ -277,9 +318,12 @@ export default function Admin() {
     } else if (type === 'commission') {
       await fetch(`${API}/lc/admin/commissions/${id}/reject`, { method: 'PUT', headers, body });
       setCommissions(prev => prev.filter(c => c.id !== id));
-    } else {
+    } else if (type === 'transaction') {
       await fetch(`${API}/lc/admin/transactions/${id}/reject`, { method: 'PUT', headers, body });
       setTransactions(prev => prev.filter(t => t.id !== id));
+    } else if (type === 'cert') {
+      await fetch(`${API}/lc/admin/certifications/${id}/reject`, { method: 'PUT', headers, body });
+      setCerts(prev => prev.filter(c => c.id !== id));
     }
   };
 
@@ -294,6 +338,7 @@ export default function Admin() {
     setClaims([]);
     setCommissions([]);
     setTransactions([]);
+    setCerts([]);
   };
 
   const pendingProfiles = profiles.filter(p => !p.is_visible && !p.reject_reason);
@@ -360,6 +405,7 @@ export default function Admin() {
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
             { label: '评论', value: comments.length, color: '#38bdf8' },
             { label: '相关方', value: claims.length, color: '#f97316' },
+            { label: '认证', value: certs.length, color: '#3b82f6' },
           ].map(({ label, value, color }) => (
             <div key={label} style={{ ...card, textAlign: 'center' }}>
               <div style={{ fontSize: '1.8rem', fontWeight: 900, color, marginBottom: 4 }}>{value}</div>
@@ -377,6 +423,7 @@ export default function Admin() {
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
           <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
           <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
+          <button style={tabStyle(tab === 'certs')} onClick={() => setTab('certs')}>认证审核 {certs.length > 0 && `(${certs.length})`}</button>
         </div>
 
         {error && <p style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: 16 }}>{error}</p>}
@@ -445,7 +492,22 @@ export default function Admin() {
             )}
 
             {tab === 'wallet' && (
-              <ListEmpty empty={transactions.length === 0} text="暂无待审核充值">
+              <>
+                {transactionMsg && (
+                  <div style={{
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    backgroundColor: transactionMsg.ok ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)',
+                    border: `1px solid ${transactionMsg.ok ? 'rgba(52,211,153,0.25)' : 'rgba(248,113,113,0.25)'}`,
+                    color: transactionMsg.ok ? '#34d399' : '#f87171',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    marginBottom: 12,
+                  }}>
+                    {transactionMsg.text}
+                  </div>
+                )}
+                <ListEmpty empty={transactions.length === 0} text="暂无待审核充值">
                 {transactions.map(tx => (
                   <Row key={tx.id} accent="#22c55e">
                     <div style={{ minWidth: 0, flex: 1 }}>
@@ -458,12 +520,13 @@ export default function Admin() {
                       {tx.payment_proof && <Proof>支付凭证：{tx.payment_proof}</Proof>}
                     </div>
                     <Actions vertical>
-                      <ActionButton kind="ok" onClick={() => approveTransaction(tx.id)}>到账</ActionButton>
+                      <ActionButton kind="ok" disabled={transactionLoading} onClick={() => approveTransaction(tx.id)}>到账</ActionButton>
                       <ActionButton kind="bad" onClick={() => openRejectModal(tx.id, 'transaction')}>拒绝</ActionButton>
                     </Actions>
                   </Row>
                 ))}
               </ListEmpty>
+              </>
             )}
 
             {tab === 'rankings' && (
@@ -554,6 +617,41 @@ export default function Admin() {
                 ))}
               </ListEmpty>
             )}
+
+            {tab === 'certs' && (
+              <ListEmpty empty={certs.length === 0} text="暂无待审核认证">
+                {certs.map(c => (
+                  <Row key={c.id} accent="#3b82f6">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine
+                        title={c.lc_profiles?.display_name || '未知用户'}
+                        pill={c.type === 'dm' ? '🎭 DM 开本记录认证' : '🏪 店家营业执照认证'}
+                      />
+                      <Meta>
+                        用户：{c.lc_profiles?.display_name || '未知用户'}
+                        {c.lc_profiles?.phone ? ` · ${c.lc_profiles.phone}` : ''}
+                        {c.created_at ? ` · ${c.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      {c.description && <ContentBox>{c.description}</ContentBox>}
+                      {c.files && c.files.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                          {c.files.map((f, i) => (
+                            <a key={i} href={f.url} target="_blank" rel="noreferrer"
+                              style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.08)', color: '#3b82f6', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
+                              📎 {f.name || `附件 ${i + 1}`}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveCert(c.id)}>通过</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'cert')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
           </>
         )}
       </div>
@@ -597,12 +695,12 @@ function Actions({ children, vertical }: { children: React.ReactNode; vertical?:
   return <div style={{ display: 'flex', flexDirection: vertical ? 'column' : 'row', gap: 8, flexShrink: 0 }}>{children}</div>;
 }
 
-function ActionButton({ children, onClick, kind }: { children: React.ReactNode; onClick: () => void; kind?: 'ok' | 'bad' }) {
+function ActionButton({ children, onClick, kind, disabled }: { children: React.ReactNode; onClick: () => void; kind?: 'ok' | 'bad'; disabled?: boolean }) {
   const ok = kind === 'ok';
   const bad = kind === 'bad';
   return (
-    <button onClick={onClick}
-      style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${ok ? 'rgba(52,211,153,0.3)' : bad ? 'rgba(248,113,113,0.25)' : 'rgba(201,146,46,0.2)'}`, cursor: 'pointer', background: ok ? 'rgba(52,211,153,0.12)' : bad ? 'rgba(248,113,113,0.08)' : 'transparent', color: ok ? '#34d399' : bad ? '#f87171' : GOLD, fontWeight: 600, fontSize: '0.82rem' }}>
+    <button onClick={onClick} disabled={disabled}
+      style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${ok ? 'rgba(52,211,153,0.3)' : bad ? 'rgba(248,113,113,0.25)' : 'rgba(201,146,46,0.2)'}`, cursor: disabled ? 'not-allowed' : 'pointer', background: ok ? 'rgba(52,211,153,0.12)' : bad ? 'rgba(248,113,113,0.08)' : 'transparent', color: ok ? '#34d399' : bad ? '#f87171' : GOLD, fontWeight: 600, fontSize: '0.82rem', opacity: disabled ? 0.5 : 1 }}>
       {children}
     </button>
   );

@@ -18,6 +18,38 @@ const ALL_CITY_OPTIONS = Object.entries(PROVINCE_CITIES).flatMap(([province, cit
   cities.map(city => ({ province, city }))
 );
 
+const DRAFT_KEY = 'lc_ranking_draft';
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (d._v === 1) return d as DraftData;
+    return null;
+  } catch { return null; }
+}
+
+function saveDraft(data: DraftData) {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)); } catch { /* quota exceeded */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* */ }
+}
+
+interface DraftData {
+  _v: number;
+  type: 'red' | 'black';
+  subjectType: string;
+  subjectName: string;
+  subjectCity: string;
+  selectedProvince: string;
+  subjectUrl: string;
+  content: string;
+  initialAmount: number;
+}
+
 const scrollPanelStyle: React.CSSProperties = {
   overflowY: 'auto',
   overscrollBehavior: 'contain',
@@ -40,22 +72,44 @@ export default function CreateRanking() {
   const navigate = useNavigate();
   const [auth] = useState(() => getAuth());
 
-  const [type, setType] = useState<'red' | 'black'>('red');
-  const [subjectType, setSubjectType] = useState<string>('store');
-  const [subjectName, setSubjectName] = useState('');
-  const [subjectCity, setSubjectCity] = useState('');
-  const [selectedProvince, setSelectedProvince] = useState(PROVINCES[0] || '');
+  const draft = useMemo(() => loadDraft(), []);
+  const hasDraft = !!draft;
+
+  const [type, setType] = useState<'red' | 'black'>(draft?.type || 'red');
+  const [subjectType, setSubjectType] = useState<string>(draft?.subjectType || 'store');
+  const [subjectName, setSubjectName] = useState(draft?.subjectName || '');
+  const [subjectCity, setSubjectCity] = useState(draft?.subjectCity || '');
+  const [selectedProvince, setSelectedProvince] = useState(draft?.selectedProvince || PROVINCES[0] || '');
   const [cityOpen, setCityOpen] = useState(false);
   const [cityQuery, setCityQuery] = useState('');
-  const [subjectUrl, setSubjectUrl] = useState('');
-  const [content, setContent] = useState('');
-  const [initialAmount, setInitialAmount] = useState(10);
+  const [subjectUrl, setSubjectUrl] = useState(draft?.subjectUrl || '');
+  const [content, setContent] = useState(draft?.content || '');
+  const [initialAmount, setInitialAmount] = useState(draft?.initialAmount || 10);
   const [files, setFiles] = useState<{ name: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [balance, setBalance] = useState<number | null>(null);
+  const [draftRestored, setDraftRestored] = useState(hasDraft);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+
+  // Auto-save draft every 3 seconds
+  useEffect(() => {
+    if (done) return;
+    const timer = setInterval(() => {
+      if (subjectName.trim() || content.trim()) {
+        saveDraft({ _v: 1, type, subjectType, subjectName, subjectCity, selectedProvince, subjectUrl, content, initialAmount });
+        setDraftSavedAt(Date.now());
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [done, type, subjectType, subjectName, subjectCity, selectedProvince, subjectUrl, content, initialAmount]);
+
+  const dismissDraftNotice = () => {
+    setDraftRestored(false);
+    clearDraft();
+  };
 
   useEffect(() => {
     if (!auth) { navigate('/login'); return; }
@@ -125,9 +179,11 @@ export default function CreateRanking() {
       const d = await r.json();
       if (d.success) {
         setDone(true);
+        clearDraft();
         setBalance(prev => (prev || 0) - initialAmount);
       } else {
-        setError(d.error || '提交失败');
+        const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败');
+        setError(msg);
       }
     } catch { setError('网络错误，请重试'); }
     finally { setSubmitting(false); }
@@ -154,6 +210,28 @@ export default function CreateRanking() {
       </div>
 
       <div style={{ maxWidth: 640, margin: '0 auto', padding: '36px 20px 80px' }}>
+        {/* 草稿恢复提示 */}
+        {draftRestored && hasDraft && (
+          <div style={{
+            padding: '12px 16px', borderRadius: 10, marginBottom: 20,
+            background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)',
+            color: '#93c5fd', fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <span>📝 已恢复上次未完成的草稿（文件需重新上传）</span>
+            <button onClick={dismissDraftNotice} style={{ border: 'none', background: 'none', color: '#93c5fd', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>清除</button>
+          </div>
+        )}
+
+        {/* 草稿已保存指示 */}
+        {draftSavedAt && !done && (
+          <div style={{
+            padding: '6px 14px', borderRadius: 8, marginBottom: 8,
+            background: 'rgba(201,146,46,0.04)', color: 'rgba(201,146,46,0.6)',
+            fontSize: '0.73rem', textAlign: 'right',
+          }}>
+            💾 草稿已保存 {new Date(draftSavedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </div>
+        )}
         {done ? (
           <div style={{ textAlign: 'center', padding: '60px 0' }}>
             <div style={{ fontSize: 64, marginBottom: 20 }}>✅</div>

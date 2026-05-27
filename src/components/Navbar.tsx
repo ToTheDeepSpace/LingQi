@@ -16,6 +16,7 @@ type CreatorAuth = {
   display_name?: string;
   phone?: string;
   token?: string;
+  role?: string;
 };
 
 function isTokenExpired(token: string) {
@@ -58,6 +59,7 @@ export default function Navbar() {
   const { creatorAuth, adminToken } = authSnapshot;
   const isLoggedIn = !!creatorAuth;
   const isAdmin = !!adminToken;
+  const isShop = creatorAuth?.role === 'shop';
 
   useEffect(() => {
     const syncAuth = () => setAuthSnapshot(readAuthSnapshot());
@@ -89,7 +91,8 @@ export default function Navbar() {
           + (data.comments || []).length
           + (data.claims || []).length
           + (data.commissions || []).length
-          + (data.transactions || []).length;
+          + (data.transactions || []).length
+          + (data.certifications || []).length;
         setPendingCount(total);
       } catch {
         if (alive) setPendingCount(0);
@@ -137,6 +140,8 @@ export default function Navbar() {
           {isLoggedIn
             ? <>
               <NavLink to="/dashboard">我的主页</NavLink>
+              <NavLink to="/certification">认证</NavLink>
+              {isShop && <NavLink to="/shop/dashboard">店家后台</NavLink>}
               <button onClick={handleLogout}
                 style={{
                   padding: '8px 14px', borderRadius: 8, fontSize: '0.85rem',
@@ -198,6 +203,8 @@ export default function Navbar() {
           {isLoggedIn
             ? <>
               <MobileLink to="/dashboard" onClick={() => setMenuOpen(false)}>我的主页</MobileLink>
+              <MobileLink to="/certification" onClick={() => setMenuOpen(false)}>认证</MobileLink>
+              {isShop && <MobileLink to="/shop/dashboard" onClick={() => setMenuOpen(false)}>店家后台</MobileLink>}
               <button onClick={() => { setMenuOpen(false); handleLogout(); }}
                 style={{
                   width: '100%', textAlign: 'left', padding: '10px 0', fontSize: '0.9rem',

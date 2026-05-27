@@ -12,11 +12,12 @@ import CreateRanking from './pages/CreateRanking';
 import Commissions from './pages/Commissions';
 import CreateCommission from './pages/CreateCommission';
 import Wallet from './pages/Wallet';
+import CertificationPage from './pages/CertificationPage';
+import ShopDashboard from './pages/ShopDashboard';
 import './App.css';
 
 function AppLayout() {
   const { pathname } = useLocation();
-  // Login has its own full-screen layout
   const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new';
 
   return (
@@ -34,7 +35,33 @@ function AppLayout() {
         <Route path="/commissions" element={<Commissions />} />
         <Route path="/commissions/new" element={<CreateCommission />} />
         <Route path="/wallet" element={<Wallet />} />
+        <Route path="/certification" element={<CertificationPage />} />
+        <Route path="/shop/dashboard" element={<ShopDashboard />} />
       </Routes>
+      <footer style={{
+        textAlign: 'center',
+        padding: '24px 20px 32px',
+        backgroundColor: 'rgba(11,26,48,0.96)',
+        borderTop: '1px solid rgba(201,146,46,0.12)',
+        marginTop: 'auto',
+      }}>
+        <a
+          href="https://jusichen.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: '#d9a857',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            textDecoration: 'none',
+            transition: 'opacity 0.2s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
+          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+        >
+          剧司辰 · 剧本杀排期系统 →
+        </a>
+      </footer>
     </>
   );
 }

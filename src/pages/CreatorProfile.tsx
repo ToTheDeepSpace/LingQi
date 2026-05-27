@@ -126,8 +126,38 @@ export default function CreatorProfile() {
               }
             </div>
             <div>
-              <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.4rem, 3vw, 2rem)', marginBottom: 6 }}>
+              <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.4rem, 3vw, 2rem)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 {creator.display_name}
+                {creator.verified_shop && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 2,
+                    padding: '2px 6px', borderRadius: 999, fontSize: '0.65rem', fontWeight: 900,
+                    background: '#3b82f6', color: '#fff',
+                  }} title="已认证店家">✓ 蓝V</span>
+                )}
+                {!creator.verified_shop && creator.has_pending_shop_cert && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 2,
+                    padding: '2px 6px', borderRadius: 999, fontSize: '0.65rem', fontWeight: 900,
+                    background: '#93c5fd', color: '#1e3a5f',
+                    cursor: 'help',
+                  }} title="蓝V是官方认证的，淡蓝V是审核中的">✓ 蓝V</span>
+                )}
+                {creator.verified_dm && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 2,
+                    padding: '2px 8px', borderRadius: 999, fontSize: '0.65rem', fontWeight: 800,
+                    background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117',
+                  }} title="已认证DM">🎭 已认证DM</span>
+                )}
+                {!creator.verified_dm && creator.has_pending_dm_cert && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 2,
+                    padding: '2px 8px', borderRadius: 999, fontSize: '0.65rem', fontWeight: 700,
+                    background: 'rgba(217,168,87,0.2)', color: '#d9a857', border: '1px solid rgba(217,168,87,0.4)',
+                    cursor: 'help',
+                  }} title="DM认证审核中">🎭 审核中</span>
+                )}
               </h1>
               <p style={{ color: 'rgba(220,230,243,0.76)', fontSize: '0.92rem', marginBottom: 10 }}>
                 {creator.city || '未知城市'} · {ROLE_LABEL[creator.role_type || ''] || creator.role_type}

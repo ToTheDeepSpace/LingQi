@@ -18,11 +18,18 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
 
 // --- 工具函数 ---
 function ok(d?: unknown) { return { success: true, data: d }; }
-function err(e: unknown) { return { success: false, error: e instanceof Error ? e.message : String(e) }; }
+function err(e: unknown) {
+  if (e instanceof Error) return { success: false, error: e.message };
+  if (typeof e === 'string') return { success: false, error: e };
+  if (e && typeof e === 'object' && 'message' in (e as Record<string,unknown>)) {
+    return { success: false, error: String((e as Record<string,unknown>).message) };
+  }
+  return { success: false, error: '服务器错误' };
+}
 
 // --- JWT 鉴权中间件 ---
 function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -84,6 +91,7 @@ app.get('/api/health', (_req, res) => res.json(ok({ status: '灵契 running' }))
 app.post('/api/lc/auth', async (req, res) => {
   try {
     const { phone, password, displayName } = req.body;
+    const profileRole = 'player';
     if (!phone || !password) {
       return res.status(400).json(err(new Error('请填写手机号和密码')));
     }
@@ -92,32 +100,7 @@ app.post('/api/lc/auth', async (req, res) => {
 
     if (existing) {
       if (!existing.password_hash) {
-        if (displayName) {
-          const passwordHash = await bcrypt.hash(password, 10);
-          const { data: upgraded, error: upgradeError } = await supabase
-            .from('lc_profiles')
-            .update({
-              display_name: displayName,
-              password_hash: passwordHash,
-              is_visible: true,
-              reject_reason: null,
-            })
-            .eq('id', existing.id)
-            .select()
-            .single();
-
-          if (upgradeError) throw upgradeError;
-
-          const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
-          return res.json(ok({
-            id: existing.id,
-            display_name: upgraded?.display_name || displayName,
-            phone: existing.phone,
-            token,
-          }));
-        }
-
-        return res.status(401).json(err(new Error('该账号未设置密码，请先注册')));
+        return res.status(409).json(err(new Error('该手机号已注册')));
       }
       const valid = await bcrypt.compare(password, existing.password_hash);
       if (!valid) return res.status(401).json(err(new Error('密码错误')));
@@ -127,19 +110,30 @@ app.post('/api/lc/auth', async (req, res) => {
       }
 
       const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
-      return res.json(ok({ id: existing.id, display_name: displayName || existing.display_name, phone: existing.phone, token }));
+      const isShop = existing.role === 'shop';
+      return res.json(ok({
+        id: existing.id, display_name: displayName || existing.display_name, phone: existing.phone,
+        role: existing.role, token,
+        ...(isShop ? { juzhanggui_link: 'https://jusichen.com' } : {}),
+      }));
     }
 
     // 注册
     const passwordHash = await bcrypt.hash(password, 10);
+    const insertData: Record<string, unknown> = {
+      phone, display_name: displayName || '用户', role: profileRole,
+      password_hash: passwordHash, is_visible: true,
+    };
     const { data: profile } = await supabase.from('lc_profiles')
-      .insert({ phone, display_name: displayName || '用户', password_hash: passwordHash, is_visible: true })
+      .insert(insertData)
       .select().single();
 
     if (!profile) return res.status(500).json(err(new Error('注册失败')));
 
     const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
-    res.json(ok({ id: profile.id, display_name: profile.display_name, phone: profile.phone, token }));
+    res.json(ok({
+      id: profile.id, display_name: profile.display_name, phone: profile.phone, role: profile.role, token,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -189,12 +183,22 @@ app.get('/api/lc/creators/:id', async (req, res) => {
     const { data: profile } = await supabase.from('lc_profiles').select('*').eq('id', req.params.id).single();
     if (!profile) return res.status(404).json(err(new Error('创作者不存在')));
 
-    const [{ data: services }, { data: portfolio }] = await Promise.all([
+    const [{ data: services }, { data: portfolio }, { data: pendingCerts }] = await Promise.all([
       supabase.from('lc_services').select('*').eq('creator_id', req.params.id).eq('is_active', true),
       supabase.from('lc_portfolio').select('*').eq('creator_id', req.params.id).order('created_at', { ascending: false }),
+      supabase.from('lc_certifications').select('type, status').eq('profile_id', req.params.id).eq('status', 'pending'),
     ]);
 
-    res.json(ok({ ...profile, services: services || [], portfolio: portfolio || [] }));
+    const hasPendingShopCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'shop');
+    const hasPendingDmCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'dm');
+
+    res.json(ok({
+      ...profile,
+      services: services || [],
+      portfolio: portfolio || [],
+      has_pending_shop_cert: hasPendingShopCert,
+      has_pending_dm_cert: hasPendingDmCert,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -457,7 +461,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -465,6 +469,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_claims').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_commissions').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_transactions').select('*, lc_profiles(display_name, phone)').eq('type', 'recharge').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_certifications').select('*, lc_profiles!inner(display_name, phone)').eq('status', 'pending').order('created_at', { ascending: false }),
     ]);
     res.json(ok({
       profiles: profiles || [],
@@ -474,6 +479,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       claims: claims || [],
       commissions: commissions || [],
       transactions: transactions || [],
+      certifications: certifications || [],
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -516,7 +522,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     const subjectType = req.query.subjectType as string;
     let query = supabase
       .from('lc_rankings')
-      .select('*')
+      .select('*, lc_profiles!poster_id(verified_dm, verified_shop, role)')
       .eq('status', 'approved')
       .order('likes', { ascending: false })
       .order('created_at', { ascending: false });
@@ -857,6 +863,177 @@ app.post('/api/lc/upload', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('请先登录')));
     // 简单文件大小检查（由前端限制 + 此处兜底）
     res.json(ok({ message: '上传功能请在客户端通过 Supabase Storage 直接上传' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ==================== 店家后台 ====================
+
+app.get('/api/lc/shop/dashboard', authMiddleware, async (req, res) => {
+  try {
+    const creatorId = getReq(req, 'creatorId');
+    const { data: profile } = await supabase.from('lc_profiles').select('*').eq('id', creatorId).single();
+    if (!profile || profile.role !== 'shop' || !profile.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    const shopName = profile.shop_name || profile.display_name;
+    const { data: reviews } = await supabase.from('lc_rankings')
+      .select('*')
+      .eq('subject_type', 'store')
+      .eq('subject_name', shopName)
+      .order('created_at', { ascending: false });
+    const reviewIds = (reviews || []).map((r: { id: string }) => r.id);
+    let comments: Record<string, unknown>[] = [];
+    if (reviewIds.length > 0) {
+      const { data: cmts } = await supabase.from('lc_comments')
+        .select('*')
+        .in('ranking_id', reviewIds)
+        .order('created_at', { ascending: true });
+      comments = cmts || [];
+    }
+    res.json(ok({ profile, reviews: reviews || [], comments }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/shop/profile', authMiddleware, async (req, res) => {
+  try {
+    const creatorId = getReq(req, 'creatorId');
+    const { data: profile } = await supabase.from('lc_profiles').select('role, verified_shop').eq('id', creatorId).single();
+    if (!profile || profile.role !== 'shop' || !profile.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    const { shop_name, shop_description, contact_phone, contact_wechat, address, juzhanggui_link } = req.body;
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (shop_name !== undefined) update.shop_name = shop_name;
+    if (shop_description !== undefined) update.shop_description = shop_description;
+    if (contact_phone !== undefined) update.contact_phone = contact_phone;
+    if (contact_wechat !== undefined) update.contact_wechat = contact_wechat;
+    if (address !== undefined) update.address = address;
+    if (juzhanggui_link !== undefined) update.juzhanggui_link = juzhanggui_link;
+    await supabase.from('lc_profiles').update(update).eq('id', creatorId);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/shop/review/:id/reply', authMiddleware, async (req, res) => {
+  try {
+    const creatorId = getReq(req, 'creatorId');
+    const { data: profile } = await supabase.from('lc_profiles').select('role, verified_shop, shop_name, display_name').eq('id', creatorId).single();
+    if (!profile || profile.role !== 'shop' || !profile.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    const { data: review } = await supabase.from('lc_rankings').select('*').eq('id', req.params.id).single();
+    if (!review) return res.status(404).json(err(new Error('评价不存在')));
+    const shopName = profile.shop_name || profile.display_name;
+    if (review.subject_type !== 'store' || review.subject_name !== shopName) return res.status(403).json(err(new Error('无权回复此评价')));
+    const { replyText } = req.body;
+    if (!replyText) return res.status(400).json(err(new Error('请输入回复内容')));
+    await supabase.from('lc_rankings').update({ shop_reply: replyText }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/shop/review/:id/appeal', authMiddleware, async (req, res) => {
+  try {
+    const creatorId = getReq(req, 'creatorId');
+    const { data: profile } = await supabase.from('lc_profiles').select('role, verified_shop, shop_name, display_name').eq('id', creatorId).single();
+    if (!profile || profile.role !== 'shop' || !profile.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    const { data: review } = await supabase.from('lc_rankings').select('*').eq('id', req.params.id).single();
+    if (!review) return res.status(404).json(err(new Error('评价不存在')));
+    const shopName = profile.shop_name || profile.display_name;
+    if (review.subject_type !== 'store' || review.subject_name !== shopName) return res.status(403).json(err(new Error('无权申诉此评价')));
+    const { reason } = req.body;
+    if (!reason) return res.status(400).json(err(new Error('请输入申诉理由')));
+    await supabase.from('lc_rankings').update({ appeal_status: 'pending', appeal_reason: reason }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/shop/appeal/:id/resolve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!status || !['approved', 'rejected'].includes(status)) return res.status(400).json(err(new Error('无效状态')));
+    await supabase.from('lc_rankings').update({ appeal_status: status }).eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+// ── 认证 ──
+
+app.post('/api/lc/certifications', authMiddleware, async (req, res) => {
+  try {
+    const { type, files, description } = req.body;
+    if (!type || !['dm', 'shop'].includes(type)) {
+      return res.status(400).json(err(new Error('请选择认证类型')));
+    }
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      return res.status(400).json(err(new Error('请上传认证材料')));
+    }
+    if (files.length > 6) return res.status(400).json(err(new Error('认证材料最多上传 6 张')));
+    const totalBytes = JSON.stringify(files).length;
+    if (totalBytes > 18 * 1024 * 1024) return res.status(413).json(err(new Error('认证材料太大，请压缩后上传')));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const { data, error: insErr } = await supabase.from('lc_certifications').insert({
+      profile_id: profile.id,
+      type,
+      files,
+      description: description || null,
+    }).select().single();
+
+    if (insErr) throw insErr;
+    res.json(ok(data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/certifications/my', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const { data } = await supabase.from('lc_certifications')
+      .select('*')
+      .eq('profile_id', profile.id)
+      .order('created_at', { ascending: false });
+
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/admin/certifications', authMiddleware, adminMiddleware, async (_req, res) => {
+  try {
+    const { data } = await supabase.from('lc_certifications')
+      .select('*, lc_profiles!inner(display_name, phone)')
+      .order('created_at', { ascending: false });
+
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/certifications/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data: cert } = await supabase.from('lc_certifications')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (!cert) return res.status(404).json(err(new Error('认证记录不存在')));
+
+    await supabase.from('lc_certifications')
+      .update({ status: 'approved', updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+
+    if (cert.type === 'dm') {
+      await supabase.from('lc_profiles').update({ verified_dm: true }).eq('id', cert.profile_id);
+    } else if (cert.type === 'shop') {
+      await supabase.from('lc_profiles').update({ verified_shop: true, role: 'shop' }).eq('id', cert.profile_id);
+    }
+
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/certifications/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { rejectReason } = req.body;
+    await supabase.from('lc_certifications')
+      .update({ status: 'rejected', reject_reason: rejectReason || null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+    res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
 

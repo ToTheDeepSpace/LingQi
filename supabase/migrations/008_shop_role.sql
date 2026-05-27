@@ -1,0 +1,1 @@
+ALTER TABLE lc_profiles ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'player' CHECK (role IN ('player', 'shop'));

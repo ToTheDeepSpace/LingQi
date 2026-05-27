@@ -18,6 +18,10 @@ export interface Creator {
   is_realname: boolean;
   reject_reason: string | null;
   created_at: string;
+  verified_dm?: boolean;
+  verified_shop?: boolean;
+  has_pending_shop_cert?: boolean;
+  has_pending_dm_cert?: boolean;
 }
 
 export interface Service {
@@ -62,6 +66,7 @@ export interface AuthData {
   display_name: string;
   phone: string;
   token: string;
+  role: string;
 }
 
 export interface SocialSnapshot {
@@ -90,4 +95,20 @@ export interface Commission {
   status: 'pending' | 'approved' | 'rejected';
   reject_reason: string | null;
   created_at: string;
+}
+
+export interface Certification {
+  id: string;
+  profile_id: string;
+  type: 'dm' | 'shop';
+  status: 'pending' | 'approved' | 'rejected';
+  files: { name: string; url: string }[];
+  description: string | null;
+  reject_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  profile?: {
+    display_name: string;
+    phone: string;
+  };
 }
