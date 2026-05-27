@@ -22,6 +22,8 @@ const SUBJECT_LABEL: Record<string, string> = {
   player: '玩家',
 };
 
+type ProofFile = { name?: string; url: string; type?: string };
+
 type Profile = {
   id: string;
   display_name: string;
@@ -65,6 +67,8 @@ type CommentReview = {
   is_pinned?: boolean;
   pin_label?: string | null;
   payment_proof?: string | null;
+  related_note?: string | null;
+  related_files?: ProofFile[] | null;
   created_at: string;
   lc_rankings?: { subject_name?: string; type?: 'red' | 'black' | 'white' };
 };
@@ -109,7 +113,7 @@ type CertReview = {
   profile_id: string;
   type: 'dm' | 'shop';
   status: 'pending' | 'approved' | 'rejected';
-  files: { name: string; url: string }[];
+  files: ProofFile[];
   description: string | null;
   reject_reason: string | null;
   created_at: string;
@@ -125,6 +129,28 @@ const card: React.CSSProperties = {
   borderRadius: 14,
   padding: '16px 20px',
 };
+
+function getRelatedProof(comment: CommentReview): { note: string; files: ProofFile[] } {
+  const directFiles = Array.isArray(comment.related_files) ? comment.related_files : [];
+  if (comment.related_note || directFiles.length > 0) {
+    return { note: comment.related_note || '', files: directFiles };
+  }
+  if (!comment.payment_proof?.trim().startsWith('{')) return { note: '', files: [] };
+  try {
+    const parsed = JSON.parse(comment.payment_proof) as {
+      kind?: string;
+      related_note?: string;
+      related_files?: ProofFile[];
+    };
+    if (parsed.kind !== 'related_party_certification') return { note: '', files: [] };
+    return {
+      note: parsed.related_note || '',
+      files: Array.isArray(parsed.related_files) ? parsed.related_files : [],
+    };
+  } catch {
+    return { note: '', files: [] };
+  }
+}
 
 export default function Admin() {
   const [authed, setAuthed] = useState(() => {
@@ -585,20 +611,40 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
 
             {tab === 'comments' && (
               <ListEmpty empty={comments.length === 0} text="暂无待审核评论">
-                {comments.map(c => (
-                  <Row key={c.id}>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={c.lc_rankings?.subject_name || '未知帖子'} pill={c.is_pinned ? (c.pin_label || '相关方回应') : (c.lc_rankings?.type === 'black' ? '👎 黑榜评论' : c.lc_rankings?.type === 'white' ? '✨ 白榜评论' : '🏅 红榜评论')} />
-                      <Meta>作者：{c.is_realname ? `⭐ ${c.author_name}` : c.author_name} · {c.created_at?.slice(0, 10)}</Meta>
-                      <ContentBox>{c.content}</ContentBox>
-                      {c.payment_proof && <Proof>支付凭证：{c.payment_proof}</Proof>}
-                    </div>
-                    <Actions vertical>
-                      <ActionButton kind="ok" onClick={() => approveComment(c.id)}>通过</ActionButton>
-                      <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'comment')}>拒绝</ActionButton>
-                    </Actions>
-                  </Row>
-                ))}
+                {comments.map(c => {
+                  const relatedProof = getRelatedProof(c);
+                  const isRelatedProof = c.is_pinned && (relatedProof.note || relatedProof.files.length > 0);
+                  return (
+                    <Row key={c.id}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <TitleLine title={c.lc_rankings?.subject_name || '未知帖子'} pill={c.is_pinned ? (c.pin_label || '相关方回应') : (c.lc_rankings?.type === 'black' ? '👎 黑榜评论' : c.lc_rankings?.type === 'white' ? '✨ 白榜评论' : '🏅 红榜评论')} />
+                        <Meta>作者：{c.is_realname ? `⭐ ${c.author_name}` : c.author_name} · {c.created_at?.slice(0, 10)}</Meta>
+                        <ContentBox>{c.content}</ContentBox>
+                        {isRelatedProof && (
+                          <Proof>
+                            <strong style={{ color: GOLD }}>相关方认证资料</strong>
+                            {relatedProof.note && <div style={{ marginTop: 6, lineHeight: 1.7 }}>说明：{relatedProof.note}</div>}
+                            {relatedProof.files.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                                {relatedProof.files.map((f, i) => (
+                                  <a key={i} href={f.url} target="_blank" rel="noreferrer"
+                                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(201,146,46,0.18)', background: 'rgba(201,146,46,0.08)', color: GOLD, fontSize: '0.76rem', fontWeight: 700, textDecoration: 'none' }}>
+                                    🖼 {f.name || `图片 ${i + 1}`}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </Proof>
+                        )}
+                        {c.payment_proof && !isRelatedProof && <Proof>支付凭证：{c.payment_proof}</Proof>}
+                      </div>
+                      <Actions vertical>
+                        <ActionButton kind="ok" onClick={() => approveComment(c.id)}>通过</ActionButton>
+                        <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'comment')}>{c.is_pinned ? '拒绝置顶' : '拒绝'}</ActionButton>
+                      </Actions>
+                    </Row>
+                  );
+                })}
               </ListEmpty>
             )}
 

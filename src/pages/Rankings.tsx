@@ -64,6 +64,8 @@ type VoteRecord = {
 
 type VoteModal = { id: string; voteType: 'like' | 'dislike' | 'joy' } | null;
 type CommentModal = { rankingId: string } | null;
+type RelatedFile = { name: string; url: string; type?: string };
+type RelatedCertModal = { rankingId: string; commentId: string } | null;
 
 const card: React.CSSProperties = {
   backgroundColor: '#fffdf8',
@@ -258,6 +260,12 @@ export default function Rankings() {
   const [voteError, setVoteError] = useState('');
 
   const [certifyingComment, setCertifyingComment] = useState('');
+  const [relatedModal, setRelatedModal] = useState<RelatedCertModal>(null);
+  const [relatedNote, setRelatedNote] = useState('');
+  const [relatedFiles, setRelatedFiles] = useState<RelatedFile[]>([]);
+  const [relatedError, setRelatedError] = useState('');
+  const [relatedDone, setRelatedDone] = useState(false);
+  const [uploadingRelatedFiles, setUploadingRelatedFiles] = useState(false);
 
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
   const [commentsMap, setCommentsMap] = useState<Record<string, Comment[]>>({});
@@ -436,22 +444,85 @@ export default function Rankings() {
     finally { setVoting(false); }
   };
 
-  const certifyRelatedComment = async (rankingId: string, commentId: string) => {
+  const openRelatedCertModal = (rankingId: string, commentId: string) => {
     const current = requireAuth();
     if (!current) return;
-    setCertifyingComment(commentId);
+    setRelatedModal({ rankingId, commentId });
+    setRelatedNote('');
+    setRelatedFiles([]);
+    setRelatedError('');
+    setRelatedDone(false);
+  };
+
+  const closeRelatedCertModal = () => {
+    setRelatedModal(null);
+    setRelatedNote('');
+    setRelatedFiles([]);
+    setRelatedError('');
+    setRelatedDone(false);
+    setUploadingRelatedFiles(false);
+  };
+
+  const handleRelatedFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    if (selectedFiles.length === 0) return;
+    setUploadingRelatedFiles(true);
+    setRelatedError('');
     try {
-      const r = await fetch(`${API}/lc/rankings/${rankingId}/comments/${commentId}/related-certify`, {
+      const nextFiles: RelatedFile[] = [];
+      for (const file of selectedFiles) {
+        if (!file.type.startsWith('image/')) {
+          setRelatedError('相关方认证资料目前只支持图片');
+          continue;
+        }
+        if (file.size > 4 * 1024 * 1024) {
+          setRelatedError(`${file.name} 超过 4MB，请压缩后再传`);
+          continue;
+        }
+        const url = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('读取失败'));
+          reader.readAsDataURL(file);
+        });
+        nextFiles.push({ name: file.name, url, type: file.type });
+      }
+      setRelatedFiles(prev => [...prev, ...nextFiles].slice(0, 4));
+    } catch {
+      setRelatedError('图片读取失败，请换一张图试试');
+    } finally {
+      setUploadingRelatedFiles(false);
+      e.target.value = '';
+    }
+  };
+
+  const removeRelatedFile = (index: number) => {
+    setRelatedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const submitRelatedCert = async () => {
+    if (!relatedModal) return;
+    const current = requireAuth();
+    if (!current) return;
+    if (!relatedNote.trim() && relatedFiles.length === 0) {
+      setRelatedError('请写明你的相关关系，或上传能证明身份/关联的图片材料');
+      return;
+    }
+    setCertifyingComment(relatedModal.commentId);
+    setRelatedError('');
+    try {
+      const r = await fetch(`${API}/lc/rankings/${relatedModal.rankingId}/comments/${relatedModal.commentId}/related-certify`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${current.token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
+        body: JSON.stringify({ relatedNote: relatedNote.trim(), relatedFiles }),
       });
       const d = await r.json();
       if (d.success) {
-        alert('相关方认证已提交，审核通过后这条评论会置顶展示。');
-        fetchComments(rankingId);
+        setRelatedDone(true);
+        fetchComments(relatedModal.rankingId);
       }
-      else alert(d.error || '认证失败');
-    } catch { alert('网络错误'); }
+      else setRelatedError(d.error || '认证失败');
+    } catch { setRelatedError('网络错误'); }
     finally { setCertifyingComment(''); }
   };
 
@@ -840,9 +911,9 @@ export default function Rankings() {
                           <span style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.52)', display: 'flex', alignItems: 'center', gap: 6 }}>
                             — {renderName(c.author_name, c.is_realname)} · {c.created_at?.slice(0, 10)}
                             {auth?.userId && c.author_id === auth.userId && !c.is_pinned && (
-                              <button onClick={() => certifyRelatedComment(item.id, c.id)} disabled={certifyingComment === c.id}
+                              <button onClick={() => openRelatedCertModal(item.id, c.id)} disabled={certifyingComment === c.id}
                                 style={{ border: '1px solid rgba(166,106,31,0.2)', background: 'rgba(166,106,31,0.08)', color: GOLD, borderRadius: 999, cursor: certifyingComment === c.id ? 'not-allowed' : 'pointer', fontSize: '0.72rem', padding: '2px 8px', fontWeight: 800 }}>
-                                {certifyingComment === c.id ? '认证中...' : '我是相关方，我要发表置顶回应'}
+                                {certifyingComment === c.id ? '提交中...' : '我是相关方，我要发表置顶回应'}
                               </button>
                             )}
                             <button onClick={() => likeComment(item.id, c.id)} disabled={likingComment === c.id}
@@ -924,6 +995,79 @@ export default function Rankings() {
                       background: commentText.trim() && (balance === null || balance >= 1) ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'rgba(71,85,105,0.08)',
                       color: commentText.trim() && (balance === null || balance >= 1) ? C : 'rgba(71,85,105,0.52)', fontWeight: 700, fontSize: '0.875rem' }}>
                     {submittingComment ? '提交中...' : '提交评论'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Related Party Certification Modal */}
+      {relatedModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: 20 }}>
+          <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 30, maxWidth: 520, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
+            {relatedDone ? (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 44, marginBottom: 14 }}>✅</div>
+                <h3 style={{ fontWeight: 900, fontSize: '1.12rem', marginBottom: 8 }}>相关方认证已提交</h3>
+                <p style={{ fontSize: '0.86rem', color: 'rgba(71,85,105,0.78)', lineHeight: 1.8, marginBottom: 20 }}>
+                  审核通过后，这条评论会作为相关方回应置顶展示在主帖下方。认证材料只给审核员判断使用，不会公开展示。
+                </p>
+                <button onClick={closeRelatedCertModal}
+                  style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 800, cursor: 'pointer' }}>关闭</button>
+              </div>
+            ) : (
+              <>
+                <h3 style={{ fontWeight: 900, fontSize: '1.12rem', marginBottom: 8 }}>相关方认证</h3>
+                <p style={{ fontSize: '0.84rem', color: 'rgba(71,85,105,0.72)', lineHeight: 1.75, marginBottom: 16 }}>
+                  这不是删帖入口，是把你已经发表的评论申请为置顶回应。请提交能证明你与帖子对象有关的资料，审核通过后置顶。
+                </p>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>相关关系说明</label>
+                  <textarea value={relatedNote} onChange={e => setRelatedNote(e.target.value)} rows={4}
+                    placeholder="例：我是被评价本人 / 店家负责人 / 当局玩家 / 当日同行人员。请说明关系和能核验的线索。"
+                    style={{ ...inputStyle, resize: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>图片材料</label>
+                  <label style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 72,
+                    border: '1px dashed rgba(166,106,31,0.35)', borderRadius: 12,
+                    background: 'rgba(166,106,31,0.06)', color: GOLD, cursor: relatedFiles.length >= 4 ? 'not-allowed' : 'pointer',
+                    fontSize: '0.84rem', fontWeight: 800, opacity: relatedFiles.length >= 4 ? 0.55 : 1,
+                  }}>
+                    {uploadingRelatedFiles ? '读取图片中...' : relatedFiles.length >= 4 ? '最多上传 4 张图片' : '+ 上传截图/凭证图片（最多 4 张）'}
+                    <input type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={relatedFiles.length >= 4}
+                      onChange={handleRelatedFileUpload} style={{ display: 'none' }} />
+                  </label>
+                  {relatedFiles.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))', gap: 10, marginTop: 12 }}>
+                      {relatedFiles.map((file, i) => (
+                        <div key={`${file.name}-${i}`} style={{ border: '1px solid rgba(166,106,31,0.16)', borderRadius: 10, overflow: 'hidden', background: '#fff7ed' }}>
+                          <img src={file.url} alt={file.name} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block' }} />
+                          <div style={{ padding: '7px 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span title={file.name} style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(71,85,105,0.72)', fontSize: '0.72rem' }}>{file.name}</span>
+                            <button onClick={() => removeRelatedFile(i)} style={{ border: 'none', background: 'transparent', color: RED, cursor: 'pointer', fontSize: '0.72rem', fontWeight: 800 }}>删除</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <p style={{ fontSize: '0.76rem', color: 'rgba(71,85,105,0.54)', lineHeight: 1.7, marginTop: 10 }}>
+                  请先自行打码第三方手机号、微信号、身份证号等隐私信息；未打码材料可能被驳回。
+                </p>
+                {relatedError && <p style={{ color: RED, fontSize: '0.8rem', marginTop: 12 }}>{relatedError}</p>}
+                <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+                  <button onClick={closeRelatedCertModal}
+                    style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
+                  <button onClick={submitRelatedCert} disabled={certifyingComment === relatedModal.commentId || (!relatedNote.trim() && relatedFiles.length === 0)}
+                    style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
+                      cursor: certifyingComment === relatedModal.commentId || (!relatedNote.trim() && relatedFiles.length === 0) ? 'not-allowed' : 'pointer',
+                      background: (!relatedNote.trim() && relatedFiles.length === 0) ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                      color: (!relatedNote.trim() && relatedFiles.length === 0) ? 'rgba(71,85,105,0.52)' : C, fontWeight: 800, fontSize: '0.875rem', opacity: certifyingComment === relatedModal.commentId ? 0.6 : 1 }}>
+                    {certifyingComment === relatedModal.commentId ? '提交中...' : '提交认证资料'}
                   </button>
                 </div>
               </>

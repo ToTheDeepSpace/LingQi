@@ -83,6 +83,46 @@ async function getAuthedProfile(req: express.Request) {
   return data;
 }
 
+type RelatedProofFile = { name: string; url: string; type?: string };
+
+function sanitizeRelatedFiles(input: unknown): RelatedProofFile[] {
+  if (!Array.isArray(input)) return [];
+  return input.slice(0, 4).map((file) => {
+    const item = file as Record<string, unknown>;
+    const name = typeof item.name === 'string' ? item.name.trim().slice(0, 120) : '认证图片';
+    const url = typeof item.url === 'string' ? item.url.trim() : '';
+    const type = typeof item.type === 'string' ? item.type.trim().slice(0, 80) : undefined;
+    return { name: name || '认证图片', url, type };
+  }).filter((file) => {
+    if (!file.url || file.url.length > 6 * 1024 * 1024) return false;
+    if (!file.url.startsWith('data:image/')) return false;
+    return true;
+  });
+}
+
+function getErrorText(e: unknown) {
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  if (e && typeof e === 'object') {
+    const item = e as Record<string, unknown>;
+    return [item.message, item.details, item.hint, item.code].filter(Boolean).join(' ');
+  }
+  return '';
+}
+
+function isRelatedProofSchemaMiss(e: unknown) {
+  const text = getErrorText(e);
+  return text.includes('schema cache') && (text.includes('related_note') || text.includes('related_files'));
+}
+
+function encodeRelatedProofFallback(note: string, files: RelatedProofFile[]) {
+  return JSON.stringify({
+    kind: 'related_party_certification',
+    related_note: note,
+    related_files: files,
+  });
+}
+
 // --- 健康检查 ---
 app.get('/api/health', (_req, res) => res.json(ok({ status: '灵契 running' })));
 
@@ -725,6 +765,11 @@ app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, a
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const relatedNote = typeof req.body?.relatedNote === 'string' ? req.body.relatedNote.trim().slice(0, 1000) : '';
+    const relatedFiles = sanitizeRelatedFiles(req.body?.relatedFiles);
+    if (!relatedNote && relatedFiles.length === 0) {
+      return res.status(400).json(err(new Error('请提交能证明你是相关方的说明或图片材料')));
+    }
 
     const { data: comment } = await supabase.from('lc_comments')
       .select('id, author_id, status')
@@ -736,8 +781,26 @@ app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, a
     if (comment.status !== 'approved') return res.status(400).json(err(new Error('评论审核通过后才能认证为相关方回应')));
 
     const { error: updErr } = await supabase.from('lc_comments')
-      .update({ status: 'pending', is_pinned: true, pin_label: '相关方回应' })
+      .update({
+        status: 'pending',
+        is_pinned: true,
+        pin_label: '相关方回应',
+        related_note: relatedNote || null,
+        related_files: relatedFiles,
+      })
       .eq('id', req.params.cid);
+    if (updErr && isRelatedProofSchemaMiss(updErr)) {
+      const { error: fallbackErr } = await supabase.from('lc_comments')
+        .update({
+          status: 'pending',
+          is_pinned: true,
+          pin_label: '相关方回应',
+          payment_proof: encodeRelatedProofFallback(relatedNote, relatedFiles),
+        })
+        .eq('id', req.params.cid);
+      if (fallbackErr) throw fallbackErr;
+      return res.json(ok({ id: req.params.cid, storage: 'fallback' }));
+    }
     if (updErr) throw updErr;
     res.json(ok({ id: req.params.cid }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -803,7 +866,32 @@ app.put('/api/lc/admin/comments/:id/approve', authMiddleware, adminMiddleware, a
 
 app.put('/api/lc/admin/comments/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    await supabase.from('lc_comments').update({ status: 'rejected' }).eq('id', req.params.id);
+    const { data: comment } = await supabase.from('lc_comments')
+      .select('id, is_pinned')
+      .eq('id', req.params.id)
+      .single();
+    if (comment?.is_pinned) {
+      const { error: updErr } = await supabase.from('lc_comments')
+        .update({
+          status: 'approved',
+          is_pinned: false,
+          pin_label: null,
+          related_note: null,
+          related_files: [],
+          payment_proof: null,
+        })
+        .eq('id', req.params.id);
+      if (updErr && isRelatedProofSchemaMiss(updErr)) {
+        const { error: fallbackErr } = await supabase.from('lc_comments')
+          .update({ status: 'approved', is_pinned: false, pin_label: null, payment_proof: null })
+          .eq('id', req.params.id);
+        if (fallbackErr) throw fallbackErr;
+      } else if (updErr) {
+        throw updErr;
+      }
+    } else {
+      await supabase.from('lc_comments').update({ status: 'rejected' }).eq('id', req.params.id);
+    }
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
