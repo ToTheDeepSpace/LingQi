@@ -40,7 +40,7 @@ function clearDraft() {
 
 interface DraftData {
   _v: number;
-  type: 'red' | 'black';
+  type: 'red' | 'black' | 'white';
   subjectType: string;
   subjectName: string;
   subjectCity: string;
@@ -75,7 +75,7 @@ export default function CreateRanking() {
   const draft = useMemo(() => loadDraft(), []);
   const hasDraft = !!draft;
 
-  const [type, setType] = useState<'red' | 'black'>(draft?.type || 'red');
+  const [type, setType] = useState<'red' | 'black' | 'white'>(draft?.type || 'red');
   const [subjectType, setSubjectType] = useState<string>(draft?.subjectType || 'store');
   const [subjectName, setSubjectName] = useState(draft?.subjectName || '');
   const [subjectCity, setSubjectCity] = useState(draft?.subjectCity || '');
@@ -163,6 +163,7 @@ export default function CreateRanking() {
     if (!subjectName.trim()) return setError('请填写对象名称');
     if (!content.trim()) return setError('请填写评价内容');
     if (!subjectType) return setError('请选择对象类型');
+    if (files.length === 0) return setError('请至少上传一份证据文件；涉及第三方信息请先打码');
     if ((balance || 0) < initialAmount) return setError('契约币不足，请先充值');
 
     setSubmitting(true);
@@ -237,7 +238,7 @@ export default function CreateRanking() {
             <div style={{ fontSize: 64, marginBottom: 20 }}>✅</div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.6rem', marginBottom: 12 }}>发布成功</h2>
             <p style={{ color: 'rgba(186,207,231,0.65)', lineHeight: 1.8, marginBottom: 32 }}>
-              你的{type === 'red' ? '红榜' : '黑榜'}已提交审核。审核通过后将上线展示，{initialAmount} 契约币已扣除。
+              你的{type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}已提交审核。审核通过后将上线展示，{initialAmount} 契约币已扣除。
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <Link to="/rankings" style={{ padding: '12px 32px', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, textDecoration: 'none' }}>
@@ -253,18 +254,21 @@ export default function CreateRanking() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {/* 类型选择 */}
             <div>
-              <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>红榜 / 黑榜</p>
+              <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>榜单类型</p>
               <div style={{ display: 'flex', gap: 8 }}>
-                {(['red', 'black'] as const).map(t => (
+                {(['red', 'white', 'black'] as const).map(t => (
                   <button key={t} onClick={() => setType(t)}
                     style={{
                       flex: 1, padding: '12px 0', borderRadius: 12, cursor: 'pointer', fontWeight: 700, fontSize: '0.95rem',
-                      border: type === t ? `2px solid ${t === 'red' ? '#dc2626' : '#64748b'}` : '2px solid rgba(255,255,255,0.08)',
-                      background: type === t ? `${t === 'red' ? 'rgba(220,38,38,0.15)' : 'rgba(100,116,139,0.12)'}` : 'rgba(255,255,255,0.03)',
+                      border: type === t ? `2px solid ${t === 'red' ? '#dc2626' : t === 'black' ? '#64748b' : '#d9a857'}` : '2px solid rgba(255,255,255,0.08)',
+                      background: type === t ? `${t === 'red' ? 'rgba(220,38,38,0.15)' : t === 'black' ? 'rgba(100,116,139,0.12)' : 'rgba(217,168,87,0.12)'}` : 'rgba(255,255,255,0.03)',
                       color: type === t ? '#fff' : 'rgba(186,207,231,0.4)',
-                    }}>{t === 'red' ? '🏅 红榜（夸）' : '👎 黑榜（踩）'}</button>
+                    }}>{t === 'red' ? '🏅 红榜' : t === 'black' ? '👎 黑榜' : '✨ 白榜'}</button>
                 ))}
               </div>
+              <p style={{ marginTop: 8, color: 'rgba(186,207,231,0.45)', fontSize: '0.76rem', lineHeight: 1.6 }}>
+                红榜写夸奖，黑榜写负面体验，白榜收录非夸非踩的奇闻、笑话和中性记录。
+              </p>
             </div>
 
             {/* 对象类型 */}
@@ -394,7 +398,7 @@ export default function CreateRanking() {
             {/* 文件上传 */}
             <div>
               <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>
-                上传证据文件 <span style={{ fontSize: '0.72rem', color: 'rgba(186,207,231,0.4)' }}>（PDF/图片，单文件 ≤10MB）</span>
+                上传证据文件 * <span style={{ fontSize: '0.72rem', color: 'rgba(186,207,231,0.4)' }}>（PDF/图片，单文件 ≤10MB；涉及第三方请先打码）</span>
               </p>
               <label style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,

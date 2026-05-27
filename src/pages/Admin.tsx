@@ -45,7 +45,7 @@ type ContactReq = {
 
 type Ranking = {
   id: string;
-  type: 'red' | 'black';
+  type: 'red' | 'black' | 'white';
   subject_name: string;
   subject_type: string;
   subject_city: string | null;
@@ -66,7 +66,7 @@ type CommentReview = {
   pin_label?: string | null;
   payment_proof?: string | null;
   created_at: string;
-  lc_rankings?: { subject_name?: string; type?: 'red' | 'black' };
+  lc_rankings?: { subject_name?: string; type?: 'red' | 'black' | 'white' };
 };
 
 type ClaimReview = {
@@ -75,7 +75,7 @@ type ClaimReview = {
   contact: string;
   message?: string | null;
   created_at: string;
-  lc_rankings?: { subject_name?: string; type?: 'red' | 'black' };
+  lc_rankings?: { subject_name?: string; type?: 'red' | 'black' | 'white' };
 };
 
 type CommissionReview = {
@@ -534,9 +534,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             {tab === 'rankings' && (
               <ListEmpty empty={rankings.length === 0} text="暂无待审核的红黑榜帖子">
                 {rankings.map(r => (
-                  <Row key={r.id} accent={r.type === 'red' ? '#dc2626' : '#475569'}>
+                  <Row key={r.id} accent={r.type === 'red' ? '#dc2626' : r.type === 'black' ? '#475569' : '#d9a857'}>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={r.subject_name} pill={r.type === 'red' ? '🏅 红榜' : '👎 黑榜'} />
+                      <TitleLine title={r.subject_name} pill={r.type === 'red' ? '🏅 红榜' : r.type === 'black' ? '👎 黑榜' : '✨ 白榜'} />
                       <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · 初始：{r.initial_amount} 契约币 · {r.created_at?.slice(0, 10)}</Meta>
                       {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
                       <ContentBox>{r.content}</ContentBox>
@@ -588,7 +588,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {comments.map(c => (
                   <Row key={c.id}>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={c.lc_rankings?.subject_name || '未知帖子'} pill={c.is_pinned ? (c.pin_label || '相关方回应') : (c.lc_rankings?.type === 'black' ? '👎 黑榜评论' : '🏅 红榜评论')} />
+                      <TitleLine title={c.lc_rankings?.subject_name || '未知帖子'} pill={c.is_pinned ? (c.pin_label || '相关方回应') : (c.lc_rankings?.type === 'black' ? '👎 黑榜评论' : c.lc_rankings?.type === 'white' ? '✨ 白榜评论' : '🏅 红榜评论')} />
                       <Meta>作者：{c.is_realname ? `⭐ ${c.author_name}` : c.author_name} · {c.created_at?.slice(0, 10)}</Meta>
                       <ContentBox>{c.content}</ContentBox>
                       {c.payment_proof && <Proof>支付凭证：{c.payment_proof}</Proof>}

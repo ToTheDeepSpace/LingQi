@@ -19,11 +19,11 @@ const SUBJECT_LABEL: Record<string, string> = {
 const SUBJECT_TYPES = ['creator', 'dm', 'store', 'player'] as const;
 const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
 
-type AuthSession = { token: string; displayName: string };
+type AuthSession = { token: string; displayName: string; userId?: string };
 
 type Ranking = {
   id: string;
-  type: 'red' | 'black';
+  type: 'red' | 'black' | 'white';
   subject_name: string;
   subject_type: string;
   subject_city: string | null;
@@ -34,6 +34,7 @@ type Ranking = {
   initial_amount: number;
   likes: number;
   dislikes: number;
+  joys?: number;
   created_at: string;
   expires_at?: string;
   expiry_override?: string;
@@ -44,6 +45,7 @@ type Ranking = {
 type Comment = {
   id: string;
   content: string;
+  author_id?: string | null;
   author_name: string;
   is_realname: boolean;
   is_pinned?: boolean;
@@ -54,14 +56,13 @@ type Comment = {
 
 type VoteRecord = {
   id: string;
-  vote_type: 'like' | 'dislike';
+  vote_type: 'like' | 'dislike' | 'joy';
   voter_name: string;
   voter_is_realname: boolean;
   created_at: string;
 };
 
-type VoteModal = { id: string; voteType: 'like' | 'dislike' } | null;
-type RelatedModal = { rankingId: string; subjectName: string } | null;
+type VoteModal = { id: string; voteType: 'like' | 'dislike' | 'joy' } | null;
 type CommentModal = { rankingId: string } | null;
 
 const card: React.CSSProperties = {
@@ -94,7 +95,7 @@ function getAuth(): AuthSession | null {
     if (!data?.token) return null;
     const payload = JSON.parse(atob(data.token.split('.')[1]));
     if (payload.exp * 1000 < Date.now()) return null;
-    return { token: data.token, displayName: data.display_name || '用户' };
+    return { token: data.token, displayName: data.display_name || '用户', userId: payload.creatorId };
   } catch { return null; }
 }
 
@@ -239,7 +240,7 @@ function CityFilter({
 
 export default function Rankings() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'red' | 'black'>('red');
+  const [tab, setTab] = useState<'red' | 'black' | 'white'>('red');
   const [subjectTab, setSubjectTab] = useState<string>('all');
   const [city, setCity] = useState('all');
   const [cityOpen, setCityOpen] = useState(false);
@@ -256,11 +257,7 @@ export default function Rankings() {
   const [voting, setVoting] = useState(false);
   const [voteError, setVoteError] = useState('');
 
-  const [relatedModal, setRelatedModal] = useState<RelatedModal>(null);
-  const [relatedText, setRelatedText] = useState('');
-  const [relatedDone, setRelatedDone] = useState(false);
-  const [submittingRelated, setSubmittingRelated] = useState(false);
-  const [relatedError, setRelatedError] = useState('');
+  const [certifyingComment, setCertifyingComment] = useState('');
 
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
   const [commentsMap, setCommentsMap] = useState<Record<string, Comment[]>>({});
@@ -428,7 +425,7 @@ export default function Rankings() {
       });
       const d = await r.json();
       if (d.success) {
-        setItems(prev => prev.map(i => i.id === voteModal.id ? { ...i, likes: d.data.likes, dislikes: d.data.dislikes } : i));
+        setItems(prev => prev.map(i => i.id === voteModal.id ? { ...i, likes: d.data.likes, dislikes: d.data.dislikes, joys: d.data.joys } : i));
         fetchVotes(voteModal.id);
         fetchWallet();
         setVoteModal(null);
@@ -439,26 +436,23 @@ export default function Rankings() {
     finally { setVoting(false); }
   };
 
-  const submitRelatedComment = async () => {
-    if (!relatedModal || !relatedText.trim()) return;
+  const certifyRelatedComment = async (rankingId: string, commentId: string) => {
     const current = requireAuth();
     if (!current) return;
-    setSubmittingRelated(true);
-    setRelatedError('');
+    setCertifyingComment(commentId);
     try {
-      const r = await fetch(`${API}/lc/rankings/${relatedModal.rankingId}/related-comment`, {
+      const r = await fetch(`${API}/lc/rankings/${rankingId}/comments/${commentId}/related-certify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
-        body: JSON.stringify({ content: relatedText.trim() }),
+        headers: { Authorization: `Bearer ${current.token}` },
       });
       const d = await r.json();
       if (d.success) {
-        setRelatedDone(true);
-        fetchComments(relatedModal.rankingId);
-        fetchWallet();
-      } else setRelatedError(d.error || '提交失败');
-    } catch { setRelatedError('网络错误'); }
-    finally { setSubmittingRelated(false); }
+        alert('相关方认证已提交，审核通过后这条评论会置顶展示。');
+        fetchComments(rankingId);
+      }
+      else alert(d.error || '认证失败');
+    } catch { alert('网络错误'); }
+    finally { setCertifyingComment(''); }
   };
 
   const submitComment = async () => {
@@ -504,7 +498,7 @@ export default function Rankings() {
     } finally { setLikingComment(''); }
   };
 
-  const openVoteModal = (id: string, voteType: 'like' | 'dislike') => {
+  const openVoteModal = (id: string, voteType: 'like' | 'dislike' | 'joy') => {
     const current = requireAuth();
     if (!current) return;
     setVoteModal({ id, voteType });
@@ -520,16 +514,7 @@ export default function Rankings() {
     setCommentError('');
   };
 
-  const openRelatedModal = (rankingId: string, subjectName: string) => {
-    const current = requireAuth();
-    if (!current) return;
-    setRelatedModal({ rankingId, subjectName });
-    setRelatedDone(false);
-    setRelatedText('');
-    setRelatedError('');
-  };
-
-  const tabBtn = (t: 'red' | 'black', label: string, color: string) => (
+  const tabBtn = (t: 'red' | 'black' | 'white', label: string, color: string) => (
     <button onClick={() => setTab(t)}
       style={{
         flex: 1, padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer',
@@ -556,7 +541,7 @@ export default function Rankings() {
             <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 14 }} />
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 8 }}>灵契红黑榜</h1>
             <p style={{ color: 'rgba(71,85,105,0.80)', fontSize: '0.95rem' }}>
-              委托师、卡司、店家、玩家都可以被评价 · 点赞越高越靠前
+              委托师、卡司、店家、玩家都可以被评价 · 点赞越高越靠前 · 欢乐免费
             </p>
           </div>
           {auth && (
@@ -576,8 +561,9 @@ export default function Rankings() {
 
       <div style={{ maxWidth: 1180, margin: '0 auto', padding: '24px 20px 80px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-          <div style={{ width: 'min(100%, 340px)', display: 'flex', gap: 4, padding: 4, backgroundColor: '#fffdf8', border: '1px solid rgba(166,106,31,0.16)', borderRadius: 14, boxShadow: '0 8px 20px rgba(102,70,30,0.06)' }}>
+          <div style={{ width: 'min(100%, 420px)', display: 'flex', gap: 4, padding: 4, backgroundColor: '#fffdf8', border: '1px solid rgba(166,106,31,0.16)', borderRadius: 14, boxShadow: '0 8px 20px rgba(102,70,30,0.06)' }}>
             {tabBtn('red', '🏅 红榜', '#dc2626')}
+            {tabBtn('white', '✨ 白榜', '#b8860b')}
             {tabBtn('black', '👎 黑榜', '#475569')}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 320px' }}>
@@ -610,6 +596,21 @@ export default function Rankings() {
           />
         </div>
 
+        <div style={{
+          marginBottom: 18,
+          padding: '13px 16px',
+          borderRadius: 12,
+          background: '#fffdf8',
+          border: '1px solid rgba(166,106,31,0.16)',
+          boxShadow: '0 8px 20px rgba(102,70,30,0.05)',
+          color: 'rgba(31,41,55,0.78)',
+          fontSize: '0.82rem',
+          lineHeight: 1.7,
+        }}>
+          <strong style={{ color: GOLD }}>审核规则：</strong>
+          审核员尽量保持中立客观；主帖必须附带证据；涉及第三方隐私的信息请先打码；微信认证后一人一票，不可多投。相关方可先发表普通评论，评论通过后再认证为置顶回应。
+        </div>
+
         {loading && (
           <div style={{ textAlign: 'center', padding: '80px 0' }}>
             <div style={{ width: 36, height: 36, border: '2px solid rgba(201,146,46,0.3)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
@@ -631,9 +632,9 @@ export default function Rankings() {
 
         {!loading && !error && rankedItems.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 0' }}>
-            <div style={{ fontSize: 52, marginBottom: 16, opacity: 0.3 }}>{tab === 'red' ? '🏅' : '👎'}</div>
+            <div style={{ fontSize: 52, marginBottom: 16, opacity: 0.3 }}>{tab === 'red' ? '🏅' : tab === 'black' ? '👎' : '✨'}</div>
             <p style={{ color: 'rgba(71,85,105,0.68)', marginBottom: 20 }}>
-              {subjectTab !== 'all' ? `${SUBJECT_LABEL[subjectTab] || subjectTab}暂无内容` : (tab === 'red' ? '红榜暂无内容' : '黑榜暂无内容')}
+              {subjectTab !== 'all' ? `${SUBJECT_LABEL[subjectTab] || subjectTab}暂无内容` : (tab === 'red' ? '红榜暂无内容' : tab === 'black' ? '黑榜暂无内容' : '白榜暂无内容')}
             </p>
             <Link to="/rankings/new" style={{ color: GOLD, fontSize: '0.875rem', textDecoration: 'underline' }}>
               成为第一个发布的人
@@ -644,7 +645,7 @@ export default function Rankings() {
         {!loading && !error && rankedItems.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start' }}>
             {rankedItems.map((item, idx) => {
-              const accentColor = item.type === 'red' ? RED2 : BLK;
+              const accentColor = item.type === 'red' ? RED2 : item.type === 'black' ? BLK : GOLD;
               const comments = commentsMap[item.id] || [];
               const pinnedComments = comments.filter(c => c.is_pinned);
               const normalComments = comments.filter(c => !c.is_pinned);
@@ -658,13 +659,13 @@ export default function Rankings() {
                   style={{
                     ...card,
                     borderLeft: `3px solid ${accentColor}`,
-                    borderColor: item.type === 'red' ? 'rgba(220,38,38,0.3)' : 'rgba(148,163,184,0.2)',
+                    borderColor: item.type === 'red' ? 'rgba(220,38,38,0.3)' : item.type === 'black' ? 'rgba(148,163,184,0.2)' : 'rgba(166,106,31,0.24)',
                     borderLeftColor: accentColor,
                   }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
                     <div style={{
                       width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                      background: item.type === 'red' ? 'linear-gradient(135deg, #dc2626, #ef4444)' : 'linear-gradient(135deg, #374151, #4b5563)',
+                      background: item.type === 'red' ? 'linear-gradient(135deg, #dc2626, #ef4444)' : item.type === 'black' ? 'linear-gradient(135deg, #374151, #4b5563)' : 'linear-gradient(135deg, #d9a857, #a66a1f)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontWeight: 900, fontSize: '0.82rem', color: '#fff',
                     }}>{idx + 1}</div>
@@ -673,9 +674,9 @@ export default function Rankings() {
                         <span style={{ fontWeight: 800, fontSize: '1rem' }}>{item.subject_name}</span>
                         <span style={{
                           padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600,
-                          background: item.type === 'red' ? 'rgba(220,38,38,0.12)' : 'rgba(148,163,184,0.12)',
-                          color: item.type === 'red' ? '#f87171' : BLK,
-                          border: `1px solid ${item.type === 'red' ? 'rgba(220,38,38,0.25)' : 'rgba(148,163,184,0.2)'}`,
+                          background: item.type === 'red' ? 'rgba(220,38,38,0.12)' : item.type === 'black' ? 'rgba(148,163,184,0.12)' : 'rgba(166,106,31,0.12)',
+                          color: item.type === 'red' ? '#f87171' : item.type === 'black' ? BLK : GOLD,
+                          border: `1px solid ${item.type === 'red' ? 'rgba(220,38,38,0.25)' : item.type === 'black' ? 'rgba(148,163,184,0.2)' : 'rgba(166,106,31,0.24)'}`,
                         }}>{SUBJECT_LABEL[item.subject_type] || item.subject_type}</span>
                         {item.subject_city && (
                           <span style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.70)' }}>📍 {item.subject_city}</span>
@@ -757,6 +758,10 @@ export default function Rankings() {
                         style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.25)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
                         👍 {item.likes} <span style={{ fontSize: '0.7rem', color: 'rgba(52,211,153,0.6)' }}>1币</span>
                       </button>
+                      <button onClick={() => openVoteModal(item.id, 'joy')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(217,168,87,0.25)', background: 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
+                        😂 {item.joys || 0} <span style={{ fontSize: '0.7rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
+                      </button>
                       <button onClick={() => openVoteModal(item.id, 'dislike')}
                         style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.07)', color: RED, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
                         👎 {item.dislikes} <span style={{ fontSize: '0.7rem', color: 'rgba(248,113,113,0.5)' }}>1币</span>
@@ -807,12 +812,6 @@ export default function Rankings() {
                       {showVotes ? '收起口碑' : '公开口碑'}
                     </button>
                     <div style={{ flex: 1 }} />
-                    <button onClick={() => openRelatedModal(item.id, item.subject_name)}
-                      style={{ background: 'rgba(201,146,46,0.06)', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 8, cursor: 'pointer', color: 'rgba(201,146,46,0.6)', fontSize: '0.75rem', fontWeight: 600, padding: '4px 10px' }}
-                      onMouseEnter={e => { e.currentTarget.style.color = GOLD; e.currentTarget.style.borderColor = GOLD; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = 'rgba(201,146,46,0.6)'; e.currentTarget.style.borderColor = 'rgba(201,146,46,0.2)'; }}>
-                      我是相关方
-                    </button>
                   </div>
 
                   {showVotes && (
@@ -823,10 +822,10 @@ export default function Rankings() {
                         <span key={v.id} style={{
                           display: 'inline-flex', alignItems: 'center', gap: 5,
                           padding: '4px 10px', borderRadius: 999, fontSize: '0.74rem',
-                          color: v.vote_type === 'like' ? '#34d399' : RED,
-                          background: v.vote_type === 'like' ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)',
-                          border: `1px solid ${v.vote_type === 'like' ? 'rgba(52,211,153,0.18)' : 'rgba(248,113,113,0.18)'}`,
-                        }}>{v.vote_type === 'like' ? '👍' : '👎'} {v.voter_is_realname ? `⭐ ${v.voter_name}` : v.voter_name}</span>
+                          color: v.vote_type === 'like' ? '#34d399' : v.vote_type === 'dislike' ? RED : GOLD,
+                          background: v.vote_type === 'like' ? 'rgba(52,211,153,0.08)' : v.vote_type === 'dislike' ? 'rgba(248,113,113,0.08)' : 'rgba(217,168,87,0.10)',
+                          border: `1px solid ${v.vote_type === 'like' ? 'rgba(52,211,153,0.18)' : v.vote_type === 'dislike' ? 'rgba(248,113,113,0.18)' : 'rgba(166,106,31,0.18)'}`,
+                        }}>{v.vote_type === 'like' ? '👍' : v.vote_type === 'dislike' ? '👎' : '😂'} {v.voter_is_realname ? `⭐ ${v.voter_name}` : v.voter_name}</span>
                       ))}
                     </div>
                   )}
@@ -840,6 +839,12 @@ export default function Rankings() {
                           <p style={{ color: 'rgba(31,41,55,0.86)', lineHeight: 1.7, marginBottom: 6 }}>{c.content}</p>
                           <span style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.52)', display: 'flex', alignItems: 'center', gap: 6 }}>
                             — {renderName(c.author_name, c.is_realname)} · {c.created_at?.slice(0, 10)}
+                            {auth?.userId && c.author_id === auth.userId && !c.is_pinned && (
+                              <button onClick={() => certifyRelatedComment(item.id, c.id)} disabled={certifyingComment === c.id}
+                                style={{ border: '1px solid rgba(166,106,31,0.2)', background: 'rgba(166,106,31,0.08)', color: GOLD, borderRadius: 999, cursor: certifyingComment === c.id ? 'not-allowed' : 'pointer', fontSize: '0.72rem', padding: '2px 8px', fontWeight: 800 }}>
+                                {certifyingComment === c.id ? '认证中...' : '我是相关方，我要发表置顶回应'}
+                              </button>
+                            )}
                             <button onClick={() => likeComment(item.id, c.id)} disabled={likingComment === c.id}
                               style={{ marginLeft: 'auto', border: 'none', background: 'none', color: '#34d399', cursor: 'pointer', fontSize: '0.75rem' }}>👍 {c.likes}</button>
                           </span>
@@ -858,65 +863,30 @@ export default function Rankings() {
       {voteModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 32, maxWidth: 420, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
-            <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>{voteModal.voteType === 'like' ? '👍 点赞' : '👎 点踩'} · 1 契约币</h3>
+            <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>
+              {voteModal.voteType === 'like' ? '👍 点赞 · 1 契约币' : voteModal.voteType === 'dislike' ? '👎 点踩 · 1 契约币' : '😂 点欢乐 · 免费'}
+            </h3>
             <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-              以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投票，扣 1 契约币
+              以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投票。{voteModal.voteType === 'joy' ? '欢乐不扣契约币，但同样占用一人一票名额。' : '点赞/点踩扣 1 契约币。'}
             </p>
-            <p style={{ fontSize: '0.85rem', color: balance && balance >= 1 ? '#34d399' : RED, lineHeight: 1.7, marginBottom: 20 }}>
-              当前契约币：{balance ?? '...'} {balance !== null && balance < 1 && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
-            </p>
+            {voteModal.voteType !== 'joy' && (
+              <p style={{ fontSize: '0.85rem', color: balance && balance >= 1 ? '#34d399' : RED, lineHeight: 1.7, marginBottom: 20 }}>
+                当前契约币：{balance ?? '...'} {balance !== null && balance < 1 && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
+              </p>
+            )}
             {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setVoteModal(null)}
                 style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
-              <button onClick={submitVote} disabled={voting || (balance !== null && balance < 1)}
+              <button onClick={submitVote} disabled={voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1)}
                 style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
-                  cursor: voting || (balance !== null && balance < 1) ? 'not-allowed' : 'pointer',
-                  background: voting || (balance !== null && balance < 1) ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                  color: voting || (balance !== null && balance < 1) ? 'rgba(71,85,105,0.52)' : C, fontWeight: 700, fontSize: '0.875rem',
+                  cursor: voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1) ? 'not-allowed' : 'pointer',
+                  background: voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1) ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                  color: voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1) ? 'rgba(71,85,105,0.52)' : C, fontWeight: 700, fontSize: '0.875rem',
                   opacity: voting ? 0.6 : 1 }}>
                 {voting ? '提交中...' : '确认投票'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Related Party Comment Modal */}
-      {relatedModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
-          <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 32, maxWidth: 460, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
-            {relatedDone ? (
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>相关方回应已提交</h3>
-                <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 20 }}>审核通过后会置顶显示在主帖下方，所有人不用展开评论也能看到。</p>
-                <button onClick={() => setRelatedModal(null)}
-                  style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, cursor: 'pointer' }}>关闭</button>
-              </div>
-            ) : (
-              <>
-                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 4 }}>我是相关方 · 1 契约币</h3>
-                <p style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.70)', marginBottom: 16 }}>
-                  针对「{relatedModal.subjectName}」直接写回应。审核通过后，这条回应会作为置顶评论展示。
-                </p>
-                <p style={{ fontSize: '0.82rem', color: balance && balance >= 1 ? '#16a34a' : RED, marginBottom: 14 }}>
-                  当前契约币：{balance ?? '...'} {balance !== null && balance < 1 && <Link to="/wallet" style={{ color: GOLD }}>契约币不足，去充值</Link>}
-                </p>
-                <textarea value={relatedText} onChange={e => setRelatedText(e.target.value)} placeholder="用你的身份直接回应这条记录，例如解释事实、补充证据、说明处理进展……" rows={5} style={{ ...inputStyle, resize: 'none' }} />
-                {relatedError && <p style={{ color: RED, fontSize: '0.8rem', marginTop: 12 }}>{relatedError}</p>}
-                <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-                  <button onClick={() => setRelatedModal(null)} style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
-                  <button onClick={submitRelatedComment} disabled={!relatedText.trim() || submittingRelated || (balance !== null && balance < 1)}
-                    style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
-                      cursor: relatedText.trim() && !submittingRelated && (balance === null || balance >= 1) ? 'pointer' : 'not-allowed',
-                      background: relatedText.trim() && (balance === null || balance >= 1) ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'rgba(71,85,105,0.08)',
-                      color: relatedText.trim() && (balance === null || balance >= 1) ? C : 'rgba(71,85,105,0.52)', fontWeight: 700, fontSize: '0.875rem' }}>
-                    {submittingRelated ? '提交中...' : '提交相关方回应'}
-                  </button>
-                </div>
-              </>
-            )}
           </div>
         </div>
       )}

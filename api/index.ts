@@ -561,6 +561,8 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
     if (!type || !subjectName || !subjectType || !content || !initialAmount) {
       return res.status(400).json(err(new Error('缺少必填字段')));
     }
+    if (!['red', 'black', 'white'].includes(type)) return res.status(400).json(err(new Error('无效榜单类型')));
+    if (!Array.isArray(files) || files.length === 0) return res.status(400).json(err(new Error('请至少上传一份证据文件')));
     const amount = parseInt(initialAmount);
     if (amount < 10 || amount > 100) return res.status(400).json(err(new Error('契约币须在10~100之间')));
 
@@ -578,7 +580,7 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
 
     await supabase.from('lc_transactions').insert({
       profile_id: profile.id, type: 'spend', amount: -amount,
-      description: `发布${type === 'red' ? '红榜' : '黑榜'}：${subjectName}`,
+      description: `发布${type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}：${subjectName}`,
       status: 'approved',
     });
 
@@ -617,10 +619,11 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     const { voteType } = req.body;
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    if (!['like', 'dislike'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
-    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
+    if (!['like', 'dislike', 'joy'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
+    const isPaidVote = voteType !== 'joy';
+    if (isPaidVote && (profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
-    const { data: current } = await supabase.from('lc_rankings').select('likes, dislikes, status').eq('id', req.params.id).single();
+    const { data: current } = await supabase.from('lc_rankings').select('likes, dislikes, joys, status').eq('id', req.params.id).single();
     if (!current || current.status !== 'approved') return res.status(404).json(err(new Error('帖子不存在或未上线')));
 
     const { data: existingVote } = await supabase.from('lc_votes')
@@ -630,13 +633,15 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       .maybeSingle();
     if (existingVote) return res.status(409).json(err(new Error('你已经投过票了')));
 
-    // 扣 1 契约币
-    await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - 1 }).eq('id', profile.id);
-    await supabase.from('lc_transactions').insert({
-      profile_id: profile.id, type: 'spend', amount: -1,
-      description: `${voteType === 'like' ? '点赞' : '点踩'}红黑榜 · 1 契约币`,
-      status: 'approved',
-    });
+    if (isPaidVote) {
+      // 点赞/点踩扣 1 契约币；欢乐免费但仍占一人一票名额。
+      await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - 1 }).eq('id', profile.id);
+      await supabase.from('lc_transactions').insert({
+        profile_id: profile.id, type: 'spend', amount: -1,
+        description: `${voteType === 'like' ? '点赞' : '点踩'}红黑榜 · 1 契约币`,
+        status: 'approved',
+      });
+    }
 
     const { error: voteErr } = await supabase.from('lc_votes').insert({
       ranking_id: req.params.id, vote_type: voteType,
@@ -650,11 +655,19 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       throw voteErr;
     }
 
-    const field = voteType === 'like' ? 'likes' : 'dislikes';
-    const val   = voteType === 'like' ? (current.likes || 0) + 1 : (current.dislikes || 0) + 1;
+    const field = voteType === 'like' ? 'likes' : voteType === 'dislike' ? 'dislikes' : 'joys';
+    const val = voteType === 'like'
+      ? (current.likes || 0) + 1
+      : voteType === 'dislike'
+        ? (current.dislikes || 0) + 1
+        : (current.joys || 0) + 1;
     await supabase.from('lc_rankings').update({ [field]: val }).eq('id', req.params.id);
 
-    res.json(ok({ likes: voteType === 'like' ? val : current.likes, dislikes: voteType === 'dislike' ? val : current.dislikes }));
+    res.json(ok({
+      likes: voteType === 'like' ? val : current.likes,
+      dislikes: voteType === 'dislike' ? val : current.dislikes,
+      joys: voteType === 'joy' ? val : (current.joys || 0),
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -674,7 +687,7 @@ app.get('/api/lc/rankings/:id/votes', async (req, res) => {
 app.get('/api/lc/rankings/:id/comments', async (req, res) => {
   try {
     const { data } = await supabase.from('lc_comments')
-      .select('id, content, author_name, is_realname, real_name, is_pinned, pin_label, likes, created_at')
+      .select('id, content, author_id, author_name, is_realname, real_name, is_pinned, pin_label, likes, created_at')
       .eq('ranking_id', req.params.id).eq('status', 'approved')
       .order('is_pinned', { ascending: false })
       .order('likes', { ascending: false })
@@ -708,33 +721,25 @@ app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/rankings/:id/related-comment', authMiddleware, async (req, res) => {
+app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, async (req, res) => {
   try {
-    const { content } = req.body;
-    if (!content) return res.status(400).json(err(new Error('缺少相关方回应内容')));
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
-    await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - 1 }).eq('id', profile.id);
-    await supabase.from('lc_transactions').insert({
-      profile_id: profile.id, type: 'spend', amount: -1,
-      description: '发布相关方回应 · 1 契约币',
-      status: 'approved',
-    });
+    const { data: comment } = await supabase.from('lc_comments')
+      .select('id, author_id, status')
+      .eq('id', req.params.cid)
+      .eq('ranking_id', req.params.id)
+      .single();
+    if (!comment) return res.status(404).json(err(new Error('评论不存在')));
+    if (comment.author_id !== profile.id) return res.status(403).json(err(new Error('只能认证自己的评论')));
+    if (comment.status !== 'approved') return res.status(400).json(err(new Error('评论审核通过后才能认证为相关方回应')));
 
-    const { data, error: insErr } = await supabase.from('lc_comments').insert({
-      ranking_id: req.params.id,
-      content,
-      author_id: profile.id,
-      author_name: profile.display_name,
-      is_realname: !!profile.is_realname,
-      real_name: null,
-      is_pinned: true,
-      pin_label: '相关方回应',
-    }).select().single();
-    if (insErr) throw insErr;
-    res.json(ok({ id: data?.id }));
+    const { error: updErr } = await supabase.from('lc_comments')
+      .update({ status: 'pending', is_pinned: true, pin_label: '相关方回应' })
+      .eq('id', req.params.cid);
+    if (updErr) throw updErr;
+    res.json(ok({ id: req.params.cid }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
