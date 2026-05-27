@@ -46,6 +46,8 @@ type Comment = {
   content: string;
   author_name: string;
   is_realname: boolean;
+  is_pinned?: boolean;
+  pin_label?: string | null;
   likes: number;
   created_at: string;
 };
@@ -59,7 +61,7 @@ type VoteRecord = {
 };
 
 type VoteModal = { id: string; voteType: 'like' | 'dislike' } | null;
-type ClaimModal = { rankingId: string; subjectName: string } | null;
+type RelatedModal = { rankingId: string; subjectName: string } | null;
 type CommentModal = { rankingId: string } | null;
 
 const card: React.CSSProperties = {
@@ -254,12 +256,11 @@ export default function Rankings() {
   const [voting, setVoting] = useState(false);
   const [voteError, setVoteError] = useState('');
 
-  const [claimModal, setClaimModal] = useState<ClaimModal>(null);
-  const [claimContact, setClaimContact] = useState('');
-  const [claimMsg, setClaimMsg] = useState('');
-  const [claimDone, setClaimDone] = useState(false);
-  const [claiming, setClaiming] = useState(false);
-  const [claimError, setClaimError] = useState('');
+  const [relatedModal, setRelatedModal] = useState<RelatedModal>(null);
+  const [relatedText, setRelatedText] = useState('');
+  const [relatedDone, setRelatedDone] = useState(false);
+  const [submittingRelated, setSubmittingRelated] = useState(false);
+  const [relatedError, setRelatedError] = useState('');
 
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
   const [commentsMap, setCommentsMap] = useState<Record<string, Comment[]>>({});
@@ -308,6 +309,16 @@ export default function Rankings() {
     setMentionMap(results);
   };
 
+  const fetchComments = useCallback(async (rankingId: string) => {
+    return fetch(`${API}/lc/rankings/${rankingId}/comments`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setCommentsMap(prev => ({ ...prev, [rankingId]: d.data || [] })); });
+  }, []);
+
+  const preloadComments = useCallback(async (list: Ranking[]) => {
+    await Promise.all(list.slice(0, 40).map(item => fetchComments(item.id).catch(() => undefined)));
+  }, [fetchComments]);
+
   useEffect(() => {
     let alive = true;
     const loadRankings = async () => {
@@ -322,8 +333,10 @@ export default function Rankings() {
         if (!r.ok) throw new Error(`请求失败 (${r.status})`);
         const d = await r.json();
         if (alive && d.success) {
-          setItems(d.data || []);
-          void fetchMentions(d.data || []);
+          const list = d.data || [];
+          setItems(list);
+          void fetchMentions(list);
+          void preloadComments(list);
         } else if (alive) {
           setError(d.error || '加载失败');
         }
@@ -335,7 +348,7 @@ export default function Rankings() {
     };
     void loadRankings();
     return () => { alive = false; };
-  }, [tab, subjectTab, city, fetchWallet]);
+  }, [tab, subjectTab, city, fetchWallet, preloadComments]);
 
   const setCityAndClose = (nextCity: string) => {
     setCity(nextCity);
@@ -379,12 +392,6 @@ export default function Rankings() {
       }
       return <span key={i} style={{ color: 'rgba(201,146,46,0.6)' }}>{p.text}</span>;
     });
-  };
-
-  const fetchComments = (rankingId: string) => {
-    fetch(`${API}/lc/rankings/${rankingId}/comments`)
-      .then(r => r.json())
-      .then(d => { if (d.success) setCommentsMap(prev => ({ ...prev, [rankingId]: d.data || [] })); });
   };
 
   const fetchVotes = (rankingId: string) => {
@@ -432,23 +439,26 @@ export default function Rankings() {
     finally { setVoting(false); }
   };
 
-  const submitClaim = async () => {
-    if (!claimModal || !claimContact.trim()) return;
+  const submitRelatedComment = async () => {
+    if (!relatedModal || !relatedText.trim()) return;
     const current = requireAuth();
     if (!current) return;
-    setClaiming(true);
-    setClaimError('');
+    setSubmittingRelated(true);
+    setRelatedError('');
     try {
-      const r = await fetch(`${API}/lc/rankings/${claimModal.rankingId}/claim`, {
+      const r = await fetch(`${API}/lc/rankings/${relatedModal.rankingId}/related-comment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
-        body: JSON.stringify({ contact: claimContact.trim(), message: claimMsg.trim() }),
+        body: JSON.stringify({ content: relatedText.trim() }),
       });
       const d = await r.json();
-      if (d.success) setClaimDone(true);
-      else setClaimError(d.error || '提交失败');
-    } catch { setClaimError('网络错误'); }
-    finally { setClaiming(false); }
+      if (d.success) {
+        setRelatedDone(true);
+        fetchComments(relatedModal.rankingId);
+        fetchWallet();
+      } else setRelatedError(d.error || '提交失败');
+    } catch { setRelatedError('网络错误'); }
+    finally { setSubmittingRelated(false); }
   };
 
   const submitComment = async () => {
@@ -510,14 +520,13 @@ export default function Rankings() {
     setCommentError('');
   };
 
-  const openClaimModal = (rankingId: string, subjectName: string) => {
+  const openRelatedModal = (rankingId: string, subjectName: string) => {
     const current = requireAuth();
     if (!current) return;
-    setClaimModal({ rankingId, subjectName });
-    setClaimDone(false);
-    setClaimContact('');
-    setClaimMsg('');
-    setClaimError('');
+    setRelatedModal({ rankingId, subjectName });
+    setRelatedDone(false);
+    setRelatedText('');
+    setRelatedError('');
   };
 
   const tabBtn = (t: 'red' | 'black', label: string, color: string) => (
@@ -559,7 +568,7 @@ export default function Rankings() {
               display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
             }}>
               <span>💰</span>
-              {walletLoading ? '...' : <>余额 ¥{balance || 0}</>}
+              {walletLoading ? '...' : <>契约币 {balance || 0}</>}
             </Link>
           )}
         </div>
@@ -637,6 +646,8 @@ export default function Rankings() {
             {rankedItems.map((item, idx) => {
               const accentColor = item.type === 'red' ? RED2 : BLK;
               const comments = commentsMap[item.id] || [];
+              const pinnedComments = comments.filter(c => c.is_pinned);
+              const normalComments = comments.filter(c => !c.is_pinned);
               const votes = votesMap[item.id] || [];
               const showComments = openComments.has(item.id);
               const showVotes = openVotes.has(item.id);
@@ -739,19 +750,44 @@ export default function Rankings() {
                         <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
                       )}
                       <span>· {item.created_at?.slice(0, 10)}</span>
-                      <span>· 初始 {item.initial_amount}</span>
+                      <span>· 初始 {item.initial_amount} 契约币</span>
                     </span>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => openVoteModal(item.id, 'like')}
                         style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.25)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
-                        👍 {item.likes} <span style={{ fontSize: '0.7rem', color: 'rgba(52,211,153,0.6)' }}>¥1</span>
+                        👍 {item.likes} <span style={{ fontSize: '0.7rem', color: 'rgba(52,211,153,0.6)' }}>1币</span>
                       </button>
                       <button onClick={() => openVoteModal(item.id, 'dislike')}
                         style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.07)', color: RED, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
-                        👎 {item.dislikes} <span style={{ fontSize: '0.7rem', color: 'rgba(248,113,113,0.5)' }}>¥1</span>
+                        👎 {item.dislikes} <span style={{ fontSize: '0.7rem', color: 'rgba(248,113,113,0.5)' }}>1币</span>
                       </button>
                     </div>
                   </div>
+
+                  {pinnedComments.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                      {pinnedComments.map(c => (
+                        <div key={c.id} style={{
+                          border: '1px solid rgba(166,106,31,0.22)',
+                          background: 'linear-gradient(135deg, #fff7ed 0%, #fffdf8 100%)',
+                          borderRadius: 10,
+                          padding: '10px 12px',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
+                            <span style={{ padding: '2px 8px', borderRadius: 999, background: 'rgba(166,106,31,0.12)', color: GOLD, fontSize: '0.7rem', fontWeight: 900 }}>
+                              置顶 · {c.pin_label || '相关方回应'}
+                            </span>
+                            <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.72rem' }}>
+                              {renderName(c.author_name, c.is_realname)} · {c.created_at?.slice(0, 10)}
+                            </span>
+                          </div>
+                          <p style={{ color: 'rgba(31,41,55,0.88)', fontSize: '0.82rem', lineHeight: 1.65, margin: 0 }}>
+                            {c.content}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 10, borderTop: '1px solid rgba(201,146,46,0.08)' }}>
                     <button onClick={() => toggleComments(item.id)}
@@ -763,7 +799,7 @@ export default function Rankings() {
                     <button onClick={() => openCommentModal(item.id)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
-                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>+ 发评论 ¥1</button>
+                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>+ 发评论 1币</button>
                     <button onClick={() => toggleVotes(item.id)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
@@ -771,7 +807,7 @@ export default function Rankings() {
                       {showVotes ? '收起口碑' : '公开口碑'}
                     </button>
                     <div style={{ flex: 1 }} />
-                    <button onClick={() => openClaimModal(item.id, item.subject_name)}
+                    <button onClick={() => openRelatedModal(item.id, item.subject_name)}
                       style={{ background: 'rgba(201,146,46,0.06)', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 8, cursor: 'pointer', color: 'rgba(201,146,46,0.6)', fontSize: '0.75rem', fontWeight: 600, padding: '4px 10px' }}
                       onMouseEnter={e => { e.currentTarget.style.color = GOLD; e.currentTarget.style.borderColor = GOLD; }}
                       onMouseLeave={e => { e.currentTarget.style.color = 'rgba(201,146,46,0.6)'; e.currentTarget.style.borderColor = 'rgba(201,146,46,0.2)'; }}>
@@ -797,9 +833,9 @@ export default function Rankings() {
 
                   {showComments && (
                     <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {comments.length === 0 ? (
+                      {normalComments.length === 0 ? (
                         <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.48)', textAlign: 'center', padding: '12px 0' }}>暂无评论，等待审核中...</p>
-                      ) : comments.map(c => (
+                      ) : normalComments.map(c => (
                         <div key={c.id} style={{ backgroundColor: '#fff7ed', border: '1px solid rgba(166,106,31,0.12)', borderRadius: 10, padding: '10px 14px', fontSize: '0.84rem' }}>
                           <p style={{ color: 'rgba(31,41,55,0.86)', lineHeight: 1.7, marginBottom: 6 }}>{c.content}</p>
                           <span style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.52)', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -822,12 +858,12 @@ export default function Rankings() {
       {voteModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 32, maxWidth: 420, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
-            <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>{voteModal.voteType === 'like' ? '👍 点赞' : '👎 点踩'} · ¥1</h3>
+            <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>{voteModal.voteType === 'like' ? '👍 点赞' : '👎 点踩'} · 1 契约币</h3>
             <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-              以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投票，从余额扣 ¥1
+              以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投票，扣 1 契约币
             </p>
             <p style={{ fontSize: '0.85rem', color: balance && balance >= 1 ? '#34d399' : RED, lineHeight: 1.7, marginBottom: 20 }}>
-              当前余额：¥{balance ?? '...'} {balance !== null && balance < 1 && <Link to="/wallet" style={{ color: GOLD }}>（余额不足，去充值）</Link>}
+              当前契约币：{balance ?? '...'} {balance !== null && balance < 1 && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
             </p>
             {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
             <div style={{ display: 'flex', gap: 10 }}>
@@ -846,43 +882,37 @@ export default function Rankings() {
         </div>
       )}
 
-      {/* Claim Modal */}
-      {claimModal && (
+      {/* Related Party Comment Modal */}
+      {relatedModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
-          <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 32, maxWidth: 420, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
-            {claimDone ? (
+          <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 32, maxWidth: 460, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
+            {relatedDone ? (
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>相关方申请已提交</h3>
-                <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 20 }}>管理员会联系你核实身份。</p>
-                <button onClick={() => setClaimModal(null)}
+                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>相关方回应已提交</h3>
+                <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 20 }}>审核通过后会置顶显示在主帖下方，所有人不用展开评论也能看到。</p>
+                <button onClick={() => setRelatedModal(null)}
                   style={{ padding: '10px 28px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, cursor: 'pointer' }}>关闭</button>
               </div>
             ) : (
               <>
-                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 4 }}>我是相关方</h3>
-                <p style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.70)', marginBottom: 20 }}>
-                  针对「{claimModal.subjectName}」，以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份提交相关方申请。
+                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 4 }}>我是相关方 · 1 契约币</h3>
+                <p style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.70)', marginBottom: 16 }}>
+                  针对「{relatedModal.subjectName}」直接写回应。审核通过后，这条回应会作为置顶评论展示。
                 </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>联系方式 <span style={{ color: RED }}>*</span></label>
-                    <input value={claimContact} onChange={e => setClaimContact(e.target.value)} placeholder="微信 / 微博 / 小红书 / 抖音主页" style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>补充说明（可选）</label>
-                    <textarea value={claimMsg} onChange={e => setClaimMsg(e.target.value)} placeholder="可以附上能证明身份的信息..." rows={3} style={{ ...inputStyle, resize: 'none' }} />
-                  </div>
-                </div>
-                {claimError && <p style={{ color: RED, fontSize: '0.8rem', marginTop: 12 }}>{claimError}</p>}
+                <p style={{ fontSize: '0.82rem', color: balance && balance >= 1 ? '#16a34a' : RED, marginBottom: 14 }}>
+                  当前契约币：{balance ?? '...'} {balance !== null && balance < 1 && <Link to="/wallet" style={{ color: GOLD }}>契约币不足，去充值</Link>}
+                </p>
+                <textarea value={relatedText} onChange={e => setRelatedText(e.target.value)} placeholder="用你的身份直接回应这条记录，例如解释事实、补充证据、说明处理进展……" rows={5} style={{ ...inputStyle, resize: 'none' }} />
+                {relatedError && <p style={{ color: RED, fontSize: '0.8rem', marginTop: 12 }}>{relatedError}</p>}
                 <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-                  <button onClick={() => setClaimModal(null)} style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
-                  <button onClick={submitClaim} disabled={!claimContact.trim() || claiming}
+                  <button onClick={() => setRelatedModal(null)} style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
+                  <button onClick={submitRelatedComment} disabled={!relatedText.trim() || submittingRelated || (balance !== null && balance < 1)}
                     style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
-                      cursor: claimContact.trim() ? 'pointer' : 'not-allowed',
-                      background: claimContact.trim() ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'rgba(71,85,105,0.08)',
-                      color: claimContact.trim() ? C : 'rgba(71,85,105,0.52)', fontWeight: 700, fontSize: '0.875rem' }}>
-                    {claiming ? '提交中...' : '提交相关方申请'}
+                      cursor: relatedText.trim() && !submittingRelated && (balance === null || balance >= 1) ? 'pointer' : 'not-allowed',
+                      background: relatedText.trim() && (balance === null || balance >= 1) ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'rgba(71,85,105,0.08)',
+                      color: relatedText.trim() && (balance === null || balance >= 1) ? C : 'rgba(71,85,105,0.52)', fontWeight: 700, fontSize: '0.875rem' }}>
+                    {submittingRelated ? '提交中...' : '提交相关方回应'}
                   </button>
                 </div>
               </>
@@ -905,11 +935,11 @@ export default function Rankings() {
               </div>
             ) : (
               <>
-                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>发表评论 · ¥1</h3>
+                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>发表评论 · 1 契约币</h3>
                 <p style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.70)', marginBottom: 16 }}>
-                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份评论，从余额扣 ¥1。
-                  当前余额：<strong style={{ color: balance && balance >= 1 ? '#34d399' : RED }}>¥{balance ?? '...'}</strong>
-                  {balance !== null && balance < 1 && <span> <Link to="/wallet" style={{ color: GOLD }}>余额不足，去充值</Link></span>}
+                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份评论，扣 1 契约币。
+                  当前契约币：<strong style={{ color: balance && balance >= 1 ? '#34d399' : RED }}>{balance ?? '...'}</strong>
+                  {balance !== null && balance < 1 && <span> <Link to="/wallet" style={{ color: GOLD }}>契约币不足，去充值</Link></span>}
                 </p>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>评论内容 <span style={{ color: RED }}>*</span></label>

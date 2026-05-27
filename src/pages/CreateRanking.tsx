@@ -163,7 +163,7 @@ export default function CreateRanking() {
     if (!subjectName.trim()) return setError('请填写对象名称');
     if (!content.trim()) return setError('请填写评价内容');
     if (!subjectType) return setError('请选择对象类型');
-    if ((balance || 0) < initialAmount) return setError('余额不足，请先充值');
+    if ((balance || 0) < initialAmount) return setError('契约币不足，请先充值');
 
     setSubmitting(true);
     setError('');
@@ -197,14 +197,14 @@ export default function CreateRanking() {
         <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>发布红黑榜</h1>
-            <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.55)' }}>一人一票 · 真实口碑 · 余额 ¥{initialAmount} 起发</p>
+            <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.55)' }}>一人一票 · 真实口碑 · 契约币 {initialAmount} 起发</p>
           </div>
           <Link to="/wallet" style={{
             padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)',
             background: 'rgba(201,146,46,0.06)', color: GOLD, textDecoration: 'none',
             fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            <span>💰</span> 余额 ¥{balance ?? '...'}
+            <span>💰</span> 契约币 {balance ?? '...'}
           </Link>
         </div>
       </div>
@@ -237,7 +237,7 @@ export default function CreateRanking() {
             <div style={{ fontSize: 64, marginBottom: 20 }}>✅</div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.6rem', marginBottom: 12 }}>发布成功</h2>
             <p style={{ color: 'rgba(186,207,231,0.65)', lineHeight: 1.8, marginBottom: 32 }}>
-              你的{type === 'red' ? '红榜' : '黑榜'}已提交审核。审核通过后将上线展示，人民币 ¥{initialAmount} 已从余额扣除。
+              你的{type === 'red' ? '红榜' : '黑榜'}已提交审核。审核通过后将上线展示，{initialAmount} 契约币已扣除。
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <Link to="/rankings" style={{ padding: '12px 32px', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, textDecoration: 'none' }}>
@@ -286,14 +286,14 @@ export default function CreateRanking() {
             {/* 金额 */}
             <div>
               <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(186,207,231,0.75)' }}>
-                初始投入 · <span style={{ color: GOLD }}>¥{initialAmount}</span>
+                初始投入 · <span style={{ color: GOLD }}>{initialAmount} 契约币</span>
               </p>
               <input type="range" min={10} max={100} step={10} value={initialAmount}
                 onChange={e => setInitialAmount(Number(e.target.value))}
                 style={{ width: '100%', accentColor: GOLD }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'rgba(186,207,231,0.4)', marginTop: 4 }}>
-                <span>¥10（最低）</span>
-                <span>¥100（最高）</span>
+                <span>10 契约币（最低）</span>
+                <span>100 契约币（最高）</span>
               </div>
             </div>
 
@@ -437,7 +437,7 @@ export default function CreateRanking() {
                 color: submitting ? 'rgba(201,146,46,0.4)' : C,
                 border: 'none', opacity: submitting ? 0.7 : 1,
               }}>
-              {submitting ? '提交中...' : `发布 · 余额扣 ¥${initialAmount}`}
+              {submitting ? '提交中...' : `发布 · 扣 ${initialAmount} 契约币`}
             </button>
           </div>
         )}

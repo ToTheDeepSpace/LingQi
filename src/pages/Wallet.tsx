@@ -89,17 +89,17 @@ export default function Wallet() {
       <div style={{ backgroundColor: '#1A1D27', borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '32px 20px' }}>
         <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的钱包</h1>
-            <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.55)' }}>余额用于红黑榜发布、投票、评论</p>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的契约币</h1>
+            <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.55)' }}>契约币用于红黑榜发布、投票、评论</p>
           </div>
           <div style={{
             padding: '16px 24px', borderRadius: 14,
             border: '1px solid rgba(201,146,46,0.25)', background: 'rgba(201,146,46,0.06)',
             textAlign: 'center',
           }}>
-            <p style={{ fontSize: '0.75rem', color: 'rgba(186,207,231,0.45)', marginBottom: 4 }}>当前余额</p>
+            <p style={{ fontSize: '0.75rem', color: 'rgba(186,207,231,0.45)', marginBottom: 4 }}>当前契约币</p>
             <p style={{ fontSize: '1.8rem', fontWeight: 900, color: GOLD }}>
-              ¥{balance === null ? '...' : balance}
+              {balance === null ? '...' : balance}
             </p>
           </div>
         </div>
@@ -129,7 +129,7 @@ export default function Wallet() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <p style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: 8, color: 'rgba(186,207,231,0.7)' }}>
-                  充值金额 · <span style={{ color: GOLD }}>¥{amount}</span>
+                  充值契约币 · <span style={{ color: GOLD }}>{amount}</span>
                 </p>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                   {[20, 50, 100, 200, 500].map(a => (
@@ -139,7 +139,7 @@ export default function Wallet() {
                         border: amount === a ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.15)',
                         background: amount === a ? 'rgba(201,146,46,0.12)' : 'transparent',
                         color: amount === a ? GOLD : 'rgba(186,207,231,0.45)',
-                      }}>¥{a}</button>
+                      }}>{a} 契约币</button>
                   ))}
                 </div>
               </div>
@@ -196,7 +196,7 @@ export default function Wallet() {
                     fontSize: '0.9rem', fontWeight: 700,
                     color: tx.amount > 0 ? '#34d399' : (tx.type === 'recharge' && tx.status === 'pending' ? GOLD : RED),
                   }}>
-                    {tx.amount > 0 ? '+' : ''}{tx.amount}
+                    {tx.amount > 0 ? '+' : ''}{tx.amount} 契约币
                   </p>
                   {tx.type === 'recharge' && (
                     <span style={{

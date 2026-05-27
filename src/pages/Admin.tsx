@@ -62,6 +62,8 @@ type CommentReview = {
   content: string;
   author_name: string;
   is_realname?: boolean;
+  is_pinned?: boolean;
+  pin_label?: string | null;
   payment_proof?: string | null;
   created_at: string;
   lc_rankings?: { subject_name?: string; type?: 'red' | 'black' };
@@ -511,7 +513,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {transactions.map(tx => (
                   <Row key={tx.id} accent="#22c55e">
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={`充值 ¥${tx.amount}`} pill="钱包充值" />
+                      <TitleLine title={`充值 ${tx.amount} 契约币`} pill="钱包充值" />
                       <Meta>
                         用户：{tx.lc_profiles?.display_name || '未知用户'}
                         {tx.lc_profiles?.phone ? ` · ${tx.lc_profiles.phone}` : ''}
@@ -535,7 +537,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   <Row key={r.id} accent={r.type === 'red' ? '#dc2626' : '#475569'}>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <TitleLine title={r.subject_name} pill={r.type === 'red' ? '🏅 红榜' : '👎 黑榜'} />
-                      <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · 初始金额：¥{r.initial_amount} · {r.created_at?.slice(0, 10)}</Meta>
+                      <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · 初始：{r.initial_amount} 契约币 · {r.created_at?.slice(0, 10)}</Meta>
                       {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
                       <ContentBox>{r.content}</ContentBox>
                       {r.payment_proof && <Proof>支付凭证：{r.payment_proof}</Proof>}
@@ -586,7 +588,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {comments.map(c => (
                   <Row key={c.id}>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={c.lc_rankings?.subject_name || '未知帖子'} pill={c.lc_rankings?.type === 'black' ? '👎 黑榜评论' : '🏅 红榜评论'} />
+                      <TitleLine title={c.lc_rankings?.subject_name || '未知帖子'} pill={c.is_pinned ? (c.pin_label || '相关方回应') : (c.lc_rankings?.type === 'black' ? '👎 黑榜评论' : '🏅 红榜评论')} />
                       <Meta>作者：{c.is_realname ? `⭐ ${c.author_name}` : c.author_name} · {c.created_at?.slice(0, 10)}</Meta>
                       <ContentBox>{c.content}</ContentBox>
                       {c.payment_proof && <Proof>支付凭证：{c.payment_proof}</Proof>}

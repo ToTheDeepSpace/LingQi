@@ -122,13 +122,21 @@ app.post('/api/lc/auth', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const insertData: Record<string, unknown> = {
       phone, display_name: displayName || '用户', role: profileRole,
-      password_hash: passwordHash, is_visible: true,
+      password_hash: passwordHash, is_visible: true, balance: 30,
     };
     const { data: profile } = await supabase.from('lc_profiles')
       .insert(insertData)
       .select().single();
 
     if (!profile) return res.status(500).json(err(new Error('注册失败')));
+
+    await supabase.from('lc_transactions').insert({
+      profile_id: profile.id,
+      type: 'recharge',
+      amount: 30,
+      description: '新用户注册赠送 30 契约币',
+      status: 'approved',
+    });
 
     const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
     res.json(ok({
@@ -554,16 +562,16 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       return res.status(400).json(err(new Error('缺少必填字段')));
     }
     const amount = parseInt(initialAmount);
-    if (amount < 10 || amount > 100) return res.status(400).json(err(new Error('金额须在10~100元之间')));
+    if (amount < 10 || amount > 100) return res.status(400).json(err(new Error('契约币须在10~100之间')));
 
-    // 余额支付
+    // 契约币支付
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    if ((profile.balance || 0) < amount) return res.status(402).json(err(new Error('余额不足，请先充值')));
+    if ((profile.balance || 0) < amount) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
     const posterId = getReq(req, 'creatorId');
 
-    // 扣款
+    // 扣契约币
     await supabase.from('lc_profiles')
       .update({ balance: (profile.balance || 0) - amount })
       .eq('id', profile.id);
@@ -610,7 +618,7 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     if (!['like', 'dislike'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
-    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('余额不足，请先充值')));
+    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
     const { data: current } = await supabase.from('lc_rankings').select('likes, dislikes, status').eq('id', req.params.id).single();
     if (!current || current.status !== 'approved') return res.status(404).json(err(new Error('帖子不存在或未上线')));
@@ -622,11 +630,11 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       .maybeSingle();
     if (existingVote) return res.status(409).json(err(new Error('你已经投过票了')));
 
-    // 扣款 ¥1
+    // 扣 1 契约币
     await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - 1 }).eq('id', profile.id);
     await supabase.from('lc_transactions').insert({
       profile_id: profile.id, type: 'spend', amount: -1,
-      description: `${voteType === 'like' ? '点赞' : '点踩'}红黑榜`,
+      description: `${voteType === 'like' ? '点赞' : '点踩'}红黑榜 · 1 契约币`,
       status: 'approved',
     });
 
@@ -666,8 +674,10 @@ app.get('/api/lc/rankings/:id/votes', async (req, res) => {
 app.get('/api/lc/rankings/:id/comments', async (req, res) => {
   try {
     const { data } = await supabase.from('lc_comments')
-      .select('id, content, author_name, is_realname, real_name, likes, created_at')
+      .select('id, content, author_name, is_realname, real_name, is_pinned, pin_label, likes, created_at')
       .eq('ranking_id', req.params.id).eq('status', 'approved')
+      .order('is_pinned', { ascending: false })
+      .order('likes', { ascending: false })
       .order('created_at', { ascending: true });
     res.json(ok(data || []));
   } catch (e) { res.status(500).json(err(e)); }
@@ -679,19 +689,49 @@ app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
     if (!content) return res.status(400).json(err(new Error('缺少评论内容')));
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('余额不足，请先充值')));
+    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
-    // 扣款 ¥1
+    // 扣 1 契约币
     await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - 1 }).eq('id', profile.id);
     await supabase.from('lc_transactions').insert({
       profile_id: profile.id, type: 'spend', amount: -1,
-      description: '发表红黑榜评论',
+      description: '发表红黑榜评论 · 1 契约币',
       status: 'approved',
     });
 
     const { data, error: insErr } = await supabase.from('lc_comments').insert({
       ranking_id: req.params.id, content, author_id: profile.id, author_name: profile.display_name,
       is_realname: !!profile.is_realname, real_name: null,
+    }).select().single();
+    if (insErr) throw insErr;
+    res.json(ok({ id: data?.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/rankings/:id/related-comment', authMiddleware, async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content) return res.status(400).json(err(new Error('缺少相关方回应内容')));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
+
+    await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - 1 }).eq('id', profile.id);
+    await supabase.from('lc_transactions').insert({
+      profile_id: profile.id, type: 'spend', amount: -1,
+      description: '发布相关方回应 · 1 契约币',
+      status: 'approved',
+    });
+
+    const { data, error: insErr } = await supabase.from('lc_comments').insert({
+      ranking_id: req.params.id,
+      content,
+      author_id: profile.id,
+      author_name: profile.display_name,
+      is_realname: !!profile.is_realname,
+      real_name: null,
+      is_pinned: true,
+      pin_label: '相关方回应',
     }).select().single();
     if (insErr) throw insErr;
     res.json(ok({ id: data?.id }));
@@ -831,12 +871,12 @@ app.get('/api/lc/wallet', authMiddleware, async (req, res) => {
 app.post('/api/lc/wallet/recharge', authMiddleware, async (req, res) => {
   try {
     const { amount, paymentProof } = req.body;
-    if (!amount || amount < 10) return res.status(400).json(err(new Error('充值金额最低 ¥10')));
+    if (!amount || amount < 10) return res.status(400).json(err(new Error('充值金额最低 10 契约币')));
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     await supabase.from('lc_transactions').insert({
       profile_id: profile.id, type: 'recharge', amount: parseInt(amount),
-      description: '余额充值', payment_proof: paymentProof || null,
+      description: '契约币充值', payment_proof: paymentProof || null,
       status: 'pending',
     });
     res.json(ok({ message: '充值申请已提交，管理员审核后到账' }));
