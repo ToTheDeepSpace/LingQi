@@ -115,6 +115,10 @@ function isRelatedProofSchemaMiss(e: unknown) {
   return text.includes('schema cache') && (text.includes('related_note') || text.includes('related_files'));
 }
 
+function isMissingRelation(e: unknown, relation: string) {
+  return getErrorText(e).includes(relation);
+}
+
 function encodeRelatedProofFallback(note: string, files: RelatedProofFile[]) {
   return JSON.stringify({
     kind: 'related_party_certification',
@@ -464,6 +468,75 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
     }).select().single();
     if (insErr) throw insErr;
 
+    res.json(ok({ id: data?.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/commissions/applications/received', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const { data: commissions, error: cErr } = await supabase.from('lc_commissions')
+      .select('id, title, city, needed_date')
+      .eq('poster_id', profile.id);
+    if (cErr) throw cErr;
+    const ids = (commissions || []).map(item => item.id);
+    if (ids.length === 0) return res.json(ok([]));
+
+    const meta = new Map((commissions || []).map(item => [item.id, item]));
+    const { data, error: qErr } = await supabase.from('lc_commission_applications')
+      .select('*')
+      .in('commission_id', ids)
+      .order('created_at', { ascending: false });
+    if (qErr && isMissingRelation(qErr, 'lc_commission_applications')) return res.json(ok([]));
+    if (qErr) throw qErr;
+    res.json(ok((data || []).map(item => ({ ...item, commission: meta.get(item.commission_id) || null }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/commissions/applications/sent', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data, error: qErr } = await supabase.from('lc_commission_applications')
+      .select('id, commission_id, status, created_at')
+      .eq('applicant_id', profile.id)
+      .order('created_at', { ascending: false });
+    if (qErr && isMissingRelation(qErr, 'lc_commission_applications')) return res.json(ok([]));
+    if (qErr) throw qErr;
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res) => {
+  try {
+    const letter = typeof req.body?.letter === 'string' ? req.body.letter.trim().slice(0, 1200) : '';
+    if (!letter) return res.status(400).json(err(new Error('请填写申请信')));
+
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const { data: commission } = await supabase.from('lc_commissions')
+      .select('id, poster_id, status')
+      .eq('id', req.params.id)
+      .single();
+    if (!commission) return res.status(404).json(err(new Error('委托需求不存在')));
+    if (commission.status !== 'approved') return res.status(400).json(err(new Error('只能申请已上墙的委托需求')));
+    if (commission.poster_id === profile.id) return res.status(400).json(err(new Error('不能接自己的委托需求')));
+
+    const { data, error: insErr } = await supabase.from('lc_commission_applications').insert({
+      commission_id: req.params.id,
+      applicant_id: profile.id,
+      applicant_name: profile.display_name,
+      applicant_is_realname: !!profile.is_realname,
+      letter,
+    }).select('id').single();
+    if (insErr) {
+      if (insErr.code === '23505') return res.status(409).json(err(new Error('你已经提交过接单申请了')));
+      if (isMissingRelation(insErr, 'lc_commission_applications')) return res.status(503).json(err(new Error('接单申请数据表尚未初始化，请先执行 Supabase migration')));
+      throw insErr;
+    }
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
 });

@@ -97,6 +97,18 @@ export interface Commission {
   created_at: string;
 }
 
+export interface CommissionApplication {
+  id: string;
+  commission_id: string;
+  applicant_id: string;
+  applicant_name: string;
+  applicant_is_realname: boolean;
+  letter: string;
+  status: 'submitted' | 'accepted' | 'rejected';
+  created_at: string;
+  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date'> | null;
+}
+
 export interface Certification {
   id: string;
   profile_id: string;

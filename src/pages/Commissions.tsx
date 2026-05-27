@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import type { AuthData, Commission } from '../types';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import type { AuthData, Commission, CommissionApplication } from '../types';
 import { CITIES } from '../constants/cities';
 
 const API = '/api';
@@ -28,14 +28,22 @@ function getAuth(): AuthData | null {
 }
 
 export default function Commissions() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState<Commission[]>([]);
   const [myItems, setMyItems] = useState<Commission[]>([]);
+  const [receivedApplications, setReceivedApplications] = useState<CommissionApplication[]>([]);
+  const [sentApplications, setSentApplications] = useState<{ id: string; commission_id: string; status: string; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [city, setCity] = useState('all');
   const [targetType, setTargetType] = useState('all');
   const [cityOpen, setCityOpen] = useState(false);
+  const [applicationModal, setApplicationModal] = useState<Commission | null>(null);
+  const [applicationLetter, setApplicationLetter] = useState('');
+  const [applicationError, setApplicationError] = useState('');
+  const [applicationDone, setApplicationDone] = useState(false);
+  const [submittingApplication, setSubmittingApplication] = useState(false);
   const submitted = searchParams.get('submitted') === '1';
 
   useEffect(() => {
@@ -70,13 +78,24 @@ export default function Commissions() {
     }
     const loadMine = async () => {
       try {
-        const r = await fetch(`${API}/lc/commissions/mine`, {
-          headers: { Authorization: `Bearer ${auth.token}` },
-        });
-        const d = await r.json();
-        if (alive && d.success) setMyItems(d.data || []);
+        const headers = { Authorization: `Bearer ${auth.token}` };
+        const [mineRes, receivedRes, sentRes] = await Promise.all([
+          fetch(`${API}/lc/commissions/mine`, { headers }),
+          fetch(`${API}/lc/commissions/applications/received`, { headers }),
+          fetch(`${API}/lc/commissions/applications/sent`, { headers }),
+        ]);
+        const mine = await mineRes.json();
+        const received = await receivedRes.json();
+        const sent = await sentRes.json();
+        if (alive && mine.success) setMyItems(mine.data || []);
+        if (alive && received.success) setReceivedApplications(received.data || []);
+        if (alive && sent.success) setSentApplications(sent.data || []);
       } catch {
-        if (alive) setMyItems([]);
+        if (alive) {
+          setMyItems([]);
+          setReceivedApplications([]);
+          setSentApplications([]);
+        }
       }
     };
     void loadMine();
@@ -84,6 +103,57 @@ export default function Commissions() {
   }, []);
 
   const privateItems = myItems.filter(item => item.status !== 'approved');
+  const sentApplicationIds = new Set(sentApplications.map(item => item.commission_id));
+
+  const openApplicationModal = (item: Commission) => {
+    const auth = getAuth();
+    if (!auth) {
+      navigate('/login');
+      return;
+    }
+    setApplicationModal(item);
+    setApplicationLetter('');
+    setApplicationError('');
+    setApplicationDone(false);
+  };
+
+  const closeApplicationModal = () => {
+    setApplicationModal(null);
+    setApplicationLetter('');
+    setApplicationError('');
+    setApplicationDone(false);
+    setSubmittingApplication(false);
+  };
+
+  const submitApplication = async () => {
+    if (!applicationModal) return;
+    const auth = getAuth();
+    if (!auth) return navigate('/login');
+    if (!applicationLetter.trim()) {
+      setApplicationError('请先写一段申请信');
+      return;
+    }
+    setSubmittingApplication(true);
+    setApplicationError('');
+    try {
+      const r = await fetch(`${API}/lc/commissions/${applicationModal.id}/applications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify({ letter: applicationLetter.trim() }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        setSentApplications(prev => [{ id: d.data.id, commission_id: applicationModal.id, status: 'submitted', created_at: new Date().toISOString() }, ...prev]);
+        setApplicationDone(true);
+      } else {
+        setApplicationError(d.error || '提交失败');
+      }
+    } catch {
+      setApplicationError('网络错误，请重试');
+    } finally {
+      setSubmittingApplication(false);
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (!confirm('确定要删除这条委托需求吗？')) return;
@@ -152,6 +222,31 @@ export default function Commissions() {
           </section>
         )}
 
+        {receivedApplications.length > 0 && (
+          <section style={{ marginBottom: 26, borderRadius: 16, border: '1px solid rgba(125,211,252,0.18)', background: 'rgba(14,165,233,0.06)', padding: 18 }}>
+            <div style={{ marginBottom: 14 }}>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 900, marginBottom: 6 }}>收到的接单申请</h2>
+              <p style={{ color: 'rgba(220,230,243,0.68)', fontSize: '0.86rem', lineHeight: 1.7 }}>
+                这些是别人对你已发布委托需求写来的申请信，先在这里看，后面再接正式沟通流。
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+              {receivedApplications.map(app => (
+                <article key={app.id} style={{ borderRadius: 14, border: '1px solid rgba(125,211,252,0.16)', background: 'rgba(255,255,255,0.05)', padding: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 10, color: 'rgba(220,230,243,0.56)', fontSize: '0.76rem' }}>
+                    <span>{app.commission?.title || '委托需求'}</span>
+                    <span>{app.created_at?.slice(0, 10)}</span>
+                  </div>
+                  <h3 style={{ fontWeight: 900, fontSize: '0.98rem', marginBottom: 8, color: '#e0f2fe' }}>
+                    {app.applicant_is_realname ? '⭐ ' : ''}{app.applicant_name}
+                  </h3>
+                  <p style={{ color: 'rgba(220,230,243,0.76)', lineHeight: 1.7, fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{app.letter}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 22 }}>
           {[
             ['all', '全部'],
@@ -204,16 +299,61 @@ export default function Commissions() {
         {!loading && !error && items.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
             {items.map(item => (
-              <CommissionCard key={item.id} item={item} />
+              <CommissionCard
+                key={item.id}
+                item={item}
+                onApply={() => openApplicationModal(item)}
+                applied={sentApplicationIds.has(item.id)}
+                ownItem={getAuth()?.id === item.poster_id}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {applicationModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ width: '100%', maxWidth: 520, borderRadius: 18, border: '1px solid rgba(217,168,87,0.22)', background: '#101a2d', boxShadow: '0 24px 70px rgba(0,0,0,0.48)', padding: 28 }}>
+            {applicationDone ? (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 42, marginBottom: 12 }}>✅</div>
+                <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.25rem', marginBottom: 8 }}>接单申请已提交</h3>
+                <p style={{ color: 'rgba(220,230,243,0.72)', lineHeight: 1.8, marginBottom: 20 }}>
+                  你的申请信已经送到这条委托需求下面。当前版本先用于原型跑通，后面再补正式私信/通知。
+                </p>
+                <button onClick={closeApplicationModal} className="btn-gold" style={{ padding: '10px 24px' }}>关闭</button>
+              </div>
+            ) : (
+              <>
+                <p style={{ color: GOLD, fontSize: '0.78rem', fontWeight: 900, letterSpacing: '0.04em', marginBottom: 8 }}>我要接单</p>
+                <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.25rem', marginBottom: 8 }}>{applicationModal.title}</h3>
+                <p style={{ color: 'rgba(220,230,243,0.68)', lineHeight: 1.75, fontSize: '0.86rem', marginBottom: 16 }}>
+                  写清楚你能接什么、可用时间、城市和你希望委托人先知道的条件。不要在这里放敏感隐私。
+                </p>
+                <textarea value={applicationLetter} onChange={e => setApplicationLetter(e.target.value)}
+                  rows={6}
+                  placeholder="例：我可以接这个角色，6月初在上海/杭州都方便。我的风格更偏沉浸陪伴，可以先沟通角色设定和边界..."
+                  style={{ width: '100%', boxSizing: 'border-box', borderRadius: 12, border: '1px solid rgba(217,168,87,0.22)', background: 'rgba(255,255,255,0.05)', color: '#f8fafc', padding: '12px 14px', resize: 'none', outline: 'none', lineHeight: 1.7 }} />
+                {applicationError && <p style={{ color: '#fca5a5', fontSize: '0.82rem', marginTop: 10 }}>{applicationError}</p>}
+                <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                  <button onClick={closeApplicationModal}
+                    style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.22)', background: 'transparent', color: 'rgba(220,230,243,0.72)', cursor: 'pointer', fontWeight: 700 }}>取消</button>
+                  <button onClick={submitApplication} disabled={!applicationLetter.trim() || submittingApplication}
+                    className="btn-gold"
+                    style={{ flex: 2, padding: '11px', opacity: !applicationLetter.trim() || submittingApplication ? 0.55 : 1, cursor: !applicationLetter.trim() || submittingApplication ? 'not-allowed' : 'pointer' }}>
+                    {submittingApplication ? '提交中...' : '提交申请信'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function CommissionCard({ item, showStatus, onDelete }: { item: Commission; showStatus?: boolean; onDelete?: () => void }) {
+function CommissionCard({ item, showStatus, onDelete, onApply, applied, ownItem }: { item: Commission; showStatus?: boolean; onDelete?: () => void; onApply?: () => void; applied?: boolean; ownItem?: boolean }) {
   return (
     <article style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.16)', background: 'linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035))' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -239,6 +379,19 @@ function CommissionCard({ item, showStatus, onDelete }: { item: Commission; show
         <button onClick={onDelete}
           style={{ marginTop: 12, padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#fca5a5', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
           删除
+        </button>
+      )}
+      {onApply && (
+        <button onClick={onApply} disabled={applied || ownItem}
+          style={{
+            width: '100%', marginTop: 14, padding: '10px 14px', borderRadius: 10,
+            border: applied || ownItem ? '1px solid rgba(220,230,243,0.12)' : '1px solid rgba(217,168,87,0.28)',
+            background: applied || ownItem ? 'rgba(255,255,255,0.04)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
+            color: applied || ownItem ? 'rgba(220,230,243,0.46)' : GOLD,
+            cursor: applied || ownItem ? 'not-allowed' : 'pointer',
+            fontWeight: 900,
+          }}>
+          {ownItem ? '自己的需求' : applied ? '已提交申请' : '我要接单'}
         </button>
       )}
     </article>
