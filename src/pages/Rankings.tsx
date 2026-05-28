@@ -21,6 +21,15 @@ const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成�
 
 type AuthSession = { token: string; displayName: string; userId?: string };
 
+type MyVote = {
+  id: string;
+  vote_type: 'like' | 'dislike' | 'joy';
+  created_at: string;
+  cancel_deadline: string;
+  can_cancel: boolean;
+  refund_amount: number;
+};
+
 type Ranking = {
   id: string;
   type: 'red' | 'black' | 'white';
@@ -40,6 +49,7 @@ type Ranking = {
   expiry_override?: string;
   files?: { name: string; url: string; type?: string }[];
   lc_profiles?: { verified_dm?: boolean; verified_shop?: boolean; role?: string };
+  my_vote?: MyVote | null;
 };
 
 type Comment = {
@@ -118,6 +128,27 @@ function parseMentions(text: string): { text: string; mention: boolean; name: st
   }
   if (last < text.length) parts.push({ text: text.slice(last), mention: false, name: '' });
   return parts;
+}
+
+function voteCopy(voteType: MyVote['vote_type']) {
+  if (voteType === 'like') return { label: '点赞', icon: '👍', paid: true };
+  if (voteType === 'dislike') return { label: '点踩', icon: '👎', paid: true };
+  return { label: '欢乐', icon: '😂', paid: false };
+}
+
+function voteCanCancel(myVote: MyVote | null | undefined) {
+  if (!myVote) return false;
+  return myVote.can_cancel && new Date(myVote.cancel_deadline).getTime() > Date.now();
+}
+
+function voteDeadlineText(myVote: MyVote | null | undefined) {
+  if (!myVote) return '';
+  return new Date(myVote.cancel_deadline).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -334,7 +365,10 @@ export default function Rankings() {
         const params = new URLSearchParams({ type: tab });
         if (subjectTab !== 'all') params.set('subjectType', subjectTab);
         if (city !== 'all') params.set('city', city);
-        const r = await fetch(`${API}/lc/rankings?${params}`);
+        const current = getAuth();
+        const r = await fetch(`${API}/lc/rankings?${params}`, {
+          headers: current ? { Authorization: `Bearer ${current.token}` } : undefined,
+        });
         if (!r.ok) throw new Error(`请求失败 (${r.status})`);
         const d = await r.json();
         if (alive && d.success) {
@@ -433,12 +467,51 @@ export default function Rankings() {
       });
       const d = await r.json();
       if (d.success) {
-        setItems(prev => prev.map(i => i.id === voteModal.id ? { ...i, likes: d.data.likes, dislikes: d.data.dislikes, joys: d.data.joys } : i));
+        setItems(prev => prev.map(i => i.id === voteModal.id ? {
+          ...i,
+          likes: d.data.likes,
+          dislikes: d.data.dislikes,
+          joys: d.data.joys,
+          my_vote: d.data.myVote || null,
+        } : i));
         fetchVotes(voteModal.id);
         fetchWallet();
         setVoteModal(null);
       } else {
+        if (d.data?.myVote) {
+          setItems(prev => prev.map(i => i.id === voteModal.id ? { ...i, my_vote: d.data.myVote } : i));
+        }
         setVoteError(d.error || '操作失败');
+      }
+    } catch { setVoteError('网络错误'); }
+    finally { setVoting(false); }
+  };
+
+  const cancelVote = async () => {
+    if (!voteModal) return;
+    const current = requireAuth();
+    if (!current) return;
+    setVoting(true);
+    setVoteError('');
+    try {
+      const r = await fetch(`${API}/lc/rankings/${voteModal.id}/vote`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${current.token}` },
+      });
+      const d = await r.json();
+      if (d.success) {
+        setItems(prev => prev.map(i => i.id === voteModal.id ? {
+          ...i,
+          likes: d.data.likes,
+          dislikes: d.data.dislikes,
+          joys: d.data.joys,
+          my_vote: null,
+        } : i));
+        fetchVotes(voteModal.id);
+        fetchWallet();
+        setVoteModal(null);
+      } else {
+        setVoteError(d.error || '撤销失败');
       }
     } catch { setVoteError('网络错误'); }
     finally { setVoting(false); }
@@ -600,6 +673,12 @@ export default function Rankings() {
     ? <><span style={{ color: GOLD, fontWeight: 700 }}>⭐ {name}</span><span style={{ color: 'rgba(201,146,46,0.5)', fontSize: '0.7rem' }}> 实名</span></>
     : name;
 
+  const voteModalItem = voteModal ? items.find(item => item.id === voteModal.id) : undefined;
+  const existingMyVote = voteModalItem?.my_vote || null;
+  const existingVoteCopy = existingMyVote ? voteCopy(existingMyVote.vote_type) : null;
+  const requestedVoteCopy = voteModal ? voteCopy(voteModal.voteType) : null;
+  const canCancelExistingVote = voteCanCancel(existingMyVote);
+
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#1f2937' }}>
       <div style={{
@@ -724,6 +803,7 @@ export default function Rankings() {
               const showComments = openComments.has(item.id);
               const showVotes = openVotes.has(item.id);
               const left = daysLeft(item);
+              const myVote = item.my_vote || null;
 
               return (
                 <div key={item.id}
@@ -826,16 +906,16 @@ export default function Rankings() {
                     </span>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => openVoteModal(item.id, 'like')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(52,211,153,0.25)', background: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
-                        👍 {item.likes} <span style={{ fontSize: '0.7rem', color: 'rgba(52,211,153,0.6)' }}>1币</span>
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.25)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#34d399', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
+                        {myVote?.vote_type === 'like' ? '已赞' : '👍'} {item.likes} <span style={{ fontSize: '0.7rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(52,211,153,0.6)' }}>1币</span>
                       </button>
                       <button onClick={() => openVoteModal(item.id, 'joy')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(217,168,87,0.25)', background: 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
-                        😂 {item.joys || 0} <span style={{ fontSize: '0.7rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: myVote?.vote_type === 'joy' ? '1px solid rgba(166,106,31,0.42)' : '1px solid rgba(217,168,87,0.25)', background: myVote?.vote_type === 'joy' ? 'rgba(217,168,87,0.16)' : 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
+                        {myVote?.vote_type === 'joy' ? '已欢乐' : '😂'} {item.joys || 0} <span style={{ fontSize: '0.7rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
                       </button>
                       <button onClick={() => openVoteModal(item.id, 'dislike')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.07)', color: RED, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
-                        👎 {item.dislikes} <span style={{ fontSize: '0.7rem', color: 'rgba(248,113,113,0.5)' }}>1币</span>
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: myVote?.vote_type === 'dislike' ? '1px solid rgba(220,38,38,0.38)' : '1px solid rgba(248,113,113,0.2)', background: myVote?.vote_type === 'dislike' ? 'rgba(254,226,226,0.72)' : 'rgba(248,113,113,0.07)', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : RED, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
+                        {myVote?.vote_type === 'dislike' ? '已踩' : '👎'} {item.dislikes} <span style={{ fontSize: '0.7rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(248,113,113,0.5)' }}>1币</span>
                       </button>
                     </div>
                   </div>
@@ -934,30 +1014,72 @@ export default function Rankings() {
       {voteModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 32, maxWidth: 420, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
-            <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>
-              {voteModal.voteType === 'like' ? '👍 点赞 · 1 契约币' : voteModal.voteType === 'dislike' ? '👎 点踩 · 1 契约币' : '😂 点欢乐 · 免费'}
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-              以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投票。{voteModal.voteType === 'joy' ? '欢乐不扣契约币，但同样占用一人一票名额。' : '点赞/点踩扣 1 契约币。'}
-            </p>
-            {voteModal.voteType !== 'joy' && (
-              <p style={{ fontSize: '0.85rem', color: balance && balance >= 1 ? '#34d399' : RED, lineHeight: 1.7, marginBottom: 20 }}>
-                当前契约币：{balance ?? '...'} {balance !== null && balance < 1 && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
-              </p>
+            {existingMyVote && existingVoteCopy ? (
+              <>
+                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>
+                  已投过：{existingVoteCopy.icon} {existingVoteCopy.label}
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
+                  每个账号对同一条内容只能投一票。你已经以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投过票。
+                </p>
+                <div style={{
+                  border: '1px solid rgba(166,106,31,0.16)',
+                  background: '#fffaf2',
+                  borderRadius: 12,
+                  padding: '12px 14px',
+                  marginBottom: 14,
+                  color: 'rgba(71,85,105,0.78)',
+                  fontSize: '0.82rem',
+                  lineHeight: 1.7,
+                }}>
+                  {canCancelExistingVote
+                    ? <>24 小时内可以撤销。{existingMyVote.refund_amount > 0 ? `撤销后退回 ${existingMyVote.refund_amount} 契约币。` : '欢乐免费，撤销不涉及退币。'}截止：{voteDeadlineText(existingMyVote)}</>
+                    : <>这票已经超过 24 小时撤销期，只保留公开口碑记录。</>}
+                </div>
+                {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setVoteModal(null)}
+                    style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>
+                    关闭
+                  </button>
+                  <button onClick={cancelVote} disabled={voting || !canCancelExistingVote}
+                    style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
+                      cursor: voting || !canCancelExistingVote ? 'not-allowed' : 'pointer',
+                      background: voting || !canCancelExistingVote ? 'rgba(71,85,105,0.08)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
+                      color: voting || !canCancelExistingVote ? 'rgba(71,85,105,0.52)' : '#fff',
+                      fontWeight: 800, fontSize: '0.875rem', opacity: voting ? 0.6 : 1 }}>
+                    {voting ? '撤销中...' : canCancelExistingVote ? '撤销投票' : '不可撤销'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>
+                  {requestedVoteCopy?.icon} {requestedVoteCopy?.label} · {requestedVoteCopy?.paid ? '1 契约币' : '免费'}
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
+                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投票。{voteModal.voteType === 'joy' ? '欢乐不扣契约币，但同样占用一人一票名额。' : '点赞/点踩扣 1 契约币，24 小时内撤销可退回。'}
+                </p>
+                {voteModal.voteType !== 'joy' && (
+                  <p style={{ fontSize: '0.85rem', color: balance && balance >= 1 ? '#34d399' : RED, lineHeight: 1.7, marginBottom: 20 }}>
+                    当前契约币：{balance ?? '...'} {balance !== null && balance < 1 && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
+                  </p>
+                )}
+                {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setVoteModal(null)}
+                    style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
+                  <button onClick={submitVote} disabled={voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1)}
+                    style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
+                      cursor: voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1) ? 'not-allowed' : 'pointer',
+                      background: voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1) ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                      color: voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1) ? 'rgba(71,85,105,0.52)' : C, fontWeight: 700, fontSize: '0.875rem',
+                      opacity: voting ? 0.6 : 1 }}>
+                    {voting ? '提交中...' : '确认投票'}
+                  </button>
+                </div>
+              </>
             )}
-            {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setVoteModal(null)}
-                style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
-              <button onClick={submitVote} disabled={voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1)}
-                style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
-                  cursor: voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1) ? 'not-allowed' : 'pointer',
-                  background: voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1) ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                  color: voting || (voteModal.voteType !== 'joy' && balance !== null && balance < 1) ? 'rgba(71,85,105,0.52)' : C, fontWeight: 700, fontSize: '0.875rem',
-                  opacity: voting ? 0.6 : 1 }}>
-                {voting ? '提交中...' : '确认投票'}
-              </button>
-            </div>
           </div>
         </div>
       )}

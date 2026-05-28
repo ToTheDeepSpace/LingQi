@@ -47,6 +47,17 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
   }
 }
 
+function getOptionalCreatorId(req: express.Request) {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) return null;
+  try {
+    const decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId?: string };
+    return decoded.creatorId || null;
+  } catch {
+    return null;
+  }
+}
+
 function adminMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
   if ((req as Record<string, unknown>).role !== 'admin') {
     return res.status(403).json(err(new Error('无管理员权限')));
@@ -125,6 +136,40 @@ function encodeRelatedProofFallback(note: string, files: RelatedProofFile[]) {
     related_note: note,
     related_files: files,
   });
+}
+
+type RankingVoteType = 'like' | 'dislike' | 'joy';
+type RankingVoteRow = {
+  id: string;
+  ranking_id?: string;
+  vote_type: RankingVoteType;
+  created_at: string;
+};
+
+const VOTE_CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function voteRefundAmount(voteType: RankingVoteType) {
+  return voteType === 'joy' ? 0 : 1;
+}
+
+function voteLabel(voteType: RankingVoteType) {
+  if (voteType === 'like') return '点赞';
+  if (voteType === 'dislike') return '点踩';
+  return '欢乐';
+}
+
+function serializeMyVote(vote: RankingVoteRow) {
+  const createdAt = new Date(vote.created_at).getTime();
+  const cancelDeadlineMs = createdAt + VOTE_CANCEL_WINDOW_MS;
+  const canCancel = Number.isFinite(createdAt) && Date.now() <= cancelDeadlineMs;
+  return {
+    id: vote.id,
+    vote_type: vote.vote_type,
+    created_at: vote.created_at,
+    cancel_deadline: new Date(cancelDeadlineMs).toISOString(),
+    can_cancel: canCancel,
+    refund_amount: canCancel ? voteRefundAmount(vote.vote_type) : 0,
+  };
 }
 
 // --- 健康检查 ---
@@ -641,6 +686,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     const type = req.query.type as string;
     const city = req.query.city as string;
     const subjectType = req.query.subjectType as string;
+    const viewerId = getOptionalCreatorId(req);
     let query = supabase
       .from('lc_rankings')
       .select('*, lc_profiles!poster_id(verified_dm, verified_shop, role)')
@@ -664,7 +710,24 @@ app.get('/api/lc/rankings', async (req, res) => {
       return Number.isFinite(expiresAt) && expiresAt > now;
     });
 
-    res.json(ok(visible));
+    if (!viewerId || visible.length === 0) return res.json(ok(visible));
+
+    const rankingIds = visible.map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
+    const { data: myVotes, error: myVoteErr } = await supabase.from('lc_votes')
+      .select('id, ranking_id, vote_type, created_at')
+      .in('ranking_id', rankingIds)
+      .eq('voter_id', viewerId);
+    if (myVoteErr) throw myVoteErr;
+
+    const voteByRanking = new Map(
+      (myVotes || []).map((vote: RankingVoteRow) => [vote.ranking_id, serializeMyVote(vote)])
+    );
+    const withMyVotes = visible.map((row: Record<string, unknown>) => ({
+      ...row,
+      my_vote: voteByRanking.get(String(row.id)) || null,
+    }));
+
+    res.json(ok(withMyVotes));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -740,11 +803,16 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     if (!current || current.status !== 'approved') return res.status(404).json(err(new Error('帖子不存在或未上线')));
 
     const { data: existingVote } = await supabase.from('lc_votes')
-      .select('id')
+      .select('id, vote_type, created_at')
       .eq('ranking_id', req.params.id)
       .eq('voter_id', profile.id)
       .maybeSingle();
-    if (existingVote) return res.status(409).json(err(new Error('你已经投过票了')));
+    if (existingVote) {
+      return res.status(409).json({
+        ...err(new Error('你已经投过票了')),
+        data: { myVote: serializeMyVote(existingVote as RankingVoteRow) },
+      });
+    }
 
     if (isPaidVote) {
       // 点赞/点踩扣 1 契约币；欢乐免费但仍占一人一票名额。
@@ -756,15 +824,25 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       });
     }
 
-    const { error: voteErr } = await supabase.from('lc_votes').insert({
+    const { data: voteRow, error: voteErr } = await supabase.from('lc_votes').insert({
       ranking_id: req.params.id, vote_type: voteType,
       voter_ip: req.headers['x-forwarded-for'] as string || req.ip,
       voter_id: profile.id,
       voter_name: profile.display_name,
       voter_is_realname: !!profile.is_realname,
-    });
+    }).select('id, ranking_id, vote_type, created_at').single();
     if (voteErr) {
-      if (voteErr.code === '23505') return res.status(409).json(err(new Error('你已经投过票了')));
+      if (voteErr.code === '23505') {
+        const { data: duplicatedVote } = await supabase.from('lc_votes')
+          .select('id, ranking_id, vote_type, created_at')
+          .eq('ranking_id', req.params.id)
+          .eq('voter_id', profile.id)
+          .maybeSingle();
+        return res.status(409).json({
+          ...err(new Error('你已经投过票了')),
+          data: duplicatedVote ? { myVote: serializeMyVote(duplicatedVote as RankingVoteRow) } : undefined,
+        });
+      }
       throw voteErr;
     }
 
@@ -780,6 +858,65 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       likes: voteType === 'like' ? val : current.likes,
       dislikes: voteType === 'dislike' ? val : current.dislikes,
       joys: voteType === 'joy' ? val : (current.joys || 0),
+      myVote: voteRow ? serializeMyVote(voteRow as RankingVoteRow) : null,
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.delete('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const { data: vote } = await supabase.from('lc_votes')
+      .select('id, ranking_id, vote_type, created_at')
+      .eq('ranking_id', req.params.id)
+      .eq('voter_id', profile.id)
+      .maybeSingle();
+    if (!vote) return res.status(404).json(err(new Error('你还没有给这条内容投票')));
+
+    const typedVote = vote as RankingVoteRow;
+    const createdAt = new Date(typedVote.created_at).getTime();
+    if (!Number.isFinite(createdAt) || Date.now() - createdAt > VOTE_CANCEL_WINDOW_MS) {
+      return res.status(400).json(err(new Error('投票超过24小时，不能撤销')));
+    }
+
+    const { data: current } = await supabase.from('lc_rankings')
+      .select('likes, dislikes, joys, status')
+      .eq('id', req.params.id)
+      .single();
+    if (!current) return res.status(404).json(err(new Error('帖子不存在')));
+
+    const { error: deleteErr } = await supabase.from('lc_votes')
+      .delete()
+      .eq('id', typedVote.id)
+      .eq('voter_id', profile.id);
+    if (deleteErr) throw deleteErr;
+
+    const field = typedVote.vote_type === 'like' ? 'likes' : typedVote.vote_type === 'dislike' ? 'dislikes' : 'joys';
+    const nextValue = Math.max(0, Number((current as Record<string, unknown>)[field] || 0) - 1);
+    const { error: countErr } = await supabase.from('lc_rankings').update({ [field]: nextValue }).eq('id', req.params.id);
+    if (countErr) throw countErr;
+
+    const refundAmount = voteRefundAmount(typedVote.vote_type);
+    if (refundAmount > 0) {
+      await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) + refundAmount }).eq('id', profile.id);
+      await supabase.from('lc_transactions').insert({
+        profile_id: profile.id,
+        type: 'recharge',
+        amount: refundAmount,
+        description: `24小时内撤销${voteLabel(typedVote.vote_type)}退回 · ${refundAmount} 契约币`,
+        status: 'approved',
+      });
+    }
+
+    res.json(ok({
+      likes: typedVote.vote_type === 'like' ? nextValue : current.likes,
+      dislikes: typedVote.vote_type === 'dislike' ? nextValue : current.dislikes,
+      joys: typedVote.vote_type === 'joy' ? nextValue : (current.joys || 0),
+      myVote: null,
+      refunded: refundAmount,
+      balance: (profile.balance || 0) + refundAmount,
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
