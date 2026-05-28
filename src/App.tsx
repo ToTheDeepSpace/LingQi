@@ -12,6 +12,8 @@ import Rankings from './pages/Rankings';
 import CreateRanking from './pages/CreateRanking';
 import Commissions from './pages/Commissions';
 import CreateCommission from './pages/CreateCommission';
+import Carpools from './pages/Carpools';
+import CreateCarpool from './pages/CreateCarpool';
 import Wallet from './pages/Wallet';
 import CertificationPage from './pages/CertificationPage';
 import ShopDashboard from './pages/ShopDashboard';
@@ -20,7 +22,7 @@ import './App.css';
 
 function AppLayout() {
   const { pathname } = useLocation();
-  const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new';
+  const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new';
 
   return (
     <>
@@ -36,6 +38,8 @@ function AppLayout() {
         <Route path="/rankings/new" element={<CreateRanking />} />
         <Route path="/commissions" element={<Commissions />} />
         <Route path="/commissions/new" element={<CreateCommission />} />
+        <Route path="/carpools" element={<Carpools />} />
+        <Route path="/carpools/new" element={<CreateCarpool />} />
         <Route path="/wallet" element={<Wallet />} />
         <Route path="/certification" element={<CertificationPage />} />
         <Route path="/shop/dashboard" element={<ShopDashboard />} />
@@ -73,11 +77,13 @@ function SiteFooter() {
           <FooterColumn title="主要入口">
             <FooterLink to="/explore">灵契大厅</FooterLink>
             <FooterLink to="/commissions">委托需求墙</FooterLink>
+            <FooterLink to="/carpools">拼车区</FooterLink>
             <FooterLink to="/rankings">红黑白榜</FooterLink>
             <FooterLink to="/wallet">我的契约币</FooterLink>
           </FooterColumn>
           <FooterColumn title="发布与认证">
             <FooterLink to="/commissions/new">发布委托</FooterLink>
+            <FooterLink to="/carpools/new">发布拼车</FooterLink>
             <FooterLink to="/rankings/new">发布口碑</FooterLink>
             <FooterLink to="/certification">身份认证</FooterLink>
             <FooterLink to="/dashboard">个人后台</FooterLink>

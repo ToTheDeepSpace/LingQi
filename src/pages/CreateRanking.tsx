@@ -86,7 +86,7 @@ export default function CreateRanking() {
   const [cityQuery, setCityQuery] = useState('');
   const [subjectUrl, setSubjectUrl] = useState(draft?.subjectUrl || '');
   const [content, setContent] = useState(draft?.content || '');
-  const [initialAmount, setInitialAmount] = useState(draft?.initialAmount || 10);
+  const [initialAmount, setInitialAmount] = useState(draft?.type === 'white' ? 0 : Math.max(10, draft?.initialAmount || 10));
   const [files, setFiles] = useState<{ name: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -95,6 +95,7 @@ export default function CreateRanking() {
   const [balance, setBalance] = useState<number | null>(null);
   const [draftRestored, setDraftRestored] = useState(hasDraft);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const effectiveAmount = type === 'white' ? 0 : initialAmount;
 
   // Auto-save draft every 3 seconds
   useEffect(() => {
@@ -165,8 +166,8 @@ export default function CreateRanking() {
     if (!subjectName.trim()) return setError('请填写对象名称');
     if (!content.trim()) return setError('请填写评价内容');
     if (!subjectType) return setError('请选择对象类型');
-    if (files.length === 0) return setError('请至少上传一份证据文件；涉及第三方信息请先打码');
-    if ((balance || 0) < initialAmount) return setError('契约币不足，请先充值');
+    if (type !== 'white' && files.length === 0) return setError('请至少上传一份证据文件；涉及第三方信息请先打码');
+    if (effectiveAmount > 0 && (balance || 0) < effectiveAmount) return setError('契约币不足，请先充值');
 
     setSubmitting(true);
     setError('');
@@ -176,14 +177,14 @@ export default function CreateRanking() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
         body: JSON.stringify({
           type, subjectName: subjectName.trim(), subjectType, subjectCity: subjectCity.trim() || null,
-          subjectUrl: subjectUrl.trim() || null, content: content.trim(), initialAmount, files,
+          subjectUrl: subjectUrl.trim() || null, content: content.trim(), initialAmount: effectiveAmount, files,
         }),
       });
       const d = await r.json();
       if (d.success) {
         setDone(true);
         clearDraft();
-        setBalance(prev => (prev || 0) - initialAmount);
+        setBalance(prev => (prev || 0) - effectiveAmount);
       } else {
         const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败');
         setError(msg);
@@ -200,7 +201,9 @@ export default function CreateRanking() {
         <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>发布红黑榜</h1>
-            <p style={{ fontSize: '0.82rem', color: MUTED }}>一人一票 · 真实口碑 · 契约币 {initialAmount} 起发</p>
+            <p style={{ fontSize: '0.82rem', color: MUTED }}>
+              一人一票 · 真实口碑 · {type === 'white' ? '白榜免费发布' : `契约币 ${effectiveAmount} 起发`}
+            </p>
           </div>
           <Link to="/wallet" style={{
             padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)',
@@ -240,7 +243,7 @@ export default function CreateRanking() {
             <div style={{ fontSize: 64, marginBottom: 20 }}>✅</div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.6rem', marginBottom: 12 }}>发布成功</h2>
             <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 32 }}>
-              你的{type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}已提交审核。审核通过后将上线展示，{initialAmount} 契约币已扣除。
+              你的{type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}已提交审核。审核通过后将上线展示，{effectiveAmount > 0 ? `${effectiveAmount} 契约币已扣除。` : '白榜本次免费发布。'}
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <Link to="/rankings" style={{ padding: '12px 32px', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: INK, fontWeight: 700, textDecoration: 'none' }}>
@@ -259,7 +262,10 @@ export default function CreateRanking() {
               <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(71,85,105,0.78)' }}>榜单类型</p>
               <div style={{ display: 'flex', gap: 8 }}>
                 {(['red', 'white', 'black'] as const).map(t => (
-                  <button key={t} onClick={() => setType(t)}
+                  <button key={t} onClick={() => {
+                    setType(t);
+                    setInitialAmount(prev => t === 'white' ? 0 : Math.max(10, prev || 10));
+                  }}
                     style={{
                       flex: 1, padding: '12px 0', borderRadius: 12, cursor: 'pointer', fontWeight: 700, fontSize: '0.95rem',
                       border: type === t ? `2px solid ${t === 'red' ? '#dc2626' : t === 'black' ? '#64748b' : '#d9a857'}` : '2px solid rgba(201,146,46,0.16)',
@@ -290,18 +296,24 @@ export default function CreateRanking() {
             </div>
 
             {/* 金额 */}
-            <div>
-              <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(71,85,105,0.78)' }}>
-                初始投入 · <span style={{ color: GOLD }}>{initialAmount} 契约币</span>
-              </p>
-              <input type="range" min={10} max={100} step={10} value={initialAmount}
-                onChange={e => setInitialAmount(Number(e.target.value))}
-                style={{ width: '100%', accentColor: GOLD }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'rgba(71,85,105,0.52)', marginTop: 4 }}>
-                <span>10 契约币（最低）</span>
-                <span>100 契约币（最高）</span>
+            {type === 'white' ? (
+              <div style={{ padding: '14px 16px', borderRadius: 12, border: '1px solid rgba(217,168,87,0.22)', background: 'rgba(217,168,87,0.08)', color: '#925f18', lineHeight: 1.7, fontSize: '0.84rem' }}>
+                ✨ 白榜免费发布。它适合记录非夸非踩的趣闻、笑话、怪事和中性观察；如果涉及具体人或店，上传材料会更容易通过审核。
               </div>
-            </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(71,85,105,0.78)' }}>
+                  初始投入 · <span style={{ color: GOLD }}>{effectiveAmount} 契约币</span>
+                </p>
+                <input type="range" min={10} max={100} step={10} value={effectiveAmount}
+                  onChange={e => setInitialAmount(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: GOLD }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.73rem', color: 'rgba(71,85,105,0.52)', marginTop: 4 }}>
+                  <span>10 契约币（最低）</span>
+                  <span>100 契约币（最高）</span>
+                </div>
+              </div>
+            )}
 
             {/* 对象名称 */}
             <Input label="对象名称 *" value={subjectName} onChange={setSubjectName} placeholder="店名 / 人名 / DM名 / 灵契师名" />
@@ -400,7 +412,7 @@ export default function CreateRanking() {
             {/* 文件上传 */}
             <div>
               <p style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: 10, color: 'rgba(71,85,105,0.78)' }}>
-                上传证据文件 * <span style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.52)' }}>（PDF/图片，单文件 ≤10MB；涉及第三方请先打码）</span>
+                上传证据文件 {type === 'white' ? '（可选）' : '*'} <span style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.52)' }}>（PDF/图片，单文件 ≤10MB；涉及第三方请先打码）</span>
               </p>
               <label style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
@@ -443,7 +455,7 @@ export default function CreateRanking() {
                 color: submitting ? 'rgba(201,146,46,0.4)' : INK,
                 border: 'none', opacity: submitting ? 0.7 : 1,
               }}>
-              {submitting ? '提交中...' : `发布 · 扣 ${initialAmount} 契约币`}
+              {submitting ? '提交中...' : (effectiveAmount > 0 ? `发布 · 扣 ${effectiveAmount} 契约币` : '免费发布白榜')}
             </button>
           </div>
         )}

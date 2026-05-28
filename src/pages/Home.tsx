@@ -75,6 +75,15 @@ export default function Home() {
               onMouseLeave={e => { e.currentTarget.style.background = 'rgba(254,242,242,0.9)'; e.currentTarget.style.borderColor = 'rgba(192,57,43,0.24)'; }}>
               ⚖ 红黑榜 · 一人一票 · 真实口碑
             </Link>
+            <Link to="/carpools" style={{
+              width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem', fontWeight: 650,
+              borderRadius: 12, border: '1px solid rgba(39,83,137,0.22)', background: 'rgba(239,246,255,0.9)',
+              color: '#275389', textDecoration: 'none', transition: 'all 0.3s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(219,234,254,0.95)'; e.currentTarget.style.borderColor = '#275389'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,246,255,0.9)'; e.currentTarget.style.borderColor = 'rgba(39,83,137,0.22)'; }}>
+              🚗 拼车区 · 找搭子 · 看补贴
+            </Link>
           </div>
 
           <p style={{ marginTop: 24, fontSize: 11, letterSpacing: '0.08em', color: 'rgba(71,85,105,0.62)', textAlign: 'center' }}>

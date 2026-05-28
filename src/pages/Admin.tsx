@@ -98,6 +98,33 @@ type CommissionReview = {
   created_at: string;
 };
 
+type CarpoolReview = {
+  id: string;
+  poster_name: string;
+  poster_is_realname?: boolean;
+  title: string;
+  city: string;
+  event_date: string;
+  start_time?: string | null;
+  deadline_date?: string | null;
+  deadline_time?: string | null;
+  script_name: string;
+  role_name?: string | null;
+  role_note?: string | null;
+  needed_count: number;
+  subsidy_mode: 'none' | 'asking' | 'offering';
+  subsidy_amount: number;
+  store_name?: string | null;
+  store_address?: string | null;
+  leader_contact?: string | null;
+  contact_note?: string | null;
+  content: string;
+  boost_amount: number;
+  juzhanggui_sync_status?: 'pending' | 'synced' | 'failed' | 'disabled';
+  juzhanggui_schedule_id?: string | null;
+  created_at: string;
+};
+
 type TransactionReview = {
   id: string;
   profile_id: string;
@@ -120,8 +147,8 @@ type CertReview = {
   lc_profiles?: { display_name?: string; phone?: string };
 };
 
-type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'transaction' | 'cert';
-type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions' | 'wallet' | 'certs';
+type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert';
+type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'wallet' | 'certs';
 
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.04)',
@@ -164,6 +191,7 @@ export default function Admin() {
   const [comments, setComments] = useState<CommentReview[]>([]);
   const [claims, setClaims] = useState<ClaimReview[]>([]);
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
+  const [carpools, setCarpools] = useState<CarpoolReview[]>([]);
   const [transactions, setTransactions] = useState<TransactionReview[]>([]);
   const [certs, setCerts] = useState<CertReview[]>([]);
 const [loading, setLoading] = useState(false);
@@ -192,6 +220,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setComments((d.data as { comments: CommentReview[] }).comments || []);
         setClaims((d.data as { claims: ClaimReview[] }).claims || []);
         setCommissions((d.data as { commissions: CommissionReview[] }).commissions || []);
+        setCarpools((d.data as { carpools: CarpoolReview[] }).carpools || []);
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
       } else {
@@ -272,8 +301,12 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
-  const approveRanking = async (id: string) => {
-    await fetch(`${API}/lc/admin/rankings/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+  const approveRanking = async (id: string, targetType?: 'red' | 'black' | 'white') => {
+    await fetch(`${API}/lc/admin/rankings/${id}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetType }),
+    });
     void loadData();
   };
 
@@ -289,6 +322,11 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
 
   const approveCommission = async (id: string) => {
     await fetch(`${API}/lc/admin/commissions/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    void loadData();
+  };
+
+  const approveCarpool = async (id: string) => {
+    await fetch(`${API}/lc/admin/carpools/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
     void loadData();
   };
 
@@ -346,6 +384,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     } else if (type === 'commission') {
       await fetch(`${API}/lc/admin/commissions/${id}/reject`, { method: 'PUT', headers, body });
       setCommissions(prev => prev.filter(c => c.id !== id));
+    } else if (type === 'carpool') {
+      await fetch(`${API}/lc/admin/carpools/${id}/reject`, { method: 'PUT', headers, body });
+      setCarpools(prev => prev.filter(c => c.id !== id));
     } else if (type === 'transaction') {
       await fetch(`${API}/lc/admin/transactions/${id}/reject`, { method: 'PUT', headers, body });
       setTransactions(prev => prev.filter(t => t.id !== id));
@@ -365,6 +406,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setComments([]);
     setClaims([]);
     setCommissions([]);
+    setCarpools([]);
     setTransactions([]);
     setCerts([]);
   };
@@ -430,6 +472,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             { label: '联系申请', value: requests.length, color: GOLD },
             { label: '充值', value: transactions.length, color: '#22c55e' },
             { label: '委托需求', value: commissions.length, color: '#fbbf24' },
+            { label: '拼车', value: carpools.length, color: '#14b8a6' },
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
             { label: '评论', value: comments.length, color: '#38bdf8' },
             { label: '相关方', value: claims.length, color: '#f97316' },
@@ -448,6 +491,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           <button style={tabStyle(tab === 'requests')} onClick={() => setTab('requests')}>联系 {requests.length > 0 && `(${requests.length})`}</button>
           <button style={tabStyle(tab === 'wallet')} onClick={() => setTab('wallet')}>充值 {transactions.length > 0 && `(${transactions.length})`}</button>
           <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
+          <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
           <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
           <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
@@ -563,13 +607,19 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   <Row key={r.id} accent={r.type === 'red' ? '#dc2626' : r.type === 'black' ? '#475569' : '#d9a857'}>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <TitleLine title={r.subject_name} pill={r.type === 'red' ? '🏅 红榜' : r.type === 'black' ? '👎 黑榜' : '✨ 白榜'} />
-                      <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · 初始：{r.initial_amount} 契约币 · {r.created_at?.slice(0, 10)}</Meta>
+                      <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · {r.type === 'white' && r.initial_amount === 0 ? '免费发布' : `初始：${r.initial_amount} 契约币`} · {r.created_at?.slice(0, 10)}</Meta>
                       {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
                       <ContentBox>{r.content}</ContentBox>
                       {r.payment_proof && <Proof>支付凭证：{r.payment_proof}</Proof>}
                     </div>
                     <Actions vertical>
                       <ActionButton kind="ok" onClick={() => approveRanking(r.id)}>通过</ActionButton>
+                      {r.type === 'white' && (
+                        <>
+                          <ActionButton onClick={() => approveRanking(r.id, 'red')}>转红榜</ActionButton>
+                          <ActionButton onClick={() => approveRanking(r.id, 'black')}>转黑榜</ActionButton>
+                        </>
+                      )}
                       <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking')}>拒绝</ActionButton>
                     </Actions>
                   </Row>
@@ -603,6 +653,44 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     <Actions vertical>
                       <ActionButton kind="ok" onClick={() => approveCommission(c.id)}>通过</ActionButton>
                       <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'commission')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'carpools' && (
+              <ListEmpty empty={carpools.length === 0} text="暂无待审核拼车">
+                {carpools.map(c => (
+                  <Row key={c.id} accent="#14b8a6">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={c.title} pill="拼车区" />
+                      <Meta>
+                        发布人：{c.poster_is_realname ? `⭐ ${c.poster_name}` : c.poster_name}
+                        {` · ${c.city} · ${c.event_date}${c.start_time ? ` ${c.start_time}` : ''}`}
+                        {c.deadline_date ? ` · 截止：${c.deadline_date}${c.deadline_time ? ` ${c.deadline_time}` : ''}` : ''}
+                        {c.created_at ? ` · ${c.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      <Meta>
+                        本名：{c.script_name}
+                        {c.role_name ? ` · 角色：${c.role_name}` : ''}
+                        {` · 缺口：${c.needed_count}`}
+                        {c.subsidy_mode !== 'none' ? ` · ${c.subsidy_mode === 'asking' ? '吃补' : '出补'} ${c.subsidy_amount}` : ' · 无补贴'}
+                        {c.boost_amount > 0 ? ` · 加权 ${c.boost_amount}` : ''}
+                      </Meta>
+                      {(c.store_name || c.leader_contact || c.contact_note) && (
+                        <Meta>
+                          {c.store_name ? `店家：${c.store_name}${c.store_address ? ` · ${c.store_address}` : ''} ` : ''}
+                          {c.leader_contact ? `车头：${c.leader_contact} ` : ''}
+                          {c.contact_note ? `补充：${c.contact_note}` : ''}
+                        </Meta>
+                      )}
+                      {c.role_note && <ContentBox>{c.role_note}</ContentBox>}
+                      <ContentBox>{c.content}</ContentBox>
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveCarpool(c.id)}>通过并同步剧司辰</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'carpool')}>拒绝</ActionButton>
                     </Actions>
                   </Row>
                 ))}

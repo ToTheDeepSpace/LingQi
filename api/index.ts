@@ -12,6 +12,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'lingqi-dev-secret-change-in-produc
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const JUZHANGGUI_TENANT_ID = process.env.JUZHANGGUI_TENANT_ID || 'f0d6e011-6e75-4c14-95e9-dc61b26871e3';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -95,6 +96,7 @@ async function getAuthedProfile(req: express.Request) {
 }
 
 type RelatedProofFile = { name: string; url: string; type?: string };
+type SubsidyMode = 'none' | 'asking' | 'offering';
 
 function sanitizeRelatedFiles(input: unknown): RelatedProofFile[] {
   if (!Array.isArray(input)) return [];
@@ -136,6 +138,124 @@ function encodeRelatedProofFallback(note: string, files: RelatedProofFile[]) {
     related_note: note,
     related_files: files,
   });
+}
+
+function cleanText(value: unknown, max = 1200) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function parseCoinAmount(value: unknown, fallback = 0) {
+  const amount = Number.parseInt(String(value ?? fallback), 10);
+  return Number.isFinite(amount) ? Math.max(0, amount) : fallback;
+}
+
+function normalizeClockTime(value: unknown, fallback = '19:30') {
+  const text = cleanText(value, 20);
+  const match = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return fallback;
+  const hour = Math.min(23, Math.max(0, Number(match[1])));
+  const minute = Math.min(59, Math.max(0, Number(match[2])));
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function addHoursToClock(time: string, hours: number) {
+  const [h, m] = time.split(':').map(Number);
+  const total = ((h || 0) * 60 + (m || 0) + hours * 60) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function buildJuzhangguiScheduleNote(carpool: Record<string, unknown>) {
+  const lines = [
+    `来源：灵契拼车区`,
+    `拼车ID：${carpool.id}`,
+    `标题：${carpool.title || ''}`,
+    `城市：${carpool.city || ''}`,
+    `角色：${carpool.role_name || '未指定'}`,
+    `截止：${carpool.deadline_date || '未填'}${carpool.deadline_time ? ` ${carpool.deadline_time}` : ''}`,
+    `车头联系方式：${carpool.leader_contact || '未填'}`,
+    `补贴：${carpool.subsidy_mode === 'asking' ? '吃补' : carpool.subsidy_mode === 'offering' ? '出补' : '无'} ${carpool.subsidy_amount || 0}`,
+    `说明：${carpool.content || ''}`,
+  ];
+  return lines.join('\n').slice(0, 1800);
+}
+
+async function syncCarpoolToJuzhanggui(carpool: Record<string, unknown>) {
+  if (carpool.juzhanggui_schedule_id) {
+    return { ok: true, scheduleId: String(carpool.juzhanggui_schedule_id), reused: true };
+  }
+
+  const scriptName = cleanText(carpool.script_name, 100);
+  if (!scriptName) throw new Error('缺少剧本名，无法同步剧司辰');
+
+  const { data: existingScript, error: scriptQueryErr } = await supabase.from('scripts')
+    .select('id')
+    .eq('tenant_id', JUZHANGGUI_TENANT_ID)
+    .eq('name', scriptName)
+    .maybeSingle();
+  if (scriptQueryErr) throw scriptQueryErr;
+
+  let scriptId = existingScript?.id;
+  if (!scriptId) {
+    const { data: script, error: scriptErr } = await supabase.from('scripts').insert({
+      name: scriptName,
+      duration_minutes: 240,
+      min_duration_hours: 4,
+      max_duration_hours: 4,
+      tenant_id: JUZHANGGUI_TENANT_ID,
+    }).select('id').single();
+    if (scriptErr) throw scriptErr;
+    scriptId = script?.id;
+  }
+
+  const roleName = cleanText(carpool.role_name, 80);
+  if (scriptId && roleName) {
+    const { data: existingRole } = await supabase.from('script_player_roles')
+      .select('id')
+      .eq('script_id', scriptId)
+      .eq('role_name', roleName)
+      .maybeSingle();
+    if (!existingRole) {
+      await supabase.from('script_player_roles').insert({ script_id: scriptId, role_name: roleName, gender: '' });
+    }
+  }
+
+  const roomName = cleanText(carpool.store_name, 100) || `灵契拼车-${cleanText(carpool.city, 40) || '待定城市'}`;
+  const { data: existingRoom, error: roomQueryErr } = await supabase.from('rooms')
+    .select('id')
+    .eq('tenant_id', JUZHANGGUI_TENANT_ID)
+    .eq('name', roomName)
+    .maybeSingle();
+  if (roomQueryErr) throw roomQueryErr;
+
+  let roomId = existingRoom?.id;
+  if (!roomId) {
+    const { data: room, error: roomErr } = await supabase.from('rooms').insert({
+      name: roomName,
+      capacity: Number(carpool.needed_count || 0) || 0,
+      tenant_id: JUZHANGGUI_TENANT_ID,
+      status: 'active',
+    }).select('id').single();
+    if (roomErr) throw roomErr;
+    roomId = room?.id;
+  }
+
+  const startTime = normalizeClockTime(carpool.start_time, '19:30');
+  const endTime = addHoursToClock(startTime, 4);
+  const { data: schedule, error: scheduleErr } = await supabase.from('schedules').insert({
+    script_id: scriptId,
+    room_id: roomId || null,
+    scheduled_date: carpool.event_date,
+    start_time: startTime,
+    end_time: endTime,
+    status: 'pending',
+    player_count: Number(carpool.needed_count || 0) || 0,
+    customer_name: `灵契拼车 · ${cleanText(carpool.poster_name, 40) || '车头'}`,
+    note: buildJuzhangguiScheduleNote(carpool),
+    tenant_id: JUZHANGGUI_TENANT_ID,
+  }).select('id').single();
+  if (scheduleErr) throw scheduleErr;
+
+  return { ok: true, scheduleId: schedule?.id || null, reused: false };
 }
 
 type RankingVoteType = 'like' | 'dislike' | 'joy';
@@ -523,6 +643,236 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+// ==================== 拼车区 ====================
+
+app.get('/api/lc/carpools', async (req, res) => {
+  try {
+    const city = req.query.city as string;
+    const date = req.query.date as string;
+    const script = req.query.script as string;
+    let query = supabase.from('lc_carpools')
+      .select('*')
+      .eq('status', 'approved')
+      .order('boost_amount', { ascending: false })
+      .order('event_date', { ascending: true })
+      .order('created_at', { ascending: false });
+    if (city && city !== 'all') query = query.eq('city', city);
+    if (date) query = query.eq('event_date', date);
+    if (script) query = query.ilike('script_name', `%${script}%`);
+    const { data, error: qErr } = await query;
+    if (qErr && isMissingRelation(qErr, 'lc_carpools')) return res.json(ok([]));
+    if (qErr) throw qErr;
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/carpools/mine', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data, error: qErr } = await supabase.from('lc_carpools')
+      .select('*')
+      .eq('poster_id', profile.id)
+      .order('created_at', { ascending: false });
+    if (qErr && isMissingRelation(qErr, 'lc_carpools')) return res.json(ok([]));
+    if (qErr) throw qErr;
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const title = cleanText(req.body.title, 80);
+    const city = cleanText(req.body.city, 40);
+    const eventDate = cleanText(req.body.eventDate, 20);
+    const startTime = cleanText(req.body.startTime, 20);
+    const deadlineDate = cleanText(req.body.deadlineDate, 20);
+    const deadlineTime = cleanText(req.body.deadlineTime, 20);
+    const scriptName = cleanText(req.body.scriptName, 80);
+    const roleName = cleanText(req.body.roleName, 80);
+    const roleNote = cleanText(req.body.roleNote, 400);
+    const storeName = cleanText(req.body.storeName, 100);
+    const storeCity = cleanText(req.body.storeCity, 40) || city;
+    const storeAddress = cleanText(req.body.storeAddress, 160);
+    const storeSourceUrl = cleanText(req.body.storeSourceUrl, 500);
+    const storeVerifyNote = cleanText(req.body.storeVerifyNote, 500);
+    const leaderContact = cleanText(req.body.leaderContact, 300);
+    const contactNote = cleanText(req.body.contactNote, 300);
+    const content = cleanText(req.body.content, 1600);
+    const subsidyMode = (['none', 'asking', 'offering'].includes(req.body.subsidyMode) ? req.body.subsidyMode : 'none') as SubsidyMode;
+    const subsidyAmount = subsidyMode === 'none' ? 0 : parseCoinAmount(req.body.subsidyAmount, 0);
+    const neededCount = Math.min(20, Math.max(1, parseCoinAmount(req.body.neededCount, 1)));
+    const boostAmount = parseCoinAmount(req.body.boostAmount, 0);
+
+    if (!city || !eventDate || !deadlineDate || !scriptName || !leaderContact || !content) {
+      return res.status(400).json(err(new Error('请填写城市、日期、截止日期、本名、车头联系方式和拼车说明')));
+    }
+    if (boostAmount > 100) return res.status(400).json(err(new Error('加权展示最多 100 契约币')));
+    if (boostAmount > 0 && (profile.balance || 0) < boostAmount) {
+      return res.status(402).json(err(new Error('契约币不足，请先充值')));
+    }
+
+    if (boostAmount > 0) {
+      await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - boostAmount }).eq('id', profile.id);
+      await supabase.from('lc_transactions').insert({
+        profile_id: profile.id,
+        type: 'spend',
+        amount: -boostAmount,
+        description: `拼车区加权展示：${scriptName}`,
+        status: 'approved',
+      });
+    }
+
+    const { data, error: insErr } = await supabase.from('lc_carpools').insert({
+      poster_id: profile.id,
+      poster_name: profile.display_name,
+      poster_is_realname: !!profile.is_realname,
+      title: title || `${eventDate} · ${city} · ${scriptName}`,
+      city,
+      event_date: eventDate,
+      start_time: startTime || null,
+      deadline_date: deadlineDate,
+      deadline_time: deadlineTime || null,
+      script_name: scriptName,
+      role_name: roleName || null,
+      role_note: roleNote || null,
+      store_name: storeName || null,
+      store_city: storeName ? storeCity : null,
+      store_address: storeAddress || null,
+      store_source_url: storeSourceUrl || null,
+      store_verify_note: storeVerifyNote || null,
+      store_suggestion_status: storeName ? 'pending' : 'none',
+      subsidy_mode: subsidyMode,
+      subsidy_amount: subsidyAmount,
+      needed_count: neededCount,
+      leader_contact: leaderContact,
+      contact_note: contactNote || null,
+      content,
+      boost_amount: boostAmount,
+      ai_assist_context: {
+        source: 'lingqi_carpool_form',
+        juzhanggui_sync: 'on_admin_approval',
+      },
+    }).select('id').single();
+    if (insErr) {
+      if (isMissingRelation(insErr, 'lc_carpools')) return res.status(503).json(err(new Error('拼车区数据表尚未初始化，请先执行 Supabase migration')));
+      throw insErr;
+    }
+
+    res.json(ok({ id: data?.id, balance: (profile.balance || 0) - boostAmount }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/carpools/applications/sent', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data, error: qErr } = await supabase.from('lc_carpool_applications')
+      .select('id, carpool_id, status, created_at')
+      .eq('applicant_id', profile.id)
+      .order('created_at', { ascending: false });
+    if (qErr && isMissingRelation(qErr, 'lc_carpool_applications')) return res.json(ok([]));
+    if (qErr) throw qErr;
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/carpools/applications/received', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data: carpools, error: cErr } = await supabase.from('lc_carpools')
+      .select('id, title, city, event_date')
+      .eq('poster_id', profile.id);
+    if (cErr && isMissingRelation(cErr, 'lc_carpools')) return res.json(ok([]));
+    if (cErr) throw cErr;
+    const ids = (carpools || []).map(item => item.id);
+    if (ids.length === 0) return res.json(ok([]));
+
+    const meta = new Map((carpools || []).map(item => [item.id, item]));
+    const { data, error: qErr } = await supabase.from('lc_carpool_applications')
+      .select('*')
+      .in('carpool_id', ids)
+      .order('created_at', { ascending: false });
+    if (qErr && isMissingRelation(qErr, 'lc_carpool_applications')) return res.json(ok([]));
+    if (qErr) throw qErr;
+    res.json(ok((data || []).map(item => ({ ...item, carpool: meta.get(item.carpool_id) || null }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/carpools/:id/applications', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const message = cleanText(req.body.message, 1200);
+    const roleName = cleanText(req.body.roleName, 80);
+    if (!message) return res.status(400).json(err(new Error('请填写上车申请')));
+
+    const { data: carpool, error: cErr } = await supabase.from('lc_carpools')
+      .select('id, poster_id, status')
+      .eq('id', req.params.id)
+      .single();
+    if (cErr && isMissingRelation(cErr, 'lc_carpools')) return res.status(503).json(err(new Error('拼车区数据表尚未初始化')));
+    if (!carpool) return res.status(404).json(err(new Error('拼车不存在')));
+    if (carpool.status !== 'approved') return res.status(400).json(err(new Error('只能申请已公开的拼车')));
+    if (carpool.poster_id === profile.id) return res.status(400).json(err(new Error('不能申请自己的拼车')));
+
+    const { data, error: insErr } = await supabase.from('lc_carpool_applications').insert({
+      carpool_id: req.params.id,
+      applicant_id: profile.id,
+      applicant_name: profile.display_name,
+      applicant_is_realname: !!profile.is_realname,
+      role_name: roleName || null,
+      message,
+    }).select('id').single();
+    if (insErr) {
+      if (insErr.code === '23505') return res.status(409).json(err(new Error('你已经提交过上车申请了')));
+      throw insErr;
+    }
+    res.json(ok({ id: data?.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/carpools/assistant/compensation', async (req, res) => {
+  try {
+    const city = cleanText(req.query.city, 40);
+    const script = cleanText(req.query.script, 80);
+    const role = cleanText(req.query.role, 80);
+    const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
+    let query = supabase.from('lc_carpools')
+      .select('city, script_name, role_name, subsidy_mode, subsidy_amount, event_date')
+      .eq('status', 'approved')
+      .gte('created_at', since)
+      .gt('subsidy_amount', 0)
+      .limit(200);
+    if (city && city !== 'all') query = query.eq('city', city);
+    if (script) query = query.ilike('script_name', `%${script}%`);
+    if (role) query = query.ilike('role_name', `%${role}%`);
+    const { data, error: qErr } = await query;
+    if (qErr && isMissingRelation(qErr, 'lc_carpools')) return res.json(ok({ samples: [], summary: [] }));
+    if (qErr) throw qErr;
+
+    const groups = new Map<string, { city: string; script_name: string; role_name: string; asking: number[]; offering: number[]; count: number }>();
+    for (const row of data || []) {
+      const key = `${row.city || '未知'}|${row.script_name || '未知'}|${row.role_name || '未标注角色'}`;
+      const current = groups.get(key) || { city: row.city || '未知', script_name: row.script_name || '未知', role_name: row.role_name || '未标注角色', asking: [], offering: [], count: 0 };
+      current.count += 1;
+      if (row.subsidy_mode === 'asking') current.asking.push(Number(row.subsidy_amount || 0));
+      if (row.subsidy_mode === 'offering') current.offering.push(Number(row.subsidy_amount || 0));
+      groups.set(key, current);
+    }
+    const avg = (items: number[]) => items.length ? Math.round(items.reduce((a, b) => a + b, 0) / items.length) : null;
+    const summary = Array.from(groups.values())
+      .map(item => ({ ...item, asking_avg: avg(item.asking), offering_avg: avg(item.offering), asking: undefined, offering: undefined }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12);
+    res.json(ok({ samples: data || [], summary }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.get('/api/lc/commissions/applications/received', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
@@ -633,7 +983,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -642,6 +992,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_commissions').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_transactions').select('*, lc_profiles(display_name, phone)').eq('type', 'recharge').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_certifications').select('*, lc_profiles!inner(display_name, phone)').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_carpools').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
     ]);
     res.json(ok({
       profiles: profiles || [],
@@ -652,6 +1003,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       commissions: commissions || [],
       transactions: transactions || [],
       certifications: certifications || [],
+      carpools: carpools || [],
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -740,31 +1092,32 @@ app.get('/api/lc/rankings', async (req, res) => {
 app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
   try {
     const { type, subjectName, subjectType, subjectCity, subjectUrl, content, initialAmount, paymentProof, newSubject, files } = req.body;
-    if (!type || !subjectName || !subjectType || !content || !initialAmount) {
+    if (!type || !subjectName || !subjectType || !content) {
       return res.status(400).json(err(new Error('缺少必填字段')));
     }
     if (!['red', 'black', 'white'].includes(type)) return res.status(400).json(err(new Error('无效榜单类型')));
-    if (!Array.isArray(files) || files.length === 0) return res.status(400).json(err(new Error('请至少上传一份证据文件')));
-    const amount = parseInt(initialAmount);
-    if (amount < 10 || amount > 100) return res.status(400).json(err(new Error('契约币须在10~100之间')));
+    if (type !== 'white' && (!Array.isArray(files) || files.length === 0)) return res.status(400).json(err(new Error('请至少上传一份证据文件')));
+    const amount = type === 'white' ? 0 : parseInt(initialAmount);
+    if (type !== 'white' && (amount < 10 || amount > 100)) return res.status(400).json(err(new Error('契约币须在10~100之间')));
 
     // 契约币支付
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    if ((profile.balance || 0) < amount) return res.status(402).json(err(new Error('契约币不足，请先充值')));
+    if (amount > 0 && (profile.balance || 0) < amount) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
     const posterId = getReq(req, 'creatorId');
 
-    // 扣契约币
-    await supabase.from('lc_profiles')
-      .update({ balance: (profile.balance || 0) - amount })
-      .eq('id', profile.id);
+    if (amount > 0) {
+      await supabase.from('lc_profiles')
+        .update({ balance: (profile.balance || 0) - amount })
+        .eq('id', profile.id);
 
-    await supabase.from('lc_transactions').insert({
-      profile_id: profile.id, type: 'spend', amount: -amount,
-      description: `发布${type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}：${subjectName}`,
-      status: 'approved',
-    });
+      await supabase.from('lc_transactions').insert({
+        profile_id: profile.id, type: 'spend', amount: -amount,
+        description: `发布${type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}：${subjectName}`,
+        status: 'approved',
+      });
+    }
 
     const row: Record<string, unknown> = {
       type, subject_name: subjectName, subject_type: subjectType, subject_city: subjectCity || null,
@@ -1120,9 +1473,19 @@ app.post('/api/lc/rankings/:id/claim', authMiddleware, async (req, res) => {
 
 app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { data: r } = await supabase.from('lc_rankings').select('initial_amount').eq('id', req.params.id).single();
+    const targetType = ['red', 'black', 'white'].includes(req.body?.targetType) ? req.body.targetType : null;
+    const { data: r } = await supabase.from('lc_rankings').select('type, initial_amount').eq('id', req.params.id).single();
     if (!r) return res.status(404).json(err(new Error('帖子不存在')));
-    await supabase.from('lc_rankings').update({ status: 'approved', likes: r.initial_amount }).eq('id', req.params.id);
+    const nextType = targetType || r.type;
+    const patch: Record<string, unknown> = {
+      status: 'approved',
+      type: nextType,
+      likes: r.type === 'white' && targetType ? 0 : r.initial_amount,
+    };
+    if (nextType === 'black') {
+      patch.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    }
+    await supabase.from('lc_rankings').update(patch).eq('id', req.params.id);
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1200,6 +1563,45 @@ app.put('/api/lc/admin/commissions/:id/reject', authMiddleware, adminMiddleware,
   try {
     const rejectReason = req.body?.rejectReason || null;
     await supabase.from('lc_commissions')
+      .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/carpools/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data: carpool, error: cErr } = await supabase.from('lc_carpools')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (cErr) throw cErr;
+    if (!carpool) return res.status(404).json(err(new Error('拼车不存在')));
+
+    let syncResult: { ok: boolean; scheduleId?: string | null; reused?: boolean; error?: string } = { ok: false };
+    try {
+      const synced = await syncCarpoolToJuzhanggui(carpool as Record<string, unknown>);
+      syncResult = { ok: true, scheduleId: synced.scheduleId, reused: synced.reused };
+    } catch (syncErr) {
+      syncResult = { ok: false, error: getErrorText(syncErr) || '同步剧司辰失败' };
+    }
+
+    await supabase.from('lc_carpools')
+      .update({
+        status: 'approved',
+        juzhanggui_sync_status: syncResult.ok ? 'synced' : 'failed',
+        juzhanggui_schedule_id: syncResult.scheduleId || carpool.juzhanggui_schedule_id || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id);
+    res.json(ok({ sync: syncResult }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/carpools/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const rejectReason = req.body?.rejectReason || null;
+    await supabase.from('lc_carpools')
       .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
       .eq('id', req.params.id);
     res.json(ok());

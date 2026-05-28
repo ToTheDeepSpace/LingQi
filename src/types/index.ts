@@ -109,6 +109,55 @@ export interface CommissionApplication {
   commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date'> | null;
 }
 
+export interface Carpool {
+  id: string;
+  poster_id: string;
+  poster_name: string;
+  poster_is_realname: boolean;
+  title: string;
+  city: string;
+  event_date: string;
+  start_time: string | null;
+  deadline_date: string | null;
+  deadline_time: string | null;
+  script_name: string;
+  role_name: string | null;
+  role_note: string | null;
+  store_name: string | null;
+  store_city: string | null;
+  store_address: string | null;
+  store_source_url: string | null;
+  store_verify_note: string | null;
+  store_suggestion_status: 'none' | 'pending' | 'linked';
+  subsidy_mode: 'none' | 'asking' | 'offering';
+  subsidy_amount: number;
+  needed_count: number;
+  joined_count: number;
+  leader_contact: string | null;
+  contact_note: string | null;
+  content: string;
+  boost_amount: number;
+  status: 'pending' | 'approved' | 'rejected' | 'closed';
+  reject_reason: string | null;
+  juzhanggui_sync_status: 'pending' | 'synced' | 'failed' | 'disabled';
+  juzhanggui_schedule_id: string | null;
+  ai_assist_context?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface CarpoolApplication {
+  id: string;
+  carpool_id: string;
+  applicant_id: string;
+  applicant_name: string;
+  applicant_is_realname: boolean;
+  role_name: string | null;
+  message: string;
+  status: 'submitted' | 'accepted' | 'rejected';
+  created_at: string;
+  carpool?: Pick<Carpool, 'id' | 'title' | 'city' | 'event_date'> | null;
+}
+
 export interface Certification {
   id: string;
   profile_id: string;

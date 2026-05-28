@@ -137,6 +137,7 @@ export default function Navbar() {
         <div className="hidden sm:flex" style={{ alignItems: 'center', gap: 8 }}>
           <NavLink to="/explore">进入灵契大厅</NavLink>
           <NavLink to="/commissions">委托需求</NavLink>
+          <NavLink to="/carpools">拼车区</NavLink>
           <NavLink to="/rankings">红黑榜</NavLink>
           {creatorAuth && <IdentityChip tone="user">用户：{creatorAuth.display_name || creatorAuth.phone || '已登录'}</IdentityChip>}
           {isAdmin && <IdentityChip tone="admin">管理员{pendingCount > 0 ? ` · 待审 ${pendingCount}` : ' · 已登录'}</IdentityChip>}
@@ -201,6 +202,7 @@ export default function Navbar() {
         }}>
           <MobileLink to="/explore" onClick={() => setMenuOpen(false)}>进入灵契大厅</MobileLink>
           <MobileLink to="/commissions" onClick={() => setMenuOpen(false)}>委托需求</MobileLink>
+          <MobileLink to="/carpools" onClick={() => setMenuOpen(false)}>拼车区</MobileLink>
           <MobileLink to="/rankings" onClick={() => setMenuOpen(false)}>红黑榜</MobileLink>
           {creatorAuth && <MobileStatus tone="user">当前用户：{creatorAuth.display_name || creatorAuth.phone || '已登录'}</MobileStatus>}
           {isAdmin && <MobileStatus tone="admin">管理员已登录{pendingCount > 0 ? `，待审 ${pendingCount}` : ''}</MobileStatus>}

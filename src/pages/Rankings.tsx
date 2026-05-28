@@ -910,7 +910,7 @@ export default function Rankings() {
                         <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
                       )}
                       <span>· {item.created_at?.slice(0, 10)}</span>
-                      <span>· 初始 {item.initial_amount} 契约币</span>
+                      <span>· {item.type === 'white' && item.initial_amount === 0 ? '免费发布' : `初始 ${item.initial_amount} 契约币`}</span>
                     </span>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => openVoteModal(item.id, 'like')}
