@@ -60,6 +60,13 @@ const scrollPanelStyle: React.CSSProperties = {
   WebkitOverflowScrolling: 'touch',
 };
 
+const backLinkStyle: React.CSSProperties = {
+  color: 'rgba(39,83,137,0.82)',
+  textDecoration: 'none',
+  fontSize: '0.86rem',
+  fontWeight: 800,
+};
+
 function getAuth() {
   try {
     const stored = localStorage.getItem('lc_creator');
@@ -202,8 +209,9 @@ export default function CreateRanking() {
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
       <div style={{ background: 'linear-gradient(135deg, #eef6ff, #fffaf2)', borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '32px 20px' }}>
-        <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
+        <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <Link to="/rankings" style={backLinkStyle}>← 返回红黑榜</Link>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>发布红黑榜</h1>
             <p style={{ fontSize: '0.82rem', color: MUTED }}>
               一人一票 · 真实口碑 · {type === 'white' ? '白榜免费发布' : `契约币 ${effectiveAmount} 起发`}

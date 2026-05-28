@@ -9,6 +9,13 @@ const GOLD = '#d9a857';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
+const backLinkStyle: React.CSSProperties = {
+  color: 'rgba(39,83,137,0.82)',
+  textDecoration: 'none',
+  fontSize: '0.86rem',
+  fontWeight: 800,
+};
+
 function getAuth(): AuthData | null {
   try {
     const stored = localStorage.getItem('lc_creator');
@@ -107,8 +114,9 @@ export default function CreateCarpool() {
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
       <div style={{ background: 'linear-gradient(135deg, #eef6ff, #fffaf2)', borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '32px 20px' }}>
-        <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-          <div>
+        <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <Link to="/carpools" style={backLinkStyle}>← 返回拼车区</Link>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>发布拼车</h1>
             <p style={{ fontSize: '0.82rem', color: MUTED }}>日期、城市、剧本、角色和补贴信息会成为后续 AI 助手的数据基础。</p>
           </div>
