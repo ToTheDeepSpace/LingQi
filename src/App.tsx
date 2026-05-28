@@ -15,7 +15,7 @@ import CreateCommission from './pages/CreateCommission';
 import Wallet from './pages/Wallet';
 import CertificationPage from './pages/CertificationPage';
 import ShopDashboard from './pages/ShopDashboard';
-import { PrivacyPolicy, ReviewRules } from './pages/Legal';
+import { PrivacyPolicy, ReviewRules, UserAgreement } from './pages/Legal';
 import './App.css';
 
 function AppLayout() {
@@ -40,6 +40,7 @@ function AppLayout() {
         <Route path="/certification" element={<CertificationPage />} />
         <Route path="/shop/dashboard" element={<ShopDashboard />} />
         <Route path="/rules" element={<ReviewRules />} />
+        <Route path="/terms" element={<UserAgreement />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
       </Routes>
       <SiteFooter />
@@ -89,7 +90,7 @@ function SiteFooter() {
           </FooterColumn>
           <FooterColumn title="规则与合规">
             <FooterLink to="/rules">审核规则</FooterLink>
-            <FooterText>用户协议（待补）</FooterText>
+            <FooterLink to="/terms">用户协议</FooterLink>
             <FooterLink to="/privacy">隐私政策</FooterLink>
             <FooterText>备案号待公示</FooterText>
           </FooterColumn>
