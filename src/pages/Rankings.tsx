@@ -968,7 +968,7 @@ export default function Rankings() {
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
                       onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>
-                      {showVotes ? '收起口碑' : '公开口碑'}
+                      {showVotes ? '收起投票记录' : '查看投票记录'}
                     </button>
                     <div style={{ flex: 1 }} />
                   </div>
@@ -976,7 +976,7 @@ export default function Rankings() {
                   {showVotes && (
                     <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {votes.length === 0 ? (
-                        <span style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.48)' }}>暂无公开口碑</span>
+                        <span style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.48)' }}>暂无投票记录</span>
                       ) : votes.map(v => (
                         <span key={v.id} style={{
                           display: 'inline-flex', alignItems: 'center', gap: 5,
