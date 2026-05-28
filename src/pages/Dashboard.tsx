@@ -43,7 +43,7 @@ type MyRanking = {
   likes: number;
   dislikes: number;
   joys: number;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
   created_at: string;
 };
 
@@ -52,7 +52,7 @@ type MyCommission = {
   title: string;
   city?: string | null;
   needed_date?: string | null;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'closed';
   created_at: string;
 };
 
@@ -240,6 +240,44 @@ export default function Dashboard() {
       if (d.success) {
         setMyCarpools(prev => prev.map(item => item.id === id ? { ...item, status: 'closed' } : item));
         setMsg('拼车已关闭');
+        setTimeout(() => setMsg(''), 2500);
+      } else {
+        const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '关闭失败');
+        setError(msg);
+      }
+    } catch {
+      setError('网络错误，请重试');
+    }
+  };
+
+  const withdrawRanking = async (id: string) => {
+    if (!confirm('确定撤回这条待审核口碑吗？撤回后不会进入审核队列。')) return;
+    setError('');
+    try {
+      const r = await fetch(`${API}/lc/rankings/${id}/withdraw`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      if (d.success) {
+        setMyRankings(prev => prev.map(item => item.id === id ? { ...item, status: 'withdrawn' } : item));
+        setMsg('口碑已撤回');
+        setTimeout(() => setMsg(''), 2500);
+      } else {
+        const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '撤回失败');
+        setError(msg);
+      }
+    } catch {
+      setError('网络错误，请重试');
+    }
+  };
+
+  const closeCommission = async (id: string) => {
+    if (!confirm('确定关闭这条委托需求吗？关闭后不会继续公开展示。')) return;
+    setError('');
+    try {
+      const r = await fetch(`${API}/lc/commissions/${id}/close`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      if (d.success) {
+        setMyCommissions(prev => prev.map(item => item.id === id ? { ...item, status: 'closed' } : item));
+        setMsg('委托需求已关闭');
         setTimeout(() => setMsg(''), 2500);
       } else {
         const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '关闭失败');
@@ -585,6 +623,11 @@ export default function Dashboard() {
                       meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · ${item.initial_amount === 0 ? '免费' : `${item.initial_amount} 契约币`} · 赞${item.likes || 0} 踩${item.dislikes || 0} 欢乐${item.joys || 0}`}
                       status={item.status}
                       to="/rankings"
+                      action={item.status === 'pending' && item.initial_amount === 0 ? (
+                        <button onClick={() => withdrawRanking(item.id)} style={miniButtonStyle}>
+                          撤回
+                        </button>
+                      ) : null}
                     />
                   ))}
                 </MineSection>
@@ -596,6 +639,11 @@ export default function Dashboard() {
                       meta={`${item.city || '未填城市'}${item.needed_date ? ` · ${item.needed_date}` : ''}`}
                       status={item.status}
                       to="/commissions"
+                      action={item.status === 'approved' || item.status === 'pending' ? (
+                        <button onClick={() => closeCommission(item.id)} style={miniButtonStyle}>
+                          关闭
+                        </button>
+                      ) : null}
                     />
                   ))}
                 </MineSection>
@@ -608,8 +656,7 @@ export default function Dashboard() {
                       status={item.status}
                       to="/carpools"
                       action={item.status === 'approved' || item.status === 'pending' ? (
-                        <button onClick={() => closeCarpool(item.id)}
-                          style={{ border: '1px solid rgba(100,116,139,0.2)', background: 'rgba(241,245,249,0.85)', color: '#475569', borderRadius: 8, padding: '5px 9px', cursor: 'pointer', fontSize: '0.76rem', fontWeight: 800 }}>
+                        <button onClick={() => closeCarpool(item.id)} style={miniButtonStyle}>
                           关闭
                         </button>
                       ) : null}
@@ -654,12 +701,24 @@ function MineSection({ title, emptyText, children }: { title: string; emptyText:
   );
 }
 
+const miniButtonStyle: React.CSSProperties = {
+  border: '1px solid rgba(100,116,139,0.2)',
+  background: 'rgba(241,245,249,0.85)',
+  color: '#475569',
+  borderRadius: 8,
+  padding: '5px 9px',
+  cursor: 'pointer',
+  fontSize: '0.76rem',
+  fontWeight: 800,
+};
+
 function MineRow({ title, meta, status, to, action }: { title: string; meta: string; status: string; to: string; action?: React.ReactNode }) {
   const statusMap: Record<string, { label: string; color: string; bg: string }> = {
     pending: { label: '待审核', color: '#925f18', bg: 'rgba(217,168,87,0.12)' },
     approved: { label: '已公开', color: '#15803d', bg: 'rgba(220,252,231,0.78)' },
     rejected: { label: '未通过', color: '#b91c1c', bg: 'rgba(254,242,242,0.9)' },
     closed: { label: '已关闭', color: '#64748b', bg: 'rgba(241,245,249,0.9)' },
+    withdrawn: { label: '已撤回', color: '#64748b', bg: 'rgba(241,245,249,0.9)' },
   };
   const item = statusMap[status] || statusMap.pending;
   return (

@@ -959,6 +959,28 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.put('/api/lc/commissions/:id/close', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data: commission, error: cErr } = await supabase.from('lc_commissions')
+      .select('id, poster_id, status')
+      .eq('id', req.params.id)
+      .single();
+    if (cErr && isMissingRelation(cErr, 'lc_commissions')) return res.status(503).json(err(new Error('委托需求表尚未初始化')));
+    if (!commission) return res.status(404).json(err(new Error('委托需求不存在')));
+    if (commission.poster_id !== profile.id) return res.status(403).json(err(new Error('只能关闭自己的委托需求')));
+    if (!['pending', 'approved'].includes(commission.status)) return res.status(400).json(err(new Error('当前状态不能关闭')));
+
+    const { error: updErr } = await supabase.from('lc_commissions')
+      .update({ status: 'closed', updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .eq('poster_id', profile.id);
+    if (updErr) throw updErr;
+    res.json(ok({ id: req.params.id, status: 'closed' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 // ==================== 拼车区 ====================
 
 app.get('/api/lc/carpools', async (req, res) => {
@@ -1573,6 +1595,32 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.put('/api/lc/rankings/:id/withdraw', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data: ranking } = await supabase.from('lc_rankings')
+      .select('id, poster_id, status, initial_amount, likes, dislikes, joys')
+      .eq('id', req.params.id)
+      .single();
+    if (!ranking) return res.status(404).json(err(new Error('内容不存在')));
+    if (ranking.poster_id !== profile.id) return res.status(403).json(err(new Error('只能撤回自己的内容')));
+    if (ranking.status !== 'pending') return res.status(400).json(err(new Error('只有待审核内容可以撤回')));
+    if ((ranking.initial_amount || 0) > 0) return res.status(400).json(err(new Error('付费内容撤回涉及契约币退款，请联系管理员处理')));
+    if ((ranking.likes || 0) > 0 || (ranking.dislikes || 0) > 0 || (ranking.joys || 0) > 0) {
+      return res.status(400).json(err(new Error('已有互动记录的内容不能自助撤回')));
+    }
+
+    const { error: updErr } = await supabase.from('lc_rankings')
+      .update({ status: 'withdrawn' })
+      .eq('id', req.params.id)
+      .eq('poster_id', profile.id)
+      .eq('status', 'pending');
+    if (updErr) throw updErr;
+    res.json(ok({ id: req.params.id, status: 'withdrawn' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
   try {
     const voteType = req.body.voteType as RankingVoteType;
@@ -2110,17 +2158,6 @@ app.get('/api/lc/profiles/lookup', async (req, res) => {
     const { data } = await supabase.from('lc_profiles')
       .select('id, display_name').eq('display_name', name).maybeSingle();
     res.json(ok(data || null));
-  } catch (e) { res.status(500).json(err(e)); }
-});
-
-// ── 文件上传 ──
-
-app.post('/api/lc/upload', authMiddleware, async (req, res) => {
-  try {
-    const profile = await getAuthedProfile(req);
-    if (!profile) return res.status(401).json(err(new Error('请先登录')));
-    // 简单文件大小检查（由前端限制 + 此处兜底）
-    res.json(ok({ message: '上传功能请在客户端通过 Supabase Storage 直接上传' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
