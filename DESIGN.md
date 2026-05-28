@@ -1,296 +1,104 @@
----
-version: alpha
-name: 泡泡宇宙 (Bubbleverse)
-description: 剧司辰 · 灵契 · 红黑榜统一设计语言。戏剧感 × 东方美学 × 现代SaaS。
-colors:
-  # ── 共享底色 ──
-  ink: "#0F1117"
-  ink-light: "#1A1D27"
-  paper: "#F5F3EE"
-  paper-dim: "#E8E4DB"
-  primary: "#1B6B6B"
-  primary-light: "#2D9D9D"
-  
-  # ── 剧司辰 ──
-  jsc-primary: "#1B6B6B"
-  jsc-primary-light: "#2D9D9D"
-  jsc-accent: "#C9A84C"
-  
-  # ── 灵契 ──
-  lq-primary: "#6B3FA0"
-  lq-primary-light: "#8B5FBF"
-  lq-accent: "#D4A843"
-  lq-rose: "#E8C4C4"
-  
-  # ── 红黑榜 ──
-  rbb-red: "#C0392B"
-  rbb-red-light: "#E74C3C"
-  rbb-black: "#1A1A1A"
-  rbb-green: "#27AE60"
-  rbb-gold: "#F39C12"
-  
-  # ── 语义色 ──
-  success: "#27AE60"
-  warning: "#F39C12"
-  error: "#E74C3C"
-  info: "#3498DB"
+# LingQi DESIGN.md
 
-typography:
-  h1:
-    fontFamily: "Noto Serif SC, serif"
-    fontSize: 2.25rem
-    fontWeight: 700
-    lineHeight: 1.3
-    letterSpacing: "-0.01em"
-  h2:
-    fontFamily: "Noto Serif SC, serif"
-    fontSize: 1.75rem
-    fontWeight: 600
-    lineHeight: 1.35
-  h3:
-    fontFamily: "Noto Sans SC, sans-serif"
-    fontSize: 1.25rem
-    fontWeight: 600
-    lineHeight: 1.4
-  body-lg:
-    fontFamily: "Noto Sans SC, sans-serif"
-    fontSize: 1.0625rem
-    fontWeight: 400
-    lineHeight: 1.7
-  body-md:
-    fontFamily: "Noto Sans SC, sans-serif"
-    fontSize: 0.9375rem
-    fontWeight: 400
-    lineHeight: 1.6
-  body-sm:
-    fontFamily: "Noto Sans SC, sans-serif"
-    fontSize: 0.8125rem
-    fontWeight: 400
-    lineHeight: 1.5
-  label:
-    fontFamily: "Noto Sans SC, sans-serif"
-    fontSize: 0.75rem
-    fontWeight: 500
-    lineHeight: 1.4
-    letterSpacing: "0.04em"
-  number:
-    fontFamily: "JetBrains Mono, monospace"
-    fontSize: 0.9375rem
-    fontWeight: 500
+> 本文件是灵契仓库内的设计入口，避免 Agent 只读仓库时拿到旧规则。
+> 完整设计系统主文档在：
+> `/Users/mima0000/Documents/Obsidian Vault/01_Projects 项目/DESIGN.md`
 
-rounded:
-  none: 0
-  sm: 4px
-  md: 8px
-  lg: 12px
-  xl: 16px
-  full: 9999px
+更新时间：2026-05-28
 
-spacing:
-  xs: 4px
-  sm: 8px
-  md: 16px
-  lg: 24px
-  xl: 32px
-  "2xl": 48px
-  "3xl": 64px
+## 品牌定义
 
-shadows:
-  card: "0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08)"
-  elevated: "0 4px 12px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.1)"
-  modal: "0 8px 32px rgba(0,0,0,0.25)"
-  glow-gold: "0 0 20px rgba(201,168,76,0.3)"
-  glow-purple: "0 0 20px rgba(107,63,160,0.3)"
+灵契不是普通 coser 展示站。
 
-components:
-  # ── 共享组件 ──
-  button-primary:
-    backgroundColor: "{colors.jsc-primary}"
-    textColor: "#FFFFFF"
-    rounded: "{rounded.md}"
-    padding: "10px 24px"
-  button-primary-hover:
-    backgroundColor: "{colors.jsc-primary}"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.md}"
-  button-ghost:
-    backgroundColor: "transparent"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.md}"
-    padding: "10px 24px"
-  button-ghost-hover:
-    backgroundColor: "rgba(255,255,255,0.08)"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.md}"
-  
-  card-default:
-    backgroundColor: "{colors.ink-light}"
-    rounded: "{rounded.lg}"
-    padding: "{spacing.lg}"
-  
-  input-default:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.md}"
-    padding: "10px 14px"
-  
-  tag-default:
-    backgroundColor: "rgba(255,255,255,0.06)"
-    textColor: "{colors.paper-dim}"
-    rounded: "{rounded.full}"
-    padding: "4px 10px"
-  
-  # ── 剧司辰专属 ──
-  jsc-schedule-card:
-    backgroundColor: "{colors.ink-light}"
-    rounded: "{rounded.lg}"
-    padding: "{spacing.md}"
-  jsc-status-confirmed:
-    backgroundColor: "{colors.jsc-primary}"
-    textColor: "#FFFFFF"
-    rounded: "{rounded.sm}"
-  jsc-status-pending:
-    backgroundColor: "rgba(201,168,76,0.15)"
-    textColor: "{colors.jsc-accent}"
-    rounded: "{rounded.sm}"
-  
-  # ── 灵契专属 ──
-  lq-profile-header:
-    backgroundColor: "linear-gradient(135deg, {colors.lq-primary}, {colors.ink})"
-    rounded: "{rounded.xl}"
-    padding: "{spacing.2xl}"
-  lq-contract-card:
-    backgroundColor: "{colors.ink-light}"
-    rounded: "{rounded.lg}"
-    padding: "{spacing.lg}"
-  lq-badge-verified:
-    backgroundColor: "{colors.lq-accent}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.full}"
-  
-  # ── 红黑榜专属 ──
-  rbb-post-card:
-    backgroundColor: "{colors.ink-light}"
-    rounded: "{rounded.lg}"
-    padding: "{spacing.lg}"
-  rbb-upvote:
-    backgroundColor: "transparent"
-    textColor: "{colors.rbb-green}"
-  rbb-upvote-active:
-    backgroundColor: "rgba(39,174,96,0.12)"
-    textColor: "{colors.rbb-green}"
-  rbb-downvote:
-    backgroundColor: "transparent"
-    textColor: "{colors.rbb-red}"
-  rbb-downvote-active:
-    backgroundColor: "rgba(192,57,43,0.12)"
-    textColor: "{colors.rbb-red}"
-  rbb-star-badge:
-    backgroundColor: "{colors.rbb-gold}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.full}"
----
+灵契师是与虚拟人签订契约的人。契约成立后，虚拟人借由灵契师短暂降临现实，与委托人相遇、陪伴、完成一段被共同见证的时间。
 
-## Overview
+对外核心表达：
 
-泡泡宇宙 (Bubbleverse) 是剧司辰、灵契、红黑榜的统一设计语言。三者共享暗色底盘（ink #0F1117）、东方衬线标题（Noto Serif SC）、克制留白——各自通过专属主题色和微交互建立独立人格。
+- “与虚拟人签订契约，让角色短暂降临现实。”
+- “寻找灵契师”
+- “发起委托”
+- “进入灵契大厅”
 
-- **剧司辰**：深海青 + 古铜金，理性可靠，像剧场后台的挂钟。
-- **灵契**：紫罗兰 + 暖金 + 玫瑰，神秘而温柔，像一卷展开的契约。
-- **红黑榜**：嫣红 + 墨黑 + 翠绿，直接有力，像用朱砂笔在宣纸上判词。
+禁止：
 
----
+- 不要把灵契师写成卡司。
+- 不要把委托人写成 coser。
+- 不要把“预约意向金”写成“加微信门槛费”。
 
-## Colors
+## 当前视觉方向
 
-### 共享底色
+- 用户侧页面使用暖白纸面 `#FFFDF8`、白色卡片、深色正文 `#1F2937`。
+- 辅助文字不要低于 `rgba(71,85,105,0.76)` 这个可读性级别。
+- 金色 `#D9A857` 用于签订、认证、星标、契约币、付费入口。
+- 浅蓝 `#275389` 用于链接、返回入口和信息提示。
+- 紫色只作为灵性光泽或特殊徽章，不作为大面积主背景。
+- 红色只用于风险、驳回、黑榜或点踩，不做大面积背景。
 
-| Token | 值 | 用途 |
-|--------|-----|------|
-| `ink` | #0F1117 | 全局背景，所有产品通用 |
-| `ink-light` | #1A1D27 | 卡片、面板、输入框 |
-| `paper` | #F5F3EE | 正文、主要文字 |
-| `paper-dim` | #E8E4DB | 辅助文字、标签 |
+## 页面规则
 
-### 剧司辰
+### 首页
 
-- **Primary (#1B6B6B)**：深水绿，传达稳、可信。按钮、tab 激活态、状态标签。
-- **Accent (#C9A84C)**：古铜金。时间选择器、高亮日期、VIP 标识。少量点缀，不喧宾夺主。
+- 第一屏必须解释“灵契是什么”。
+- 灵契师、委托人、配套服务的关系要清楚。
+- 配套服务包括摄影师、妆造师、服装商、道具师。
+- 不再把 coser 作为主要服务对象写进首页。
 
-### 灵契
+### 灵契大厅
 
-- **Primary (#6B3FA0)**：紫藤色。导航、主按钮、灵契师认证徽章。
-- **Accent (#D4A843)**：暖金。契约签署动效、星标、付费入口。
-- **Rose (#E8C4C4)**：樱花粉。委托状态、温柔提示、情感本标签。
+- 要像“可被委托的角色入口”，不是资料表。
+- 重点展示头像/封面、角色气质、可接地点、档期、社交账号快照、精选评价和委托入口。
+- 支持抖音、小红书等外部主页链接；手机端优先尝试打开 App，失败再打开网页。
+
+### 委托需求墙
+
+- 委托人可以发布任务需求：日期、城市/地点、想要的角色、预算、补充说明。
+- 需求也可以只是一段自由文字，不强迫所有人填完整表格。
+- 需求墙应该像“愿望委托板”，不是招聘网站。
+- 任务地点和日期必须突出展示，因为灵契师可能全国流动。
+- 预留 AI 填表助手接口。
 
 ### 红黑榜
 
-- **Red (#C0392B)**：朱砂红。点踩、警告、删除确认。不可大面积使用。
-- **Green (#27AE60)**：翠绿。点赞、好评、通过标识。
-- **Gold (#F39C12)**：实名星标。后台认证后的荣誉标识。
-- **Black (#1A1A1A)**：榜单位底色。与 ink 拉开一个色阶，让榜单区域有重量感。
+- 分类：店家、DM（卡司）、灵契师（委托师）、玩家。
+- 红榜/黑榜需要证据，发布前必须明确提示审核规则。
+- 白榜承接非夸非踩的趣闻、笑话和中性记录，原型期免费发布。
+- 欢乐反应免费，表示“有意思”，不代表认同或反对。
+- 点赞/点踩是一号一票；同一用户可以改票。
+- 黑榜公开展示 30 天后过期隐藏。
+- “我是相关方”不是删帖入口。正确路径是先发评论，再提交相关资料申请相关方认证；审核通过后评论置顶在主帖下方。
 
-### 语义色
+### 拼车区
 
-`success`（绿）、`warning`（金）、`error`（红）、`info`（蓝）——跨产品统一，不做变体。
+- 拼车区属于灵契口碑与同城协作生态，不是独立产品。
+- 发布拼车必须包含日期、城市、报名截止日期、车头联系方式、剧本名和拼车说明。
+- 可加钱提升展示排序，但不得影响审核结论。
+- 审核通过的拼车可同步为剧司辰默认店家的剧本、房间线索或排期草稿。
 
----
+## 用户资料与头像
 
-## Typography
+- 用户可以上传头像和封面图。
+- 昵称、头像、封面图、简介默认走自动机审；命中风险进入人工复核。
+- 被驳回时回退到上一版已通过资料。
+- 实名认证只影响星标和后台可信度，前台仍显示昵称和头像，不暴露真实姓名。
+- 禁止头像/昵称冒充官方、冒充他人、使用违法违规、色情擦边、血腥暴力、仇恨攻击、联系方式导流或广告内容。
 
-**层级原则**：标题用衬线体（Noto Serif SC）建立东方仪式感，正文用无衬线（Noto Sans SC）保阅读效率，数字用等宽（JetBrains Mono）传递数据可信度。
+## 审核系统
 
-- `h1` / `h2`：衬线，克制的大字号，不做超大 hero。
-- `h3`：无衬线加粗，用于卡片标题和面板。
-- `body-lg`：行高 1.7，保证中文长文本呼吸感。
-- `label`：小号大写风格（letter-spacing 0.04em），用于 badge、tag、表头。
-- `number`：等宽，数据表格和统计数字。
+- 注册账号不需要审核；发布内容需要审核。
+- 自动预审先检查文本、图片、链接、重复内容、证据缺失、第三方隐私、辱骂和导流。
+- 机器审核保存 `risk_score`、`risk_labels`、`model_version`、`reason`。
+- 机器不能独立完成严重处罚、永久隐藏、封号、公开定性这类不可逆决定。
+- 高风险黑榜、相关方争议、删除/隐藏、热门帖改判、涉及隐私/严重指控的内容，走多人复核。
+- 建议统一 `moderation_jobs` 队列管理主帖、评论、头像、昵称、委托、拼车和相关方申请。
 
----
+## 防篡改记录
 
-## Layout & Spacing
+暂不上真正区块链。先做站内防篡改审计链：
 
-间距体系从 4px 到 64px，遵循 8px 基准。移动端卡片间距降至 `md`（16px），桌面端保持 `lg`（24px）起步。
+1. 通过审核的主帖、评论、相关方回应生成规范化 JSON。
+2. 计算 `content_hash`。
+3. 保存 `previous_hash`，形成站内 hash chain。
+4. 每天生成 `daily_root_hash`。
+5. 未来需要时再锚定可信时间戳服务或公链。
 
-关键规则：
-1. 页面左右留白 ≥ 16px（移动）/ 32px（桌面）。
-2. 卡片之间间距 = `md`（16px）。
-3. 信息组之间间距 = `lg`（24px），用空行而非分割线。
-4. 表单标签与输入框间距 = `sm`（8px）。
-
----
-
-## Components
-
-### 按钮
-- `button-primary`：主操作。剧司辰用青，灵契用紫，红黑榜用红。
-- `button-ghost`：次要操作，透明底 + 白色字，hover 时微亮。
-
-### 卡片
-- `card-default`：所有列表卡片基础款。8px 圆角，16px 内边距。
-- 红黑榜 `rbb-post-card` 复用同一结构但颜色更重。
-
-### 状态标签
-- 剧司辰的排期状态：已确认=青底白字，待定=金底金字。
-- 灵契的认证徽章：金色小圆点 + "已认证"。
-- 红黑榜的实名星标：金色六角星 + "实名"。
-
-### 红黑榜特有
-- 点赞/点踩：默认灰色，激活后绿/红 + 10% 透明度底色。数字用 JetBrains Mono。
-- "我是相关方"按钮：幽灵按钮 + 小盾牌 icon，不抢主视觉。
-
----
-
-## Do's and Don'ts
-
-### ✅ Do
-- 标题用衬线体，正文用无衬线体。一个页面不超过一种衬线 + 一种无衬线。
-- 暗色背景上，正文确保 `paper` 色（#F5F3EE），不用纯白刺眼。
-- 卡片之间用留白间隔，不要加分割线。
-- 数字用 JetBrains Mono，对齐右。
-
-### ❌ Don't
-- 不要在暗色背景上大片用纯黑或纯白——永远用 `ink` 和 `paper` 体系。
-- 不要让红黑榜的红色覆盖面积超过 15% 屏幕——它应该是点缀，不是背景。
-- 灵契不要用高饱和紫色做大面积背景，始终从 `ink` 出发渐变。
-- 三个产品的主题色不要交叉使用——剧司辰上不出紫色，灵契上不出青色。
+对用户展示为“记录编号 / 审核通过时间 / 内容校验码 / 历史状态”即可。
