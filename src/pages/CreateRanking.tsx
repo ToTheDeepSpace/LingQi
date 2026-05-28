@@ -15,6 +15,8 @@ const SUBJECT_LABEL: Record<string, string> = {
   player: '玩家',
 };
 
+type RankingType = 'red' | 'black' | 'white';
+
 const PROVINCES = Object.keys(PROVINCE_CITIES);
 const ALL_CITY_OPTIONS = Object.entries(PROVINCE_CITIES).flatMap(([province, cities]) =>
   cities.map(city => ({ province, city }))
@@ -77,7 +79,7 @@ export default function CreateRanking() {
   const draft = useMemo(() => loadDraft(), []);
   const hasDraft = !!draft;
 
-  const [type, setType] = useState<'red' | 'black' | 'white'>(draft?.type || 'red');
+  const [type, setType] = useState<RankingType>(draft?.type || 'red');
   const [subjectType, setSubjectType] = useState<string>(draft?.subjectType || 'store');
   const [subjectName, setSubjectName] = useState(draft?.subjectName || '');
   const [subjectCity, setSubjectCity] = useState(draft?.subjectCity || '');
@@ -95,6 +97,7 @@ export default function CreateRanking() {
   const [balance, setBalance] = useState<number | null>(null);
   const [draftRestored, setDraftRestored] = useState(hasDraft);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const [rulesAccepted, setRulesAccepted] = useState(false);
   const effectiveAmount = type === 'white' ? 0 : initialAmount;
 
   // Auto-save draft every 3 seconds
@@ -166,6 +169,7 @@ export default function CreateRanking() {
     if (!subjectName.trim()) return setError('请填写对象名称');
     if (!content.trim()) return setError('请填写评价内容');
     if (!subjectType) return setError('请选择对象类型');
+    if (!rulesAccepted) return setError('请先阅读并确认发布规则');
     if (type !== 'white' && files.length === 0) return setError('请至少上传一份证据文件；涉及第三方信息请先打码');
     if (effectiveAmount > 0 && (balance || 0) < effectiveAmount) return setError('契约币不足，请先充值');
 
@@ -249,7 +253,7 @@ export default function CreateRanking() {
               <Link to="/rankings" style={{ padding: '12px 32px', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: INK, fontWeight: 700, textDecoration: 'none' }}>
                 回红黑榜
               </Link>
-              <button onClick={() => { setDone(false); setSubjectName(''); setContent(''); setFiles([]); setError(''); }}
+              <button onClick={() => { setDone(false); setSubjectName(''); setContent(''); setFiles([]); setError(''); setRulesAccepted(false); }}
                 style={{ padding: '12px 32px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.3)', background: 'none', color: GOLD, fontWeight: 600, cursor: 'pointer' }}>
                 再发一条
               </button>
@@ -278,6 +282,12 @@ export default function CreateRanking() {
                 红榜写夸奖，黑榜写负面体验，白榜收录非夸非踩的奇闻、笑话和中性记录。
               </p>
             </div>
+
+            <RankingRulesNotice
+              type={type}
+              accepted={rulesAccepted}
+              onAcceptedChange={setRulesAccepted}
+            />
 
             {/* 对象类型 */}
             <div>
@@ -447,15 +457,15 @@ export default function CreateRanking() {
               </div>
             )}
 
-            <button onClick={submit} disabled={submitting}
+            <button onClick={submit} disabled={submitting || !rulesAccepted}
               style={{
                 width: '100%', padding: '16px', borderRadius: 14, fontWeight: 800, fontSize: '1rem',
-                cursor: submitting ? 'not-allowed' : 'pointer',
-                background: submitting ? 'rgba(201,146,46,0.15)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                color: submitting ? 'rgba(201,146,46,0.4)' : INK,
-                border: 'none', opacity: submitting ? 0.7 : 1,
+                cursor: submitting || !rulesAccepted ? 'not-allowed' : 'pointer',
+                background: submitting || !rulesAccepted ? 'rgba(201,146,46,0.15)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                color: submitting || !rulesAccepted ? 'rgba(201,146,46,0.48)' : INK,
+                border: 'none', opacity: submitting || !rulesAccepted ? 0.82 : 1,
               }}>
-              {submitting ? '提交中...' : (effectiveAmount > 0 ? `发布 · 扣 ${effectiveAmount} 契约币` : '免费发布白榜')}
+              {submitting ? '提交中...' : !rulesAccepted ? '请先确认发布规则' : (effectiveAmount > 0 ? `发布 · 扣 ${effectiveAmount} 契约币` : '免费发布白榜')}
             </button>
           </div>
         )}
@@ -474,6 +484,74 @@ function Input({ label, value, onChange, placeholder }: { label: string; value: 
           background: '#fff', color: INK, fontSize: '0.9rem',
           outline: 'none', boxSizing: 'border-box',
         }} />
+    </div>
+  );
+}
+
+function RankingRulesNotice({ type, accepted, onAcceptedChange }: { type: RankingType; accepted: boolean; onAcceptedChange: (value: boolean) => void }) {
+  const typeTip = type === 'red'
+    ? '红榜适合写清楚你为什么推荐、对方做对了什么、哪段体验值得被看到。'
+    : type === 'black'
+      ? '黑榜属于负面体验记录，证据要求更高；请写事实经过，不做人身攻击。'
+      : '白榜免费，但不是低成本阴阳怪气；如果内容实际构成负面指控，审核时可能被转黑榜或驳回。';
+
+  return (
+    <section style={{
+      borderRadius: 14,
+      border: '1px solid rgba(217,168,87,0.28)',
+      background: 'linear-gradient(135deg, rgba(255,250,242,0.96), rgba(239,246,255,0.78))',
+      padding: 16,
+      boxShadow: '0 12px 30px rgba(31,41,55,0.05)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
+        <div>
+          <p style={{ color: '#925f18', fontSize: '0.78rem', fontWeight: 900, marginBottom: 4 }}>发布前必读</p>
+          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.02rem', margin: 0, color: INK }}>这条内容会进入人工审核</h2>
+        </div>
+        <Link to="/rules" target="_blank" style={{ color: '#275389', fontSize: '0.8rem', fontWeight: 800, textDecoration: 'none' }}>查看完整规则</Link>
+      </div>
+
+      <div style={{ display: 'grid', gap: 9, color: 'rgba(71,85,105,0.78)', fontSize: '0.82rem', lineHeight: 1.65 }}>
+        <RuleLine text={typeTip} />
+        <RuleLine text="红榜、黑榜必须上传证据；白榜可选，但涉及具体人或店时建议上传材料。" />
+        <RuleLine text="聊天记录、订单、群聊、照片等第三方信息请先打码；未打码或泄露隐私的内容可能被驳回。" />
+        <RuleLine text="同一账号对同一帖子只保留一票；禁止多号刷赞、刷踩、刷欢乐或重复提交同一事件。" />
+        <RuleLine text="审核通过只代表符合展示规则，不代表平台确认所有陈述完全真实。" />
+        <RuleLine text="相关方回应不是删帖入口：先发普通评论，通过后再提交关系材料申请置顶。" />
+        <RuleLine text="黑榜默认公开展示 30 天后过期隐藏，重大争议仍可进入人工复核。" />
+      </div>
+
+      <label style={{
+        marginTop: 14,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 9,
+        padding: '11px 12px',
+        borderRadius: 10,
+        background: accepted ? 'rgba(217,168,87,0.12)' : 'rgba(255,255,255,0.78)',
+        border: `1px solid ${accepted ? 'rgba(217,168,87,0.30)' : 'rgba(217,168,87,0.16)'}`,
+        color: accepted ? '#925f18' : 'rgba(71,85,105,0.72)',
+        cursor: 'pointer',
+        fontSize: '0.82rem',
+        fontWeight: 800,
+      }}>
+        <input
+          type="checkbox"
+          checked={accepted}
+          onChange={e => onAcceptedChange(e.target.checked)}
+          style={{ marginTop: 2, accentColor: GOLD }}
+        />
+        <span>我已阅读并确认：我会尽量写事实、上传证据、打码隐私，并接受人工审核结果。</span>
+      </label>
+    </section>
+  );
+}
+
+function RuleLine({ text }: { text: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+      <span style={{ color: GOLD, fontWeight: 900, lineHeight: 1.6 }}>•</span>
+      <span>{text}</span>
     </div>
   );
 }
