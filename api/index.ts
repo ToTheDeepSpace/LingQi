@@ -1089,6 +1089,18 @@ app.get('/api/lc/rankings', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
+  try {
+    const posterId = getReq(req, 'creatorId');
+    const { data, error } = await supabase.from('lc_rankings')
+      .select('id, type, subject_name, subject_type, subject_city, initial_amount, likes, dislikes, joys, status, created_at')
+      .eq('poster_id', posterId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
   try {
     const { type, subjectName, subjectType, subjectCity, subjectUrl, content, initialAmount, paymentProof, newSubject, files } = req.body;

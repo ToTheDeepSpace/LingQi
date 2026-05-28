@@ -31,7 +31,41 @@ const TABS = [
   { id: 'services',    label: '服务',   icon: 'M4 6h16M4 10h16M4 14h12 M8 18l2 2 4-4' },
   { id: 'availability',label: '档期',   icon: 'M8 2v4M16 2v4M3 10h18M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2v-7' },
   { id: 'portfolio',   label: '作品',   icon: 'M4 16l4.6-4.6 3.4 3.4L18 9l4 4V6a2 2 0 00-2-2H6a2 2 0 00-2 2v10a2 2 0 002 2h12 M6 7h.01' },
+  { id: 'posts',       label: '我的发布', icon: 'M4 5h16M4 12h16M4 19h10' },
 ] as const;
+
+type MyRanking = {
+  id: string;
+  type: 'red' | 'black' | 'white';
+  subject_name: string;
+  subject_city?: string | null;
+  initial_amount: number;
+  likes: number;
+  dislikes: number;
+  joys: number;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+};
+
+type MyCommission = {
+  id: string;
+  title: string;
+  city?: string | null;
+  needed_date?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+};
+
+type MyCarpool = {
+  id: string;
+  title: string;
+  city: string;
+  event_date: string;
+  deadline_date?: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'closed';
+  juzhanggui_sync_status?: 'pending' | 'synced' | 'failed' | 'disabled';
+  created_at: string;
+};
 
 const card: React.CSSProperties = {
   backgroundColor: '#fffaf2',
@@ -57,6 +91,9 @@ export default function Dashboard() {
   const [creator, setCreator]   = useState<Creator | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
+  const [myRankings, setMyRankings] = useState<MyRanking[]>([]);
+  const [myCommissions, setMyCommissions] = useState<MyCommission[]>([]);
+  const [myCarpools, setMyCarpools] = useState<MyCarpool[]>([]);
   const [tab, setTab]           = useState('profile');
   const [saving, setSaving]     = useState(false);
   const [msg, setMsg]           = useState('');
@@ -92,7 +129,10 @@ export default function Dashboard() {
     Promise.all([
       fetch(`${API}/lc/creators/${data.id}`).then(r => r.json()),
       fetch(`${API}/lc/creators/${data.id}/availability`).then(r => r.json()),
-    ]).then(([profileData, availData]) => {
+      fetch(`${API}/lc/rankings/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
+      fetch(`${API}/lc/commissions/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
+      fetch(`${API}/lc/carpools/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
+    ]).then(([profileData, availData, rankingsData, commissionsData, carpoolsData]) => {
       if (profileData.success && profileData.data) {
         const { services: svc, portfolio: port, ...profile } = profileData.data;
         setCreator(profile);
@@ -116,6 +156,9 @@ export default function Dashboard() {
         setAvailItems(availData.data || []);
         setAvailDates((availData.data || []).map((a: { date: string }) => a.date));
       }
+      if (rankingsData.success) setMyRankings(rankingsData.data || []);
+      if (commissionsData.success) setMyCommissions(commissionsData.data || []);
+      if (carpoolsData.success) setMyCarpools(carpoolsData.data || []);
     }).catch(() => setError('网络错误')).finally(() => setLoading(false));
   }, [navigate]);
 
@@ -513,6 +556,43 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+
+            {tab === 'posts' && (
+              <div style={{ display: 'grid', gap: 16 }}>
+                <MineSection title="红黑白榜" emptyText="还没有发布过口碑">
+                  {myRankings.map(item => (
+                    <MineRow key={item.id}
+                      title={item.subject_name}
+                      meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · ${item.initial_amount === 0 ? '免费' : `${item.initial_amount} 契约币`} · 赞${item.likes || 0} 踩${item.dislikes || 0} 欢乐${item.joys || 0}`}
+                      status={item.status}
+                      to="/rankings"
+                    />
+                  ))}
+                </MineSection>
+
+                <MineSection title="委托需求" emptyText="还没有发布过委托">
+                  {myCommissions.map(item => (
+                    <MineRow key={item.id}
+                      title={item.title}
+                      meta={`${item.city || '未填城市'}${item.needed_date ? ` · ${item.needed_date}` : ''}`}
+                      status={item.status}
+                      to="/commissions"
+                    />
+                  ))}
+                </MineSection>
+
+                <MineSection title="拼车" emptyText="还没有发布过拼车">
+                  {myCarpools.map(item => (
+                    <MineRow key={item.id}
+                      title={item.title}
+                      meta={`${item.city} · ${item.event_date}${item.deadline_date ? ` · 截止 ${item.deadline_date}` : ''}${item.juzhanggui_sync_status === 'synced' ? ' · 已同步剧司辰' : item.juzhanggui_sync_status === 'failed' ? ' · 同步失败' : ''}`}
+                      status={item.status}
+                      to="/carpools"
+                    />
+                  ))}
+                </MineSection>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -536,5 +616,37 @@ export default function Dashboard() {
         .dark-cal abbr { text-decoration: none !important; }
       `}</style>
     </div>
+  );
+}
+
+function MineSection({ title, emptyText, children }: { title: string; emptyText: string; children: React.ReactNode }) {
+  const hasItems = Array.isArray(children) ? children.length > 0 : !!children;
+  return (
+    <section style={card}>
+      <h2 style={{ fontWeight: 800, fontSize: '1rem', color: INK, marginBottom: 14 }}>{title}</h2>
+      {hasItems ? <div style={{ display: 'grid', gap: 10 }}>{children}</div> : <p style={{ color: MUTED, fontSize: '0.86rem' }}>{emptyText}</p>}
+    </section>
+  );
+}
+
+function MineRow({ title, meta, status, to }: { title: string; meta: string; status: string; to: string }) {
+  const statusMap: Record<string, { label: string; color: string; bg: string }> = {
+    pending: { label: '待审核', color: '#925f18', bg: 'rgba(217,168,87,0.12)' },
+    approved: { label: '已公开', color: '#15803d', bg: 'rgba(220,252,231,0.78)' },
+    rejected: { label: '未通过', color: '#b91c1c', bg: 'rgba(254,242,242,0.9)' },
+    closed: { label: '已关闭', color: '#64748b', bg: 'rgba(241,245,249,0.9)' },
+  };
+  const item = statusMap[status] || statusMap.pending;
+  return (
+    <article style={{ borderRadius: 12, border: '1px solid rgba(201,146,46,0.16)', background: '#fff', padding: 14, display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center' }}>
+      <div style={{ minWidth: 0 }}>
+        <h3 style={{ fontWeight: 800, fontSize: '0.92rem', color: INK, marginBottom: 5 }}>{title}</h3>
+        <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.6 }}>{meta}</p>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <span style={{ padding: '4px 8px', borderRadius: 999, background: item.bg, color: item.color, fontSize: '0.74rem', fontWeight: 800 }}>{item.label}</span>
+        <Link to={to} style={{ color: '#925f18', fontSize: '0.8rem', fontWeight: 800, textDecoration: 'none' }}>查看</Link>
+      </div>
+    </article>
   );
 }
