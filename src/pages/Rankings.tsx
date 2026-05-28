@@ -50,6 +50,13 @@ type Ranking = {
   files?: { name: string; url: string; type?: string }[];
   lc_profiles?: { verified_dm?: boolean; verified_shop?: boolean; role?: string };
   my_vote?: MyVote | null;
+  audit_proof?: {
+    event_type: string;
+    entry_hash: string;
+    content_hash: string;
+    chain_date: string;
+    created_at: string;
+  } | null;
 };
 
 type Comment = {
@@ -153,6 +160,11 @@ function voteDeadlineText(myVote: MyVote | null | undefined) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function shortHash(hash?: string | null) {
+  if (!hash) return '';
+  return `${hash.slice(0, 8)}...${hash.slice(-6)}`;
 }
 
 function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -911,6 +923,25 @@ export default function Rankings() {
                       )}
                       <span>· {item.created_at?.slice(0, 10)}</span>
                       <span>· {item.type === 'white' && item.initial_amount === 0 ? '免费发布' : `初始 ${item.initial_amount} 契约币`}</span>
+                      {item.audit_proof && (
+                        <button
+                          type="button"
+                          onClick={() => window.open(`${API}/lc/audit/ranking/${item.id}`, '_blank')}
+                          title={`内容校验码：${item.audit_proof.content_hash}`}
+                          style={{
+                            border: '1px solid rgba(39,83,137,0.14)',
+                            background: 'rgba(239,246,255,0.62)',
+                            color: '#275389',
+                            borderRadius: 999,
+                            padding: '2px 8px',
+                            fontSize: '0.68rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          审计码 {shortHash(item.audit_proof.entry_hash)}
+                        </button>
+                      )}
                     </span>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => openVoteModal(item.id, 'like')}

@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
+import { createHash } from 'node:crypto';
 
 // --- 环境变量 ---
 const JWT_SECRET = process.env.JWT_SECRET || 'lingqi-dev-secret-change-in-production';
@@ -142,6 +143,290 @@ function encodeRelatedProofFallback(note: string, files: RelatedProofFile[]) {
 
 function cleanText(value: unknown, max = 1200) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+type AuditTargetType = 'ranking' | 'comment' | 'commission' | 'carpool';
+
+function normalizeAuditValue(value: unknown): unknown {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(item => normalizeAuditValue(item));
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).sort().reduce<Record<string, unknown>>((acc, key) => {
+    const normalized = normalizeAuditValue(record[key]);
+    if (normalized !== undefined) acc[key] = normalized;
+    return acc;
+  }, {});
+}
+
+function stableJson(value: unknown) {
+  return JSON.stringify(normalizeAuditValue(value));
+}
+
+function sha256(value: string) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function hashLooseValue(value: unknown) {
+  const text = typeof value === 'string' ? value : stableJson(value);
+  return sha256(text || '');
+}
+
+function summarizeAuditFiles(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 12).map((file, index) => {
+    const item = file as Record<string, unknown>;
+    const url = typeof item.url === 'string' ? item.url : '';
+    return {
+      index,
+      name: cleanText(item.name, 120) || 'file',
+      type: cleanText(item.type, 80) || null,
+      size: url.length,
+      url_hash: url ? hashLooseValue(url) : null,
+    };
+  });
+}
+
+function auditPayload(targetType: AuditTargetType, row: Record<string, unknown>) {
+  if (targetType === 'ranking') {
+    return {
+      id: row.id,
+      type: row.type,
+      subject_name: row.subject_name,
+      subject_type: row.subject_type,
+      subject_city: row.subject_city,
+      subject_url: row.subject_url,
+      content: row.content,
+      author_name: row.author_name,
+      is_realname: row.is_realname,
+      initial_amount: row.initial_amount,
+      likes: row.likes,
+      dislikes: row.dislikes,
+      joys: row.joys,
+      status: row.status,
+      files: summarizeAuditFiles(row.files),
+      expires_at: row.expires_at,
+      created_at: row.created_at,
+    };
+  }
+  if (targetType === 'comment') {
+    return {
+      id: row.id,
+      ranking_id: row.ranking_id,
+      content: row.content,
+      author_name: row.author_name,
+      is_realname: row.is_realname,
+      status: row.status,
+      is_pinned: row.is_pinned,
+      pin_label: row.pin_label,
+      related_note: row.related_note,
+      related_files: summarizeAuditFiles(row.related_files),
+      created_at: row.created_at,
+    };
+  }
+  if (targetType === 'commission') {
+    return {
+      id: row.id,
+      poster_name: row.poster_name,
+      poster_is_realname: row.poster_is_realname,
+      title: row.title,
+      content: row.content,
+      desired_role: row.desired_role,
+      target_type: row.target_type,
+      needed_date: row.needed_date,
+      city: row.city,
+      location: row.location,
+      budget: row.budget,
+      status: row.status,
+      created_at: row.created_at,
+    };
+  }
+  return {
+    id: row.id,
+    poster_name: row.poster_name,
+    poster_is_realname: row.poster_is_realname,
+    title: row.title,
+    city: row.city,
+    event_date: row.event_date,
+    start_time: row.start_time,
+    deadline_date: row.deadline_date,
+    deadline_time: row.deadline_time,
+    script_name: row.script_name,
+    role_name: row.role_name,
+    subsidy_mode: row.subsidy_mode,
+    subsidy_amount: row.subsidy_amount,
+    needed_count: row.needed_count,
+    store_name: row.store_name,
+    store_city: row.store_city,
+    content: row.content,
+    boost_amount: row.boost_amount,
+    status: row.status,
+    juzhanggui_sync_status: row.juzhanggui_sync_status,
+    juzhanggui_schedule_id: row.juzhanggui_schedule_id,
+    created_at: row.created_at,
+  };
+}
+
+async function refreshAuditDailyRoot(chainDate: string) {
+  const { data: entries, error } = await supabase.from('lc_audit_chain_entries')
+    .select('entry_hash')
+    .eq('chain_date', chainDate)
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true });
+  if (error) throw error;
+  const hashes = (entries || []).map((entry: { entry_hash: string }) => entry.entry_hash);
+  if (hashes.length === 0) return null;
+  const rootHash = sha256(stableJson({ version: 'lc-audit-root-v1', chainDate, hashes }));
+  const firstHash = hashes[0];
+  const lastHash = hashes[hashes.length - 1];
+  const { error: upsertErr } = await supabase.from('lc_audit_daily_roots').upsert({
+    audit_date: chainDate,
+    root_hash: rootHash,
+    entry_count: hashes.length,
+    first_entry_hash: firstHash,
+    last_entry_hash: lastHash,
+    generated_at: new Date().toISOString(),
+  }, { onConflict: 'audit_date' });
+  if (upsertErr) throw upsertErr;
+  return { rootHash, entryCount: hashes.length, firstHash, lastHash };
+}
+
+async function appendAuditEntry(args: {
+  targetType: AuditTargetType;
+  targetId: string;
+  eventType: string;
+  payload: unknown;
+  actorId?: string | null;
+  actorRole?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  try {
+    const createdAt = new Date().toISOString();
+    const chainDate = createdAt.slice(0, 10);
+    const canonicalPayload = normalizeAuditValue(args.payload);
+    const contentHash = sha256(stableJson(canonicalPayload));
+    const { data: latest, error: latestErr } = await supabase.from('lc_audit_chain_entries')
+      .select('entry_hash')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestErr) throw latestErr;
+    const previousHash = latest?.entry_hash || null;
+    const actorRole = args.actorRole || 'system';
+    const entryBase = {
+      version: 'lc-audit-entry-v1',
+      target_type: args.targetType,
+      target_id: args.targetId,
+      event_type: args.eventType,
+      content_hash: contentHash,
+      previous_hash: previousHash,
+      canonical_payload: canonicalPayload,
+      actor_id: args.actorId || null,
+      actor_role: actorRole,
+      created_at: createdAt,
+    };
+    const entryHash = sha256(stableJson(entryBase));
+    const { data, error: insertErr } = await supabase.from('lc_audit_chain_entries').insert({
+      target_type: args.targetType,
+      target_id: args.targetId,
+      event_type: args.eventType,
+      content_hash: contentHash,
+      previous_hash: previousHash,
+      entry_hash: entryHash,
+      canonical_payload: canonicalPayload,
+      actor_id: args.actorId || null,
+      actor_role: actorRole,
+      metadata: args.metadata || {},
+      chain_date: chainDate,
+      created_at: createdAt,
+    }).select('id, entry_hash, content_hash, chain_date, created_at').single();
+    if (insertErr) throw insertErr;
+    await refreshAuditDailyRoot(chainDate);
+    return data;
+  } catch (auditErr) {
+    console.error('[audit-chain] append failed', getErrorText(auditErr));
+    return null;
+  }
+}
+
+async function auditApprovedTarget(
+  targetType: AuditTargetType,
+  row: Record<string, unknown> | null | undefined,
+  eventType: string,
+  actorId: string | null,
+  metadata?: Record<string, unknown>
+) {
+  if (!row?.id) return null;
+  return appendAuditEntry({
+    targetType,
+    targetId: String(row.id),
+    eventType,
+    payload: auditPayload(targetType, row),
+    actorId,
+    actorRole: 'admin',
+    metadata,
+  });
+}
+
+type PublicAuditProof = {
+  event_type: string;
+  entry_hash: string;
+  content_hash: string;
+  chain_date: string;
+  created_at: string;
+};
+
+async function attachAuditProof<T extends Record<string, unknown>>(targetType: AuditTargetType, rows: T[]) {
+  if (rows.length === 0) return rows;
+  try {
+    const ids = rows.map(row => String(row.id)).filter(Boolean);
+    const { data, error } = await supabase.from('lc_audit_chain_entries')
+      .select('target_id, event_type, entry_hash, content_hash, chain_date, created_at')
+      .eq('target_type', targetType)
+      .in('target_id', ids)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    const proofById = new Map<string, PublicAuditProof>();
+    (data || []).forEach((entry: PublicAuditProof & { target_id: string }) => {
+      if (!proofById.has(entry.target_id)) {
+        proofById.set(entry.target_id, {
+          event_type: entry.event_type,
+          entry_hash: entry.entry_hash,
+          content_hash: entry.content_hash,
+          chain_date: entry.chain_date,
+          created_at: entry.created_at,
+        });
+      }
+    });
+    return rows.map(row => ({ ...row, audit_proof: proofById.get(String(row.id)) || null }));
+  } catch (auditErr) {
+    console.error('[audit-chain] attach proof failed', getErrorText(auditErr));
+    return rows.map(row => ({ ...row, audit_proof: null }));
+  }
+}
+
+async function backfillAuditTargets(targetType: AuditTargetType, table: string, limit: number) {
+  const { data: existing, error: auditErr } = await supabase.from('lc_audit_chain_entries')
+    .select('target_id')
+    .eq('target_type', targetType)
+    .limit(10000);
+  if (auditErr) throw auditErr;
+  const audited = new Set((existing || []).map((entry: { target_id: string }) => entry.target_id));
+  const { data, error } = await supabase.from(table)
+    .select('*')
+    .eq('status', 'approved')
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  let created = 0;
+  for (const row of (data || []) as Record<string, unknown>[]) {
+    if (!row.id || audited.has(String(row.id))) continue;
+    const result = await auditApprovedTarget(targetType, row, 'legacy_approved_snapshot', 'admin', { source: 'admin_backfill' });
+    if (result) created += 1;
+  }
+  return { scanned: data?.length || 0, created };
 }
 
 function parseCoinAmount(value: unknown, fallback = 0) {
@@ -1037,6 +1322,56 @@ app.put('/api/lc/contact-requests/:id/reject', authMiddleware, adminMiddleware, 
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+// ==================== 防篡改审计链 ====================
+
+app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
+  try {
+    const targetType = req.params.targetType as AuditTargetType;
+    if (!['ranking', 'comment', 'commission', 'carpool'].includes(targetType)) {
+      return res.status(400).json(err(new Error('无效审计对象')));
+    }
+    const { data: entries, error: qErr } = await supabase.from('lc_audit_chain_entries')
+      .select('id, target_type, target_id, event_type, content_hash, previous_hash, entry_hash, chain_date, created_at')
+      .eq('target_type', targetType)
+      .eq('target_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (qErr && isMissingRelation(qErr, 'lc_audit_chain_entries')) {
+      return res.json(ok({ entries: [], daily_roots: [] }));
+    }
+    if (qErr) throw qErr;
+    const dates = Array.from(new Set((entries || []).map((entry: { chain_date: string }) => entry.chain_date).filter(Boolean)));
+    let roots: Record<string, unknown>[] = [];
+    if (dates.length > 0) {
+      const { data: dailyRoots, error: rootErr } = await supabase.from('lc_audit_daily_roots')
+        .select('audit_date, root_hash, entry_count, first_entry_hash, last_entry_hash, generated_at')
+        .in('audit_date', dates);
+      if (rootErr) throw rootErr;
+      roots = dailyRoots || [];
+    }
+    res.json(ok({ entries: entries || [], daily_roots: roots }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/admin/audit/backfill', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(500, Math.max(1, parseCoinAmount(req.body?.limit, 200)));
+    const target = cleanText(req.body?.target, 40);
+    const allJobs: Array<[AuditTargetType, string]> = [
+      ['ranking', 'lc_rankings'],
+      ['comment', 'lc_comments'],
+      ['commission', 'lc_commissions'],
+      ['carpool', 'lc_carpools'],
+    ];
+    const jobs = allJobs.filter(([type]) => !target || target === type);
+    const results: Record<string, { scanned: number; created: number }> = {};
+    for (const [targetType, table] of jobs) {
+      results[targetType] = await backfillAuditTargets(targetType, table, limit);
+    }
+    res.json(ok(results));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 // ==================== 红黑榜 ====================
 
 app.get('/api/lc/rankings', async (req, res) => {
@@ -1068,9 +1403,11 @@ app.get('/api/lc/rankings', async (req, res) => {
       return Number.isFinite(expiresAt) && expiresAt > now;
     });
 
-    if (!viewerId || visible.length === 0) return res.json(ok(visible));
+    const visibleWithAudit = await attachAuditProof('ranking', visible);
 
-    const rankingIds = visible.map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
+    if (!viewerId || visibleWithAudit.length === 0) return res.json(ok(visibleWithAudit));
+
+    const rankingIds = visibleWithAudit.map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
     const { data: myVotes, error: myVoteErr } = await supabase.from('lc_votes')
       .select('id, ranking_id, vote_type, created_at')
       .in('ranking_id', rankingIds)
@@ -1080,7 +1417,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     const voteByRanking = new Map(
       (myVotes || []).map((vote: RankingVoteRow) => [vote.ranking_id, serializeMyVote(vote)])
     );
-    const withMyVotes = visible.map((row: Record<string, unknown>) => ({
+    const withMyVotes = visibleWithAudit.map((row: Record<string, unknown>) => ({
       ...row,
       my_vote: voteByRanking.get(String(row.id)) || null,
     }));
@@ -1497,8 +1834,16 @@ app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, a
     if (nextType === 'black') {
       patch.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     }
-    await supabase.from('lc_rankings').update(patch).eq('id', req.params.id);
-    res.json(ok());
+    const { data: approved, error: updErr } = await supabase.from('lc_rankings')
+      .update(patch)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+    const audit = await auditApprovedTarget('ranking', approved, targetType ? 'ranking_reclassified_approved' : 'ranking_approved', getReq(req, 'creatorId'), {
+      target_type_override: targetType,
+    });
+    res.json(ok({ audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -1511,8 +1856,14 @@ app.put('/api/lc/admin/rankings/:id/reject', authMiddleware, adminMiddleware, as
 
 app.put('/api/lc/admin/comments/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    await supabase.from('lc_comments').update({ status: 'approved' }).eq('id', req.params.id);
-    res.json(ok());
+    const { data: approved, error: updErr } = await supabase.from('lc_comments')
+      .update({ status: 'approved' })
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+    const audit = await auditApprovedTarget('comment', approved, approved?.is_pinned ? 'related_reply_pinned' : 'comment_approved', getReq(req, 'creatorId'));
+    res.json(ok({ audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -1564,10 +1915,14 @@ app.put('/api/lc/admin/claims/:id/reject', authMiddleware, adminMiddleware, asyn
 
 app.put('/api/lc/admin/commissions/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    await supabase.from('lc_commissions')
+    const { data: approved, error: updErr } = await supabase.from('lc_commissions')
       .update({ status: 'approved', updated_at: new Date().toISOString() })
-      .eq('id', req.params.id);
-    res.json(ok());
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+    const audit = await auditApprovedTarget('commission', approved, 'commission_approved', getReq(req, 'creatorId'));
+    res.json(ok({ audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -1598,15 +1953,19 @@ app.put('/api/lc/admin/carpools/:id/approve', authMiddleware, adminMiddleware, a
       syncResult = { ok: false, error: getErrorText(syncErr) || '同步剧司辰失败' };
     }
 
-    await supabase.from('lc_carpools')
+    const { data: approved, error: updErr } = await supabase.from('lc_carpools')
       .update({
         status: 'approved',
         juzhanggui_sync_status: syncResult.ok ? 'synced' : 'failed',
         juzhanggui_schedule_id: syncResult.scheduleId || carpool.juzhanggui_schedule_id || null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', req.params.id);
-    res.json(ok({ sync: syncResult }));
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+    const audit = await auditApprovedTarget('carpool', approved, 'carpool_approved', getReq(req, 'creatorId'), { sync: syncResult });
+    res.json(ok({ sync: syncResult, audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
