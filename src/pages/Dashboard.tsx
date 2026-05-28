@@ -6,9 +6,11 @@ import ImageUpload from '../components/ImageUpload';
 import type { Creator, Service, Portfolio, AuthData, Availability } from '../types';
 
 const API  = '/api';
-const C    = '#0F1117';
-const C2   = '#1A1D27';
+const C    = '#fffdf8';
+const C2   = '#eef6ff';
 const GOLD = '#d9a857';
+const INK  = '#1f2937';
+const MUTED = 'rgba(71,85,105,0.76)';
 
 function getToken(): string {
   try {
@@ -32,21 +34,22 @@ const TABS = [
 ] as const;
 
 const card: React.CSSProperties = {
-  backgroundColor: 'rgba(255,255,255,0.05)',
-  border: '1px solid rgba(201,146,46,0.18)',
+  backgroundColor: '#fffaf2',
+  border: '1px solid rgba(201,146,46,0.22)',
   borderRadius: 16, padding: 24,
+  boxShadow: '0 14px 34px rgba(31,41,55,0.06)',
 };
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '11px 14px', borderRadius: 10,
   border: '1px solid rgba(201,146,46,0.2)', outline: 'none',
-  backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff',
+  backgroundColor: '#fff', color: INK,
   fontSize: '0.875rem', boxSizing: 'border-box',
 };
 
 const labelStyle: React.CSSProperties = {
   display: 'block', fontSize: '0.78rem', fontWeight: 600,
-  color: 'rgba(186,207,231,0.7)', marginBottom: 8,
+  color: 'rgba(71,85,105,0.78)', marginBottom: 8,
 };
 
 export default function Dashboard() {
@@ -227,7 +230,7 @@ export default function Dashboard() {
     <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{ width: 40, height: 40, border: '2px solid rgba(201,146,46,0.3)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 20px', animation: 'spin 0.8s linear infinite' }} />
-        <p style={{ color: 'rgba(186,207,231,0.65)' }}>加载中...</p>
+        <p style={{ color: MUTED }}>加载中...</p>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -237,7 +240,7 @@ export default function Dashboard() {
     <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 56, marginBottom: 20, opacity: 0.3 }}>🌊</div>
-        <p style={{ color: 'rgba(186,207,231,0.7)', marginBottom: 20 }}>{error || '加载失败'}</p>
+        <p style={{ color: MUTED, marginBottom: 20 }}>{error || '加载失败'}</p>
         <button onClick={() => navigate('/login')} style={{ background: 'none', border: 'none', color: GOLD, cursor: 'pointer', textDecoration: 'underline', fontSize: '0.875rem' }}>返回登录</button>
       </div>
     </div>
@@ -250,7 +253,7 @@ export default function Dashboard() {
         padding: '11px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
         fontWeight: 600, fontSize: '0.875rem', textAlign: 'left', width: '100%',
         background: tab === id ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'transparent',
-        color: tab === id ? C : 'rgba(186,207,231,0.7)',
+        color: tab === id ? INK : 'rgba(71,85,105,0.74)',
         transition: 'all 0.2s',
       }}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -261,22 +264,22 @@ export default function Dashboard() {
   );
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
+    <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
 
       {/* Header */}
-      <div style={{ backgroundColor: C2, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '24px 20px' }}>
+      <div style={{ background: `linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '24px 20px' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的主页</h1>
-            <p style={{ fontSize: '0.85rem', color: 'rgba(186,207,231,0.65)' }}>{creator.display_name}</p>
+            <p style={{ fontSize: '0.85rem', color: MUTED }}>{creator.display_name}</p>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <Link to={`/explore/${creator.id}`}
-              style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)', color: GOLD, fontSize: '0.82rem', textDecoration: 'none', fontWeight: 600 }}>
+              style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.28)', color: '#925f18', background: 'rgba(255,255,255,0.72)', fontSize: '0.82rem', textDecoration: 'none', fontWeight: 600 }}>
               查看公开页 →
             </Link>
             <button onClick={logout}
-              style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: 'rgba(186,207,231,0.55)', cursor: 'pointer', fontSize: '0.82rem' }}>
+              style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(220,38,38,0.22)', background: 'rgba(254,242,242,0.78)', color: '#b91c1c', cursor: 'pointer', fontSize: '0.82rem' }}>
               退出
             </button>
           </div>
@@ -286,7 +289,7 @@ export default function Dashboard() {
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
 
         {error && (
-          <div style={{ padding: '12px 16px', backgroundColor: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', borderRadius: 10, fontSize: '0.875rem', color: '#f87171', marginBottom: 20 }}>
+          <div style={{ padding: '12px 16px', backgroundColor: 'rgba(254,242,242,0.92)', border: '1px solid rgba(220,38,38,0.24)', borderRadius: 10, fontSize: '0.875rem', color: '#b91c1c', marginBottom: 20 }}>
             {error}
           </div>
         )}
@@ -295,10 +298,10 @@ export default function Dashboard() {
         {!creator.is_visible && (
           <div style={{
             padding: '14px 18px', borderRadius: 12, marginBottom: 20,
-            backgroundColor: creator.reject_reason ? 'rgba(248,113,113,0.08)' : 'rgba(201,146,46,0.08)',
-            border: `1px solid ${creator.reject_reason ? 'rgba(248,113,113,0.25)' : 'rgba(201,146,46,0.25)'}`,
+            backgroundColor: creator.reject_reason ? 'rgba(254,242,242,0.92)' : 'rgba(201,146,46,0.1)',
+            border: `1px solid ${creator.reject_reason ? 'rgba(220,38,38,0.24)' : 'rgba(201,146,46,0.25)'}`,
             fontSize: '0.875rem',
-            color: creator.reject_reason ? '#f87171' : GOLD,
+            color: creator.reject_reason ? '#b91c1c' : '#925f18',
           }}>
             {creator.reject_reason
               ? `您的入驻申请已被拒绝。原因：${creator.reject_reason}`
@@ -319,20 +322,20 @@ export default function Dashboard() {
             {/* 资料 */}
             {tab === 'profile' && (
               <div style={card}>
-                <h2 style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 24, color: 'rgba(186,207,231,0.9)' }}>编辑资料</h2>
+                <h2 style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 24, color: INK }}>编辑资料</h2>
                 <div style={{
                   padding: '14px 16px',
                   borderRadius: 12,
                   marginBottom: 20,
-                  backgroundColor: creator.is_realname ? 'rgba(201,146,46,0.08)' : 'rgba(255,255,255,0.035)',
-                  border: `1px solid ${creator.is_realname ? 'rgba(201,146,46,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                  backgroundColor: creator.is_realname ? 'rgba(201,146,46,0.1)' : 'rgba(255,255,255,0.72)',
+                  border: `1px solid ${creator.is_realname ? 'rgba(201,146,46,0.25)' : 'rgba(125,147,170,0.16)'}`,
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <span style={{ color: creator.is_realname ? GOLD : 'rgba(186,207,231,0.65)', fontWeight: 800, fontSize: '0.9rem' }}>
+                    <span style={{ color: creator.is_realname ? '#925f18' : 'rgba(71,85,105,0.72)', fontWeight: 800, fontSize: '0.9rem' }}>
                       {creator.is_realname ? '⭐ 已完成实名认证' : '未完成实名认证'}
                     </span>
                   </div>
-                  <p style={{ color: 'rgba(186,207,231,0.6)', fontSize: '0.8rem', lineHeight: 1.7 }}>
+                  <p style={{ color: 'rgba(71,85,105,0.64)', fontSize: '0.8rem', lineHeight: 1.7 }}>
                     实名由后台审核，前台只显示星标和昵称，不公开真实姓名。需要认证时请联系管理员提交材料。
                   </p>
                 </div>
@@ -389,12 +392,12 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div style={{ padding: '14px 16px', borderRadius: 12, marginBottom: 24, backgroundColor: 'rgba(217,168,87,0.07)', border: '1px solid rgba(217,168,87,0.18)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'rgba(220,230,243,0.82)', fontSize: '0.86rem', fontWeight: 700, marginBottom: 12 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'rgba(71,85,105,0.82)', fontSize: '0.86rem', fontWeight: 700, marginBottom: 12 }}>
                     <input type="checkbox" checked={form.contact_unlock_enabled} onChange={e => setForm({ ...form, contact_unlock_enabled: e.target.checked })} />
                     开启预约意向金
                   </label>
                   <input type="number" value={form.contact_intent_amount} onChange={e => setForm({ ...form, contact_intent_amount: e.target.value })} placeholder="意向金金额，0 表示不收" style={inputStyle} />
-                  <p style={{ color: 'rgba(220,230,243,0.55)', fontSize: '0.78rem', lineHeight: 1.7, marginTop: 10 }}>
+                  <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.7, marginTop: 10 }}>
                     这不是“加微信门槛费”，页面会写成预约意向确认，用来减少无效打扰。
                   </p>
                 </div>
@@ -402,12 +405,12 @@ export default function Dashboard() {
                   <button onClick={saveProfile} disabled={saving}
                     style={{
                       padding: '11px 28px', borderRadius: 10, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-                      background: saving ? 'rgba(255,255,255,0.07)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                      color: saving ? 'rgba(186,207,231,0.5)' : C, fontWeight: 700, fontSize: '0.9rem',
+                      background: saving ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                      color: saving ? 'rgba(71,85,105,0.52)' : INK, fontWeight: 700, fontSize: '0.9rem',
                     }}>
                     {saving ? '保存中...' : '保存资料'}
                   </button>
-                  {msg && <span style={{ fontSize: '0.875rem', color: '#34d399', fontWeight: 600 }}>{msg}</span>}
+                  {msg && <span style={{ fontSize: '0.875rem', color: '#15803d', fontWeight: 600 }}>{msg}</span>}
                 </div>
               </div>
             )}
@@ -419,18 +422,18 @@ export default function Dashboard() {
                   <div key={s.id} style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
                       <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{s.service_type}</span>
-                      {s.duration && <span style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.6)', marginLeft: 8 }}>· {s.duration}</span>}
-                      {s.description && <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.6)', marginTop: 4 }}>{s.description}</p>}
+                      {s.duration && <span style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.62)', marginLeft: 8 }}>· {s.duration}</span>}
+                      {s.description && <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.62)', marginTop: 4 }}>{s.description}</p>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                       <span style={{ fontWeight: 700, color: GOLD }}>¥{s.price}</span>
                       <button onClick={() => deleteService(s.id)}
-                        style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.82rem' }}>删除</button>
+                        style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: '0.82rem' }}>删除</button>
                     </div>
                   </div>
                 ))}
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
-                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.85)' }}>添加服务</p>
+                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>添加服务</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                     <input type="text" value={newSvc.service_type} onChange={e => setNewSvc({ ...newSvc, service_type: e.target.value })}
                       placeholder="服务类型" style={inputStyle} />
@@ -440,7 +443,7 @@ export default function Dashboard() {
                   <input type="text" value={newSvc.duration} onChange={e => setNewSvc({ ...newSvc, duration: e.target.value })}
                     placeholder="时长（如：2小时）" style={{ ...inputStyle, marginBottom: 16 }} />
                   <button onClick={addService}
-                    style={{ padding: '10px 24px', borderRadius: 10, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, fontSize: '0.875rem' }}>
+                    style={{ padding: '10px 24px', borderRadius: 10, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: INK, fontWeight: 700, fontSize: '0.875rem' }}>
                     添加
                   </button>
                 </div>
@@ -450,8 +453,8 @@ export default function Dashboard() {
             {/* 档期 */}
             {tab === 'availability' && (
               <div style={card}>
-                <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: 'rgba(186,207,231,0.85)' }}>点击选择可约日期</p>
-                <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.55)', marginBottom: 16 }}>已选中的日期和地点将显示在你的公开主页上</p>
+                <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: INK }}>点击选择可约日期</p>
+                <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.58)', marginBottom: 16 }}>已选中的日期和地点将显示在你的公开主页上</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 520, marginBottom: 18 }}>
                   <input value={availCity} onChange={e => setAvailCity(e.target.value)} placeholder="这批档期所在城市（默认用常驻城市）" style={inputStyle} />
                   <input value={availLocation} onChange={e => setAvailLocation(e.target.value)} placeholder="地点补充，如展会/区县/可商量" style={inputStyle} />
@@ -476,7 +479,7 @@ export default function Dashboard() {
                     </span>
                   ))}
                   {availDates.length === 0 && (
-                    <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.45)' }}>还没有标记可约日期</p>
+                    <p style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.52)' }}>还没有标记可约日期</p>
                   )}
                 </div>
               </div>
@@ -487,7 +490,7 @@ export default function Dashboard() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {portfolio.length > 0 && (
                   <div style={card}>
-                    <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.85)' }}>已上传作品</p>
+                    <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>已上传作品</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 10 }}>
                       {portfolio.map(p => (
                         <div key={p.id} style={{ aspectRatio: '1', borderRadius: 10, overflow: 'hidden', position: 'relative', border: '1px solid rgba(201,146,46,0.15)' }}
@@ -504,9 +507,9 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
-                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.85)' }}>上传作品</p>
+                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>上传作品</p>
                   <ImageUpload onUploaded={addPortfolio} token={token} api={API} />
-                  <p style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.45)', marginTop: 12 }}>支持 JPG、PNG、GIF，最大 10MB</p>
+                  <p style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.52)', marginTop: 12 }}>支持 JPG、PNG、GIF，最大 10MB</p>
                 </div>
               </div>
             )}
@@ -517,19 +520,19 @@ export default function Dashboard() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* Dark calendar overrides */
-        .dark-cal { background: transparent !important; border: none !important; width: 100% !important; color: #fff !important; }
+        /* Light calendar overrides */
+        .dark-cal { background: transparent !important; border: none !important; width: 100% !important; color: #1f2937 !important; }
         .dark-cal .react-calendar__navigation { background: transparent !important; margin-bottom: 12px; }
-        .dark-cal .react-calendar__navigation button { color: rgba(186,207,231,0.85) !important; background: transparent !important; font-size: 0.9rem !important; font-weight: 600 !important; border-radius: 8px !important; }
-        .dark-cal .react-calendar__navigation button:hover { background: rgba(255,255,255,0.06) !important; }
-        .dark-cal .react-calendar__navigation button:disabled { color: rgba(186,207,231,0.3) !important; }
-        .dark-cal .react-calendar__month-view__weekdays { color: rgba(186,207,231,0.5) !important; font-size: 0.72rem !important; }
-        .dark-cal .react-calendar__tile { background: transparent !important; color: rgba(186,207,231,0.8) !important; border-radius: 8px !important; padding: 8px !important; }
-        .dark-cal .react-calendar__tile:hover { background: rgba(255,255,255,0.07) !important; }
+        .dark-cal .react-calendar__navigation button { color: rgba(71,85,105,0.85) !important; background: transparent !important; font-size: 0.9rem !important; font-weight: 600 !important; border-radius: 8px !important; }
+        .dark-cal .react-calendar__navigation button:hover { background: rgba(217,168,87,0.10) !important; }
+        .dark-cal .react-calendar__navigation button:disabled { color: rgba(71,85,105,0.3) !important; }
+        .dark-cal .react-calendar__month-view__weekdays { color: rgba(71,85,105,0.55) !important; font-size: 0.72rem !important; }
+        .dark-cal .react-calendar__tile { background: transparent !important; color: rgba(71,85,105,0.82) !important; border-radius: 8px !important; padding: 8px !important; }
+        .dark-cal .react-calendar__tile:hover { background: rgba(217,168,87,0.10) !important; }
         .dark-cal .react-calendar__tile--now { background: rgba(201,146,46,0.12) !important; color: ${GOLD} !important; }
         .dark-cal .react-calendar__tile--active { background: rgba(201,146,46,0.12) !important; }
         .dark-cal .react-calendar__tile.avail-tile { background: rgba(201,146,46,0.2) !important; color: ${GOLD} !important; font-weight: 700 !important; border: 1px solid rgba(201,146,46,0.4) !important; }
-        .dark-cal .react-calendar__month-view__days__day--neighboringMonth { color: rgba(186,207,231,0.2) !important; }
+        .dark-cal .react-calendar__month-view__days__day--neighboringMonth { color: rgba(71,85,105,0.25) !important; }
         .dark-cal abbr { text-decoration: none !important; }
       `}</style>
     </div>

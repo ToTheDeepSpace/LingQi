@@ -4,9 +4,11 @@ import { CITIES } from '../constants/cities';
 import type { AuthData } from '../types';
 
 const API = '/api';
-const C = '#0F1117';
-const C2 = '#1A1D27';
+const C = '#fffdf8';
+const C2 = '#fffaf2';
 const GOLD = '#d9a857';
+const INK = '#1f2937';
+const MUTED = 'rgba(71,85,105,0.76)';
 
 function getAuth(): AuthData | null {
   try {
@@ -23,16 +25,16 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '12px 14px',
   borderRadius: 10,
-  border: '1px solid rgba(217,168,87,0.22)',
-  background: 'rgba(255,255,255,0.055)',
-  color: '#fff',
+  border: '1px solid rgba(217,168,87,0.28)',
+  background: '#fff',
+  color: INK,
   boxSizing: 'border-box',
   outline: 'none',
 };
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
-  color: 'rgba(220,230,243,0.76)',
+  color: 'rgba(71,85,105,0.82)',
   fontSize: '0.82rem',
   fontWeight: 800,
   marginBottom: 8,
@@ -55,10 +57,10 @@ export default function CreateCommission() {
 
   if (!auth) {
     return (
-      <div style={{ minHeight: '100vh', background: C, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ minHeight: '100vh', background: C, color: INK, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
         <div style={{ maxWidth: 420, textAlign: 'center' }}>
           <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.8rem', marginBottom: 12 }}>请先注册身份</h1>
-          <p style={{ color: 'rgba(220,230,243,0.68)', lineHeight: 1.8, marginBottom: 22 }}>发布委托需求需要账号身份，公开展示仍只显示昵称。</p>
+          <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 22 }}>发布委托需求需要账号身份，公开展示仍只显示昵称。</p>
           <Link to="/login" className="btn-gold" style={{ padding: '10px 24px', textDecoration: 'none' }}>去登录 / 注册</Link>
         </div>
       </div>
@@ -101,18 +103,18 @@ export default function CreateCommission() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: C, color: '#fff' }}>
+    <div style={{ minHeight: '100vh', background: C, color: INK }}>
       <div style={{ maxWidth: 780, margin: '0 auto', padding: '28px 20px 80px' }}>
-        <Link to="/commissions" style={{ color: 'rgba(220,230,243,0.62)', textDecoration: 'none', fontSize: '0.88rem' }}>← 返回委托需求墙</Link>
-        <div style={{ marginTop: 24, padding: '28px', borderRadius: 16, background: C2, border: '1px solid rgba(217,168,87,0.16)' }}>
+        <Link to="/commissions" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none', fontSize: '0.88rem' }}>← 返回委托需求墙</Link>
+        <div style={{ marginTop: 24, padding: '28px', borderRadius: 16, background: C2, border: '1px solid rgba(217,168,87,0.22)', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
           <div className="gold-line" style={{ marginBottom: 16 }} />
           <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.3rem)', marginBottom: 8 }}>发布委托需求</h1>
-          <p style={{ color: 'rgba(220,230,243,0.7)', lineHeight: 1.8, marginBottom: 22 }}>
+          <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 22 }}>
             你可以写得很具体，也可以只留一段愿望。内容会先进入人工审核。
           </p>
 
-          <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(217,168,87,0.08)', border: '1px solid rgba(217,168,87,0.2)', color: 'rgba(245,243,238,0.82)', fontSize: '0.84rem', marginBottom: 22 }}>
-            以 <strong style={{ color: GOLD }}>{auth.display_name}</strong> 的身份发布。AI 填表助手接口已预留，当前先由你手动填写。
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(217,168,87,0.1)', border: '1px solid rgba(217,168,87,0.24)', color: '#65401c', fontSize: '0.84rem', marginBottom: 22 }}>
+            以 <strong style={{ color: '#925f18' }}>{auth.display_name}</strong> 的身份发布。AI 填表助手接口已预留，当前先由你手动填写。
           </div>
 
           <div style={{ display: 'grid', gap: 16 }}>
@@ -173,14 +175,14 @@ export default function CreateCommission() {
             </div>
           </div>
 
-          {error && <p style={{ color: '#f87171', fontSize: '0.86rem', marginTop: 18 }}>{error}</p>}
+          {error && <p style={{ color: '#b91c1c', fontSize: '0.86rem', marginTop: 18 }}>{error}</p>}
 
           <div style={{ display: 'flex', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
             <button onClick={submit} disabled={submitting}
-              style={{ padding: '12px 28px', borderRadius: 10, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: submitting ? 'rgba(255,255,255,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: submitting ? 'rgba(220,230,243,0.55)' : C, fontWeight: 900 }}>
+              style={{ padding: '12px 28px', borderRadius: 10, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: submitting ? 'rgba(241,245,249,0.88)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: submitting ? 'rgba(71,85,105,0.55)' : INK, fontWeight: 900 }}>
               {submitting ? '提交中...' : '提交审核'}
             </button>
-            <Link to="/commissions" style={{ padding: '12px 18px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.22)', color: 'rgba(220,230,243,0.72)', textDecoration: 'none', fontWeight: 700 }}>取消</Link>
+            <Link to="/commissions" style={{ padding: '12px 18px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.28)', color: MUTED, textDecoration: 'none', fontWeight: 700 }}>取消</Link>
           </div>
         </div>
       </div>

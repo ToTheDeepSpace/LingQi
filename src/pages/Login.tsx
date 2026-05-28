@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 
 const API = '/api';
-const C    = '#0F1117';
-const C2   = '#1A1D27';
+const C    = '#fffdf8';
+const C2   = '#eef6ff';
 const GOLD = '#d9a857';
+const INK  = '#1f2937';
+const MUTED = 'rgba(71,85,105,0.76)';
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '12px 16px', borderRadius: 10, fontSize: '0.9rem',
-  border: '1px solid rgba(201,146,46,0.2)', outline: 'none',
-  backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff',
+  border: '1px solid rgba(201,146,46,0.28)', outline: 'none',
+  backgroundColor: '#fff', color: INK,
   boxSizing: 'border-box',
 };
 
@@ -52,17 +54,17 @@ export default function Login() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', backgroundColor: C }}>
+    <div style={{ minHeight: '100vh', display: 'flex', backgroundColor: C, color: INK }}>
 
       {/* ── 左侧品牌面板 ── */}
       <div style={{
         display: 'none',
         width: '45%', flexShrink: 0,
         backgroundColor: C2, alignItems: 'center', justifyContent: 'center',
-        borderRight: '1px solid rgba(201,146,46,0.12)',
+        borderRight: '1px solid rgba(201,146,46,0.18)',
         position: 'relative', overflow: 'hidden',
       }} className="lg-flex">
-        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 70% 55% at 50% 45%, rgba(201,146,46,0.09) 0%, transparent 65%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 70% 55% at 50% 45%, rgba(201,146,46,0.14) 0%, transparent 65%)', pointerEvents: 'none' }} />
         {[500, 360, 220].map((s) => (
           <div key={s} style={{ position: 'absolute', width: s, height: s, borderRadius: '50%', border: '1px solid rgba(201,146,46,0.08)', pointerEvents: 'none', top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }} />
         ))}
@@ -71,12 +73,12 @@ export default function Login() {
             灵契
           </div>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 32px' }} />
-          <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: 'rgba(226,238,252,0.78)', lineHeight: 2 }}>
+          <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: MUTED, lineHeight: 2 }}>
             让每一次附身<br />都有名字、口碑<br />和被委托的理由
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 40 }}>
             {['灵契师', '委托人', '配套服务', '红黑榜'].map(r => (
-              <span key={r} style={{ padding: '5px 14px', borderRadius: 999, fontSize: '0.8rem', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(201,146,46,0.18)', color: 'rgba(226,238,252,0.72)' }}>
+              <span key={r} style={{ padding: '5px 14px', borderRadius: 999, fontSize: '0.8rem', background: 'rgba(255,255,255,0.72)', border: '1px solid rgba(201,146,46,0.2)', color: 'rgba(71,85,105,0.74)' }}>
                 {r}
               </span>
             ))}
@@ -95,36 +97,36 @@ export default function Login() {
             </Link>
           </div>
 
-          <div style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,146,46,0.15)', borderRadius: 20, padding: '36px 32px' }}>
+          <div style={{ backgroundColor: '#fffaf2', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 20, padding: '36px 32px', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
             <div style={{ textAlign: 'center', marginBottom: 28 }}>
-              <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 8, color: '#fff' }}>
+              <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 8, color: INK }}>
                 {isRegister ? '创建账号' : '欢迎回来'}
               </h1>
-              <p style={{ fontSize: '0.85rem', color: 'rgba(226,238,252,0.68)' }}>
+              <p style={{ fontSize: '0.85rem', color: MUTED }}>
                 {isRegister ? '注册后即可使用，发布内容再进入审核' : '登录你的灵契账号'}
               </p>
             </div>
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {error && (
-                <div style={{ padding: '12px 16px', backgroundColor: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', borderRadius: 10, fontSize: '0.85rem', color: '#f87171' }}>
+                <div style={{ padding: '12px 16px', backgroundColor: 'rgba(254,242,242,0.92)', border: '1px solid rgba(220,38,38,0.24)', borderRadius: 10, fontSize: '0.85rem', color: '#b91c1c' }}>
                   {error}
                 </div>
               )}
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'rgba(186,207,231,0.7)', marginBottom: 8 }}>手机号</label>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>手机号</label>
                 <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="输入手机号" required style={inputStyle} />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'rgba(186,207,231,0.7)', marginBottom: 8 }}>密码</label>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>密码</label>
                 <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isRegister ? '设置密码（至少4位）' : '输入密码'} required style={inputStyle} />
               </div>
 
               {isRegister && (
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'rgba(186,207,231,0.7)', marginBottom: 8 }}>昵称 / 艺名</label>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>昵称 / 艺名</label>
                   <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="你希望别人怎么称呼你" required style={inputStyle} />
                 </div>
               )}
@@ -132,24 +134,24 @@ export default function Login() {
               <button type="submit" disabled={loading}
                 style={{
                   marginTop: 8, padding: '13px', borderRadius: 10, border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
-                  background: loading ? 'rgba(255,255,255,0.06)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                  color: loading ? 'rgba(186,207,231,0.4)' : C, fontWeight: 700, fontSize: '0.9rem',
+                  background: loading ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                  color: loading ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 700, fontSize: '0.9rem',
                 }}>
                 {loading ? '处理中...' : isRegister ? '注册并登录' : '登录'}
               </button>
 
-              <p style={{ fontSize: '0.82rem', color: 'rgba(226,238,252,0.68)', textAlign: 'center' }}>
+              <p style={{ fontSize: '0.82rem', color: MUTED, textAlign: 'center' }}>
                 {isRegister ? (
                   <>已有账号？<button type="button" onClick={() => { setIsRegister(false); setError(''); }}
-                    style={{ background: 'none', border: 'none', color: '#f4c873', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, textDecoration: 'underline' }}>去登录</button></>
+                    style={{ background: 'none', border: 'none', color: '#925f18', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'underline' }}>去登录</button></>
                 ) : (
                   <>没有账号？<button type="button" onClick={() => { setIsRegister(true); setError(''); }}
-                    style={{ background: 'none', border: 'none', color: '#f4c873', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, textDecoration: 'underline' }}>立即注册</button></>
+                    style={{ background: 'none', border: 'none', color: '#925f18', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'underline' }}>立即注册</button></>
                 )}
               </p>
 
               {isRegister && (
-                <p style={{ fontSize: '0.75rem', color: 'rgba(226,238,252,0.64)', textAlign: 'center', lineHeight: 1.7 }}>
+                <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.64)', textAlign: 'center', lineHeight: 1.7 }}>
                   账号注册后立即可用；红黑榜内容、评论和相关方申请会先进入人工审核
                 </p>
               )}
@@ -157,9 +159,9 @@ export default function Login() {
           </div>
 
           <div style={{ textAlign: 'center', marginTop: 24 }}>
-            <Link to="/" style={{ fontSize: '0.8rem', color: 'rgba(226,238,252,0.7)', textDecoration: 'none' }}
+            <Link to="/" style={{ fontSize: '0.8rem', color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }}
               onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
-              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(226,238,252,0.7)')}>
+              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>
               ← 返回首页
             </Link>
           </div>

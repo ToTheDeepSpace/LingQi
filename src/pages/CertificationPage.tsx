@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import type { Certification } from '../types';
 
 const API = '/api';
-const C = '#0F1117';
-const C2 = '#1A1D27';
+const C = '#fffdf8';
+const C2 = '#eef6ff';
 const GOLD = '#d9a857';
 const BLUE = '#3b82f6';
+const INK = '#1f2937';
+const MUTED = 'rgba(71,85,105,0.76)';
 
 type AuthSession = { token: string; id: string };
 
@@ -23,10 +25,11 @@ function getAuth(): AuthSession | null {
 }
 
 const card: React.CSSProperties = {
-  backgroundColor: 'rgba(255,255,255,0.05)',
-  border: '1px solid rgba(201,146,46,0.18)',
+  backgroundColor: '#fffaf2',
+  border: '1px solid rgba(201,146,46,0.22)',
   borderRadius: 16,
   padding: 24,
+  boxShadow: '0 14px 34px rgba(31,41,55,0.06)',
 };
 
 const inputStyle: React.CSSProperties = {
@@ -34,8 +37,8 @@ const inputStyle: React.CSSProperties = {
   padding: '11px 14px',
   borderRadius: 10,
   border: '1px solid rgba(201,146,46,0.2)',
-  backgroundColor: 'rgba(255,255,255,0.05)',
-  color: '#fff',
+  backgroundColor: '#fff',
+  color: INK,
   fontSize: '0.875rem',
   outline: 'none',
   boxSizing: 'border-box',
@@ -49,8 +52,8 @@ const STATUS_LABEL: Record<string, string> = {
 
 const STATUS_COLOR: Record<string, string> = {
   pending: '#fbbf24',
-  approved: '#34d399',
-  rejected: '#f87171',
+  approved: '#15803d',
+  rejected: '#b91c1c',
 };
 
 export default function CertificationPage() {
@@ -170,10 +173,10 @@ export default function CertificationPage() {
   if (!auth) return null;
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
+    <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
       <div style={{
-        background: `radial-gradient(circle at 18% 0%, rgba(59,130,246,0.15), transparent 40%), linear-gradient(135deg, ${C2}, #21262d)`,
-        borderBottom: '1px solid rgba(201,146,46,0.12)',
+        background: `radial-gradient(circle at 18% 0%, rgba(59,130,246,0.12), transparent 40%), linear-gradient(135deg, ${C2}, #fffaf2)`,
+        borderBottom: '1px solid rgba(201,146,46,0.2)',
         padding: '34px 20px 30px',
       }}>
         <div style={{ maxWidth: 800, margin: '0 auto' }}>
@@ -181,7 +184,7 @@ export default function CertificationPage() {
           <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.4rem, 3vw, 2rem)', marginBottom: 8 }}>
             身份认证
           </h1>
-          <p style={{ color: 'rgba(186,207,231,0.65)', fontSize: '0.95rem' }}>
+          <p style={{ color: MUTED, fontSize: '0.95rem' }}>
             提交材料完成认证，获得官方标识
           </p>
         </div>
@@ -191,15 +194,15 @@ export default function CertificationPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
           <div style={card}>
-            <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(220,230,243,0.88)' }}>
+            <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 16, color: INK }}>
               选择认证类型
             </h3>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => { setType('dm'); setSubmitDone(false); }}
                 style={{
                   flex: 1, padding: '14px', borderRadius: 12, border: type === 'dm' ? `2px solid ${GOLD}` : '1px solid rgba(201,146,46,0.2)',
-                  background: type === 'dm' ? 'rgba(201,146,46,0.12)' : 'rgba(255,255,255,0.03)',
-                  color: type === 'dm' ? GOLD : 'rgba(186,207,231,0.55)', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
+                  background: type === 'dm' ? 'rgba(201,146,46,0.12)' : '#fff',
+                  color: type === 'dm' ? '#925f18' : 'rgba(71,85,105,0.66)', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
                   transition: 'all 0.2s',
                 }}>
                 🎭 DM 开本记录认证
@@ -207,8 +210,8 @@ export default function CertificationPage() {
               <button onClick={() => { setType('shop'); setSubmitDone(false); }}
                 style={{
                   flex: 1, padding: '14px', borderRadius: 12, border: type === 'shop' ? `2px solid ${BLUE}` : '1px solid rgba(201,146,46,0.2)',
-                  background: type === 'shop' ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.03)',
-                  color: type === 'shop' ? BLUE : 'rgba(186,207,231,0.55)', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
+                  background: type === 'shop' ? 'rgba(59,130,246,0.12)' : '#fff',
+                  color: type === 'shop' ? BLUE : 'rgba(71,85,105,0.66)', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
                   transition: 'all 0.2s',
                 }}>
                 🏪 店家营业执照认证
@@ -220,7 +223,7 @@ export default function CertificationPage() {
             <div style={{ ...card, textAlign: 'center', padding: '48px 24px' }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
               <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>认证申请已提交</h3>
-              <p style={{ color: 'rgba(186,207,231,0.65)', fontSize: '0.875rem', lineHeight: 1.7, marginBottom: 20 }}>
+              <p style={{ color: MUTED, fontSize: '0.875rem', lineHeight: 1.7, marginBottom: 20 }}>
                 管理员审核通过后，你的主页将显示认证标识。
               </p>
               <button onClick={() => setSubmitDone(false)}
@@ -230,10 +233,10 @@ export default function CertificationPage() {
             </div>
           ) : (
             <div style={card}>
-              <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(220,230,243,0.88)' }}>
+              <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 16, color: INK }}>
                 {type === 'dm' ? 'DM 开本记录认证' : '店家营业执照认证'}
                 {type === 'dm' && hasApprovedDm && (
-                  <span style={{ marginLeft: 10, padding: '2px 10px', borderRadius: 999, fontSize: '0.75rem', background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)', fontWeight: 500 }}>
+                  <span style={{ marginLeft: 10, padding: '2px 10px', borderRadius: 999, fontSize: '0.75rem', background: 'rgba(240,253,244,0.9)', color: '#15803d', border: '1px solid rgba(34,197,94,0.22)', fontWeight: 500 }}>
                     已认证
                   </span>
                 )}
@@ -245,7 +248,7 @@ export default function CertificationPage() {
               </h3>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'rgba(186,207,231,0.7)', marginBottom: 6 }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(71,85,105,0.78)', marginBottom: 6 }}>
                   {type === 'dm' ? '上传开本记录截图（可多张）' : '上传营业执照'}
                 </label>
                 <input
@@ -272,7 +275,7 @@ export default function CertificationPage() {
                   </svg>
                   {uploading ? '上传中...' : '上传图片'}
                 </label>
-                {uploadError && <p style={{ fontSize: '0.78rem', color: '#f87171', marginTop: 8 }}>{uploadError}</p>}
+                {uploadError && <p style={{ fontSize: '0.78rem', color: '#b91c1c', marginTop: 8 }}>{uploadError}</p>}
               </div>
 
               {files.length > 0 && (
@@ -290,7 +293,7 @@ export default function CertificationPage() {
               )}
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'rgba(186,207,231,0.7)', marginBottom: 6 }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(71,85,105,0.78)', marginBottom: 6 }}>
                   {type === 'dm' ? '开本说明（开本次数、剧本类型等）' : '店铺说明（可选）'}
                 </label>
                 <textarea
@@ -302,14 +305,14 @@ export default function CertificationPage() {
                 />
               </div>
 
-              {submitError && <p style={{ color: '#f87171', fontSize: '0.82rem', marginBottom: 12 }}>{submitError}</p>}
+              {submitError && <p style={{ color: '#b91c1c', fontSize: '0.82rem', marginBottom: 12 }}>{submitError}</p>}
 
               <button onClick={submit} disabled={submitting || files.length === 0}
                 style={{
                   width: '100%', padding: '12px', borderRadius: 10, border: 'none',
                   cursor: submitting || files.length === 0 ? 'not-allowed' : 'pointer',
-                  background: submitting || files.length === 0 ? 'rgba(255,255,255,0.06)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                  color: submitting || files.length === 0 ? 'rgba(186,207,231,0.4)' : C,
+                  background: submitting || files.length === 0 ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                  color: submitting || files.length === 0 ? 'rgba(71,85,105,0.42)' : INK,
                   fontWeight: 700, fontSize: '0.9rem',
                 }}>
                 {submitting ? '提交中...' : '提交认证申请'}
@@ -318,13 +321,13 @@ export default function CertificationPage() {
           )}
 
           <div style={card}>
-            <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(220,230,243,0.88)' }}>
+            <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 16, color: INK }}>
               我的认证记录
             </h3>
             {certsLoading ? (
-              <p style={{ color: 'rgba(186,207,231,0.45)', fontSize: '0.875rem' }}>加载中...</p>
+              <p style={{ color: 'rgba(71,85,105,0.52)', fontSize: '0.875rem' }}>加载中...</p>
             ) : myCerts.length === 0 ? (
-              <p style={{ color: 'rgba(186,207,231,0.45)', fontSize: '0.875rem' }}>暂无认证记录</p>
+              <p style={{ color: 'rgba(71,85,105,0.52)', fontSize: '0.875rem' }}>暂无认证记录</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {myCerts.map(cert => (
@@ -332,7 +335,7 @@ export default function CertificationPage() {
                     padding: '14px 16px',
                     borderRadius: 10,
                     border: '1px solid rgba(201,146,46,0.15)',
-                    background: 'rgba(255,255,255,0.03)',
+                    background: '#fff',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     flexWrap: 'wrap', gap: 10,
                   }}>
@@ -349,10 +352,10 @@ export default function CertificationPage() {
                         {STATUS_LABEL[cert.status]}
                       </span>
                       {cert.reject_reason && (
-                        <p style={{ fontSize: '0.78rem', color: '#f87171', marginTop: 4 }}>拒绝原因：{cert.reject_reason}</p>
+                        <p style={{ fontSize: '0.78rem', color: '#b91c1c', marginTop: 4 }}>拒绝原因：{cert.reject_reason}</p>
                       )}
                     </div>
-                    <span style={{ fontSize: '0.75rem', color: 'rgba(186,207,231,0.4)' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.5)' }}>
                       {cert.created_at?.slice(0, 10)}
                     </span>
                   </div>

@@ -4,11 +4,11 @@ import type { Creator, PaginatedResponse } from '../types';
 import { CITIES } from '../constants/cities';
 
 const API = '/api';
-const C = '#0F1117';
-const C2 = '#1A1D27';
+const C = '#fffdf8';
+const C2 = '#eef6ff';
 const GOLD = '#d9a857';
-const PAPER = 'rgba(245,243,238,0.94)';
-const PAPER_DIM = 'rgba(226,238,252,0.78)';
+const PAPER = '#1f2937';
+const PAPER_DIM = 'rgba(71,85,105,0.76)';
 
 const FILTERS = [
   { key: 'all', label: '全部' },
@@ -101,10 +101,10 @@ export default function Explore() {
   const creatorCountText = loading ? '正在加载' : `${filtered.length} 位可查看`;
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
+    <div style={{ backgroundColor: C, minHeight: '100vh', color: PAPER }}>
       <div style={{
-        background: `radial-gradient(circle at 16% 0%, rgba(107,63,160,0.24), transparent 34%), linear-gradient(135deg, ${C2}, #21262d)`,
-        borderBottom: '1px solid rgba(217,168,87,0.16)',
+        background: `radial-gradient(circle at 16% 0%, rgba(217,168,87,0.16), transparent 34%), linear-gradient(135deg, ${C2}, #fffaf2)`,
+        borderBottom: '1px solid rgba(217,168,87,0.2)',
         padding: '52px 20px 34px',
       }}>
         <div style={{ maxWidth: 1080, margin: '0 auto' }}>
@@ -149,8 +149,8 @@ export default function Explore() {
                     cursor: 'pointer',
                     fontWeight: active ? 800 : 600,
                     border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.14)',
-                    background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.055)',
-                    color: active ? GOLD : 'rgba(226,238,252,0.78)',
+                    background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.82)',
+                    color: active ? '#925f18' : 'rgba(71,85,105,0.78)',
                   }}>
                   {label}
                 </button>
@@ -194,7 +194,7 @@ export default function Explore() {
         )}
 
         {!loading && !error && filtered.length === 0 && (
-          <div style={{ padding: '56px 20px', border: '1px dashed rgba(217,168,87,0.22)', borderRadius: 8, background: 'rgba(255,255,255,0.035)' }}>
+          <div style={{ padding: '56px 20px', border: '1px dashed rgba(217,168,87,0.28)', borderRadius: 8, background: 'rgba(255,250,242,0.82)' }}>
             <div style={{ maxWidth: 580, margin: '0 auto', textAlign: 'center' }}>
               <div style={{ fontSize: 42, marginBottom: 16, color: GOLD }}>✦</div>
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.35rem', fontWeight: 900, color: PAPER, marginBottom: 10 }}>
@@ -255,7 +255,7 @@ function SearchableCitySelect({
   }, [query]);
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', marginLeft: 'auto' }}>
       <button onClick={onToggle}
         style={{
           minHeight: 36,
@@ -264,8 +264,8 @@ function SearchableCitySelect({
           fontSize: '0.875rem',
           cursor: 'pointer',
           border: city !== 'all' ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.22)',
-          background: city !== 'all' ? 'rgba(217,168,87,0.14)' : 'rgba(255,255,255,0.055)',
-          color: city !== 'all' ? GOLD : 'rgba(226,238,252,0.78)',
+          background: city !== 'all' ? 'rgba(217,168,87,0.14)' : 'rgba(255,255,255,0.82)',
+          color: city !== 'all' ? '#925f18' : 'rgba(71,85,105,0.78)',
           fontWeight: 800,
           whiteSpace: 'nowrap',
         }}>
@@ -283,9 +283,9 @@ function SearchableCitySelect({
             width: 'min(360px, calc(100vw - 32px))',
             padding: 12,
             borderRadius: 8,
-            background: '#0d1f38',
-            border: '1px solid rgba(217,168,87,0.24)',
-            boxShadow: '0 18px 48px rgba(0,0,0,0.48)',
+            background: '#fffdf8',
+            border: '1px solid rgba(217,168,87,0.28)',
+            boxShadow: '0 18px 48px rgba(31,41,55,0.16)',
           }}
             onWheel={e => e.stopPropagation()}
             onTouchMove={e => e.stopPropagation()}>
@@ -300,7 +300,7 @@ function SearchableCitySelect({
                 padding: '10px 12px',
                 borderRadius: 8,
                 border: '1px solid rgba(217,168,87,0.24)',
-                background: 'rgba(255,255,255,0.06)',
+                background: '#fff',
                 color: PAPER,
                 outline: 'none',
                 marginBottom: 10,
@@ -312,7 +312,7 @@ function SearchableCitySelect({
                 <CityOption key={c} active={city === c} onClick={() => onSelect(c)}>{c}</CityOption>
               ))}
             </div>
-            <div style={{ height: 1, background: 'rgba(217,168,87,0.12)', marginBottom: 8 }} />
+            <div style={{ height: 1, background: 'rgba(217,168,87,0.18)', marginBottom: 8 }} />
             <div style={{ ...cityScrollStyle, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>
               {matchedCities.length > 0 ? matchedCities.map(c => (
                 <button key={c} onClick={() => onSelect(c)}
@@ -322,7 +322,7 @@ function SearchableCitySelect({
                     border: 'none',
                     cursor: 'pointer',
                     background: city === c ? 'rgba(217,168,87,0.16)' : 'transparent',
-                    color: city === c ? GOLD : 'rgba(226,238,252,0.78)',
+                    color: city === c ? '#925f18' : 'rgba(71,85,105,0.78)',
                     fontSize: '0.84rem',
                     fontWeight: city === c ? 800 : 500,
                     textAlign: 'left',
@@ -330,7 +330,7 @@ function SearchableCitySelect({
                   {c}
                 </button>
               )) : (
-                <p style={{ gridColumn: '1 / -1', color: 'rgba(226,238,252,0.62)', fontSize: '0.84rem', padding: '16px 4px' }}>
+                <p style={{ gridColumn: '1 / -1', color: 'rgba(71,85,105,0.62)', fontSize: '0.84rem', padding: '16px 4px' }}>
                   没搜到这个城市，可以先选全部城市。
                 </p>
               )}
@@ -351,21 +351,22 @@ function CreatorCard({ creator }: { creator: Creator }) {
   return (
     <article style={{
       minHeight: 210,
-      background: 'linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035))',
-      border: '1px solid rgba(217,168,87,0.18)',
+      background: 'linear-gradient(180deg, #ffffff, #fffaf2)',
+      border: '1px solid rgba(217,168,87,0.2)',
       borderRadius: 8,
       padding: 18,
       transition: 'transform 0.18s ease, border-color 0.18s ease, background 0.18s ease',
       cursor: 'pointer',
+      boxShadow: '0 12px 30px rgba(31,41,55,0.06)',
     }}
       onMouseEnter={e => {
-        e.currentTarget.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05))';
+        e.currentTarget.style.background = 'linear-gradient(180deg, #ffffff, #fff7ed)';
         e.currentTarget.style.borderColor = 'rgba(217,168,87,0.42)';
         e.currentTarget.style.transform = 'translateY(-2px)';
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035))';
-        e.currentTarget.style.borderColor = 'rgba(217,168,87,0.18)';
+        e.currentTarget.style.background = 'linear-gradient(180deg, #ffffff, #fffaf2)';
+        e.currentTarget.style.borderColor = 'rgba(217,168,87,0.2)';
         e.currentTarget.style.transform = 'none';
       }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
@@ -403,11 +404,11 @@ function CreatorCard({ creator }: { creator: Creator }) {
       </div>
 
       {creator.bio ? (
-        <p style={{ fontSize: '0.86rem', color: 'rgba(226,238,252,0.76)', lineHeight: 1.75, marginBottom: 14, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+        <p style={{ fontSize: '0.86rem', color: 'rgba(71,85,105,0.76)', lineHeight: 1.75, marginBottom: 14, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
           {creator.bio}
         </p>
       ) : (
-        <p style={{ fontSize: '0.86rem', color: 'rgba(226,238,252,0.64)', lineHeight: 1.75, marginBottom: 14 }}>
+        <p style={{ fontSize: '0.86rem', color: 'rgba(71,85,105,0.64)', lineHeight: 1.75, marginBottom: 14 }}>
           主页资料还在补全中，可以先查看档期、服务与联系方式入口。
         </p>
       )}
@@ -420,7 +421,7 @@ function CreatorCard({ creator }: { creator: Creator }) {
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {tags.slice(0, 4).map(t => <Tag key={t} muted>{t}</Tag>)}
-        {tags.length > 4 && <span style={{ color: 'rgba(226,238,252,0.55)', fontSize: '0.75rem', alignSelf: 'center' }}>+{tags.length - 4}</span>}
+        {tags.length > 4 && <span style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.75rem', alignSelf: 'center' }}>+{tags.length - 4}</span>}
       </div>
     </article>
   );
@@ -428,8 +429,8 @@ function CreatorCard({ creator }: { creator: Creator }) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ border: '1px solid rgba(217,168,87,0.14)', background: 'rgba(255,255,255,0.045)', borderRadius: 8, padding: '12px 14px' }}>
-      <div style={{ color: 'rgba(226,238,252,0.62)', fontSize: '0.76rem', marginBottom: 4 }}>{label}</div>
+    <div style={{ border: '1px solid rgba(217,168,87,0.18)', background: 'rgba(255,255,255,0.76)', borderRadius: 8, padding: '12px 14px' }}>
+      <div style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', marginBottom: 4 }}>{label}</div>
       <div style={{ color: PAPER, fontWeight: 900, fontSize: '0.96rem' }}>{value}</div>
     </div>
   );
@@ -438,7 +439,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 function CityOption({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick}
-      style={{ padding: '6px 10px', borderRadius: 999, border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.14)', background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.04)', color: active ? GOLD : 'rgba(226,238,252,0.72)', cursor: 'pointer', fontSize: '0.78rem', fontWeight: active ? 800 : 600 }}>
+      style={{ padding: '6px 10px', borderRadius: 999, border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.18)', background: active ? 'rgba(217,168,87,0.16)' : '#fff', color: active ? '#925f18' : 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.78rem', fontWeight: active ? 800 : 600 }}>
       {children}
     </button>
   );
@@ -446,7 +447,7 @@ function CityOption({ children, active, onClick }: { children: React.ReactNode; 
 
 function Tag({ children, muted }: { children: React.ReactNode; muted?: boolean }) {
   return (
-    <span style={{ padding: '4px 9px', borderRadius: 999, fontSize: '0.73rem', background: muted ? 'rgba(255,255,255,0.045)' : 'rgba(217,168,87,0.12)', border: muted ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(217,168,87,0.22)', color: muted ? 'rgba(226,238,252,0.7)' : GOLD }}>
+    <span style={{ padding: '4px 9px', borderRadius: 999, fontSize: '0.73rem', background: muted ? 'rgba(239,246,255,0.86)' : 'rgba(217,168,87,0.12)', border: muted ? '1px solid rgba(125,147,170,0.16)' : '1px solid rgba(217,168,87,0.22)', color: muted ? '#275389' : '#925f18' }}>
       {children}
     </span>
   );
@@ -461,9 +462,9 @@ function PageBtn({ children, onClick, disabled }: { children: React.ReactNode; o
         borderRadius: 8,
         fontSize: '0.875rem',
         cursor: disabled ? 'not-allowed' : 'pointer',
-        background: 'rgba(255,255,255,0.055)',
+        background: 'rgba(255,255,255,0.82)',
         border: '1px solid rgba(217,168,87,0.16)',
-        color: disabled ? 'rgba(226,238,252,0.36)' : PAPER_DIM,
+        color: disabled ? 'rgba(71,85,105,0.36)' : PAPER_DIM,
       }}>
       {children}
     </button>
@@ -487,7 +488,7 @@ const stateWrap: React.CSSProperties = {
   padding: '48px 22px',
   borderRadius: 8,
   border: '1px solid rgba(217,168,87,0.2)',
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.032))',
+  background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,250,242,0.82))',
 };
 
 const textButton: React.CSSProperties = {

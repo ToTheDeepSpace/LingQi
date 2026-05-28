@@ -161,18 +161,18 @@
 
 /* 玻璃按钮 */
 .btn-glass {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 253, 248, 0.78);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(201, 146, 46, 0.24);
+  color: #65401c;
   font-weight: 500;
   border-radius: 0.75rem;
   transition: all 0.3s ease;
 }
 .btn-glass:hover {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.3);
-  color: white;
+  background: rgba(255, 250, 242, 0.96);
+  border-color: rgba(201, 146, 46, 0.42);
+  color: #1f2937;
 }
 
 /* 输入框增强 */

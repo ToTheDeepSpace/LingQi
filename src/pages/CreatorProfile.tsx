@@ -3,9 +3,11 @@ import { useParams, Link } from 'react-router-dom';
 import type { Availability, Creator, Service, Portfolio, SocialSnapshot } from '../types';
 
 const API  = '/api';
-const C    = '#0F1117';
-const C2   = '#1A1D27';
+const C    = '#fffdf8';
+const C2   = '#eef6ff';
 const GOLD = '#d9a857';
+const INK  = '#1f2937';
+const MUTED = 'rgba(71,85,105,0.76)';
 
 const ROLE_EMOJI: Record<string, string> = {
   creator: '🎭', coser: '⭐', photographer: '📸', makeup: '💄',
@@ -15,9 +17,10 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 const card: React.CSSProperties = {
-  backgroundColor: 'rgba(255,255,255,0.05)',
-  border: '1px solid rgba(201,146,46,0.18)',
+  backgroundColor: '#fffaf2',
+  border: '1px solid rgba(201,146,46,0.2)',
   borderRadius: 16, padding: 24,
+  boxShadow: '0 14px 34px rgba(31,41,55,0.06)',
 };
 
 export default function CreatorProfile() {
@@ -74,7 +77,7 @@ export default function CreatorProfile() {
 
   const inputStyle: React.CSSProperties = {
     padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '0.875rem',
+    backgroundColor: '#fff', color: INK, fontSize: '0.875rem',
     outline: 'none', width: '100%', boxSizing: 'border-box',
   };
 
@@ -82,7 +85,7 @@ export default function CreatorProfile() {
     <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{ width: 40, height: 40, border: '2px solid rgba(201,146,46,0.3)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 20px', animation: 'spin 0.8s linear infinite' }} />
-        <p style={{ color: 'rgba(186,207,231,0.65)' }}>加载中...</p>
+        <p style={{ color: MUTED }}>加载中...</p>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -92,24 +95,24 @@ export default function CreatorProfile() {
     <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 56, marginBottom: 20, opacity: 0.3 }}>🌊</div>
-        <p style={{ color: 'rgba(186,207,231,0.7)', marginBottom: 20 }}>创作者不存在</p>
+        <p style={{ color: MUTED, marginBottom: 20 }}>创作者不存在</p>
         <Link to="/explore" style={{ color: GOLD, fontSize: '0.875rem', textDecoration: 'underline' }}>返回大厅</Link>
       </div>
     </div>
   );
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
+    <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
 
       {/* 顶部 Header */}
       <div style={{
-        background: `radial-gradient(circle at 18% 0%, rgba(107,63,160,0.28), transparent 32%), linear-gradient(135deg, ${C2}, #21262d)`,
-        borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '34px 20px 30px',
+        background: `radial-gradient(circle at 18% 0%, rgba(217,168,87,0.16), transparent 32%), linear-gradient(135deg, ${C2}, #fffaf2)`,
+        borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '34px 20px 30px',
       }}>
         <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-          <Link to="/explore" style={{ color: 'rgba(186,207,231,0.6)', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}
+          <Link to="/explore" style={{ color: 'rgba(39,83,137,0.78)', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}
             onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
-            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(186,207,231,0.6)')}>
+            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>
             ← 返回灵契大厅
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
@@ -118,7 +121,7 @@ export default function CreatorProfile() {
               background: 'linear-gradient(135deg, rgba(217,168,87,0.24), rgba(107,63,160,0.2))',
               border: '2px solid rgba(217,168,87,0.38)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, overflow: 'hidden',
-              boxShadow: '0 18px 52px rgba(0,0,0,0.28)',
+              boxShadow: '0 18px 52px rgba(31,41,55,0.14)',
             }}>
               {creator.avatar
                 ? <img src={creator.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -159,7 +162,7 @@ export default function CreatorProfile() {
                   }} title="DM认证审核中">🎭 审核中</span>
                 )}
               </h1>
-              <p style={{ color: 'rgba(220,230,243,0.76)', fontSize: '0.92rem', marginBottom: 10 }}>
+              <p style={{ color: MUTED, fontSize: '0.92rem', marginBottom: 10 }}>
                 {creator.city || '未知城市'} · {ROLE_LABEL[creator.role_type || ''] || creator.role_type}
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -180,9 +183,9 @@ export default function CreatorProfile() {
 
             {/* 简介卡 */}
             <div style={card}>
-              <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: 'rgba(220,230,243,0.88)' }}>灵契师档案</h3>
+              <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: INK }}>灵契师档案</h3>
               {creator.bio && (
-                <p style={{ fontSize: '0.875rem', color: 'rgba(220,230,243,0.78)', lineHeight: 1.8, marginBottom: creator.tags?.length ? 16 : 0 }}>
+                <p style={{ fontSize: '0.875rem', color: MUTED, lineHeight: 1.8, marginBottom: creator.tags?.length ? 16 : 0 }}>
                   {creator.bio}
                 </p>
               )}
@@ -196,12 +199,12 @@ export default function CreatorProfile() {
                 </div>
               )}
               {!creator.bio && !creator.tags?.length && (
-                <p style={{ color: 'rgba(186,207,231,0.45)', fontSize: '0.875rem' }}>创作者还没有填写简介</p>
+                <p style={{ color: 'rgba(71,85,105,0.52)', fontSize: '0.875rem' }}>创作者还没有填写简介</p>
               )}
               {creator.available_cities && creator.available_cities.length > 0 && (
-                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(217,168,87,0.12)' }}>
-                  <p style={{ color: 'rgba(220,230,243,0.55)', fontSize: '0.78rem', marginBottom: 8 }}>可接城市</p>
-                  <p style={{ color: GOLD, fontSize: '0.86rem', lineHeight: 1.7 }}>{creator.available_cities.join(' / ')}</p>
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(217,168,87,0.16)' }}>
+                  <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', marginBottom: 8 }}>可接城市</p>
+                  <p style={{ color: '#925f18', fontSize: '0.86rem', lineHeight: 1.7 }}>{creator.available_cities.join(' / ')}</p>
                 </div>
               )}
             </div>
@@ -209,7 +212,7 @@ export default function CreatorProfile() {
             {/* 社交快照 */}
             {creator.social_links && Object.values(creator.social_links).some(Boolean) && (
               <div style={card}>
-                <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: 'rgba(220,230,243,0.88)' }}>社交主页</h3>
+                <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: INK }}>社交主页</h3>
                 <div style={{ display: 'grid', gap: 10 }}>
                   {Object.entries(creator.social_links).filter(([, url]) => url).map(([key, url]) => (
                     <SocialCard key={key} kind={key} url={url} snapshot={creator.social_snapshots?.[key]} />
@@ -220,9 +223,9 @@ export default function CreatorProfile() {
 
             {/* 联系卡 */}
             <div style={card}>
-              <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: 'rgba(186,207,231,0.9)' }}>发起委托</h3>
+              <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: INK }}>发起委托</h3>
               {creator.contact_unlock_enabled && (
-                <p style={{ color: 'rgba(220,230,243,0.58)', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 12 }}>
+                <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 12 }}>
                   对方开启了预约意向金，金额 ¥{creator.contact_intent_amount || 0}。用于确认真实委托意向，申请仍需人工处理。
                 </p>
               )}
@@ -238,14 +241,14 @@ export default function CreatorProfile() {
                   <button onClick={submitContact} disabled={contactSent}
                     style={{
                       padding: '10px', borderRadius: 10, border: 'none', cursor: contactSent ? 'default' : 'pointer',
-                      background: contactSent ? 'rgba(255,255,255,0.07)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                      color: contactSent ? 'rgba(186,207,231,0.6)' : C,
+                      background: contactSent ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                      color: contactSent ? 'rgba(71,85,105,0.6)' : INK,
                       fontWeight: 600, fontSize: '0.875rem',
                     }}>
                     {contactSent ? '已发送 ✓ 等待回复' : '提交预约意向'}
                   </button>
                   {!contactSent && (
-                    <p style={{ fontSize: '0.75rem', color: 'rgba(186,207,231,0.5)', textAlign: 'center' }}>
+                    <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.56)', textAlign: 'center' }}>
                       通过后再进入联系方式沟通，不引导公开暴露微信。
                     </p>
                   )}
@@ -255,7 +258,7 @@ export default function CreatorProfile() {
                   style={{
                     width: '100%', padding: '11px', borderRadius: 10, border: 'none', cursor: 'pointer',
                     background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                    color: C, fontWeight: 600, fontSize: '0.875rem',
+                    color: INK, fontWeight: 600, fontSize: '0.875rem',
                   }}>
                   申请预约
                 </button>
@@ -269,7 +272,7 @@ export default function CreatorProfile() {
             {/* 可接服务 */}
             {services.length > 0 && (
               <div style={card}>
-                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.9)' }}>可接服务</h3>
+                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>可接服务</h3>
                 <div>
                   {services.map((s, i) => (
                     <div key={s.id} style={{
@@ -278,8 +281,8 @@ export default function CreatorProfile() {
                     }}>
                       <div>
                         <span style={{ fontWeight: 600, fontSize: '0.925rem' }}>{s.service_type}</span>
-                        {s.duration && <span style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.6)', marginLeft: 8 }}>· {s.duration}</span>}
-                        {s.description && <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.6)', marginTop: 4 }}>{s.description}</p>}
+                        {s.duration && <span style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.62)', marginLeft: 8 }}>· {s.duration}</span>}
+                        {s.description && <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.62)', marginTop: 4 }}>{s.description}</p>}
                       </div>
                       <span style={{ fontWeight: 700, fontSize: '1.05rem', color: GOLD, marginLeft: 16, flexShrink: 0 }}>¥{s.price}</span>
                     </div>
@@ -291,17 +294,17 @@ export default function CreatorProfile() {
             {/* 可约日期 */}
             {availDates.length > 0 && (
               <div style={card}>
-                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.9)' }}>可约日期与地点</h3>
+                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>可约日期与地点</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
                   {availability.slice(0, 40).map(item => (
-                    <span key={item.id} style={{ padding: '8px 12px', borderRadius: 12, fontSize: '0.8rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.25)', color: GOLD }}>
+                    <span key={item.id} style={{ padding: '8px 12px', borderRadius: 12, fontSize: '0.8rem', background: 'rgba(217,168,87,0.12)', border: '1px solid rgba(201,146,46,0.25)', color: '#925f18' }}>
                       <strong>{item.date.slice(5)}</strong>
                       <br />
-                      <span style={{ color: 'rgba(220,230,243,0.64)', fontSize: '0.75rem' }}>{item.city || creator.city || '地点可议'}{item.location ? ` · ${item.location}` : ''}</span>
+                      <span style={{ color: 'rgba(71,85,105,0.66)', fontSize: '0.75rem' }}>{item.city || creator.city || '地点可议'}{item.location ? ` · ${item.location}` : ''}</span>
                     </span>
                   ))}
                   {availability.length > 40 && (
-                    <span style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.55)', alignSelf: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.56)', alignSelf: 'center' }}>
                       +{availability.length - 40} 天
                     </span>
                   )}
@@ -312,7 +315,7 @@ export default function CreatorProfile() {
             {/* 作品集 */}
             {portfolio.length > 0 && (
               <div style={card}>
-                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: 'rgba(186,207,231,0.9)' }}>作品集</h3>
+                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>作品集</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
                   {portfolio.map(p => (
                     <div key={p.id} style={{ aspectRatio: '1', borderRadius: 12, overflow: 'hidden', background: 'rgba(201,146,46,0.08)', border: '1px solid rgba(201,146,46,0.12)' }}>
@@ -326,7 +329,7 @@ export default function CreatorProfile() {
             {services.length === 0 && availDates.length === 0 && portfolio.length === 0 && (
               <div style={{ ...card, textAlign: 'center', padding: '60px 24px' }}>
                 <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>🌙</div>
-                <p style={{ color: 'rgba(186,207,231,0.55)', fontSize: '0.9rem' }}>创作者还没有发布内容</p>
+                <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.9rem' }}>创作者还没有发布内容</p>
               </div>
             )}
           </div>
@@ -340,7 +343,7 @@ export default function CreatorProfile() {
 
 function Badge({ children }: { children: React.ReactNode }) {
   return (
-    <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(217,168,87,0.14)', border: '1px solid rgba(217,168,87,0.25)', color: GOLD, fontSize: '0.75rem', fontWeight: 800 }}>
+    <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(217,168,87,0.14)', border: '1px solid rgba(217,168,87,0.25)', color: '#925f18', fontSize: '0.75rem', fontWeight: 800 }}>
       {children}
     </span>
   );
@@ -350,12 +353,12 @@ function SocialCard({ kind, url, snapshot }: { kind: string; url: string; snapsh
   const platform = kind === 'douyin' ? '抖音' : kind === 'xiaohongshu' ? '小红书' : '社交主页';
   return (
     <a href={url} target="_blank" rel="noreferrer"
-      style={{ display: 'block', padding: 12, borderRadius: 12, border: '1px solid rgba(217,168,87,0.16)', background: 'linear-gradient(135deg, rgba(217,168,87,0.08), rgba(107,63,160,0.08))', textDecoration: 'none' }}>
+      style={{ display: 'block', padding: 12, borderRadius: 12, border: '1px solid rgba(217,168,87,0.18)', background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(239,246,255,0.88))', textDecoration: 'none' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-        <strong style={{ color: '#fff', fontSize: '0.86rem' }}>{snapshot?.title || `${platform}主页`}</strong>
-        <span style={{ color: GOLD, fontSize: '0.74rem' }}>{platform}</span>
+        <strong style={{ color: INK, fontSize: '0.86rem' }}>{snapshot?.title || `${platform}主页`}</strong>
+        <span style={{ color: '#925f18', fontSize: '0.74rem' }}>{platform}</span>
       </div>
-      <p style={{ color: 'rgba(220,230,243,0.56)', fontSize: '0.76rem', lineHeight: 1.55, wordBreak: 'break-all' }}>
+      <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.55, wordBreak: 'break-all' }}>
         {snapshot?.description || url}
       </p>
     </a>

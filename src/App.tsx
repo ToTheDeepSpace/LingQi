@@ -51,16 +51,16 @@ function AppLayout() {
 function SiteFooter() {
   return (
     <footer style={{
-      backgroundColor: '#071426',
-      borderTop: '1px solid rgba(201,146,46,0.14)',
+      background: 'linear-gradient(180deg, #fffdf8 0%, #f7fbff 100%)',
+      borderTop: '1px solid rgba(201,146,46,0.22)',
       padding: '42px 20px 30px',
       marginTop: 'auto',
-      color: 'rgba(220,230,243,0.66)',
+      color: 'rgba(71,85,105,0.78)',
     }}>
       <div style={{ maxWidth: 1120, margin: '0 auto' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 28 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.35rem', color: '#f8fafc', marginBottom: 10 }}>灵契</div>
+            <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.35rem', color: '#1f2937', marginBottom: 10 }}>灵契</div>
             <p style={{ fontSize: '0.86rem', lineHeight: 1.8, margin: 0, maxWidth: 320 }}>
               与虚拟人之灵签订契约，让其附身一段时间。这里连接委托人、灵契师与完成降临所需的配套服务。
             </p>
@@ -95,7 +95,7 @@ function SiteFooter() {
             <FooterText>备案号待公示</FooterText>
           </FooterColumn>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 34, paddingTop: 18, borderTop: '1px solid rgba(201,146,46,0.10)', fontSize: '0.76rem', color: 'rgba(220,230,243,0.46)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 34, paddingTop: 18, borderTop: '1px solid rgba(201,146,46,0.14)', fontSize: '0.76rem', color: 'rgba(71,85,105,0.58)' }}>
           <span>© {new Date().getFullYear()} 灵契 LingQi. 原型期运营中。</span>
           <span>不公开联系方式、不展示实名，只显示昵称与认证标识。</span>
         </div>
@@ -107,7 +107,7 @@ function SiteFooter() {
 function FooterColumn({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 style={{ color: '#f8fafc', fontSize: '0.86rem', fontWeight: 900, marginBottom: 12 }}>{title}</h3>
+      <h3 style={{ color: '#1f2937', fontSize: '0.86rem', fontWeight: 900, marginBottom: 12 }}>{title}</h3>
       <div style={{ display: 'grid', gap: 8 }}>{children}</div>
     </div>
   );
@@ -122,7 +122,7 @@ function FooterExternal({ href, children }: { href: string; children: React.Reac
 }
 
 function FooterText({ children }: { children: React.ReactNode }) {
-  return <span style={{ color: 'rgba(220,230,243,0.54)', fontSize: '0.8rem' }}>{children}</span>;
+  return <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.8rem' }}>{children}</span>;
 }
 
 function FooterBadge({ children }: { children: React.ReactNode }) {
@@ -130,7 +130,7 @@ function FooterBadge({ children }: { children: React.ReactNode }) {
 }
 
 const footerLinkStyle: React.CSSProperties = {
-  color: 'rgba(220,230,243,0.62)',
+  color: 'rgba(39,83,137,0.78)',
   textDecoration: 'none',
   fontSize: '0.8rem',
   fontWeight: 650,

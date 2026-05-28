@@ -2,20 +2,21 @@ import { Link } from 'react-router-dom';
 import type React from 'react';
 
 const GOLD = '#d9a857';
-const BG = '#0F1117';
-const PANEL = '#151923';
-const TEXT = 'rgba(235,240,248,0.86)';
-const MUTED = 'rgba(220,230,243,0.62)';
+const BG = '#fffdf8';
+const PANEL = '#fffaf2';
+const TEXT = '#1f2937';
+const MUTED = 'rgba(71,85,105,0.76)';
 
 const sectionStyle: React.CSSProperties = {
-  border: '1px solid rgba(217,168,87,0.14)',
-  background: 'rgba(255,255,255,0.035)',
+  border: '1px solid rgba(217,168,87,0.22)',
+  background: 'rgba(255,255,255,0.86)',
   borderRadius: 14,
   padding: '20px 22px',
+  boxShadow: '0 12px 32px rgba(31,41,55,0.06)',
 };
 
 const h2Style: React.CSSProperties = {
-  color: '#f8fafc',
+  color: '#1f2937',
   fontSize: '1.05rem',
   fontWeight: 900,
   marginBottom: 10,
@@ -37,13 +38,13 @@ const listStyle: React.CSSProperties = {
 
 function LegalLayout({ title, intro, children }: { title: string; intro: string; children: React.ReactNode }) {
   return (
-    <main style={{ background: BG, minHeight: '100vh', color: '#fff' }}>
-      <section style={{ background: `linear-gradient(135deg, ${PANEL} 0%, #0b1a30 100%)`, borderBottom: '1px solid rgba(217,168,87,0.12)', padding: '54px 20px 38px' }}>
+    <main style={{ background: BG, minHeight: '100vh', color: TEXT }}>
+      <section style={{ background: `linear-gradient(135deg, ${PANEL} 0%, #eef6ff 100%)`, borderBottom: '1px solid rgba(217,168,87,0.18)', padding: '54px 20px 38px' }}>
         <div style={{ maxWidth: 920, margin: '0 auto' }}>
           <Link to="/" style={{ color: GOLD, textDecoration: 'none', fontSize: '0.84rem', fontWeight: 800 }}>返回灵契首页</Link>
           <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 2.8rem)', margin: '18px 0 12px' }}>{title}</h1>
           <p style={{ ...pStyle, color: MUTED, maxWidth: 760 }}>{intro}</p>
-          <p style={{ color: 'rgba(220,230,243,0.46)', fontSize: '0.78rem', marginTop: 14 }}>更新时间：2026-05-28 · 原型期版本</p>
+          <p style={{ color: 'rgba(71,85,105,0.56)', fontSize: '0.78rem', marginTop: 14 }}>更新时间：2026-05-28 · 原型期版本</p>
         </div>
       </section>
       <section style={{ maxWidth: 920, margin: '0 auto', padding: '30px 20px 70px', display: 'grid', gap: 16 }}>

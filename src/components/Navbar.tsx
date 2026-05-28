@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-const BG = 'rgba(11,26,48,0.96)';
+const BG = 'rgba(255,253,248,0.94)';
 const GOLD = '#d9a857';
+const INK = '#1f2937';
+const MUTED = 'rgba(71,85,105,0.76)';
 const API = '/api';
 
 function handleLogout() {
@@ -110,9 +112,10 @@ export default function Navbar() {
     <nav style={{
       position: 'sticky', top: 0, zIndex: 50,
       backgroundColor: BG,
-      borderBottom: '1px solid rgba(201,146,46,0.15)',
+      borderBottom: '1px solid rgba(201,146,46,0.22)',
       backdropFilter: 'blur(16px)',
       WebkitBackdropFilter: 'blur(16px)',
+      boxShadow: '0 10px 32px rgba(31,41,55,0.06)',
     }}>
       <div style={{
         maxWidth: 1000, margin: '0 auto',
@@ -125,7 +128,7 @@ export default function Navbar() {
           <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.3rem' }}>
             灵契
           </span>
-          <span style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.4)', fontFamily: 'var(--font-sans)' }}>
+          <span style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(146,95,24,0.58)', fontFamily: 'var(--font-sans)' }}>
             Lingqi
           </span>
         </Link>
@@ -145,11 +148,11 @@ export default function Navbar() {
               <button onClick={handleLogout}
                 style={{
                   padding: '8px 14px', borderRadius: 8, fontSize: '0.85rem',
-                  background: 'none', border: '1px solid rgba(248,113,113,0.2)', color: 'rgba(248,113,113,0.7)',
+                  background: 'rgba(254,242,242,0.78)', border: '1px solid rgba(220,38,38,0.22)', color: '#b91c1c',
                   cursor: 'pointer', fontWeight: 500, transition: 'all 0.2s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.5)'; e.currentTarget.style.color = '#fca5a5'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.2)'; e.currentTarget.style.color = 'rgba(248,113,113,0.7)'; }}>
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(220,38,38,0.42)'; e.currentTarget.style.color = '#991b1b'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(220,38,38,0.22)'; e.currentTarget.style.color = '#b91c1c'; }}>
                 退出
               </button>
             </>
@@ -161,7 +164,7 @@ export default function Navbar() {
           }
           <Link to="/admin" style={{
             marginLeft: 4, padding: '6px 12px', borderRadius: 8, fontSize: '0.78rem',
-            color: isAdmin ? '#0F1117' : 'rgba(201,146,46,0.4)',
+            color: isAdmin ? '#0F1117' : 'rgba(146,95,24,0.68)',
             textDecoration: 'none',
             border: isAdmin ? '1px solid rgba(217,168,87,0.75)' : '1px solid rgba(201,146,46,0.15)',
             background: isAdmin ? 'linear-gradient(135deg, #f4c873 0%, #d9a857 100%)' : 'transparent',
@@ -169,7 +172,7 @@ export default function Navbar() {
             transition: 'all 0.2s',
           }}
             onMouseEnter={e => { if (!isAdmin) { (e.currentTarget as HTMLElement).style.color = GOLD; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.4)'; } }}
-            onMouseLeave={e => { if (!isAdmin) { (e.currentTarget as HTMLElement).style.color = 'rgba(201,146,46,0.4)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.15)'; } }}>
+            onMouseLeave={e => { if (!isAdmin) { (e.currentTarget as HTMLElement).style.color = 'rgba(146,95,24,0.68)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.15)'; } }}>
             管理{pendingCount > 0 ? `(${pendingCount})` : ''}
           </Link>
         </div>
@@ -178,7 +181,7 @@ export default function Navbar() {
         <button
           onClick={() => setMenuOpen(!menuOpen)}
           className="sm:hidden"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8, color: 'rgba(186,207,231,0.7)' }}>
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8, color: MUTED }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             {menuOpen
               ? <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
@@ -192,8 +195,9 @@ export default function Navbar() {
       {menuOpen && (
         <div style={{
           backgroundColor: BG,
-          borderTop: '1px solid rgba(201,146,46,0.1)',
+          borderTop: '1px solid rgba(201,146,46,0.16)',
           padding: '12px 20px 16px',
+          boxShadow: '0 18px 36px rgba(31,41,55,0.08)',
         }}>
           <MobileLink to="/explore" onClick={() => setMenuOpen(false)}>进入灵契大厅</MobileLink>
           <MobileLink to="/commissions" onClick={() => setMenuOpen(false)}>委托需求</MobileLink>
@@ -208,8 +212,8 @@ export default function Navbar() {
               <button onClick={() => { setMenuOpen(false); handleLogout(); }}
                 style={{
                   width: '100%', textAlign: 'left', padding: '10px 0', fontSize: '0.9rem',
-                  background: 'none', border: 'none', borderBottom: '1px solid rgba(201,146,46,0.06)',
-                  color: 'rgba(248,113,113,0.7)', cursor: 'pointer', fontWeight: 500,
+                  background: 'none', border: 'none', borderBottom: '1px solid rgba(201,146,46,0.12)',
+                  color: '#b91c1c', cursor: 'pointer', fontWeight: 500,
                 }}>
                 退出登录
               </button>
@@ -233,9 +237,9 @@ function IdentityChip({ children, tone }: { children: React.ReactNode; tone: 'us
       whiteSpace: 'nowrap',
       padding: '6px 10px',
       borderRadius: 8,
-      border: admin ? '1px solid rgba(217,168,87,0.5)' : '1px solid rgba(226,238,252,0.14)',
-      background: admin ? 'rgba(217,168,87,0.18)' : 'rgba(255,255,255,0.055)',
-      color: admin ? '#f4c873' : 'rgba(226,238,252,0.82)',
+      border: admin ? '1px solid rgba(217,168,87,0.55)' : '1px solid rgba(125,147,170,0.22)',
+      background: admin ? 'rgba(217,168,87,0.18)' : 'rgba(239,246,255,0.78)',
+      color: admin ? '#925f18' : '#275389',
       fontSize: '0.76rem',
       fontWeight: admin ? 900 : 700,
     }}>
@@ -251,9 +255,9 @@ function MobileStatus({ children, tone }: { children: React.ReactNode; tone: 'us
       padding: '9px 10px',
       borderRadius: 8,
       margin: '6px 0',
-      border: admin ? '1px solid rgba(217,168,87,0.42)' : '1px solid rgba(226,238,252,0.12)',
-      background: admin ? 'rgba(217,168,87,0.14)' : 'rgba(255,255,255,0.045)',
-      color: admin ? '#f4c873' : 'rgba(226,238,252,0.78)',
+      border: admin ? '1px solid rgba(217,168,87,0.42)' : '1px solid rgba(125,147,170,0.22)',
+      background: admin ? 'rgba(217,168,87,0.14)' : 'rgba(239,246,255,0.78)',
+      color: admin ? '#925f18' : '#275389',
       fontSize: '0.82rem',
       fontWeight: admin ? 900 : 700,
     }}>
@@ -264,9 +268,9 @@ function MobileStatus({ children, tone }: { children: React.ReactNode; tone: 'us
 
 function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
-    <Link to={to} style={{ textDecoration: 'none', padding: '8px 14px', borderRadius: 8, fontSize: '0.875rem', color: 'rgba(186,207,231,0.65)', transition: 'color 0.2s' }}
-      onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
-      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(186,207,231,0.65)')}>
+    <Link to={to} style={{ textDecoration: 'none', padding: '8px 14px', borderRadius: 8, fontSize: '0.875rem', color: MUTED, transition: 'color 0.2s, background 0.2s', fontWeight: 650 }}
+      onMouseEnter={e => { e.currentTarget.style.color = INK; e.currentTarget.style.background = 'rgba(217,168,87,0.10)'; }}
+      onMouseLeave={e => { e.currentTarget.style.color = MUTED; e.currentTarget.style.background = 'transparent'; }}>
       {children}
     </Link>
   );
@@ -278,8 +282,8 @@ function MobileLink({ to, children, gold, onClick }: { to: string; children: Rea
       display: 'block', textDecoration: 'none',
       padding: '10px 0',
       fontSize: '0.9rem',
-      color: gold ? GOLD : 'rgba(186,207,231,0.7)',
-      borderBottom: '1px solid rgba(201,146,46,0.06)',
+      color: gold ? GOLD : MUTED,
+      borderBottom: '1px solid rgba(201,146,46,0.12)',
       fontWeight: gold ? 600 : 400,
     }}>
       {children}

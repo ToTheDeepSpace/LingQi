@@ -18,28 +18,30 @@ const steps = [
   { n: '03', title: '见证一次降临', desc: '与灵契师、摄影师、妆造师一起，完成这场跨越次元的相遇' },
 ];
 
-const C = '#0F1117';
-const C2 = '#1A1D27';
+const C = '#fffdf8';
+const C2 = '#eef6ff';
 const GOLD = '#d9a857';
-const WARM_BG = '#151210';
-const WARM_CARD = '#1C1916';
-const WARM_TEXT = '#F0EBE1';
-const WARM_SUB = '#8A857B';
+const INK = '#1f2937';
+const MUTED = 'rgba(71,85,105,0.76)';
+const WARM_BG = '#f7efe3';
+const WARM_CARD = '#fffaf2';
+const WARM_TEXT = '#1f2937';
+const WARM_SUB = 'rgba(71,85,105,0.72)';
 
 export default function Home() {
   return (
-    <div style={{ backgroundColor: C, color: '#fff' }}>
+    <div style={{ backgroundColor: C, color: INK }}>
 
       {/* ───────────── HERO ───────────── */}
-      <section style={{ minHeight: '100svh', backgroundColor: C, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '3rem 1.25rem 5rem' }}>
+      <section style={{ minHeight: '100svh', background: 'linear-gradient(180deg, #fffdf8 0%, #f7fbff 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '3rem 1.25rem 5rem' }}>
 
-        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 50% 55%, rgba(201,146,46,0.15) 0%, rgba(107,63,160,0.06) 40%, transparent 70%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 50% 55%, rgba(217,168,87,0.18) 0%, rgba(85,135,186,0.08) 42%, transparent 72%)', pointerEvents: 'none' }} />
 
-        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 40% 30% at 50% 40%, rgba(255,255,255,0.04) 0%, transparent 100%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 40% 30% at 50% 40%, rgba(255,255,255,0.72) 0%, transparent 100%)', pointerEvents: 'none' }} />
 
         <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', maxWidth: 700, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
 
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 999, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(201,146,46,0.25)', color: 'rgba(217,168,87,0.8)', fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 36 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 999, background: 'rgba(255,250,242,0.86)', border: '1px solid rgba(201,146,46,0.32)', color: '#925f18', fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 36, boxShadow: '0 10px 26px rgba(146,95,24,0.08)' }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: GOLD }} />
             灵契师与委托人的连接之所
           </div>
@@ -50,32 +52,32 @@ export default function Home() {
             <span className="gradient-text-gold">此之谓灵契</span>
           </h1>
 
-          <p style={{ fontSize: 'clamp(0.95rem, 2.5vw, 1.15rem)', color: 'rgba(245,243,238,0.85)', lineHeight: 1.8, marginBottom: 12, textAlign: 'center', maxWidth: 560 }}>
+          <p style={{ fontSize: 'clamp(0.95rem, 2.5vw, 1.15rem)', color: 'rgba(31,41,55,0.86)', lineHeight: 1.8, marginBottom: 12, textAlign: 'center', maxWidth: 560 }}>
             灵契师，是与虚拟人签订契约的人：让角色借由自己附身片刻，陪委托人走过一段真实时间。
           </p>
-          <p style={{ fontSize: 'clamp(0.85rem, 2vw, 1rem)', color: 'rgba(245,243,238,0.72)', lineHeight: 1.8, marginBottom: 36, textAlign: 'center', maxWidth: 560 }}>
+          <p style={{ fontSize: 'clamp(0.85rem, 2vw, 1rem)', color: MUTED, lineHeight: 1.8, marginBottom: 36, textAlign: 'center', maxWidth: 560 }}>
             灵契，是这份契约，也是这场降临。这里会成为委托人寻找灵契师时首先想到的地方。
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%', maxWidth: 360 }}>
             <Link to="/explore" className="btn-gold" style={{ width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem', fontWeight: 600, letterSpacing: '0.03em' }}>
-              ⚔ 寻觅灵契师
+              寻觅灵契师
             </Link>
             <Link to="/login" className="btn-glass" style={{ width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem' }}>
               我是灵契师，免费入驻
             </Link>
             <Link to="/rankings" style={{
               width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem', fontWeight: 600,
-              borderRadius: 12, border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.12)',
-              color: '#e74c3c', textDecoration: 'none', transition: 'all 0.3s',
+              borderRadius: 12, border: '1px solid rgba(192,57,43,0.24)', background: 'rgba(254,242,242,0.9)',
+              color: '#b42318', textDecoration: 'none', transition: 'all 0.3s',
             }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(192,57,43,0.22)'; e.currentTarget.style.borderColor = '#e74c3c'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(192,57,43,0.12)'; e.currentTarget.style.borderColor = 'rgba(192,57,43,0.35)'; }}>
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(254,226,226,0.95)'; e.currentTarget.style.borderColor = '#c0392b'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(254,242,242,0.9)'; e.currentTarget.style.borderColor = 'rgba(192,57,43,0.24)'; }}>
               ⚖ 红黑榜 · 一人一票 · 真实口碑
             </Link>
           </div>
 
-          <p style={{ marginTop: 24, fontSize: 11, letterSpacing: '0.08em', color: 'rgba(245,243,238,0.55)', textAlign: 'center' }}>
+          <p style={{ marginTop: 24, fontSize: 11, letterSpacing: '0.08em', color: 'rgba(71,85,105,0.62)', textAlign: 'center' }}>
             注册即用 · 发布内容人工审核 · 口碑长期沉淀
           </p>
         </div>
@@ -91,21 +93,21 @@ export default function Home() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
             {classes.map(({ icon, role, sub, desc, accent }) => (
-              <div key={role} style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: '28px 20px', textAlign: 'center', transition: 'transform 0.2s, box-shadow 0.2s', borderTop: `3px solid ${accent}` }}
+              <div key={role} style={{ backgroundColor: '#fff', border: '1px solid rgba(201,146,46,0.16)', borderRadius: 16, padding: '28px 20px', textAlign: 'center', transition: 'transform 0.2s, box-shadow 0.2s', borderTop: `3px solid ${accent}`, boxShadow: '0 12px 32px rgba(31,41,55,0.06)' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-4px)'; (e.currentTarget as HTMLElement).style.boxShadow = `0 12px 32px ${accent}22`; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'none'; (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}>
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'none'; (e.currentTarget as HTMLElement).style.boxShadow = '0 12px 32px rgba(31,41,55,0.06)'; }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>{icon}</div>
-                <h3 style={{ fontWeight: 700, fontSize: '1rem', color: '#fff', marginBottom: 4 }}>{role}</h3>
+                <h3 style={{ fontWeight: 700, fontSize: '1rem', color: INK, marginBottom: 4 }}>{role}</h3>
                 <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.2em', textTransform: 'uppercase', color: accent, opacity: 0.7, marginBottom: 10 }}>{sub}</p>
-                <p style={{ fontSize: '0.8rem', color: 'rgba(245,243,238,0.72)', lineHeight: 1.7 }}>{desc}</p>
+                <p style={{ fontSize: '0.8rem', color: MUTED, lineHeight: 1.7 }}>{desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ───────────── 为什么选灵契（暖调深色） ───────────── */}
-      <section style={{ padding: '5rem 1.25rem', background: `linear-gradient(180deg, ${C} 0%, #151210 8%, ${WARM_BG} 30%, ${WARM_BG} 70%, #151210 92%, ${C} 100%)` }}>
+      {/* ───────────── 为什么选灵契 ───────────── */}
+      <section style={{ padding: '5rem 1.25rem', background: `linear-gradient(180deg, ${C} 0%, ${WARM_BG} 18%, #eef6ff 68%, ${C} 100%)` }}>
         <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
 
           <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.65)', marginBottom: 12 }}>为什么选择灵契</p>
@@ -114,7 +116,7 @@ export default function Home() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 32 }}>
             {features.map(({ icon, title, desc }) => (
-              <div key={title} style={{ textAlign: 'center', backgroundColor: WARM_CARD, borderRadius: 16, padding: '28px 20px', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div key={title} style={{ textAlign: 'center', backgroundColor: WARM_CARD, borderRadius: 16, padding: '28px 20px', border: '1px solid rgba(201,146,46,0.16)', boxShadow: '0 14px 36px rgba(31,41,55,0.06)' }}>
                 <div style={{ fontSize: 44, marginBottom: 16 }}>{icon}</div>
                 <h3 style={{ fontWeight: 700, fontSize: '1rem', color: WARM_TEXT, marginBottom: 10 }}>{title}</h3>
                 <p style={{ fontSize: '0.82rem', color: WARM_SUB, lineHeight: 1.8 }}>{desc}</p>
@@ -132,7 +134,7 @@ export default function Home() {
           <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>红黑榜</h2>
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
-          <p style={{ fontSize: '1rem', color: 'rgba(245,243,238,0.78)', lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
+          <p style={{ fontSize: '1rem', color: MUTED, lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
             店、灵契师、玩家——三类红黑榜，用真金白银投票。<br />
             每条评价都经过人工审核，实名发布带星标。不是有钱就能删帖。
           </p>
@@ -144,10 +146,10 @@ export default function Home() {
               { icon: '🎬', label: '卡司榜', desc: '带本水平、演绎能力、控场能力' },
               { icon: '🌙', label: '委托师榜', desc: '还原度、陪伴体验、专业程度' },
             ].map(({ icon, label, desc }) => (
-              <div key={label} style={{ padding: '22px 16px', borderRadius: 14, border: '1px solid rgba(192,57,43,0.18)', background: 'linear-gradient(180deg, rgba(192,57,43,0.08), rgba(255,255,255,0.03))', textAlign: 'center' }}>
+              <div key={label} style={{ padding: '22px 16px', borderRadius: 14, border: '1px solid rgba(192,57,43,0.18)', background: 'linear-gradient(180deg, rgba(254,242,242,0.9), rgba(255,255,255,0.92))', textAlign: 'center', boxShadow: '0 10px 28px rgba(31,41,55,0.05)' }}>
                 <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>
-                <h3 style={{ fontWeight: 700, fontSize: '0.92rem', color: '#fff', marginBottom: 6 }}>{label}</h3>
-                <p style={{ fontSize: '0.78rem', color: 'rgba(245,243,238,0.62)', lineHeight: 1.6 }}>{desc}</p>
+                <h3 style={{ fontWeight: 700, fontSize: '0.92rem', color: INK, marginBottom: 6 }}>{label}</h3>
+                <p style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.68)', lineHeight: 1.6 }}>{desc}</p>
               </div>
             ))}
           </div>
@@ -178,9 +180,9 @@ export default function Home() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 32 }}>
             {steps.map(({ n, title, desc }) => (
               <div key={n} style={{ textAlign: 'center' }}>
-                <div style={{ width: 56, height: 56, borderRadius: 14, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 900, fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: `0 4px 20px rgba(201,146,46,0.3)` }}>{n}</div>
-                <h3 style={{ fontWeight: 700, fontSize: '0.95rem', color: '#fff', marginBottom: 8 }}>{title}</h3>
-                <p style={{ fontSize: '0.8rem', color: 'rgba(245,243,238,0.68)', lineHeight: 1.7 }}>{desc}</p>
+                <div style={{ width: 56, height: 56, borderRadius: 14, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: INK, fontWeight: 900, fontSize: '1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: `0 4px 20px rgba(201,146,46,0.22)` }}>{n}</div>
+                <h3 style={{ fontWeight: 700, fontSize: '0.95rem', color: INK, marginBottom: 8 }}>{title}</h3>
+                <p style={{ fontSize: '0.8rem', color: MUTED, lineHeight: 1.7 }}>{desc}</p>
               </div>
             ))}
           </div>
@@ -188,11 +190,11 @@ export default function Home() {
       </section>
 
       {/* ───────────── CTA ───────────── */}
-      <section style={{ padding: '5rem 1.25rem', background: `linear-gradient(135deg, ${C2} 0%, ${C} 50%, ${C2} 100%)`, position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 50% 100%, rgba(201,146,46,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
+      <section style={{ padding: '5rem 1.25rem', background: `linear-gradient(135deg, #eef6ff 0%, ${C} 50%, #fff7ed 100%)`, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 50% 100%, rgba(201,146,46,0.16) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ position: 'relative', maxWidth: 560, margin: '0 auto', textAlign: 'center' }}>
           <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 3rem)', marginBottom: 16, lineHeight: 1.2 }}>开始你的灵契之旅</h2>
-          <p style={{ color: 'rgba(245,243,238,0.72)', fontSize: '1.05rem', marginBottom: 36, lineHeight: 1.8 }}>无论你是委托人，还是灵契师——这里都为这场契约留好了入口。</p>
+          <p style={{ color: MUTED, fontSize: '1.05rem', marginBottom: 36, lineHeight: 1.8 }}>无论你是委托人，还是灵契师——这里都为这场契约留好了入口。</p>
           <Link to="/explore" className="btn-gold" style={{ display: 'inline-block', padding: '14px 48px', fontSize: '1rem', fontWeight: 600 }}>
             进入灵契大厅
           </Link>
@@ -200,15 +202,15 @@ export default function Home() {
       </section>
 
       {/* ───────────── Footer ───────────── */}
-      <footer style={{ backgroundColor: C, borderTop: '1px solid rgba(201,146,46,0.1)', padding: '2.5rem 1.25rem' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, textAlign: 'center', color: 'rgba(245,243,238,0.6)', fontSize: '0.875rem' }}>
+      <footer style={{ backgroundColor: C, borderTop: '1px solid rgba(201,146,46,0.16)', padding: '2.5rem 1.25rem' }}>
+        <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, textAlign: 'center', color: 'rgba(71,85,105,0.66)', fontSize: '0.875rem' }}>
           <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.25rem' }}>灵契</span>
           <span>与虚拟人签订契约，让其借由灵契师短暂附身并降临现实，此之谓灵契</span>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <Link to="/explore" style={{ color: 'rgba(245,243,238,0.65)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(245,243,238,0.65)')}>进入大厅</Link>
-            <Link to="/commissions" style={{ color: 'rgba(245,243,238,0.65)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(245,243,238,0.65)')}>委托需求</Link>
-            <Link to="/rankings" style={{ color: 'rgba(245,243,238,0.65)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(245,243,238,0.65)')}>红黑榜</Link>
-            <Link to="/login" style={{ color: 'rgba(245,243,238,0.65)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(245,243,238,0.65)')}>入驻</Link>
+            <Link to="/explore" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>进入大厅</Link>
+            <Link to="/commissions" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>委托需求</Link>
+            <Link to="/rankings" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>红黑榜</Link>
+            <Link to="/login" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>入驻</Link>
           </div>
         </div>
       </footer>
