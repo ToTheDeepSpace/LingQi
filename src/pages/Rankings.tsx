@@ -136,6 +136,10 @@ function voteCopy(voteType: MyVote['vote_type']) {
   return { label: '欢乐', icon: '😂', paid: false };
 }
 
+function voteCost(voteType: MyVote['vote_type']) {
+  return voteType === 'joy' ? 0 : 1;
+}
+
 function voteCanCancel(myVote: MyVote | null | undefined) {
   if (!myVote) return false;
   return myVote.can_cancel && new Date(myVote.cancel_deadline).getTime() > Date.now();
@@ -678,6 +682,10 @@ export default function Rankings() {
   const existingVoteCopy = existingMyVote ? voteCopy(existingMyVote.vote_type) : null;
   const requestedVoteCopy = voteModal ? voteCopy(voteModal.voteType) : null;
   const canCancelExistingVote = voteCanCancel(existingMyVote);
+  const isChangingVote = !!existingMyVote && !!voteModal && existingMyVote.vote_type !== voteModal.voteType;
+  const voteBalanceDelta = existingMyVote && voteModal ? voteCost(existingMyVote.vote_type) - voteCost(voteModal.voteType) : 0;
+  const changingVoteNeedsBalance = isChangingVote && voteBalanceDelta < 0;
+  const changingVoteBalanceNotEnough = changingVoteNeedsBalance && balance !== null && balance < Math.abs(voteBalanceDelta);
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#1f2937' }}>
@@ -1017,10 +1025,12 @@ export default function Rankings() {
             {existingMyVote && existingVoteCopy ? (
               <>
                 <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>
-                  已投过：{existingVoteCopy.icon} {existingVoteCopy.label}
+                  {isChangingVote && requestedVoteCopy
+                    ? <>改票：{existingVoteCopy.icon} {existingVoteCopy.label} → {requestedVoteCopy.icon} {requestedVoteCopy.label}</>
+                    : <>已投过：{existingVoteCopy.icon} {existingVoteCopy.label}</>}
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-                  每个账号对同一条内容只能投一票。你已经以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投过票。
+                  每个账号对同一条内容只能保留一票。你已经以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投过票。
                 </p>
                 <div style={{
                   border: '1px solid rgba(166,106,31,0.16)',
@@ -1032,24 +1042,46 @@ export default function Rankings() {
                   fontSize: '0.82rem',
                   lineHeight: 1.7,
                 }}>
-                  {canCancelExistingVote
-                    ? <>24 小时内可以撤销。{existingMyVote.refund_amount > 0 ? `撤销后退回 ${existingMyVote.refund_amount} 契约币。` : '欢乐免费，撤销不涉及退币。'}截止：{voteDeadlineText(existingMyVote)}</>
-                    : <>这票已经超过 24 小时撤销期，只保留公开口碑记录。</>}
+                  {isChangingVote
+                    ? voteBalanceDelta > 0
+                      ? <>改为欢乐会退回 {voteBalanceDelta} 契约币；公开记录会从{existingVoteCopy.label}直接变成{requestedVoteCopy?.label}。</>
+                      : voteBalanceDelta < 0
+                        ? <>欢乐免费，改为{requestedVoteCopy?.label}需要扣 {Math.abs(voteBalanceDelta)} 契约币。</>
+                        : <>{existingVoteCopy.label}和{requestedVoteCopy?.label}互改不再扣币，也不退款，只调整公开口碑方向。</>
+                    : canCancelExistingVote
+                      ? <>24 小时内可以撤销。{existingMyVote.refund_amount > 0 ? `撤销后退回 ${existingMyVote.refund_amount} 契约币。` : '欢乐免费，撤销不涉及退币。'}截止：{voteDeadlineText(existingMyVote)}</>
+                      : <>这票已经超过 24 小时撤销期，只保留公开口碑记录。</>}
                 </div>
+                {isChangingVote && voteBalanceDelta < 0 && (
+                  <p style={{ fontSize: '0.85rem', color: changingVoteBalanceNotEnough ? RED : '#34d399', lineHeight: 1.7, marginBottom: 12 }}>
+                    当前契约币：{balance ?? '...'} {changingVoteBalanceNotEnough && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
+                  </p>
+                )}
                 {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={() => setVoteModal(null)}
                     style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>
                     关闭
                   </button>
-                  <button onClick={cancelVote} disabled={voting || !canCancelExistingVote}
+                  {isChangingVote ? (
+                    <button onClick={submitVote} disabled={voting || changingVoteBalanceNotEnough}
+                      style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
+                        cursor: voting || changingVoteBalanceNotEnough ? 'not-allowed' : 'pointer',
+                        background: voting || changingVoteBalanceNotEnough ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                        color: voting || changingVoteBalanceNotEnough ? 'rgba(71,85,105,0.52)' : C,
+                        fontWeight: 800, fontSize: '0.875rem', opacity: voting ? 0.6 : 1 }}>
+                      {voting ? '改票中...' : `改为${requestedVoteCopy?.label || '此票'}`}
+                    </button>
+                  ) : (
+                    <button onClick={cancelVote} disabled={voting || !canCancelExistingVote}
                     style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
                       cursor: voting || !canCancelExistingVote ? 'not-allowed' : 'pointer',
                       background: voting || !canCancelExistingVote ? 'rgba(71,85,105,0.08)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
                       color: voting || !canCancelExistingVote ? 'rgba(71,85,105,0.52)' : '#fff',
                       fontWeight: 800, fontSize: '0.875rem', opacity: voting ? 0.6 : 1 }}>
                     {voting ? '撤销中...' : canCancelExistingVote ? '撤销投票' : '不可撤销'}
-                  </button>
+                    </button>
+                  )}
                 </div>
               </>
             ) : (

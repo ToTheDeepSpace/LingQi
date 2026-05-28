@@ -152,6 +152,12 @@ function voteRefundAmount(voteType: RankingVoteType) {
   return voteType === 'joy' ? 0 : 1;
 }
 
+function voteCountField(voteType: RankingVoteType): 'likes' | 'dislikes' | 'joys' {
+  if (voteType === 'like') return 'likes';
+  if (voteType === 'dislike') return 'dislikes';
+  return 'joys';
+}
+
 function voteLabel(voteType: RankingVoteType) {
   if (voteType === 'like') return '点赞';
   if (voteType === 'dislike') return '点踩';
@@ -792,12 +798,10 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
 
 app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
   try {
-    const { voteType } = req.body;
+    const voteType = req.body.voteType as RankingVoteType;
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     if (!['like', 'dislike', 'joy'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
-    const isPaidVote = voteType !== 'joy';
-    if (isPaidVote && (profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
     const { data: current } = await supabase.from('lc_rankings').select('likes, dislikes, joys, status').eq('id', req.params.id).single();
     if (!current || current.status !== 'approved') return res.status(404).json(err(new Error('帖子不存在或未上线')));
@@ -808,11 +812,74 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       .eq('voter_id', profile.id)
       .maybeSingle();
     if (existingVote) {
-      return res.status(409).json({
-        ...err(new Error('你已经投过票了')),
-        data: { myVote: serializeMyVote(existingVote as RankingVoteRow) },
-      });
+      const typedExistingVote = existingVote as RankingVoteRow;
+      if (typedExistingVote.vote_type === voteType) {
+        return res.status(409).json({
+          ...err(new Error('你已经投过票了')),
+          data: { myVote: serializeMyVote(typedExistingVote) },
+        });
+      }
+
+      const oldCost = voteRefundAmount(typedExistingVote.vote_type);
+      const nextCost = voteRefundAmount(voteType);
+      const balanceDelta = oldCost - nextCost;
+      if (balanceDelta < 0 && (profile.balance || 0) < Math.abs(balanceDelta)) {
+        return res.status(402).json(err(new Error('契约币不足，请先充值')));
+      }
+
+      const votePatch: Record<string, unknown> = {
+        vote_type: voteType,
+        voter_ip: req.headers['x-forwarded-for'] as string || req.ip,
+        voter_name: profile.display_name,
+        voter_is_realname: !!profile.is_realname,
+      };
+      if (oldCost !== nextCost) votePatch.created_at = new Date().toISOString();
+
+      const { data: changedVote, error: changeVoteErr } = await supabase.from('lc_votes')
+        .update(votePatch)
+        .eq('id', typedExistingVote.id)
+        .eq('voter_id', profile.id)
+        .select('id, ranking_id, vote_type, created_at')
+        .single();
+      if (changeVoteErr) throw changeVoteErr;
+
+      const oldField = voteCountField(typedExistingVote.vote_type);
+      const nextField = voteCountField(voteType);
+      const changedCounts = {
+        likes: Number(current.likes || 0),
+        dislikes: Number(current.dislikes || 0),
+        joys: Number(current.joys || 0),
+      };
+      changedCounts[oldField] = Math.max(0, changedCounts[oldField] - 1);
+      changedCounts[nextField] = changedCounts[nextField] + 1;
+
+      const { error: countErr } = await supabase.from('lc_rankings').update(changedCounts).eq('id', req.params.id);
+      if (countErr) throw countErr;
+
+      if (balanceDelta !== 0) {
+        const nextBalance = (profile.balance || 0) + balanceDelta;
+        await supabase.from('lc_profiles').update({ balance: nextBalance }).eq('id', profile.id);
+        await supabase.from('lc_transactions').insert({
+          profile_id: profile.id,
+          type: balanceDelta > 0 ? 'recharge' : 'spend',
+          amount: balanceDelta,
+          description: balanceDelta > 0
+            ? `改投${voteLabel(voteType)}退回 · ${balanceDelta} 契约币`
+            : `改投${voteLabel(voteType)}红黑榜 · ${Math.abs(balanceDelta)} 契约币`,
+          status: 'approved',
+        });
+      }
+
+      return res.json(ok({
+        ...changedCounts,
+        myVote: changedVote ? serializeMyVote(changedVote as RankingVoteRow) : null,
+        balance: (profile.balance || 0) + balanceDelta,
+        balanceDelta,
+      }));
     }
+
+    const isPaidVote = voteType !== 'joy';
+    if (isPaidVote && (profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
     if (isPaidVote) {
       // 点赞/点踩扣 1 契约币；欢乐免费但仍占一人一票名额。
@@ -846,7 +913,7 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       throw voteErr;
     }
 
-    const field = voteType === 'like' ? 'likes' : voteType === 'dislike' ? 'dislikes' : 'joys';
+    const field = voteCountField(voteType);
     const val = voteType === 'like'
       ? (current.likes || 0) + 1
       : voteType === 'dislike'
