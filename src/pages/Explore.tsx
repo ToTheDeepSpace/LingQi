@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { Creator, PaginatedResponse } from '../types';
 import { CITIES } from '../constants/cities';
+import { getJsonCached } from '../lib/apiCache';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -64,12 +65,15 @@ export default function Explore() {
       setError('');
       const cityParam = city !== 'all' ? `&city=${encodeURIComponent(city)}` : '';
       try {
-        const r = await fetch(`${API}/lc/creators?page=${page}&limit=12${cityParam}`);
-        if (!r.ok) throw new Error(`请求失败 (${r.status})`);
-        const d = await r.json();
+        const { ok, status, data: d } = await getJsonCached<{ success: boolean; data?: PaginatedResponse<Creator>; error?: string }>(
+          `${API}/lc/creators?page=${page}&limit=12${cityParam}`,
+          undefined,
+          20_000,
+        );
+        if (!ok) throw new Error(`请求失败 (${status})`);
         if (!alive) return;
         if (d.success) {
-          const paged = d.data as PaginatedResponse<Creator>;
+          const paged = d.data || { items: [], totalPages: 1 };
           setCreators(paged.items || []);
           setTotalPages(paged.totalPages || 1);
         } else setError(d.error || '加载失败');
@@ -349,7 +353,7 @@ function CreatorCard({ creator }: { creator: Creator }) {
   const availableCities = creator.available_cities || [];
 
   return (
-    <article style={{
+    <article className="content-card" style={{
       minHeight: 210,
       background: 'linear-gradient(180deg, #ffffff, #fffaf2)',
       border: '1px solid rgba(217,168,87,0.2)',

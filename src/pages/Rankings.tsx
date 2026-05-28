@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
+import { getJsonCached } from '../lib/apiCache';
 
 const API = '/api';
 const C = '#f6efe4';
@@ -57,6 +58,7 @@ type Ranking = {
     chain_date: string;
     created_at: string;
   } | null;
+  pinned_comments?: Comment[];
 };
 
 type Comment = {
@@ -353,8 +355,11 @@ export default function Rankings() {
     const results: Record<string, string> = {};
     await Promise.all([...names].map(async name => {
       try {
-        const r = await fetch(`${API}/lc/profiles/lookup?name=${encodeURIComponent(name)}`);
-        const d = await r.json();
+        const { data: d } = await getJsonCached<{ success: boolean; data?: { id: string } }>(
+          `${API}/lc/profiles/lookup?name=${encodeURIComponent(name)}`,
+          undefined,
+          60_000,
+        );
         if (d.success && d.data) results[name] = d.data.id;
       } catch { /* ignore */ }
     }));
@@ -366,10 +371,6 @@ export default function Rankings() {
       .then(r => r.json())
       .then(d => { if (d.success) setCommentsMap(prev => ({ ...prev, [rankingId]: d.data || [] })); });
   }, []);
-
-  const preloadComments = useCallback(async (list: Ranking[]) => {
-    await Promise.all(list.slice(0, 40).map(item => fetchComments(item.id).catch(() => undefined)));
-  }, [fetchComments]);
 
   useEffect(() => {
     let alive = true;
@@ -391,7 +392,6 @@ export default function Rankings() {
           const list = d.data || [];
           setItems(list);
           void fetchMentions(list);
-          void preloadComments(list);
         } else if (alive) {
           setError(d.error || '加载失败');
         }
@@ -403,7 +403,7 @@ export default function Rankings() {
     };
     void loadRankings();
     return () => { alive = false; };
-  }, [tab, subjectTab, city, fetchWallet, preloadComments]);
+  }, [tab, subjectTab, city, fetchWallet]);
 
   const setCityAndClose = (nextCity: string) => {
     setCity(nextCity);
@@ -816,9 +816,10 @@ export default function Rankings() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start' }}>
             {rankedItems.map((item, idx) => {
               const accentColor = item.type === 'red' ? RED2 : item.type === 'black' ? BLK : GOLD;
-              const comments = commentsMap[item.id] || [];
-              const pinnedComments = comments.filter(c => c.is_pinned);
-              const normalComments = comments.filter(c => !c.is_pinned);
+              const loadedComments = commentsMap[item.id];
+              const comments = loadedComments || item.pinned_comments || [];
+              const pinnedComments = (loadedComments || item.pinned_comments || []).filter(c => c.is_pinned);
+              const normalComments = (loadedComments || []).filter(c => !c.is_pinned);
               const votes = votesMap[item.id] || [];
               const showComments = openComments.has(item.id);
               const showVotes = openVotes.has(item.id);
@@ -827,6 +828,7 @@ export default function Rankings() {
 
               return (
                 <div key={item.id}
+                  className="content-card"
                   style={{
                     ...card,
                     borderLeft: `3px solid ${accentColor}`,

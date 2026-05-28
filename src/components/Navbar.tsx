@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { preloadRoute } from '../lib/routePreload';
 
 const BG = 'rgba(255,253,248,0.94)';
 const GOLD = '#d9a857';
@@ -271,7 +272,8 @@ function MobileStatus({ children, tone }: { children: React.ReactNode; tone: 'us
 function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <Link to={to} style={{ textDecoration: 'none', padding: '8px 14px', borderRadius: 8, fontSize: '0.875rem', color: MUTED, transition: 'color 0.2s, background 0.2s', fontWeight: 650 }}
-      onMouseEnter={e => { e.currentTarget.style.color = INK; e.currentTarget.style.background = 'rgba(217,168,87,0.10)'; }}
+      onMouseEnter={e => { preloadRoute(to); e.currentTarget.style.color = INK; e.currentTarget.style.background = 'rgba(217,168,87,0.10)'; }}
+      onFocus={() => preloadRoute(to)}
       onMouseLeave={e => { e.currentTarget.style.color = MUTED; e.currentTarget.style.background = 'transparent'; }}>
       {children}
     </Link>
@@ -287,7 +289,9 @@ function MobileLink({ to, children, gold, onClick }: { to: string; children: Rea
       color: gold ? GOLD : MUTED,
       borderBottom: '1px solid rgba(201,146,46,0.12)',
       fontWeight: gold ? 600 : 400,
-    }}>
+    }}
+      onTouchStart={() => preloadRoute(to)}
+      onFocus={() => preloadRoute(to)}>
       {children}
     </Link>
   );

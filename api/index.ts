@@ -550,6 +550,18 @@ type RankingVoteRow = {
   vote_type: RankingVoteType;
   created_at: string;
 };
+type PinnedCommentRow = {
+  id: string;
+  ranking_id: string;
+  content: string;
+  author_id?: string | null;
+  author_name: string;
+  is_realname: boolean;
+  is_pinned: boolean;
+  pin_label?: string | null;
+  likes: number;
+  created_at: string;
+};
 
 const VOTE_CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -1404,10 +1416,31 @@ app.get('/api/lc/rankings', async (req, res) => {
     });
 
     const visibleWithAudit = await attachAuditProof('ranking', visible);
-
-    if (!viewerId || visibleWithAudit.length === 0) return res.json(ok(visibleWithAudit));
-
     const rankingIds = visibleWithAudit.map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
+    let pinnedByRanking = new Map<string, PinnedCommentRow[]>();
+    if (rankingIds.length > 0) {
+      const { data: pinnedComments, error: pinnedErr } = await supabase.from('lc_comments')
+        .select('id, ranking_id, content, author_id, author_name, is_realname, is_pinned, pin_label, likes, created_at')
+        .in('ranking_id', rankingIds)
+        .eq('status', 'approved')
+        .eq('is_pinned', true)
+        .order('created_at', { ascending: false });
+      if (pinnedErr) throw pinnedErr;
+      pinnedByRanking = (pinnedComments || []).reduce((map: Map<string, PinnedCommentRow[]>, comment: PinnedCommentRow) => {
+        const list = map.get(comment.ranking_id) || [];
+        list.push(comment);
+        map.set(comment.ranking_id, list);
+        return map;
+      }, new Map<string, PinnedCommentRow[]>());
+    }
+
+    const withPinnedComments = visibleWithAudit.map((row: Record<string, unknown>) => ({
+      ...row,
+      pinned_comments: pinnedByRanking.get(String(row.id)) || [],
+    }));
+
+    if (!viewerId || withPinnedComments.length === 0) return res.json(ok(withPinnedComments));
+
     const { data: myVotes, error: myVoteErr } = await supabase.from('lc_votes')
       .select('id, ranking_id, vote_type, created_at')
       .in('ranking_id', rankingIds)
@@ -1417,7 +1450,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     const voteByRanking = new Map(
       (myVotes || []).map((vote: RankingVoteRow) => [vote.ranking_id, serializeMyVote(vote)])
     );
-    const withMyVotes = visibleWithAudit.map((row: Record<string, unknown>) => ({
+    const withMyVotes = withPinnedComments.map((row: Record<string, unknown>) => ({
       ...row,
       my_vote: voteByRanking.get(String(row.id)) || null,
     }));

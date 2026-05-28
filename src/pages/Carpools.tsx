@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { AuthData, Carpool, CarpoolApplication } from '../types';
 import { CITIES } from '../constants/cities';
+import { getJsonCached } from '../lib/apiCache';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -56,8 +57,11 @@ export default function Carpools() {
       if (city !== 'all') qs.set('city', city);
       if (date) qs.set('date', date);
       if (script.trim()) qs.set('script', script.trim());
-      const r = await fetch(`${API}/lc/carpools?${qs.toString()}`);
-      const d = await r.json();
+      const { data: d } = await getJsonCached<{ success: boolean; data?: Carpool[]; error?: string }>(
+        `${API}/lc/carpools?${qs.toString()}`,
+        undefined,
+        15_000,
+      );
       if (d.success) setItems(d.data || []);
       else setError(d.error || '加载失败');
     } catch {
@@ -92,7 +96,7 @@ export default function Carpools() {
   }, []);
 
   const privateItems = myItems.filter(item => item.status !== 'approved');
-  const sentIds = new Set(sentApplications.map(item => item.carpool_id));
+  const sentIds = useMemo(() => new Set(sentApplications.map(item => item.carpool_id)), [sentApplications]);
 
   const openApply = (item: Carpool) => {
     const auth = getAuth();
@@ -291,7 +295,7 @@ export default function Carpools() {
 function CarpoolCard({ item, showStatus, onApply, applied, ownItem }: { item: Carpool; showStatus?: boolean; onApply?: () => void; applied?: boolean; ownItem?: boolean }) {
   const subsidyText = item.subsidy_mode === 'none' ? '无补贴' : `${SUBSIDY_LABEL[item.subsidy_mode]} ${item.subsidy_amount} 契约币`;
   return (
-    <article style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: item.boost_amount > 0 ? '0 16px 36px rgba(217,168,87,0.18)' : '0 12px 30px rgba(31,41,55,0.06)' }}>
+    <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: item.boost_amount > 0 ? '0 16px 36px rgba(217,168,87,0.18)' : '0 12px 30px rgba(31,41,55,0.06)' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {showStatus && <StatusPill status={item.status} />}
         {item.boost_amount > 0 && <Pill>置顶加权 {item.boost_amount}</Pill>}

@@ -53,6 +53,11 @@ body {
   border-color: #d9a857;
 }
 
+.content-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 320px;
+}
+
 /* ============ 水波纹 ============ */
 @keyframes ripple {
   0% { transform: scale(0.8); opacity: 0.4; }

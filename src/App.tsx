@@ -1,24 +1,29 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router-dom';
 import type React from 'react';
 import Navbar from './components/Navbar';
 import ErrorBoundary from './components/ErrorBoundary';
-import Home from './pages/Home';
-import Explore from './pages/Explore';
-import CreatorProfile from './pages/CreatorProfile';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Admin from './pages/Admin';
-import Rankings from './pages/Rankings';
-import CreateRanking from './pages/CreateRanking';
-import Commissions from './pages/Commissions';
-import CreateCommission from './pages/CreateCommission';
-import Carpools from './pages/Carpools';
-import CreateCarpool from './pages/CreateCarpool';
-import Wallet from './pages/Wallet';
-import CertificationPage from './pages/CertificationPage';
-import ShopDashboard from './pages/ShopDashboard';
-import { PrivacyPolicy, ReviewRules, UserAgreement } from './pages/Legal';
+import { pageLoaders, preloadRoute } from './lib/routePreload';
 import './App.css';
+
+const Home = lazy(pageLoaders.home);
+const Explore = lazy(pageLoaders.explore);
+const CreatorProfile = lazy(pageLoaders.creatorProfile);
+const Login = lazy(pageLoaders.login);
+const Dashboard = lazy(pageLoaders.dashboard);
+const Admin = lazy(pageLoaders.admin);
+const Rankings = lazy(pageLoaders.rankings);
+const CreateRanking = lazy(pageLoaders.createRanking);
+const Commissions = lazy(pageLoaders.commissions);
+const CreateCommission = lazy(pageLoaders.createCommission);
+const Carpools = lazy(pageLoaders.carpools);
+const CreateCarpool = lazy(pageLoaders.createCarpool);
+const Wallet = lazy(pageLoaders.wallet);
+const CertificationPage = lazy(pageLoaders.certification);
+const ShopDashboard = lazy(pageLoaders.shopDashboard);
+const ReviewRules = lazy(() => pageLoaders.legal().then(module => ({ default: module.ReviewRules })));
+const UserAgreement = lazy(() => pageLoaders.legal().then(module => ({ default: module.UserAgreement })));
+const PrivacyPolicy = lazy(() => pageLoaders.legal().then(module => ({ default: module.PrivacyPolicy })));
 
 function AppLayout() {
   const { pathname } = useLocation();
@@ -27,28 +32,43 @@ function AppLayout() {
   return (
     <>
       {showNavbar && <Navbar />}
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/explore" element={<Explore />} />
-        <Route path="/explore/:id" element={<CreatorProfile />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/admin" element={<Admin />} />
-        <Route path="/rankings" element={<Rankings />} />
-        <Route path="/rankings/new" element={<CreateRanking />} />
-        <Route path="/commissions" element={<Commissions />} />
-        <Route path="/commissions/new" element={<CreateCommission />} />
-        <Route path="/carpools" element={<Carpools />} />
-        <Route path="/carpools/new" element={<CreateCarpool />} />
-        <Route path="/wallet" element={<Wallet />} />
-        <Route path="/certification" element={<CertificationPage />} />
-        <Route path="/shop/dashboard" element={<ShopDashboard />} />
-        <Route path="/rules" element={<ReviewRules />} />
-        <Route path="/terms" element={<UserAgreement />} />
-        <Route path="/privacy" element={<PrivacyPolicy />} />
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/explore" element={<Explore />} />
+          <Route path="/explore/:id" element={<CreatorProfile />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/rankings" element={<Rankings />} />
+          <Route path="/rankings/new" element={<CreateRanking />} />
+          <Route path="/commissions" element={<Commissions />} />
+          <Route path="/commissions/new" element={<CreateCommission />} />
+          <Route path="/carpools" element={<Carpools />} />
+          <Route path="/carpools/new" element={<CreateCarpool />} />
+          <Route path="/wallet" element={<Wallet />} />
+          <Route path="/certification" element={<CertificationPage />} />
+          <Route path="/shop/dashboard" element={<ShopDashboard />} />
+          <Route path="/rules" element={<ReviewRules />} />
+          <Route path="/terms" element={<UserAgreement />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+        </Routes>
+      </Suspense>
       <SiteFooter />
     </>
+  );
+}
+
+function RouteFallback() {
+  return (
+    <main style={{ minHeight: '72vh', background: '#fffdf8', color: '#1f2937', padding: '84px 20px' }}>
+      <div style={{ maxWidth: 760, margin: '0 auto' }}>
+        <div style={{ width: 46, height: 46, borderRadius: 14, background: 'linear-gradient(135deg, rgba(217,168,87,0.24), rgba(238,246,255,0.95))', marginBottom: 24 }} />
+        <div style={{ height: 22, width: '48%', maxWidth: 340, borderRadius: 999, background: 'rgba(217,168,87,0.14)', marginBottom: 14 }} />
+        <div style={{ height: 14, width: '78%', borderRadius: 999, background: 'rgba(125,147,170,0.16)', marginBottom: 10 }} />
+        <div style={{ height: 14, width: '62%', borderRadius: 999, background: 'rgba(125,147,170,0.12)' }} />
+      </div>
+    </main>
   );
 }
 
@@ -120,7 +140,16 @@ function FooterColumn({ title, children }: { title: string; children: React.Reac
 }
 
 function FooterLink({ to, children }: { to: string; children: React.ReactNode }) {
-  return <Link to={to} style={footerLinkStyle}>{children}</Link>;
+  return (
+    <Link
+      to={to}
+      style={footerLinkStyle}
+      onMouseEnter={() => preloadRoute(to)}
+      onFocus={() => preloadRoute(to)}
+    >
+      {children}
+    </Link>
+  );
 }
 
 function FooterExternal({ href, children }: { href: string; children: React.ReactNode }) {

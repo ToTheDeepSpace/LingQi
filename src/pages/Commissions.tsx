@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { AuthData, Commission, CommissionApplication } from '../types';
 import { CITIES } from '../constants/cities';
+import { getJsonCached } from '../lib/apiCache';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -57,8 +58,11 @@ export default function Commissions() {
         const qs = new URLSearchParams();
         if (city !== 'all') qs.set('city', city);
         if (targetType !== 'all') qs.set('targetType', targetType);
-        const r = await fetch(`${API}/lc/commissions?${qs.toString()}`);
-        const d = await r.json();
+        const { data: d } = await getJsonCached<{ success: boolean; data?: Commission[]; error?: string }>(
+          `${API}/lc/commissions?${qs.toString()}`,
+          undefined,
+          15_000,
+        );
         if (!alive) return;
         if (d.success) setItems(d.data || []);
         else setError(d.error || '加载失败');
@@ -105,7 +109,7 @@ export default function Commissions() {
   }, []);
 
   const privateItems = myItems.filter(item => item.status !== 'approved');
-  const sentApplicationIds = new Set(sentApplications.map(item => item.commission_id));
+  const sentApplicationIds = useMemo(() => new Set(sentApplications.map(item => item.commission_id)), [sentApplications]);
 
   const openApplicationModal = (item: Commission) => {
     const auth = getAuth();
@@ -357,7 +361,7 @@ export default function Commissions() {
 
 function CommissionCard({ item, showStatus, onDelete, onApply, applied, ownItem }: { item: Commission; showStatus?: boolean; onDelete?: () => void; onApply?: () => void; applied?: boolean; ownItem?: boolean }) {
   return (
-    <article style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: '0 12px 30px rgba(31,41,55,0.06)' }}>
+    <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: '0 12px 30px rgba(31,41,55,0.06)' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {showStatus && <StatusPill status={item.status} />}
         {item.needed_date && <Pill>{item.needed_date}</Pill>}
