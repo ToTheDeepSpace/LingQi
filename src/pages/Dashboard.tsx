@@ -231,6 +231,25 @@ export default function Dashboard() {
     if (d.success) setPortfolio(portfolio.filter(p => p.id !== id));
   };
 
+  const closeCarpool = async (id: string) => {
+    if (!confirm('确定关闭这条拼车吗？关闭后不会继续公开展示。')) return;
+    setError('');
+    try {
+      const r = await fetch(`${API}/lc/carpools/${id}/close`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      if (d.success) {
+        setMyCarpools(prev => prev.map(item => item.id === id ? { ...item, status: 'closed' } : item));
+        setMsg('拼车已关闭');
+        setTimeout(() => setMsg(''), 2500);
+      } else {
+        const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '关闭失败');
+        setError(msg);
+      }
+    } catch {
+      setError('网络错误，请重试');
+    }
+  };
+
   const toggleDate = async (date: Date) => {
     if (!creator) return;
     const dateStr = date.toISOString().split('T')[0];
@@ -588,6 +607,12 @@ export default function Dashboard() {
                       meta={`${item.city} · ${item.event_date}${item.deadline_date ? ` · 截止 ${item.deadline_date}` : ''}${item.juzhanggui_sync_status === 'synced' ? ' · 已同步剧司辰' : item.juzhanggui_sync_status === 'failed' ? ' · 同步失败' : ''}`}
                       status={item.status}
                       to="/carpools"
+                      action={item.status === 'approved' || item.status === 'pending' ? (
+                        <button onClick={() => closeCarpool(item.id)}
+                          style={{ border: '1px solid rgba(100,116,139,0.2)', background: 'rgba(241,245,249,0.85)', color: '#475569', borderRadius: 8, padding: '5px 9px', cursor: 'pointer', fontSize: '0.76rem', fontWeight: 800 }}>
+                          关闭
+                        </button>
+                      ) : null}
                     />
                   ))}
                 </MineSection>
@@ -629,7 +654,7 @@ function MineSection({ title, emptyText, children }: { title: string; emptyText:
   );
 }
 
-function MineRow({ title, meta, status, to }: { title: string; meta: string; status: string; to: string }) {
+function MineRow({ title, meta, status, to, action }: { title: string; meta: string; status: string; to: string; action?: React.ReactNode }) {
   const statusMap: Record<string, { label: string; color: string; bg: string }> = {
     pending: { label: '待审核', color: '#925f18', bg: 'rgba(217,168,87,0.12)' },
     approved: { label: '已公开', color: '#15803d', bg: 'rgba(220,252,231,0.78)' },
@@ -645,6 +670,7 @@ function MineRow({ title, meta, status, to }: { title: string; meta: string; sta
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <span style={{ padding: '4px 8px', borderRadius: 999, background: item.bg, color: item.color, fontSize: '0.74rem', fontWeight: 800 }}>{item.label}</span>
+        {action}
         <Link to={to} style={{ color: '#925f18', fontSize: '0.8rem', fontWeight: 800, textDecoration: 'none' }}>查看</Link>
       </div>
     </article>

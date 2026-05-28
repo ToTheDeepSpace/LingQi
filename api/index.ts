@@ -71,6 +71,23 @@ function getReq<T extends string = string>(req: express.Request, key: string): T
   return (req as Record<string, unknown>)[key] as T;
 }
 
+function sanitizeUploadScope(scope: unknown) {
+  const raw = typeof scope === 'string' ? scope.trim() : '';
+  if (!raw) return 'general';
+  const safe = raw.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-').slice(0, 40);
+  return safe || 'general';
+}
+
+function safeFileExt(filename: string, mimetype: string) {
+  const raw = filename.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+  if (raw) return raw.slice(0, 12);
+  if (mimetype === 'application/pdf') return 'pdf';
+  if (mimetype.includes('png')) return 'png';
+  if (mimetype.includes('webp')) return 'webp';
+  if (mimetype.includes('jpeg') || mimetype.includes('jpg')) return 'jpg';
+  return 'bin';
+}
+
 function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefined) {
   const links = socialLinks || {};
   const entries = Object.entries(links).filter(([, url]) => typeof url === 'string' && url.trim());
@@ -846,8 +863,10 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
     const file = req.file;
     if (!file) return res.status(400).json(err(new Error('请选择文件')));
 
-    const ext = file.originalname.split('.').pop() || 'png';
-    const path = `${getReq(req, 'creatorId')}/${Date.now()}.${ext}`;
+    const ext = safeFileExt(file.originalname, file.mimetype);
+    const scope = sanitizeUploadScope(req.body?.scope);
+    const digest = createHash('sha256').update(file.buffer).digest('hex').slice(0, 16);
+    const path = `${getReq(req, 'creatorId')}/${scope}/${Date.now()}-${digest}.${ext}`;
 
     const { error } = await supabase.storage.from('lc-portfolio').upload(path, file.buffer, {
       contentType: file.mimetype,
@@ -857,7 +876,7 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
     if (error) throw error;
 
     const { data: urlData } = supabase.storage.from('lc-portfolio').getPublicUrl(path);
-    res.json(ok({ url: urlData.publicUrl }));
+    res.json(ok({ url: urlData.publicUrl, path, name: file.originalname, type: file.mimetype, size: file.size }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -1130,6 +1149,29 @@ app.post('/api/lc/carpools/:id/applications', authMiddleware, async (req, res) =
       throw insErr;
     }
     res.json(ok({ id: data?.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/carpools/:id/close', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const { data: carpool, error: cErr } = await supabase.from('lc_carpools')
+      .select('id, poster_id, status')
+      .eq('id', req.params.id)
+      .single();
+    if (cErr && isMissingRelation(cErr, 'lc_carpools')) return res.status(503).json(err(new Error('拼车区数据表尚未初始化')));
+    if (!carpool) return res.status(404).json(err(new Error('拼车不存在')));
+    if (carpool.poster_id !== profile.id) return res.status(403).json(err(new Error('只能关闭自己的拼车')));
+    if (carpool.status === 'closed') return res.json(ok({ closed: true }));
+    if (!['pending', 'approved'].includes(carpool.status)) return res.status(400).json(err(new Error('当前状态不能关闭')));
+
+    const { error: updErr } = await supabase.from('lc_carpools')
+      .update({ status: 'closed', updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+    if (updErr) throw updErr;
+    res.json(ok({ closed: true }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

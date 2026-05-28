@@ -11,6 +11,7 @@ const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 type AuthSession = { token: string; id: string };
+type CertFile = { name: string; url: string; type?: string; size?: number };
 
 function getAuth(): AuthSession | null {
   try {
@@ -61,7 +62,7 @@ export default function CertificationPage() {
   const auth = useMemo(() => getAuth(), []);
   const [type, setType] = useState<'dm' | 'shop'>('dm');
   const [description, setDescription] = useState('');
-  const [files, setFiles] = useState<{ name: string; url: string }[]>([]);
+  const [files, setFiles] = useState<CertFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -98,10 +99,15 @@ export default function CertificationPage() {
   const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
     if (selectedFiles.length === 0) return;
+    const current = getAuth();
+    if (!current) {
+      navigate('/login');
+      return;
+    }
     setUploadError('');
     setUploading(true);
 
-    const newFiles: { name: string; url: string }[] = [];
+    const newFiles: CertFile[] = [];
 
     for (const file of selectedFiles) {
       if (!file.type.startsWith('image/')) {
@@ -113,15 +119,27 @@ export default function CertificationPage() {
         continue;
       }
       try {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error('读取失败'));
-          reader.readAsDataURL(file);
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('scope', 'certification-proof');
+        const r = await fetch(`${API}/lc/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${current.token}` },
+          body: formData,
         });
-        newFiles.push({ name: file.name, url: dataUrl });
+        const d = await r.json();
+        if (!r.ok || !d.success) {
+          const msg = typeof d.error === 'string' ? d.error : (d.error?.message || `${file.name} 上传失败`);
+          throw new Error(msg);
+        }
+        newFiles.push({
+          name: d.data?.name || file.name,
+          url: d.data?.url,
+          type: d.data?.type || file.type,
+          size: d.data?.size || file.size,
+        });
       } catch {
-        setUploadError('部分文件读取失败');
+        setUploadError('部分文件上传失败');
       }
     }
 

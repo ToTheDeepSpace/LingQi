@@ -555,6 +555,8 @@ export default function Rankings() {
   const handleRelatedFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
     if (selectedFiles.length === 0) return;
+    const current = requireAuth();
+    if (!current) return;
     setUploadingRelatedFiles(true);
     setRelatedError('');
     try {
@@ -568,17 +570,24 @@ export default function Rankings() {
           setRelatedError(`${file.name} 超过 4MB，请压缩后再传`);
           continue;
         }
-        const url = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error('读取失败'));
-          reader.readAsDataURL(file);
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('scope', 'related-party-proof');
+        const r = await fetch(`${API}/lc/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${current.token}` },
+          body: formData,
         });
-        nextFiles.push({ name: file.name, url, type: file.type });
+        const d = await r.json();
+        if (!r.ok || !d.success) {
+          const msg = typeof d.error === 'string' ? d.error : (d.error?.message || `${file.name} 上传失败`);
+          throw new Error(msg);
+        }
+        nextFiles.push({ name: d.data?.name || file.name, url: d.data?.url, type: d.data?.type || file.type });
       }
       setRelatedFiles(prev => [...prev, ...nextFiles].slice(0, 4));
-    } catch {
-      setRelatedError('图片读取失败，请换一张图试试');
+    } catch (e) {
+      setRelatedError(e instanceof Error ? e.message : '图片上传失败，请换一张图试试');
     } finally {
       setUploadingRelatedFiles(false);
       e.target.value = '';

@@ -16,6 +16,7 @@ const SUBJECT_LABEL: Record<string, string> = {
 };
 
 type RankingType = 'red' | 'black' | 'white';
+type EvidenceFile = { name: string; url: string; type?: string; size?: number };
 
 const PROVINCES = Object.keys(PROVINCE_CITIES);
 const ALL_CITY_OPTIONS = Object.entries(PROVINCE_CITIES).flatMap(([province, cities]) =>
@@ -96,7 +97,7 @@ export default function CreateRanking() {
   const [subjectUrl, setSubjectUrl] = useState(draft?.subjectUrl || '');
   const [content, setContent] = useState(draft?.content || '');
   const [initialAmount, setInitialAmount] = useState(draft?.type === 'white' ? 0 : Math.max(10, draft?.initialAmount || 10));
-  const [files, setFiles] = useState<{ name: string; url: string }[]>([]);
+  const [files, setFiles] = useState<EvidenceFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -149,22 +150,41 @@ export default function CreateRanking() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
+    if (!auth) return navigate('/login');
     setUploading(true);
+    setError('');
     try {
-      const newFiles: { name: string; url: string }[] = [];
+      const newFiles: EvidenceFile[] = [];
       for (let i = 0; i < fileList.length; i++) {
         const f = fileList[i];
         if (f.size > 10 * 1024 * 1024) { alert(`${f.name} 超过 10MB 限制`); continue; }
-        // 存储为 base64 data URL（简化方案，适用于小文件）
-        const url = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.readAsDataURL(f);
+        const formData = new FormData();
+        formData.append('file', f);
+        formData.append('scope', 'ranking-evidence');
+        const r = await fetch(`${API}/lc/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${auth.token}` },
+          body: formData,
         });
-        newFiles.push({ name: f.name, url });
+        const d = await r.json();
+        if (!r.ok || !d.success) {
+          const msg = typeof d.error === 'string' ? d.error : (d.error?.message || `${f.name} 上传失败`);
+          throw new Error(msg);
+        }
+        newFiles.push({
+          name: d.data?.name || f.name,
+          url: d.data?.url,
+          type: d.data?.type || f.type,
+          size: d.data?.size || f.size,
+        });
       }
       setFiles(prev => [...prev, ...newFiles]);
-    } finally { setUploading(false); }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '文件上传失败，请重试');
+    } finally {
+      setUploading(false);
+      e.currentTarget.value = '';
+    }
   };
 
   const removeFile = (idx: number) => {
@@ -451,7 +471,7 @@ export default function CreateRanking() {
                       border: '1px solid rgba(201,146,46,0.2)', background: '#fff',
                       color: 'rgba(71,85,105,0.78)',
                     }}>
-                      📎 {f.name}
+                      {f.type?.includes('pdf') ? '📄' : '🖼️'} {f.name}
                       <button onClick={() => removeFile(i)} style={{ border: 'none', background: 'none', color: 'rgba(248,113,113,0.7)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>×</button>
                     </span>
                   ))}
