@@ -86,6 +86,10 @@ const labelStyle: React.CSSProperties = {
   color: 'rgba(71,85,105,0.78)', marginBottom: 8,
 };
 
+function formatDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [creator, setCreator]   = useState<Creator | null>(null);
@@ -101,7 +105,7 @@ export default function Dashboard() {
   const [loading, setLoading]   = useState(true);
 
   const [form, setForm] = useState({
-    display_name: '', bio: '', city: '', wechat: '', tags: '',
+    display_name: '', avatar: '', bio: '', city: '', wechat: '', tags: '',
     douyin: '', xiaohongshu: '', available_cities: '', travel_status: '常驻本地',
     contact_unlock_enabled: false, contact_intent_amount: '',
   });
@@ -110,8 +114,17 @@ export default function Dashboard() {
   const [availItems, setAvailItems] = useState<Availability[]>([]);
   const [availCity, setAvailCity] = useState('');
   const [availLocation, setAvailLocation] = useState('');
+  const [syncingJzg, setSyncingJzg] = useState(false);
+  const [screenshotUrl, setScreenshotUrl] = useState('');
+  const [screenshotText, setScreenshotText] = useState('');
+  const [importingScreenshot, setImportingScreenshot] = useState(false);
 
   const token = getToken();
+
+  const applyAvailability = (items: Availability[]) => {
+    setAvailItems(items || []);
+    setAvailDates((items || []).filter(a => !a.is_booked).map(a => a.date));
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem('lc_creator');
@@ -140,6 +153,7 @@ export default function Dashboard() {
         setPortfolio(port || []);
         setForm({
           display_name: profile.display_name || '',
+          avatar: profile.avatar || '',
           bio: profile.bio || '',
           city: profile.city || '',
           wechat: profile.wechat || '',
@@ -153,8 +167,7 @@ export default function Dashboard() {
         });
       } else { setError(profileData.error || '加载失败'); }
       if (availData.success) {
-        setAvailItems(availData.data || []);
-        setAvailDates((availData.data || []).map((a: { date: string }) => a.date));
+        applyAvailability(availData.data || []);
       }
       if (rankingsData.success) setMyRankings(rankingsData.data || []);
       if (commissionsData.success) setMyCommissions(commissionsData.data || []);
@@ -162,7 +175,7 @@ export default function Dashboard() {
     }).catch(() => setError('网络错误')).finally(() => setLoading(false));
   }, [navigate]);
 
-  const saveProfile = async () => {
+  const saveProfile = async (avatarOverride?: string) => {
     if (!creator) return;
     setSaving(true); setError('');
     try {
@@ -177,6 +190,7 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           display_name: form.display_name,
+          avatar: avatarOverride ?? form.avatar,
           bio: form.bio,
           city: form.city,
           wechat: form.wechat,
@@ -189,10 +203,86 @@ export default function Dashboard() {
         }),
       });
       const d = await r.json();
-      if (d.success) { setMsg('已保存'); setTimeout(() => setMsg(''), 2500); }
+      if (d.success) {
+        setCreator(prev => prev ? { ...prev, avatar: avatarOverride ?? form.avatar, display_name: form.display_name } : prev);
+        setMsg('已保存');
+        setTimeout(() => setMsg(''), 2500);
+      }
       else setError(d.error || '保存失败');
     } catch { setError('网络错误，请重试'); }
     finally { setSaving(false); }
+  };
+
+  const handleAvatarUploaded = (url: string) => {
+    setForm(prev => ({ ...prev, avatar: url }));
+    setCreator(prev => prev ? { ...prev, avatar: url } : prev);
+    void saveProfile(url);
+  };
+
+  const refreshAvailability = async () => {
+    if (!creator) return;
+    const r = await fetch(`${API}/lc/creators/${creator.id}/availability`);
+    const d = await r.json();
+    if (d.success) applyAvailability(d.data || []);
+  };
+
+  const syncJuzhangguiAvailability = async () => {
+    if (!creator) return;
+    setSyncingJzg(true);
+    setError('');
+    try {
+      const r = await fetch(`${API}/lc/availability/sync-juzhanggui`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await r.json();
+      if (!d.success) {
+        const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '同步失败');
+        setError(msg);
+        return;
+      }
+      await refreshAvailability();
+      setMsg(d.data?.matched === false ? d.data.message : `已同步 ${d.data?.imported || 0} 条剧司辰档期`);
+      setTimeout(() => setMsg(''), 3000);
+    } catch {
+      setError('网络错误，请重试');
+    } finally {
+      setSyncingJzg(false);
+    }
+  };
+
+  const importScreenshotAvailability = async () => {
+    if (!creator || !screenshotText.trim()) {
+      setError('请粘贴截图中的文字');
+      return;
+    }
+    setImportingScreenshot(true);
+    setError('');
+    try {
+      const r = await fetch(`${API}/lc/availability/import-text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          rawText: screenshotText,
+          screenshotUrl,
+          city: availCity || form.city || null,
+          location: availLocation || null,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok || !d.success) {
+        const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '导入失败');
+        setError(msg);
+        return;
+      }
+      await refreshAvailability();
+      setMsg(d.data?.message || `已从截图文字导入 ${d.data?.imported || 0} 条可约档期`);
+      setTimeout(() => setMsg(''), 3000);
+    } catch {
+      setError('网络错误，请重试');
+    } finally {
+      setImportingScreenshot(false);
+    }
   };
 
   const addService = async () => {
@@ -290,10 +380,10 @@ export default function Dashboard() {
 
   const toggleDate = async (date: Date) => {
     if (!creator) return;
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = formatDateKey(date);
     const isSet = availDates.includes(dateStr);
     if (isSet) {
-      const item = availItems.find(a => a.date === dateStr);
+      const item = availItems.find(a => !a.is_booked && a.date === dateStr);
       if (item) {
         const r = await fetch(`${API}/lc/availability/${item.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
         const d = await r.json();
@@ -363,6 +453,10 @@ export default function Dashboard() {
     </button>
   );
 
+  const availableItems = availItems.filter(item => !item.is_booked);
+  const busyItems = availItems.filter(item => item.is_booked);
+  const busyDateSet = new Set(busyItems.map(item => item.date));
+
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
 
@@ -423,6 +517,30 @@ export default function Dashboard() {
             {tab === 'profile' && (
               <div style={card}>
                 <h2 style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 24, color: INK }}>编辑资料</h2>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
+                  padding: '16px', borderRadius: 14, marginBottom: 20,
+                  background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(239,246,255,0.82))',
+                  border: '1px solid rgba(125,147,170,0.16)',
+                }}>
+                  <div style={{
+                    width: 86, height: 86, borderRadius: 22, overflow: 'hidden', flexShrink: 0,
+                    background: 'linear-gradient(135deg, rgba(217,168,87,0.24), rgba(107,63,160,0.16))',
+                    border: '2px solid rgba(217,168,87,0.32)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#925f18', fontSize: 28, fontWeight: 900,
+                  }}>
+                    {form.avatar
+                      ? <img src={form.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : (form.display_name || '灵').slice(0, 1)
+                    }
+                  </div>
+                  <div>
+                    <p style={{ color: INK, fontWeight: 800, fontSize: '0.92rem', marginBottom: 8 }}>主页头像</p>
+                    <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="上传头像" />
+                    <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', marginTop: 8 }}>上传后会同步显示到公开主页。</p>
+                  </div>
+                </div>
                 <div style={{
                   padding: '14px 16px',
                   borderRadius: 12,
@@ -502,7 +620,7 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <button onClick={saveProfile} disabled={saving}
+                  <button onClick={() => saveProfile()} disabled={saving}
                     style={{
                       padding: '11px 28px', borderRadius: 10, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
                       background: saving ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
@@ -552,35 +670,89 @@ export default function Dashboard() {
 
             {/* 档期 */}
             {tab === 'availability' && (
-              <div style={card}>
-                <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: INK }}>点击选择可约日期</p>
-                <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.58)', marginBottom: 16 }}>已选中的日期和地点将显示在你的公开主页上</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 520, marginBottom: 18 }}>
-                  <input value={availCity} onChange={e => setAvailCity(e.target.value)} placeholder="这批档期所在城市（默认用常驻城市）" style={inputStyle} />
-                  <input value={availLocation} onChange={e => setAvailLocation(e.target.value)} placeholder="地点补充，如展会/区县/可商量" style={inputStyle} />
+              <div style={{ display: 'grid', gap: 16 }}>
+                <div style={card}>
+                  <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 8, color: INK }}>手动标记可约日期</p>
+                  <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.58)', marginBottom: 16 }}>金色日期会显示在公开主页上，代表可以被委托人预约。</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 560, marginBottom: 18 }}>
+                    <input value={availCity} onChange={e => setAvailCity(e.target.value)} placeholder="这批档期所在城市（默认用常驻城市）" style={inputStyle} />
+                    <input value={availLocation} onChange={e => setAvailLocation(e.target.value)} placeholder="地点补充，如展会/区县/可商量" style={inputStyle} />
+                  </div>
+                  <div style={{ maxWidth: 400 }}>
+                    <Calendar
+                      onClickDay={toggleDate}
+                      tileClassName={({ date }) => {
+                        const ds = formatDateKey(date);
+                        if (availDates.includes(ds)) return 'avail-tile';
+                        if (busyDateSet.has(ds)) return 'busy-tile';
+                        return '';
+                      }}
+                      className="dark-cal"
+                      minDate={new Date()}
+                    />
+                  </div>
+                  <div style={{ marginTop: 20, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {availableItems.map(item => (
+                      <span key={item.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.25)', color: '#925f18' }}>
+                        {item.date}{item.city ? ` · ${item.city}` : ''}{item.location ? ` · ${item.location}` : ''}{item.source === 'screenshot' ? ' · 截图导入' : ''}
+                        <button onClick={() => toggleDate(new Date(item.date + 'T00:00:00'))}
+                          style={{ background: 'none', border: 'none', color: 'rgba(146,95,24,0.62)', cursor: 'pointer', padding: 0, lineHeight: 1 }}>✕</button>
+                      </span>
+                    ))}
+                    {availableItems.length === 0 && (
+                      <p style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.52)' }}>还没有标记可约日期</p>
+                    )}
+                  </div>
                 </div>
-                <div style={{ maxWidth: 380 }}>
-                  <Calendar
-                    onClickDay={toggleDate}
-                    tileClassName={({ date }) => {
-                      const ds = date.toISOString().split('T')[0];
-                      return availDates.includes(ds) ? 'avail-tile' : '';
-                    }}
-                    className="dark-cal"
-                    minDate={new Date()}
-                  />
+
+                <div style={{ ...card, border: '1px solid rgba(59,130,246,0.18)', background: 'linear-gradient(135deg, rgba(239,246,255,0.86), rgba(255,250,242,0.96))' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                    <div>
+                      <p style={{ fontWeight: 800, fontSize: '0.96rem', color: INK, marginBottom: 4 }}>剧司辰已排档期</p>
+                      <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.8rem', lineHeight: 1.7 }}>这里同步的是已排班/忙碌时间，不会当成可约日期展示。</p>
+                    </div>
+                    <button onClick={syncJuzhangguiAvailability} disabled={syncingJzg}
+                      style={{
+                        padding: '10px 16px', borderRadius: 10, border: '1px solid rgba(59,130,246,0.24)',
+                        background: syncingJzg ? 'rgba(241,245,249,0.86)' : 'rgba(255,255,255,0.86)',
+                        color: syncingJzg ? 'rgba(71,85,105,0.52)' : '#1d4ed8',
+                        cursor: syncingJzg ? 'not-allowed' : 'pointer', fontWeight: 800, fontSize: '0.84rem',
+                      }}>
+                      {syncingJzg ? '同步中...' : '同步剧司辰'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {busyItems.map(item => (
+                      <span key={item.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(59,130,246,0.09)', border: '1px solid rgba(59,130,246,0.18)', color: '#1e40af' }}>
+                        {item.date}{item.start_time ? ` ${item.start_time.slice(0, 5)}` : ''}{item.city ? ` · ${item.city}` : ''}{item.location ? ` · ${item.location}` : ''}{item.note ? ` · ${item.note.replace(/^剧司辰同步：/, '')}` : ''}
+                      </span>
+                    ))}
+                    {busyItems.length === 0 && (
+                      <p style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.52)' }}>还没有同步到剧司辰已排档期</p>
+                    )}
+                  </div>
                 </div>
-                <div style={{ marginTop: 20, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {availItems.map(item => (
-                    <span key={item.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.25)', color: GOLD }}>
-                      {item.date}{item.city ? ` · ${item.city}` : ''}{item.location ? ` · ${item.location}` : ''}
-                      <button onClick={() => toggleDate(new Date(item.date + 'T00:00:00'))}
-                        style={{ background: 'none', border: 'none', color: 'rgba(217,168,87,0.6)', cursor: 'pointer', padding: 0, lineHeight: 1 }}>✕</button>
-                    </span>
-                  ))}
-                  {availDates.length === 0 && (
-                    <p style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.52)' }}>还没有标记可约日期</p>
-                  )}
+
+                <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
+                  <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 8, color: INK }}>截图快速导入</p>
+                  <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.8rem', lineHeight: 1.7, marginBottom: 14 }}>上传档期截图留档，再粘贴截图中的文字，系统会把未过期日期导入为可约档期。</p>
+                  <div style={{ display: 'grid', gap: 12, maxWidth: 620 }}>
+                    <ImageUpload onUploaded={setScreenshotUrl} token={token} api={API} scope="availability-screenshot" label="上传档期截图" />
+                    {screenshotUrl && <p style={{ color: '#15803d', fontSize: '0.78rem', fontWeight: 700 }}>截图已上传</p>}
+                    <textarea value={screenshotText} onChange={e => setScreenshotText(e.target.value)} rows={5}
+                      placeholder="粘贴截图里的档期文字，比如：6.11 上海 可约 / 6月14日 北京可接"
+                      style={{ ...inputStyle, resize: 'vertical', minHeight: 110 }} />
+                    <button onClick={importScreenshotAvailability} disabled={importingScreenshot}
+                      style={{
+                        justifySelf: 'start', padding: '10px 18px', borderRadius: 10, border: 'none',
+                        cursor: importingScreenshot ? 'not-allowed' : 'pointer',
+                        background: importingScreenshot ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                        color: importingScreenshot ? 'rgba(71,85,105,0.52)' : INK,
+                        fontWeight: 800, fontSize: '0.84rem',
+                      }}>
+                      {importingScreenshot ? '导入中...' : '导入截图档期'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -608,7 +780,7 @@ export default function Dashboard() {
                 )}
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
                   <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>上传作品</p>
-                  <ImageUpload onUploaded={addPortfolio} token={token} api={API} />
+                  <ImageUpload onUploaded={addPortfolio} token={token} api={API} scope="portfolio" label="上传作品" />
                   <p style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.52)', marginTop: 12 }}>支持 JPG、PNG、GIF，最大 10MB</p>
                 </div>
               </div>
@@ -684,6 +856,7 @@ export default function Dashboard() {
         .dark-cal .react-calendar__tile--now { background: rgba(201,146,46,0.12) !important; color: ${GOLD} !important; }
         .dark-cal .react-calendar__tile--active { background: rgba(201,146,46,0.12) !important; }
         .dark-cal .react-calendar__tile.avail-tile { background: rgba(201,146,46,0.2) !important; color: ${GOLD} !important; font-weight: 700 !important; border: 1px solid rgba(201,146,46,0.4) !important; }
+        .dark-cal .react-calendar__tile.busy-tile { background: rgba(59,130,246,0.12) !important; color: #1d4ed8 !important; font-weight: 700 !important; border: 1px solid rgba(59,130,246,0.25) !important; }
         .dark-cal .react-calendar__month-view__days__day--neighboringMonth { color: rgba(71,85,105,0.25) !important; }
         .dark-cal abbr { text-decoration: none !important; }
       `}</style>

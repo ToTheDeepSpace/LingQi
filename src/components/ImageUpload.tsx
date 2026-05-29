@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useId, useState, useRef } from 'react';
 
 const GOLD = '#d9a857';
 
@@ -6,13 +6,16 @@ interface Props {
   onUploaded: (url: string) => void;
   token: string;
   api?: string;
+  scope?: string;
+  label?: string;
 }
 
-export default function ImageUpload({ onUploaded, token, api = '/api' }: Props) {
+export default function ImageUpload({ onUploaded, token, api = '/api', scope = 'portfolio', label = '选择图片' }: Props) {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview]     = useState<string | null>(null);
   const [error, setError]         = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -25,6 +28,7 @@ export default function ImageUpload({ onUploaded, token, api = '/api' }: Props) 
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('scope', scope);
       const r = await fetch(`${api}/lc/upload`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData,
       });
@@ -40,8 +44,8 @@ export default function ImageUpload({ onUploaded, token, api = '/api' }: Props) 
 
   return (
     <div>
-      <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} style={{ display: 'none' }} id="image-upload-input" />
-      <label htmlFor="image-upload-input"
+      <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} style={{ display: 'none' }} id={inputId} />
+      <label htmlFor={inputId}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '10px 20px', borderRadius: 10, cursor: 'pointer',
@@ -54,7 +58,7 @@ export default function ImageUpload({ onUploaded, token, api = '/api' }: Props) 
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
         </svg>
-        {uploading ? '上传中...' : '选择图片'}
+        {uploading ? '上传中...' : label}
       </label>
       {error && <p style={{ fontSize: '0.78rem', color: '#f87171', marginTop: 8 }}>{error}</p>}
       {preview && (

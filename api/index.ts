@@ -490,7 +490,7 @@ function parseCoinAmount(value: unknown, fallback = 0) {
 
 function normalizeClockTime(value: unknown, fallback = '19:30') {
   const text = cleanText(value, 20);
-  const match = text.match(/^(\d{1,2}):(\d{2})$/);
+  const match = text.match(/(\d{1,2}):(\d{2})/);
   if (!match) return fallback;
   const hour = Math.min(23, Math.max(0, Number(match[1])));
   const minute = Math.min(59, Math.max(0, Number(match[2])));
@@ -614,6 +614,101 @@ async function syncCarpoolToJuzhanggui(carpool: Record<string, unknown>) {
   if (scheduleErr) throw scheduleErr;
 
   return { ok: true, scheduleId: schedule?.id || null, reused: false };
+}
+
+function todayChinaDateString() {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function buildDateString(year: number, month: number, day: number) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return '';
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function parseAvailabilityDatesFromText(text: string) {
+  const today = todayChinaDateString();
+  const year = Number(today.slice(0, 4));
+  const found = new Set<string>();
+  const expired = new Set<string>();
+  const addDate = (date: string) => {
+    if (!date) return;
+    if (date < today) expired.add(date);
+    else found.add(date);
+  };
+
+  const fullDateRe = /(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})日?/g;
+  let fullMatch: RegExpExecArray | null;
+  while ((fullMatch = fullDateRe.exec(text)) !== null) {
+    addDate(buildDateString(Number(fullMatch[1]), Number(fullMatch[2]), Number(fullMatch[3])));
+  }
+
+  const shortDateRe = /(?:^|[^\d])(\d{1,2})[./月](\d{1,2})(?:日)?(?!\d)/g;
+  let shortMatch: RegExpExecArray | null;
+  while ((shortMatch = shortDateRe.exec(text)) !== null) {
+    addDate(buildDateString(year, Number(shortMatch[1]), Number(shortMatch[2])));
+  }
+
+  return { dates: [...found].sort(), expiredDates: [...expired].sort() };
+}
+
+async function upsertAvailabilityBySource(row: {
+  creator_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  city?: string | null;
+  location?: string | null;
+  note?: string | null;
+  is_booked: boolean;
+  source: string;
+  source_id: string;
+  source_payload?: Record<string, unknown>;
+}) {
+  const payload = {
+    creator_id: row.creator_id,
+    date: row.date,
+    start_time: row.start_time,
+    end_time: row.end_time,
+    city: row.city || null,
+    location: row.location || null,
+    note: row.note || null,
+    is_booked: row.is_booked,
+    source: row.source,
+    source_id: row.source_id,
+    source_payload: row.source_payload || {},
+  };
+
+  const { data: existing, error: findErr } = await supabase.from('lc_availability')
+    .select('id')
+    .eq('creator_id', row.creator_id)
+    .eq('source', row.source)
+    .eq('source_id', row.source_id)
+    .maybeSingle();
+  if (findErr) throw findErr;
+
+  if (existing?.id) {
+    const { data, error } = await supabase.from('lc_availability')
+      .update(payload)
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  const { data, error } = await supabase.from('lc_availability')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 type RankingVoteType = 'like' | 'dislike' | 'joy';
@@ -838,8 +933,8 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
 app.get('/api/lc/creators/:id/availability', async (req, res) => {
   try {
     const { data } = await supabase.from('lc_availability').select('*')
-      .eq('creator_id', req.params.id).eq('is_booked', false)
-      .gte('date', new Date().toISOString().split('T')[0]).order('date');
+      .eq('creator_id', req.params.id)
+      .gte('date', todayChinaDateString()).order('date');
     res.json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -853,17 +948,156 @@ app.post('/api/lc/availability', authMiddleware, async (req, res) => {
     const { data } = await supabase.from('lc_availability').insert({
       creator_id: creatorId, date, start_time: startTime, end_time: endTime, note,
       city: city || null, location: location || null,
+      is_booked: false, source: 'manual',
     }).select().single();
     res.json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.post('/api/lc/availability/sync-juzhanggui', authMiddleware, async (req, res) => {
+  try {
+    const creatorId = getReq(req, 'creatorId');
+    const { data: profile, error: profileErr } = await supabase.from('lc_profiles')
+      .select('id, phone, display_name, city')
+      .eq('id', creatorId)
+      .single();
+    if (profileErr) throw profileErr;
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const phone = cleanText(profile.phone, 40);
+    const displayName = cleanText(profile.display_name, 120);
+    let actor: Record<string, unknown> | null = null;
+
+    if (phone) {
+      const { data: actorByPhone, error: phoneErr } = await supabase.from('actors')
+        .select('id, name, phone')
+        .eq('tenant_id', JUZHANGGUI_TENANT_ID)
+        .eq('phone', phone)
+        .maybeSingle();
+      if (phoneErr) throw phoneErr;
+      actor = actorByPhone;
+    }
+
+    if (!actor && displayName) {
+      const { data: actorByName, error: nameErr } = await supabase.from('actors')
+        .select('id, name, phone')
+        .eq('tenant_id', JUZHANGGUI_TENANT_ID)
+        .eq('name', displayName)
+        .maybeSingle();
+      if (nameErr) throw nameErr;
+      actor = actorByName;
+    }
+
+    if (!actor?.id) {
+      return res.json(ok({
+        matched: false,
+        imported: 0,
+        updated: [],
+        message: '没有在剧司辰卡司表里找到同手机号或同昵称的卡司。请先在剧司辰卡司档案里补齐手机号，或把卡司名改成灵契昵称。',
+      }));
+    }
+
+    const today = todayChinaDateString();
+    const { data: rows, error: schedErr } = await supabase.from('schedule_actors')
+      .select('id,role_name,start_time,end_time,schedules!inner(id,tenant_id,scheduled_date,start_time,end_time,status,customer_name,scripts(name),rooms(name))')
+      .eq('actor_id', String(actor.id))
+      .eq('schedules.tenant_id', JUZHANGGUI_TENANT_ID)
+      .gte('schedules.scheduled_date', today)
+      .not('schedules.status', 'eq', 'cancelled');
+    if (schedErr) throw schedErr;
+
+    const imported = [];
+    for (const row of (rows || []) as Array<Record<string, unknown>>) {
+      const schedule = Array.isArray(row.schedules) ? row.schedules[0] : row.schedules as Record<string, unknown> | undefined;
+      if (!schedule?.id || !schedule.scheduled_date) continue;
+      const script = Array.isArray(schedule.scripts) ? schedule.scripts[0] : schedule.scripts as Record<string, unknown> | undefined;
+      const room = Array.isArray(schedule.rooms) ? schedule.rooms[0] : schedule.rooms as Record<string, unknown> | undefined;
+      const scriptName = cleanText(script?.name, 120) || '未命名剧本';
+      const roleName = cleanText(row.role_name, 80) || '卡司';
+      const roomName = cleanText(room?.name, 120);
+      const date = cleanText(schedule.scheduled_date, 20);
+      const startTime = normalizeClockTime(row.start_time || schedule.start_time, '09:00');
+      const endTime = normalizeClockTime(row.end_time || schedule.end_time, addHoursToClock(startTime, 4));
+      const sourceId = `juzhanggui:${schedule.id}:${row.id}`;
+      const item = await upsertAvailabilityBySource({
+        creator_id: creatorId,
+        date,
+        start_time: startTime,
+        end_time: endTime,
+        city: cleanText(profile.city, 80) || null,
+        location: roomName || null,
+        note: `剧司辰同步：${scriptName} · ${roleName}`,
+        is_booked: true,
+        source: 'juzhanggui',
+        source_id: sourceId,
+        source_payload: {
+          actor_id: actor.id,
+          actor_name: actor.name,
+          schedule_id: schedule.id,
+          schedule_actor_id: row.id,
+          script_name: scriptName,
+          room_name: roomName || null,
+          status: schedule.status || null,
+        },
+      });
+      imported.push(item);
+    }
+
+    res.json(ok({ matched: true, actor, imported: imported.length, items: imported }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/availability/import-text', authMiddleware, async (req, res) => {
+  try {
+    const creatorId = getReq(req, 'creatorId');
+    const rawText = cleanText(req.body?.rawText, 6000);
+    const screenshotUrl = cleanText(req.body?.screenshotUrl, 1000);
+    const city = cleanText(req.body?.city, 80);
+    const location = cleanText(req.body?.location, 120);
+    if (!rawText) return res.status(400).json(err(new Error('请粘贴截图中的文字，第一版暂不做纯图片 OCR')));
+
+    const { dates, expiredDates } = parseAvailabilityDatesFromText(rawText);
+    if (dates.length === 0) {
+      return res.json(ok({
+        imported: 0,
+        dates: [],
+        expiredDates,
+        message: expiredDates.length > 0 ? '截图里识别到的日期都已经过期，没有自动导入。' : '没有识别到日期，请用 6.11、6月11日 或 2026-06-11 这种格式。',
+      }));
+    }
+
+    const rawHash = hashLooseValue(`${creatorId}:${rawText}:${screenshotUrl}`).slice(0, 16);
+    const imported = [];
+    for (const date of dates) {
+      const item = await upsertAvailabilityBySource({
+        creator_id: creatorId,
+        date,
+        start_time: normalizeClockTime(req.body?.startTime, '09:00'),
+        end_time: normalizeClockTime(req.body?.endTime, '22:00'),
+        city: city || null,
+        location: location || null,
+        note: '截图快速导入',
+        is_booked: false,
+        source: 'screenshot',
+        source_id: `screenshot:${rawHash}:${date}`,
+        source_payload: { raw_text: rawText, screenshot_url: screenshotUrl || null },
+      });
+      imported.push(item);
+    }
+
+    res.json(ok({ imported: imported.length, items: imported, dates, expiredDates }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.delete('/api/lc/availability/:id', authMiddleware, async (req, res) => {
   try {
-    const { data: item } = await supabase.from('lc_availability').select('creator_id').eq('id', req.params.id).single();
+    const { data: item } = await supabase.from('lc_availability').select('creator_id,is_booked,source').eq('id', req.params.id).single();
     if (!item) return res.status(404).json(err(new Error('档期不存在')));
     if (getReq(req, 'creatorId') !== item.creator_id) {
       return res.status(403).json(err(new Error('只能删除自己的档期')));
+    }
+    if (item.is_booked || item.source === 'juzhanggui') {
+      return res.status(400).json(err(new Error('剧司辰同步的忙碌档期请在剧司辰修改后重新同步')));
     }
     await supabase.from('lc_availability').delete().eq('id', req.params.id);
     res.json(ok());

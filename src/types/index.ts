@@ -44,6 +44,9 @@ export interface Availability {
   location: string | null;
   is_booked: boolean;
   note: string | null;
+  source?: 'manual' | 'juzhanggui' | 'screenshot' | string | null;
+  source_id?: string | null;
+  source_payload?: Record<string, unknown> | null;
 }
 
 export interface Portfolio {

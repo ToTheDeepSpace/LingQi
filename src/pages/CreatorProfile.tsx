@@ -14,7 +14,7 @@ const ROLE_EMOJI: Record<string, string> = {
   creator: '🎭', coser: '⭐', photographer: '📸', makeup: '💄',
 };
 const ROLE_LABEL: Record<string, string> = {
-  creator: '灵契师', coser: '委托人', photographer: '摄影师', makeup: '妆造师',
+  creator: '灵契师', coser: 'Coser', photographer: '摄影师', makeup: '妆造师',
 };
 
 const card: React.CSSProperties = {
@@ -67,8 +67,9 @@ export default function CreatorProfile() {
         setPortfolio(port || []);
       }
       if (availData.success) {
-        setAvailability(availData.data || []);
-        setAvailDates((availData.data || []).map((a: { date: string }) => a.date));
+        const items = (availData.data || []) as Availability[];
+        setAvailability(items);
+        setAvailDates(items.filter(a => !a.is_booked).map(a => a.date));
       }
     }).finally(() => setLoading(false));
   }, [id]);
@@ -124,6 +125,9 @@ export default function CreatorProfile() {
       </div>
     </div>
   );
+
+  const availableSlots = availability.filter(item => !item.is_booked);
+  const busySlots = availability.filter(item => item.is_booked);
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
@@ -321,20 +325,52 @@ export default function CreatorProfile() {
             )}
 
             {/* 可约日期 */}
-            {availDates.length > 0 && (
+            {availableSlots.length > 0 && (
               <div style={card}>
                 <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>可约日期与地点</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
-                  {availability.slice(0, 40).map(item => (
+                  {availableSlots.slice(0, 40).map(item => (
                     <span key={item.id} style={{ padding: '8px 12px', borderRadius: 12, fontSize: '0.8rem', background: 'rgba(217,168,87,0.12)', border: '1px solid rgba(201,146,46,0.25)', color: '#925f18' }}>
                       <strong>{item.date.slice(5)}</strong>
+                      {item.source === 'screenshot' && <span style={{ marginLeft: 6, color: 'rgba(146,95,24,0.62)', fontSize: '0.7rem' }}>截图</span>}
                       <br />
                       <span style={{ color: 'rgba(71,85,105,0.66)', fontSize: '0.75rem' }}>{item.city || creator.city || '地点可议'}{item.location ? ` · ${item.location}` : ''}</span>
                     </span>
                   ))}
-                  {availability.length > 40 && (
+                  {availableSlots.length > 40 && (
                     <span style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.56)', alignSelf: 'center' }}>
-                      +{availability.length - 40} 天
+                      +{availableSlots.length - 40} 天
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {busySlots.length > 0 && (
+              <div style={{ ...card, background: 'linear-gradient(135deg, rgba(239,246,255,0.82), rgba(255,250,242,0.96))', border: '1px solid rgba(59,130,246,0.18)' }}>
+                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: INK }}>已排档期</h3>
+                <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 14 }}>
+                  这些日期来自已排班或已同步档期，默认视为忙碌。
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 8 }}>
+                  {busySlots.slice(0, 24).map(item => (
+                    <span key={item.id} style={{ padding: '8px 12px', borderRadius: 12, fontSize: '0.8rem', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.18)', color: '#1e40af' }}>
+                      <strong>{item.date.slice(5)}</strong>
+                      {item.source === 'juzhanggui' && <span style={{ marginLeft: 6, color: 'rgba(30,64,175,0.62)', fontSize: '0.7rem' }}>剧司辰</span>}
+                      <br />
+                      <span style={{ color: 'rgba(71,85,105,0.66)', fontSize: '0.75rem' }}>
+                        {item.start_time ? `${item.start_time.slice(0, 5)} ` : ''}{item.location || item.city || creator.city || '地点待定'}
+                      </span>
+                      {item.note && (
+                        <span style={{ display: 'block', color: 'rgba(71,85,105,0.56)', fontSize: '0.72rem', marginTop: 4, lineHeight: 1.5 }}>
+                          {item.note.replace(/^剧司辰同步：/, '')}
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                  {busySlots.length > 24 && (
+                    <span style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.56)', alignSelf: 'center' }}>
+                      +{busySlots.length - 24} 条
                     </span>
                   )}
                 </div>
@@ -355,7 +391,7 @@ export default function CreatorProfile() {
               </div>
             )}
 
-            {services.length === 0 && availDates.length === 0 && portfolio.length === 0 && (
+            {services.length === 0 && availDates.length === 0 && busySlots.length === 0 && portfolio.length === 0 && (
               <div style={{ ...card, textAlign: 'center', padding: '60px 24px' }}>
                 <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>🌙</div>
                 <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.9rem' }}>创作者还没有发布内容</p>
