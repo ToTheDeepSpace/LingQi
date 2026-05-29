@@ -1656,7 +1656,7 @@ app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
     const selectFields = targetType === 'ranking'
       ? 'id,target_type,target_id,event_type,content_hash,previous_hash,entry_hash,chain_date,created_at,canonical_payload,metadata'
       : 'id,target_type,target_id,event_type,content_hash,previous_hash,entry_hash,chain_date,created_at';
-    const { data: entries, error: qErr } = await supabase.from('lc_audit_chain_entries')
+    const { data: rawEntries, error: qErr } = await supabase.from('lc_audit_chain_entries')
       .select(selectFields)
       .eq('target_type', targetType)
       .eq('target_id', req.params.id)
@@ -1666,6 +1666,7 @@ app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
       return res.json(ok({ entries: [], daily_roots: [], target: null }));
     }
     if (qErr) throw qErr;
+    const entries = (rawEntries || []) as Array<Record<string, unknown> & { chain_date: string }>;
 
     let target: Record<string, unknown> | null = null;
     if (targetType === 'ranking') {
@@ -1677,7 +1678,7 @@ app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
       target = ranking ? auditPayload('ranking', ranking) : null;
     }
 
-    const dates = Array.from(new Set((entries || []).map((entry: { chain_date: string }) => entry.chain_date).filter(Boolean)));
+    const dates = Array.from(new Set(entries.map(entry => entry.chain_date).filter(Boolean)));
     let roots: Record<string, unknown>[] = [];
     if (dates.length > 0) {
       const { data: dailyRoots, error: rootErr } = await supabase.from('lc_audit_daily_roots')
