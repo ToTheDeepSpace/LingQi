@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { AuthData, CarpoolSubsidyType } from '../types';
 import { CITIES } from '../constants/cities';
 import { formatDetailedSubsidy, generateCarpoolMessage, parseCarpoolMessage } from '../lib/carpoolMessage';
+import ResponsibilityNotice from '../components/ResponsibilityNotice';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -223,7 +224,7 @@ export default function CreateCarpool() {
         }),
       });
       const d = await r.json();
-      if (d.success) navigate('/carpools?submitted=1');
+      if (d.success) navigate('/carpools?published=1');
       else setError(typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败'));
     } catch {
       setError('网络错误，请重试');
@@ -273,6 +274,8 @@ export default function CreateCarpool() {
               </div>
             )}
           </section>
+
+          <ResponsibilityNotice />
 
           <section style={heroCardStyle}>
             <h2 style={sectionTitleStyle}>确认四个关键信息</h2>
@@ -393,7 +396,7 @@ export default function CreateCarpool() {
               color: submitting ? 'rgba(201,146,46,0.4)' : INK,
               border: 'none',
             }}>
-            {submitting ? '提交中...' : (boostAmount > 0 ? `发布审核 · 扣 ${boostAmount} 契约币` : '提交审核')}
+            {submitting ? '发布中...' : (boostAmount > 0 ? `发布拼车 · 扣 ${boostAmount} 契约币` : '发布拼车')}
           </button>
         </div>
       </div>

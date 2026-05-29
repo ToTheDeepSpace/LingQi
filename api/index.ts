@@ -117,6 +117,8 @@ type RelatedProofFile = { name: string; url: string; type?: string };
 type SubsidyMode = 'none' | 'asking' | 'offering';
 type CarpoolSubsidyType = 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
 const CARPOOL_SUBSIDY_TYPES: CarpoolSubsidyType[] = ['none', 'half_price', 'free_ticket', 'discount', 'a_subsidy', 'fixed_deduct', 'custom'];
+type ReportTargetType = 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile';
+const REPORT_TARGET_TYPES: ReportTargetType[] = ['carpool', 'ranking', 'comment', 'commission', 'profile'];
 
 function sanitizeRelatedFiles(input: unknown): RelatedProofFile[] {
   if (!Array.isArray(input)) return [];
@@ -1140,20 +1142,29 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       contact_note: contactNote || null,
       content,
       boost_amount: boostAmount,
+      status: 'approved',
+      juzhanggui_sync_status: 'pending',
       ai_assist_context: {
         source: 'lingqi_carpool_form',
-        juzhanggui_sync: 'on_admin_approval',
+        moderation: 'post_publish',
+        juzhanggui_sync: 'pending_manual_or_background_sync',
         subsidy_unit: 'cash_or_ticket_discount',
         raw_message: rawMessage || null,
         generated_message: generatedMessage || null,
       },
-    }).select('id').single();
+    }).select('*').single();
     if (insErr) {
       if (isMissingRelation(insErr, 'lc_carpools')) return res.status(503).json(err(new Error('拼车区数据表尚未初始化，请先执行 Supabase migration')));
       throw insErr;
     }
 
-    res.json(ok({ id: data?.id, balance: (profile.balance || 0) - boostAmount }));
+    try {
+      await auditApprovedTarget('carpool', data as Record<string, unknown>, 'carpool_auto_published', profile.id, { moderation: 'post_publish' });
+    } catch {
+      // 审计链失败不阻断强时效拼车发布；后台巡检再补。
+    }
+
+    res.json(ok({ id: data?.id, status: 'approved', balance: (profile.balance || 0) - boostAmount }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -1175,6 +1186,130 @@ app.get('/api/lc/carpools/:id/contact', authMiddleware, async (req, res) => {
       leader_contact: carpool.leader_contact || '',
       contact_note: carpool.contact_note || null,
     }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/reports', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const targetType = REPORT_TARGET_TYPES.includes(req.body.targetType) ? req.body.targetType as ReportTargetType : null;
+    const targetId = cleanText(req.body.targetId, 80);
+    const reason = cleanText(req.body.reason, 80);
+    const description = cleanText(req.body.description, 800);
+    if (!targetType || !targetId || !reason) {
+      return res.status(400).json(err(new Error('请选择举报对象和举报原因')));
+    }
+
+    let targetTitle = '';
+    let snapshot: Record<string, unknown> = {};
+    if (targetType === 'carpool') {
+      const { data: item, error: qErr } = await supabase.from('lc_carpools')
+        .select('id, title, poster_id, poster_name, city, event_date, script_name, role_name, content, status')
+        .eq('id', targetId)
+        .single();
+      if (qErr && isMissingRelation(qErr, 'lc_carpools')) return res.status(503).json(err(new Error('拼车区数据表尚未初始化')));
+      if (qErr) throw qErr;
+      if (!item) return res.status(404).json(err(new Error('举报对象不存在')));
+      if (!['approved', 'pending'].includes(item.status)) return res.status(400).json(err(new Error('这条拼车已不在公开处理范围内')));
+      targetTitle = item.title;
+      snapshot = {
+        city: item.city,
+        event_date: item.event_date,
+        script_name: item.script_name,
+        role_name: item.role_name,
+        poster_name: item.poster_name,
+        content_preview: cleanText(item.content, 240),
+      };
+    } else if (targetType === 'ranking') {
+      const { data: item, error: qErr } = await supabase.from('lc_rankings')
+        .select('id, type, subject_name, subject_type, subject_city, author_name, content, status')
+        .eq('id', targetId)
+        .single();
+      if (qErr && isMissingRelation(qErr, 'lc_rankings')) return res.status(503).json(err(new Error('红黑榜数据表尚未初始化')));
+      if (qErr) throw qErr;
+      if (!item) return res.status(404).json(err(new Error('举报对象不存在')));
+      if (item.status !== 'approved') return res.status(400).json(err(new Error('只能举报已公开内容')));
+      targetTitle = item.subject_name;
+      snapshot = {
+        ranking_type: item.type,
+        subject_type: item.subject_type,
+        city: item.subject_city,
+        poster_name: item.author_name,
+        content_preview: cleanText(item.content, 240),
+      };
+    } else if (targetType === 'comment') {
+      const { data: item, error: qErr } = await supabase.from('lc_comments')
+        .select('id, ranking_id, author_name, content, status, is_pinned, pin_label, lc_rankings(subject_name, type)')
+        .eq('id', targetId)
+        .single();
+      if (qErr && isMissingRelation(qErr, 'lc_comments')) return res.status(503).json(err(new Error('评论数据表尚未初始化')));
+      if (qErr) throw qErr;
+      if (!item) return res.status(404).json(err(new Error('举报对象不存在')));
+      if (item.status !== 'approved') return res.status(400).json(err(new Error('只能举报已公开评论')));
+      const ranking = item.lc_rankings as { subject_name?: string; type?: string } | null;
+      targetTitle = `${ranking?.subject_name || '红黑榜'}的评论`;
+      snapshot = {
+        ranking_id: item.ranking_id,
+        ranking_title: ranking?.subject_name || null,
+        ranking_type: ranking?.type || null,
+        poster_name: item.author_name,
+        is_pinned: !!item.is_pinned,
+        pin_label: item.pin_label,
+        content_preview: cleanText(item.content, 240),
+      };
+    } else if (targetType === 'commission') {
+      const { data: item, error: qErr } = await supabase.from('lc_commissions')
+        .select('id, title, poster_name, city, needed_date, target_type, content, status')
+        .eq('id', targetId)
+        .single();
+      if (qErr && isMissingRelation(qErr, 'lc_commissions')) return res.status(503).json(err(new Error('委托需求表尚未初始化')));
+      if (qErr) throw qErr;
+      if (!item) return res.status(404).json(err(new Error('举报对象不存在')));
+      if (item.status !== 'approved') return res.status(400).json(err(new Error('只能举报已公开委托需求')));
+      targetTitle = item.title;
+      snapshot = {
+        city: item.city,
+        needed_date: item.needed_date,
+        target_type: item.target_type,
+        poster_name: item.poster_name,
+        content_preview: cleanText(item.content, 240),
+      };
+    } else if (targetType === 'profile') {
+      const { data: item, error: qErr } = await supabase.from('lc_profiles')
+        .select('id, display_name, role_type, city, bio, is_visible')
+        .eq('id', targetId)
+        .single();
+      if (qErr && isMissingRelation(qErr, 'lc_profiles')) return res.status(503).json(err(new Error('用户档案表尚未初始化')));
+      if (qErr) throw qErr;
+      if (!item) return res.status(404).json(err(new Error('举报对象不存在')));
+      if (!item.is_visible) return res.status(400).json(err(new Error('只能举报已公开主页')));
+      targetTitle = item.display_name;
+      snapshot = {
+        display_name: item.display_name,
+        role_type: item.role_type,
+        city: item.city,
+        content_preview: cleanText(item.bio, 240),
+      };
+    }
+
+    const { data, error: insErr } = await supabase.from('lc_reports').upsert({
+      target_type: targetType,
+      target_id: targetId,
+      target_title: targetTitle,
+      reporter_id: profile.id,
+      reporter_name: profile.display_name,
+      reason,
+      description: description || null,
+      target_snapshot: snapshot,
+      status: 'pending',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'target_type,target_id,reporter_id' }).select('id').single();
+    if (insErr) {
+      if (isMissingRelation(insErr, 'lc_reports')) return res.status(503).json(err(new Error('举报表尚未初始化，请先执行 Supabase migration')));
+      throw insErr;
+    }
+    res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -1419,7 +1554,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -1429,6 +1564,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_transactions').select('*, lc_profiles(display_name, phone)').eq('type', 'recharge').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_certifications').select('*, lc_profiles!inner(display_name, phone)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_carpools').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_reports').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
     ]);
     res.json(ok({
       profiles: profiles || [],
@@ -1440,6 +1576,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       transactions: transactions || [],
       certifications: certifications || [],
       carpools: carpools || [],
+      reports: reports || [],
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2046,6 +2183,55 @@ app.put('/api/lc/admin/carpools/:id/reject', authMiddleware, adminMiddleware, as
       .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
       .eq('id', req.params.id);
     res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const action = req.body?.action === 'dismissed' ? 'dismissed' : 'resolved';
+    const handlerNote = cleanText(req.body?.handlerNote, 500);
+    const hideTarget = !!req.body?.hideTarget;
+    const rejectReason = cleanText(req.body?.rejectReason, 300) || '举报处理后下架';
+    const { data: report, error: rErr } = await supabase.from('lc_reports')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (rErr) throw rErr;
+    if (!report) return res.status(404).json(err(new Error('举报不存在')));
+
+    if (hideTarget) {
+      if (report.target_type === 'carpool') {
+        await supabase.from('lc_carpools')
+          .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
+          .eq('id', report.target_id);
+      } else if (report.target_type === 'ranking') {
+        await supabase.from('lc_rankings')
+          .update({ status: 'rejected' })
+          .eq('id', report.target_id);
+      } else if (report.target_type === 'comment') {
+        await supabase.from('lc_comments')
+          .update({ status: 'rejected' })
+          .eq('id', report.target_id);
+      } else if (report.target_type === 'commission') {
+        await supabase.from('lc_commissions')
+          .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
+          .eq('id', report.target_id);
+      } else if (report.target_type === 'profile') {
+        await supabase.from('lc_profiles')
+          .update({ is_visible: false, reject_reason: rejectReason, updated_at: new Date().toISOString() })
+          .eq('id', report.target_id);
+      }
+    }
+
+    await supabase.from('lc_reports')
+      .update({
+        status: action,
+        handler_id: getReq(req, 'creatorId'),
+        handler_note: handlerNote || (hideTarget ? rejectReason : null),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id);
+    res.json(ok({ status: action, hidden: hideTarget }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

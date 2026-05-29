@@ -3,6 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { AuthData, Commission, CommissionApplication } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
+import ResponsibilityNotice from '../components/ResponsibilityNotice';
+import ReportModal from '../components/ReportModal';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -47,6 +49,7 @@ export default function Commissions() {
   const [applicationError, setApplicationError] = useState('');
   const [applicationDone, setApplicationDone] = useState(false);
   const [submittingApplication, setSubmittingApplication] = useState(false);
+  const [reportTarget, setReportTarget] = useState<Commission | null>(null);
   const submitted = searchParams.get('submitted') === '1';
 
   useEffect(() => {
@@ -121,6 +124,15 @@ export default function Commissions() {
     setApplicationLetter('');
     setApplicationError('');
     setApplicationDone(false);
+  };
+
+  const openReport = (item: Commission) => {
+    const auth = getAuth();
+    if (!auth) {
+      navigate('/login');
+      return;
+    }
+    setReportTarget(item);
   };
 
   const closeApplicationModal = () => {
@@ -210,6 +222,10 @@ export default function Commissions() {
             已提交成功，正在等待人工审核。审核通过后会公开展示在委托需求墙；在此之前，只有你能在下方“我的委托进度”看到它。
           </div>
         )}
+
+        <div style={{ marginBottom: 18 }}>
+          <ResponsibilityNotice compact />
+        </div>
 
         {privateItems.length > 0 && (
           <section style={{ marginBottom: 26, borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'rgba(255,250,242,0.86)', padding: 18, boxShadow: '0 12px 30px rgba(31,41,55,0.06)' }}>
@@ -309,6 +325,7 @@ export default function Commissions() {
                 key={item.id}
                 item={item}
                 onApply={() => openApplicationModal(item)}
+                onReport={() => openReport(item)}
                 applied={sentApplicationIds.has(item.id)}
                 ownItem={getAuth()?.id === item.poster_id}
               />
@@ -355,11 +372,21 @@ export default function Commissions() {
           </div>
         </div>
       )}
+
+      {reportTarget && (
+        <ReportModal
+          targetType="commission"
+          targetId={reportTarget.id}
+          targetTitle={reportTarget.title}
+          authToken={getAuth()?.token || ''}
+          onClose={() => setReportTarget(null)}
+        />
+      )}
     </div>
   );
 }
 
-function CommissionCard({ item, showStatus, onDelete, onApply, applied, ownItem }: { item: Commission; showStatus?: boolean; onDelete?: () => void; onApply?: () => void; applied?: boolean; ownItem?: boolean }) {
+function CommissionCard({ item, showStatus, onDelete, onApply, onReport, applied, ownItem }: { item: Commission; showStatus?: boolean; onDelete?: () => void; onApply?: () => void; onReport?: () => void; applied?: boolean; ownItem?: boolean }) {
   return (
     <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: '0 12px 30px rgba(31,41,55,0.06)' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -387,18 +414,28 @@ function CommissionCard({ item, showStatus, onDelete, onApply, applied, ownItem 
           删除
         </button>
       )}
-      {onApply && (
-        <button onClick={onApply} disabled={applied || ownItem}
-          style={{
-            width: '100%', marginTop: 14, padding: '10px 14px', borderRadius: 10,
-            border: applied || ownItem ? '1px solid rgba(125,147,170,0.18)' : '1px solid rgba(217,168,87,0.28)',
-            background: applied || ownItem ? 'rgba(241,245,249,0.8)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
-            color: applied || ownItem ? 'rgba(71,85,105,0.52)' : '#925f18',
-            cursor: applied || ownItem ? 'not-allowed' : 'pointer',
-            fontWeight: 900,
-          }}>
-          {ownItem ? '自己的需求' : applied ? '已提交申请' : '我要接单'}
-        </button>
+      {(onApply || onReport) && (
+        <div style={{ display: 'grid', gridTemplateColumns: onApply && onReport ? '1fr auto' : '1fr', gap: 10, marginTop: 14, alignItems: 'center' }}>
+          {onApply && (
+            <button onClick={onApply} disabled={applied || ownItem}
+              style={{
+                width: '100%', padding: '10px 14px', borderRadius: 10,
+                border: applied || ownItem ? '1px solid rgba(125,147,170,0.18)' : '1px solid rgba(217,168,87,0.28)',
+                background: applied || ownItem ? 'rgba(241,245,249,0.8)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
+                color: applied || ownItem ? 'rgba(71,85,105,0.52)' : '#925f18',
+                cursor: applied || ownItem ? 'not-allowed' : 'pointer',
+                fontWeight: 900,
+              }}>
+              {ownItem ? '自己的需求' : applied ? '已提交申请' : '我要接单'}
+            </button>
+          )}
+          {onReport && (
+            <button onClick={onReport}
+              style={{ padding: '10px 13px', borderRadius: 10, border: '1px solid rgba(185,28,28,0.18)', background: 'rgba(254,242,242,0.86)', color: 'rgba(185,28,28,0.78)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800 }}>
+              举报
+            </button>
+          )}
+        </div>
       )}
     </article>
   );

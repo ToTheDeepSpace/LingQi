@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
 import type { AuthData } from '../types';
+import ResponsibilityNotice from '../components/ResponsibilityNotice';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -115,6 +116,10 @@ export default function CreateCommission() {
 
           <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(217,168,87,0.1)', border: '1px solid rgba(217,168,87,0.24)', color: '#65401c', fontSize: '0.84rem', marginBottom: 22 }}>
             以 <strong style={{ color: '#925f18' }}>{auth.display_name}</strong> 的身份发布。AI 填表助手接口已预留，当前先由你手动填写。
+          </div>
+
+          <div style={{ marginBottom: 22 }}>
+            <ResponsibilityNotice />
           </div>
 
           <div style={{ display: 'grid', gap: 16 }}>

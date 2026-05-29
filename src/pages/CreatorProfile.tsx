@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { Availability, Creator, Service, Portfolio, SocialSnapshot } from '../types';
+import ReportModal from '../components/ReportModal';
 
 const API  = '/api';
 const C    = '#fffdf8';
@@ -23,8 +24,21 @@ const card: React.CSSProperties = {
   boxShadow: '0 14px 34px rgba(31,41,55,0.06)',
 };
 
+function getAuth(): { token: string } | null {
+  try {
+    const stored = localStorage.getItem('lc_creator');
+    if (!stored) return null;
+    const data = JSON.parse(stored);
+    if (!data?.token) return null;
+    const payload = JSON.parse(atob(data.token.split('.')[1]));
+    if (payload.exp * 1000 < Date.now()) return null;
+    return { token: data.token };
+  } catch { return null; }
+}
+
 export default function CreatorProfile() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [creator, setCreator]     = useState<Creator | null>(null);
   const [services, setServices]   = useState<Service[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
@@ -38,6 +52,7 @@ export default function CreatorProfile() {
   const [formMsg, setFormMsg]           = useState('');
   const [paymentProof, setPaymentProof] = useState('');
   const [contactSent, setContactSent]   = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -79,6 +94,15 @@ export default function CreatorProfile() {
     padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)',
     backgroundColor: '#fff', color: INK, fontSize: '0.875rem',
     outline: 'none', width: '100%', boxSizing: 'border-box',
+  };
+
+  const openReport = () => {
+    const auth = getAuth();
+    if (!auth) {
+      navigate('/login');
+      return;
+    }
+    setReportOpen(true);
   };
 
   if (loading) return (
@@ -169,6 +193,11 @@ export default function CreatorProfile() {
                 {creator.is_realname && <Badge>⭐ 实名</Badge>}
                 {creator.travel_status && <Badge>{creator.travel_status}</Badge>}
                 {creator.contact_unlock_enabled && <Badge>预约意向金 ¥{creator.contact_intent_amount || 0}</Badge>}
+                <button
+                  onClick={openReport}
+                  style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(254,242,242,0.86)', border: '1px solid rgba(185,28,28,0.18)', color: 'rgba(185,28,28,0.78)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
+                  举报主页
+                </button>
               </div>
             </div>
           </div>
@@ -335,6 +364,16 @@ export default function CreatorProfile() {
           </div>
         </div>
       </div>
+
+      {reportOpen && (
+        <ReportModal
+          targetType="profile"
+          targetId={creator.id}
+          targetTitle={creator.display_name}
+          authToken={getAuth()?.token || ''}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>

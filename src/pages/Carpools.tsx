@@ -4,6 +4,8 @@ import type { AuthData, Carpool, CarpoolApplication } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { formatDetailedSubsidy } from '../lib/carpoolMessage';
+import ResponsibilityNotice from '../components/ResponsibilityNotice';
+import ReportModal from '../components/ReportModal';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -43,7 +45,8 @@ export default function Carpools() {
   const [applyDone, setApplyDone] = useState(false);
   const [submittingApply, setSubmittingApply] = useState(false);
   const [contactModal, setContactModal] = useState<{ item: Carpool; loading: boolean; error: string; contact?: { leader_contact: string; contact_note: string | null } } | null>(null);
-  const submitted = searchParams.get('submitted') === '1';
+  const [reportModal, setReportModal] = useState<Carpool | null>(null);
+  const published = searchParams.get('published') === '1' || searchParams.get('submitted') === '1';
 
   const loadPublic = useMemo(() => async () => {
     setLoading(true);
@@ -159,6 +162,12 @@ export default function Carpools() {
     }
   };
 
+  const openReport = (item: Carpool) => {
+    const auth = getAuth();
+    if (!auth) return navigate('/login');
+    setReportModal(item);
+  };
+
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
       <div style={{ background: `radial-gradient(circle at 18% 0%, rgba(217,168,87,0.16), transparent 34%), linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '52px 20px 42px' }}>
@@ -176,9 +185,9 @@ export default function Carpools() {
       </div>
 
       <div style={{ maxWidth: 1060, margin: '0 auto', padding: '28px 20px 80px' }}>
-        {submitted && (
+        {published && (
           <div style={{ marginBottom: 18, borderRadius: 12, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(217,168,87,0.12)', padding: '14px 16px', color: '#65401c', lineHeight: 1.7 }}>
-            拼车已提交，正在等待人工审核。审核通过后会进入拼车区；如果你填了店家信息，它会同时成为店家线索。
+            拼车已发布，会立即进入拼车区。平台采用先展示、后治理：如被举报或发现违规，管理员会后置处理并保留记录。
           </div>
         )}
 
@@ -232,6 +241,10 @@ export default function Carpools() {
           </div>
         </section>
 
+        <div style={{ marginBottom: 22 }}>
+          <ResponsibilityNotice />
+        </div>
+
         <section style={{ borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(135deg, rgba(255,250,242,0.9), rgba(239,246,255,0.78))', padding: 18, marginBottom: 22 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
@@ -262,6 +275,7 @@ export default function Carpools() {
                 item={item}
                 onApply={() => openApply(item)}
                 onContact={() => void openContact(item)}
+                onReport={() => openReport(item)}
                 applied={sentIds.has(item.id)}
                 ownItem={getAuth()?.id === item.poster_id}
               />
@@ -327,11 +341,21 @@ export default function Carpools() {
           </div>
         </div>
       )}
+
+      {reportModal && (
+        <ReportModal
+          targetType="carpool"
+          targetId={reportModal.id}
+          targetTitle={reportModal.title}
+          authToken={getAuth()?.token || ''}
+          onClose={() => setReportModal(null)}
+        />
+      )}
     </div>
   );
 }
 
-function CarpoolCard({ item, showStatus, onApply, onContact, applied, ownItem }: { item: Carpool; showStatus?: boolean; onApply?: () => void; onContact?: () => void; applied?: boolean; ownItem?: boolean }) {
+function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, ownItem }: { item: Carpool; showStatus?: boolean; onApply?: () => void; onContact?: () => void; onReport?: () => void; applied?: boolean; ownItem?: boolean }) {
   const subsidyText = formatDetailedSubsidy(item);
   return (
     <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: item.boost_amount > 0 ? '0 16px 36px rgba(217,168,87,0.18)' : '0 12px 30px rgba(31,41,55,0.06)' }}>
@@ -358,8 +382,8 @@ function CarpoolCard({ item, showStatus, onApply, onContact, applied, ownItem }:
         <span>{item.poster_is_realname ? '⭐ ' : ''}{item.poster_name}</span>
         <span>{item.created_at?.slice(0, 10)}</span>
       </div>
-      {(onApply || onContact) && (
-        <div style={{ display: 'grid', gridTemplateColumns: onApply && onContact ? '1fr 1fr' : '1fr', gap: 10, marginTop: 14 }}>
+      {(onApply || onContact || onReport) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))', gap: 10, marginTop: 14 }}>
           {onApply && (
             <button onClick={onApply} disabled={applied || ownItem}
               style={{
@@ -380,6 +404,15 @@ function CarpoolCard({ item, showStatus, onApply, onContact, applied, ownItem }:
                 background: 'rgba(239,246,255,0.86)', color: '#275389', cursor: 'pointer', fontWeight: 900,
               }}>
               联系车头
+            </button>
+          )}
+          {onReport && (
+            <button onClick={onReport}
+              style={{
+                padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(185,28,28,0.18)',
+                background: 'rgba(254,242,242,0.82)', color: '#b91c1c', cursor: 'pointer', fontWeight: 900,
+              }}>
+              举报
             </button>
           )}
         </div>

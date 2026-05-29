@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
+import ResponsibilityNotice from '../components/ResponsibilityNotice';
+import ReportModal, { type ReportTargetType } from '../components/ReportModal';
 
 const API = '/api';
 const C = '#f6efe4';
@@ -85,6 +87,7 @@ type VoteModal = { id: string; voteType: 'like' | 'dislike' | 'joy' } | null;
 type CommentModal = { rankingId: string } | null;
 type RelatedFile = { name: string; url: string; type?: string };
 type RelatedCertModal = { rankingId: string; commentId: string } | null;
+type ReportTarget = { targetType: ReportTargetType; targetId: string; targetTitle: string };
 
 const card: React.CSSProperties = {
   backgroundColor: '#fffdf8',
@@ -327,6 +330,7 @@ export default function Rankings() {
 
   const [openVotes, setOpenVotes] = useState<Set<string>>(new Set());
   const [votesMap, setVotesMap] = useState<Record<string, VoteRecord[]>>({});
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
 
   const auth = getAuth();
 
@@ -683,6 +687,12 @@ export default function Rankings() {
     setCommentError('');
   };
 
+  const openReportModal = (target: ReportTarget) => {
+    const current = requireAuth();
+    if (!current) return;
+    setReportTarget(target);
+  };
+
   const tabBtn = (t: 'red' | 'black' | 'white', label: string, color: string) => (
     <button onClick={() => setTab(t)}
       style={{
@@ -788,6 +798,9 @@ export default function Rankings() {
         }}>
           <strong style={{ color: GOLD }}>审核规则：</strong>
           审核员尽量保持中立客观；主帖必须附带证据；涉及第三方隐私的信息请先打码；微信认证后一人一票，不可多投。相关方可先发表普通评论，评论通过后再认证为置顶回应。
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          <ResponsibilityNotice compact />
         </div>
 
         {loading && (
@@ -986,6 +999,11 @@ export default function Rankings() {
                             <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.72rem' }}>
                               {renderName(c.author_name, c.is_realname)} · {c.created_at?.slice(0, 10)}
                             </span>
+                            <button
+                              onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${item.subject_name} 的置顶回应` })}
+                              style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'rgba(185,28,28,0.62)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 800 }}>
+                              举报
+                            </button>
                           </div>
                           <p style={{ color: 'rgba(31,41,55,0.88)', fontSize: '0.82rem', lineHeight: 1.65, margin: 0 }}>
                             {c.content}
@@ -1011,6 +1029,13 @@ export default function Rankings() {
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
                       onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>
                       {showVotes ? '收起投票记录' : '查看投票记录'}
+                    </button>
+                    <button
+                      onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: item.subject_name })}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(185,28,28,0.68)', fontSize: '0.8rem', padding: '4px 0', fontWeight: 700 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#991b1b')}
+                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(185,28,28,0.68)')}>
+                      举报
                     </button>
                     <div style={{ flex: 1 }} />
                   </div>
@@ -1048,6 +1073,11 @@ export default function Rankings() {
                             )}
                             <button onClick={() => likeComment(item.id, c.id)} disabled={likingComment === c.id}
                               style={{ marginLeft: 'auto', border: 'none', background: 'none', color: '#34d399', cursor: 'pointer', fontSize: '0.75rem' }}>👍 {c.likes}</button>
+                            <button
+                              onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${item.subject_name} 的评论` })}
+                              style={{ border: 'none', background: 'none', color: 'rgba(185,28,28,0.62)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>
+                              举报
+                            </button>
                           </span>
                         </div>
                       ))}
@@ -1270,6 +1300,16 @@ export default function Rankings() {
             )}
           </div>
         </div>
+      )}
+
+      {reportTarget && (
+        <ReportModal
+          targetType={reportTarget.targetType}
+          targetId={reportTarget.targetId}
+          targetTitle={reportTarget.targetTitle}
+          authToken={getAuth()?.token || ''}
+          onClose={() => setReportTarget(null)}
+        />
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

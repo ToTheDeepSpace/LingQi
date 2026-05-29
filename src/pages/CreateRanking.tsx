@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PROVINCE_CITIES } from '../constants/cities';
+import ResponsibilityNotice from '../components/ResponsibilityNotice';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -316,6 +317,8 @@ export default function CreateRanking() {
               accepted={rulesAccepted}
               onAcceptedChange={setRulesAccepted}
             />
+
+            <ResponsibilityNotice />
 
             {/* 对象类型 */}
             <div>

@@ -174,8 +174,20 @@ type CertReview = {
   lc_profiles?: { display_name?: string; phone?: string };
 };
 
+type ReportReview = {
+  id: string;
+  target_type: 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile';
+  target_id: string;
+  target_title?: string | null;
+  reporter_name: string;
+  reason: string;
+  description?: string | null;
+  target_snapshot?: Record<string, unknown> | null;
+  created_at: string;
+};
+
 type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert';
-type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'wallet' | 'certs';
+type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'reports' | 'wallet' | 'certs';
 
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.04)',
@@ -219,6 +231,7 @@ export default function Admin() {
   const [claims, setClaims] = useState<ClaimReview[]>([]);
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
   const [carpools, setCarpools] = useState<CarpoolReview[]>([]);
+  const [reports, setReports] = useState<ReportReview[]>([]);
   const [transactions, setTransactions] = useState<TransactionReview[]>([]);
   const [certs, setCerts] = useState<CertReview[]>([]);
 const [loading, setLoading] = useState(false);
@@ -250,6 +263,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setCarpools((d.data as { carpools: CarpoolReview[] }).carpools || []);
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
+        setReports((d.data as { reports: ReportReview[] }).reports || []);
       } else {
         const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '加载失败');
         setError(errMsg);
@@ -357,6 +371,22 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
+  const resolveReport = async (id: string, action: 'resolved' | 'dismissed', hideTarget = false) => {
+    await fetch(`${API}/lc/admin/reports/${id}/resolve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action,
+        hideTarget,
+        rejectReason: hideTarget ? '举报处理后下架' : undefined,
+        handlerNote: action === 'dismissed' ? '已看，暂不处理' : '已处理',
+      }),
+    });
+    setReports(prev => prev.filter(item => item.id !== id));
+    if (hideTarget) setCarpools(prev => prev.filter(item => item.id !== id));
+    void loadData();
+  };
+
   const approveTransaction = async (id: string) => {
     setTransactionLoading(true);
     setTransactionMsg(null);
@@ -434,6 +464,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setClaims([]);
     setCommissions([]);
     setCarpools([]);
+    setReports([]);
     setTransactions([]);
     setCerts([]);
   };
@@ -500,6 +531,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             { label: '充值', value: transactions.length, color: '#22c55e' },
             { label: '委托需求', value: commissions.length, color: '#fbbf24' },
             { label: '拼车', value: carpools.length, color: '#14b8a6' },
+            { label: '举报', value: reports.length, color: '#f87171' },
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
             { label: '评论', value: comments.length, color: '#38bdf8' },
             { label: '相关方', value: claims.length, color: '#f97316' },
@@ -519,6 +551,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           <button style={tabStyle(tab === 'wallet')} onClick={() => setTab('wallet')}>充值 {transactions.length > 0 && `(${transactions.length})`}</button>
           <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
           <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
+          <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
           <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
           <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
@@ -718,6 +751,40 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     <Actions vertical>
                       <ActionButton kind="ok" onClick={() => approveCarpool(c.id)}>通过并同步剧司辰</ActionButton>
                       <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'carpool')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'reports' && (
+              <ListEmpty empty={reports.length === 0} text="暂无待处理举报">
+                {reports.map(r => (
+                  <Row key={r.id} accent="#f87171">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={r.target_title || r.target_id} pill={r.target_type === 'carpool' ? '拼车举报' : '举报'} />
+                      <Meta>
+                        举报人：{r.reporter_name}
+                        {` · 原因：${r.reason}`}
+                        {r.created_at ? ` · ${r.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      {r.description && <ContentBox>{r.description}</ContentBox>}
+                      {r.target_snapshot && (
+                        <Proof>
+                          {typeof r.target_snapshot.city === 'string' ? `城市：${r.target_snapshot.city} ` : ''}
+                          {typeof r.target_snapshot.event_date === 'string' ? `日期：${r.target_snapshot.event_date} ` : ''}
+                          {typeof r.target_snapshot.script_name === 'string' ? `本名：${r.target_snapshot.script_name} ` : ''}
+                          {typeof r.target_snapshot.poster_name === 'string' ? `发布者：${r.target_snapshot.poster_name}` : ''}
+                          {typeof r.target_snapshot.content_preview === 'string' && (
+                            <div style={{ marginTop: 6, lineHeight: 1.7 }}>内容摘录：{r.target_snapshot.content_preview}</div>
+                          )}
+                        </Proof>
+                      )}
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="bad" onClick={() => resolveReport(r.id, 'resolved', true)}>下架并处理</ActionButton>
+                      <ActionButton kind="ok" onClick={() => resolveReport(r.id, 'resolved')}>标记已处理</ActionButton>
+                      <ActionButton onClick={() => resolveReport(r.id, 'dismissed')}>暂不处理</ActionButton>
                     </Actions>
                   </Row>
                 ))}
