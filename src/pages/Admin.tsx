@@ -22,7 +22,20 @@ const SUBJECT_LABEL: Record<string, string> = {
   player: '玩家',
 };
 
-function formatCarpoolSubsidy(item: { subsidy_mode: 'none' | 'asking' | 'offering'; subsidy_amount: number; subsidy_note?: string | null }) {
+function formatCarpoolSubsidy(item: {
+  subsidy_mode: 'none' | 'asking' | 'offering';
+  subsidy_type?: 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
+  subsidy_amount: number;
+  subsidy_discount?: number | null;
+  subsidy_note?: string | null;
+}) {
+  const type = item.subsidy_type || 'none';
+  if (type === 'half_price') return item.subsidy_note || '半价';
+  if (type === 'free_ticket') return item.subsidy_note || '免票';
+  if (type === 'discount') return item.subsidy_note || `${item.subsidy_discount || ''}折`;
+  if (type === 'a_subsidy') return item.subsidy_note || (item.subsidy_amount > 0 ? `A补 ${item.subsidy_amount}` : 'A补');
+  if (type === 'fixed_deduct') return item.subsidy_note || (item.subsidy_amount > 0 ? `减 ${item.subsidy_amount}` : '减价');
+  if (type === 'custom') return item.subsidy_note || '补贴说明';
   if (item.subsidy_mode === 'none') return '无补贴';
   const label = item.subsidy_mode === 'asking' ? '想吃补' : '车头出补';
   const amount = item.subsidy_amount > 0 ? `${item.subsidy_amount} 元` : '';
@@ -124,7 +137,9 @@ type CarpoolReview = {
   role_note?: string | null;
   needed_count: number;
   subsidy_mode: 'none' | 'asking' | 'offering';
+  subsidy_type?: 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
   subsidy_amount: number;
+  subsidy_discount?: number | null;
   subsidy_note?: string | null;
   store_name?: string | null;
   store_address?: string | null;

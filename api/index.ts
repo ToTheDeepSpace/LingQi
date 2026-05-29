@@ -115,6 +115,8 @@ async function getAuthedProfile(req: express.Request) {
 
 type RelatedProofFile = { name: string; url: string; type?: string };
 type SubsidyMode = 'none' | 'asking' | 'offering';
+type CarpoolSubsidyType = 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
+const CARPOOL_SUBSIDY_TYPES: CarpoolSubsidyType[] = ['none', 'half_price', 'free_ticket', 'discount', 'a_subsidy', 'fixed_deduct', 'custom'];
 
 function sanitizeRelatedFiles(input: unknown): RelatedProofFile[] {
   if (!Array.isArray(input)) return [];
@@ -467,10 +469,17 @@ function addHoursToClock(time: string, hours: number) {
 }
 
 function formatCarpoolSubsidy(carpool: Record<string, unknown>) {
+  const subsidyType = cleanText(carpool.subsidy_type, 40) as CarpoolSubsidyType;
+  const note = cleanText(carpool.subsidy_note, 300);
+  if (subsidyType === 'half_price') return note || '半价';
+  if (subsidyType === 'free_ticket') return note || '免票';
+  if (subsidyType === 'discount') return note || `${Number(carpool.subsidy_discount || 0) || ''}折`;
+  if (subsidyType === 'a_subsidy') return note || (Number(carpool.subsidy_amount || 0) > 0 ? `A补 ${Number(carpool.subsidy_amount || 0)}` : 'A补');
+  if (subsidyType === 'fixed_deduct') return note || (Number(carpool.subsidy_amount || 0) > 0 ? `减 ${Number(carpool.subsidy_amount || 0)}` : '减价');
+  if (subsidyType === 'custom') return note || '补贴说明';
   if (carpool.subsidy_mode === 'none') return '无补贴';
   const label = carpool.subsidy_mode === 'asking' ? '想吃补' : '车头出补';
   const amount = Number(carpool.subsidy_amount || 0);
-  const note = cleanText(carpool.subsidy_note, 300);
   const amountText = amount > 0 ? `${amount} 元` : '';
   if (amountText && note) return `${label} ${amountText} · ${note}`;
   if (amountText) return `${label} ${amountText}`;
@@ -1013,7 +1022,15 @@ app.get('/api/lc/carpools', async (req, res) => {
     const date = req.query.date as string;
     const script = req.query.script as string;
     let query = supabase.from('lc_carpools')
-      .select('*')
+      .select(`
+        id, poster_id, poster_name, poster_is_realname, title, city,
+        event_date, start_time, deadline_date, deadline_time,
+        script_name, role_name, role_note,
+        store_name, store_city, store_address, store_suggestion_status,
+        subsidy_mode, subsidy_type, subsidy_amount, subsidy_discount, subsidy_note,
+        needed_count, joined_count, content, boost_amount, status, reject_reason,
+        juzhanggui_sync_status, juzhanggui_schedule_id, created_at, updated_at
+      `)
       .eq('status', 'approved')
       .order('boost_amount', { ascending: false })
       .order('event_date', { ascending: true })
@@ -1065,8 +1082,13 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
     const contactNote = cleanText(req.body.contactNote, 300);
     const content = cleanText(req.body.content, 1600);
     const subsidyMode = (['none', 'asking', 'offering'].includes(req.body.subsidyMode) ? req.body.subsidyMode : 'none') as SubsidyMode;
-    const subsidyAmount = subsidyMode === 'none' ? 0 : parseCoinAmount(req.body.subsidyAmount, 0);
-    const subsidyNote = subsidyMode === 'none' ? '' : cleanText(req.body.subsidyNote, 300);
+    const subsidyType = (CARPOOL_SUBSIDY_TYPES.includes(req.body.subsidyType) ? req.body.subsidyType : 'none') as CarpoolSubsidyType;
+    const subsidyAmount = subsidyType === 'none' && subsidyMode === 'none' ? 0 : parseCoinAmount(req.body.subsidyAmount, 0);
+    const rawDiscount = Number.parseFloat(String(req.body.subsidyDiscount ?? ''));
+    const subsidyDiscount = subsidyType === 'discount' && Number.isFinite(rawDiscount) && rawDiscount > 0 && rawDiscount <= 10 ? rawDiscount : null;
+    const subsidyNote = subsidyType === 'none' && subsidyMode === 'none' ? '' : cleanText(req.body.subsidyNote, 300);
+    const rawMessage = cleanText(req.body.rawMessage, 2000);
+    const generatedMessage = cleanText(req.body.generatedMessage, 2000);
     const neededCount = Math.min(20, Math.max(1, parseCoinAmount(req.body.neededCount, 1)));
     const boostAmount = parseCoinAmount(req.body.boostAmount, 0);
 
@@ -1109,7 +1131,9 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       store_verify_note: storeVerifyNote || null,
       store_suggestion_status: storeName ? 'pending' : 'none',
       subsidy_mode: subsidyMode,
+      subsidy_type: subsidyType,
       subsidy_amount: subsidyAmount,
+      subsidy_discount: subsidyDiscount,
       subsidy_note: subsidyNote || null,
       needed_count: neededCount,
       leader_contact: leaderContact,
@@ -1120,6 +1144,8 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
         source: 'lingqi_carpool_form',
         juzhanggui_sync: 'on_admin_approval',
         subsidy_unit: 'cash_or_ticket_discount',
+        raw_message: rawMessage || null,
+        generated_message: generatedMessage || null,
       },
     }).select('id').single();
     if (insErr) {
@@ -1128,6 +1154,27 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
     }
 
     res.json(ok({ id: data?.id, balance: (profile.balance || 0) - boostAmount }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/carpools/:id/contact', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data: carpool, error: cErr } = await supabase.from('lc_carpools')
+      .select('id, poster_id, status, leader_contact, contact_note')
+      .eq('id', req.params.id)
+      .single();
+    if (cErr && isMissingRelation(cErr, 'lc_carpools')) return res.status(503).json(err(new Error('拼车区数据表尚未初始化')));
+    if (cErr) throw cErr;
+    if (!carpool) return res.status(404).json(err(new Error('拼车不存在')));
+    if (carpool.status !== 'approved' && carpool.poster_id !== profile.id) {
+      return res.status(403).json(err(new Error('这条拼车尚未公开')));
+    }
+    res.json(ok({
+      leader_contact: carpool.leader_contact || '',
+      contact_note: carpool.contact_note || null,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -1231,7 +1278,7 @@ app.get('/api/lc/carpools/assistant/compensation', async (req, res) => {
     const role = cleanText(req.query.role, 80);
     const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
     let query = supabase.from('lc_carpools')
-      .select('city, script_name, role_name, subsidy_mode, subsidy_amount, subsidy_note, event_date')
+      .select('city, script_name, role_name, subsidy_mode, subsidy_type, subsidy_amount, subsidy_discount, subsidy_note, event_date')
       .eq('status', 'approved')
       .gte('created_at', since)
       .neq('subsidy_mode', 'none')

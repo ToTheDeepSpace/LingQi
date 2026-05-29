@@ -69,6 +69,8 @@ export interface AuthData {
   role: string;
 }
 
+export type CarpoolSubsidyType = 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
+
 export interface SocialSnapshot {
   url: string;
   title?: string;
@@ -130,7 +132,9 @@ export interface Carpool {
   store_verify_note: string | null;
   store_suggestion_status: 'none' | 'pending' | 'linked';
   subsidy_mode: 'none' | 'asking' | 'offering';
+  subsidy_type: CarpoolSubsidyType;
   subsidy_amount: number;
+  subsidy_discount: number | null;
   subsidy_note: string | null;
   needed_count: number;
   joined_count: number;

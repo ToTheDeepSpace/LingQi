@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { AuthData, Carpool, CarpoolApplication } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
+import { formatDetailedSubsidy } from '../lib/carpoolMessage';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -20,17 +21,6 @@ function getAuth(): AuthData | null {
     if (payload.exp * 1000 < Date.now()) return null;
     return data;
   } catch { return null; }
-}
-
-function formatSubsidy(item: Pick<Carpool, 'subsidy_mode' | 'subsidy_amount' | 'subsidy_note'>) {
-  if (item.subsidy_mode === 'none') return '无补贴';
-  const label = item.subsidy_mode === 'asking' ? '想吃补' : '车头出补';
-  const amount = item.subsidy_amount > 0 ? `${item.subsidy_amount} 元` : '';
-  const note = item.subsidy_note?.trim();
-  if (amount && note) return `${label} ${amount} · ${note}`;
-  if (amount) return `${label} ${amount}`;
-  if (note) return `${label} · ${note}`;
-  return label;
 }
 
 export default function Carpools() {
@@ -52,6 +42,7 @@ export default function Carpools() {
   const [applyError, setApplyError] = useState('');
   const [applyDone, setApplyDone] = useState(false);
   const [submittingApply, setSubmittingApply] = useState(false);
+  const [contactModal, setContactModal] = useState<{ item: Carpool; loading: boolean; error: string; contact?: { leader_contact: string; contact_note: string | null } } | null>(null);
   const submitted = searchParams.get('submitted') === '1';
 
   const loadPublic = useMemo(() => async () => {
@@ -146,6 +137,25 @@ export default function Carpools() {
       setApplyError('网络错误，请重试');
     } finally {
       setSubmittingApply(false);
+    }
+  };
+
+  const openContact = async (item: Carpool) => {
+    const auth = getAuth();
+    if (!auth) return navigate('/login');
+    setContactModal({ item, loading: true, error: '' });
+    try {
+      const r = await fetch(`${API}/lc/carpools/${item.id}/contact`, {
+        headers: { Authorization: `Bearer ${auth.token}` },
+      });
+      const d = await r.json();
+      if (d.success) {
+        setContactModal({ item, loading: false, error: '', contact: d.data });
+      } else {
+        setContactModal({ item, loading: false, error: d.error || '联系方式加载失败' });
+      }
+    } catch {
+      setContactModal({ item, loading: false, error: '网络错误，请重试' });
     }
   };
 
@@ -251,6 +261,7 @@ export default function Carpools() {
                 key={item.id}
                 item={item}
                 onApply={() => openApply(item)}
+                onContact={() => void openContact(item)}
                 applied={sentIds.has(item.id)}
                 ownItem={getAuth()?.id === item.poster_id}
               />
@@ -293,12 +304,35 @@ export default function Carpools() {
           </div>
         </div>
       )}
+
+      {contactModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ width: '100%', maxWidth: 460, borderRadius: 18, border: '1px solid rgba(217,168,87,0.28)', background: '#fffdf8', boxShadow: '0 24px 70px rgba(31,41,55,0.24)', padding: 26 }}>
+            <p style={{ color: GOLD, fontSize: '0.78rem', fontWeight: 900, letterSpacing: '0.04em', marginBottom: 8 }}>联系车头</p>
+            <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.15rem', marginBottom: 12 }}>{contactModal.item.title}</h3>
+            {contactModal.loading && <p style={{ color: MUTED, lineHeight: 1.8 }}>正在读取联系方式...</p>}
+            {!contactModal.loading && contactModal.error && <p style={{ color: '#b91c1c', lineHeight: 1.8 }}>{contactModal.error}</p>}
+            {!contactModal.loading && contactModal.contact && (
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ borderRadius: 12, background: 'rgba(239,246,255,0.82)', border: '1px solid rgba(59,130,246,0.16)', padding: 14 }}>
+                  <Label>车头微信/联系方式</Label>
+                  <p style={{ fontWeight: 900, color: INK, wordBreak: 'break-all' }}>{contactModal.contact.leader_contact || '发布者没有填写联系方式'}</p>
+                </div>
+                {contactModal.contact.contact_note && (
+                  <p style={{ color: MUTED, lineHeight: 1.7, fontSize: '0.86rem', whiteSpace: 'pre-wrap' }}>{contactModal.contact.contact_note}</p>
+                )}
+              </div>
+            )}
+            <button onClick={() => setContactModal(null)} className="btn-gold" style={{ width: '100%', padding: '10px 18px', marginTop: 18 }}>关闭</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function CarpoolCard({ item, showStatus, onApply, applied, ownItem }: { item: Carpool; showStatus?: boolean; onApply?: () => void; applied?: boolean; ownItem?: boolean }) {
-  const subsidyText = formatSubsidy(item);
+function CarpoolCard({ item, showStatus, onApply, onContact, applied, ownItem }: { item: Carpool; showStatus?: boolean; onApply?: () => void; onContact?: () => void; applied?: boolean; ownItem?: boolean }) {
+  const subsidyText = formatDetailedSubsidy(item);
   return (
     <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: item.boost_amount > 0 ? '0 16px 36px rgba(217,168,87,0.18)' : '0 12px 30px rgba(31,41,55,0.06)' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -316,26 +350,39 @@ function CarpoolCard({ item, showStatus, onApply, applied, ownItem }: { item: Ca
         {item.role_note && <span>角色说明：{item.role_note}</span>}
         <span>缺口：{item.joined_count}/{item.needed_count}</span>
         {item.store_name && <span>店家：{item.store_name}{item.store_address ? ` · ${item.store_address}` : ''}</span>}
-        {item.leader_contact && <span>车头联系方式：{item.leader_contact}</span>}
-        {item.contact_note && <span>联系说明：{item.contact_note}</span>}
+        {showStatus && item.leader_contact && <span>车头联系方式：{item.leader_contact}</span>}
+        {showStatus && item.contact_note && <span>联系说明：{item.contact_note}</span>}
         {item.juzhanggui_sync_status === 'synced' && <span>已同步到剧司辰排期草稿</span>}
       </div>
       <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(217,168,87,0.16)', display: 'flex', justifyContent: 'space-between', gap: 12, color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem' }}>
         <span>{item.poster_is_realname ? '⭐ ' : ''}{item.poster_name}</span>
         <span>{item.created_at?.slice(0, 10)}</span>
       </div>
-      {onApply && (
-        <button onClick={onApply} disabled={applied || ownItem}
-          style={{
-            width: '100%', marginTop: 14, padding: '10px 14px', borderRadius: 10,
-            border: applied || ownItem ? '1px solid rgba(125,147,170,0.18)' : '1px solid rgba(217,168,87,0.28)',
-            background: applied || ownItem ? 'rgba(241,245,249,0.8)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
-            color: applied || ownItem ? 'rgba(71,85,105,0.52)' : '#925f18',
-            cursor: applied || ownItem ? 'not-allowed' : 'pointer',
-            fontWeight: 900,
-          }}>
-          {ownItem ? '自己的拼车' : applied ? '已申请上车' : '我要上车'}
-        </button>
+      {(onApply || onContact) && (
+        <div style={{ display: 'grid', gridTemplateColumns: onApply && onContact ? '1fr 1fr' : '1fr', gap: 10, marginTop: 14 }}>
+          {onApply && (
+            <button onClick={onApply} disabled={applied || ownItem}
+              style={{
+                padding: '10px 14px', borderRadius: 10,
+                border: applied || ownItem ? '1px solid rgba(125,147,170,0.18)' : '1px solid rgba(217,168,87,0.28)',
+                background: applied || ownItem ? 'rgba(241,245,249,0.8)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
+                color: applied || ownItem ? 'rgba(71,85,105,0.52)' : '#925f18',
+                cursor: applied || ownItem ? 'not-allowed' : 'pointer',
+                fontWeight: 900,
+              }}>
+              {ownItem ? '自己的拼车' : applied ? '已申请' : '我要上车'}
+            </button>
+          )}
+          {onContact && (
+            <button onClick={onContact}
+              style={{
+                padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(39,83,137,0.24)',
+                background: 'rgba(239,246,255,0.86)', color: '#275389', cursor: 'pointer', fontWeight: 900,
+              }}>
+              联系车头
+            </button>
+          )}
+        </div>
       )}
     </article>
   );
