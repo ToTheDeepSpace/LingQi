@@ -1666,7 +1666,7 @@ app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
       return res.json(ok({ entries: [], daily_roots: [], target: null }));
     }
     if (qErr) throw qErr;
-    const entries = (rawEntries || []) as Array<Record<string, unknown> & { chain_date: string }>;
+    const entries = (rawEntries || []) as unknown as Array<Record<string, unknown> & { chain_date: string }>;
 
     let target: Record<string, unknown> | null = null;
     if (targetType === 'ranking') {
