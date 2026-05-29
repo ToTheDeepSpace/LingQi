@@ -1,6 +1,6 @@
 export interface Creator {
   id: string;
-  phone: string;
+  phone?: string;
   display_name: string;
   avatar: string | null;
   bio: string | null;
@@ -9,7 +9,7 @@ export interface Creator {
   role_type: string;
   social_links: Record<string, string>;
   social_snapshots?: Record<string, SocialSnapshot>;
-  wechat: string | null;
+  wechat?: string | null;
   available_cities?: string[];
   travel_status?: string | null;
   contact_unlock_enabled?: boolean;

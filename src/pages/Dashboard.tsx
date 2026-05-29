@@ -140,7 +140,7 @@ export default function Dashboard() {
     }
 
     Promise.all([
-      fetch(`${API}/lc/creators/${data.id}`).then(r => r.json()),
+      fetch(`${API}/lc/creators/${data.id}`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/creators/${data.id}/availability`).then(r => r.json()),
       fetch(`${API}/lc/rankings/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/commissions/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),

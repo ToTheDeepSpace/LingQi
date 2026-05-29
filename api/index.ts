@@ -60,6 +60,19 @@ function getOptionalCreatorId(req: express.Request) {
   }
 }
 
+function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
+  const safe = { ...profile };
+  delete safe.password_hash;
+  if (!isOwner) {
+    delete safe.phone;
+    delete safe.wechat;
+    delete safe.balance;
+    delete safe.contact_phone;
+    delete safe.contact_wechat;
+  }
+  return safe;
+}
+
 function adminMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
   if ((req as Record<string, unknown>).role !== 'admin') {
     return res.status(403).json(err(new Error('无管理员权限')));
@@ -868,7 +881,7 @@ app.get('/api/lc/creators', async (req, res) => {
       .range(offset, offset + limit - 1);
 
     res.json(ok({
-      items: data || [],
+      items: (data || []).map(profile => sanitizeProfile(profile)),
       total: count || 0,
       page,
       totalPages: Math.ceil((count || 0) / limit),
@@ -882,6 +895,8 @@ app.get('/api/lc/creators/:id', async (req, res) => {
   try {
     const { data: profile } = await supabase.from('lc_profiles').select('*').eq('id', req.params.id).single();
     if (!profile) return res.status(404).json(err(new Error('创作者不存在')));
+    const viewerId = getOptionalCreatorId(req);
+    const profilePayload = sanitizeProfile(profile, viewerId === profile.id);
 
     const [{ data: services }, { data: portfolio }, { data: pendingCerts }] = await Promise.all([
       supabase.from('lc_services').select('*').eq('creator_id', req.params.id).eq('is_active', true),
@@ -893,7 +908,7 @@ app.get('/api/lc/creators/:id', async (req, res) => {
     const hasPendingDmCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'dm');
 
     res.json(ok({
-      ...profile,
+      ...profilePayload,
       services: services || [],
       portfolio: portfolio || [],
       has_pending_shop_cert: hasPendingShopCert,
