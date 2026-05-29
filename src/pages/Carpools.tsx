@@ -11,12 +11,6 @@ const GOLD = '#d9a857';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
-const SUBSIDY_LABEL: Record<string, string> = {
-  none: '无补贴',
-  asking: '吃补',
-  offering: '出补',
-};
-
 function getAuth(): AuthData | null {
   try {
     const stored = localStorage.getItem('lc_creator');
@@ -26,6 +20,17 @@ function getAuth(): AuthData | null {
     if (payload.exp * 1000 < Date.now()) return null;
     return data;
   } catch { return null; }
+}
+
+function formatSubsidy(item: Pick<Carpool, 'subsidy_mode' | 'subsidy_amount' | 'subsidy_note'>) {
+  if (item.subsidy_mode === 'none') return '无补贴';
+  const label = item.subsidy_mode === 'asking' ? '想吃补' : '车头出补';
+  const amount = item.subsidy_amount > 0 ? `${item.subsidy_amount} 元` : '';
+  const note = item.subsidy_note?.trim();
+  if (amount && note) return `${label} ${amount} · ${note}`;
+  if (amount) return `${label} ${amount}`;
+  if (note) return `${label} · ${note}`;
+  return label;
 }
 
 export default function Carpools() {
@@ -151,7 +156,7 @@ export default function Carpools() {
           <div className="gold-line" style={{ marginBottom: 16 }} />
           <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 4vw, 2.7rem)', marginBottom: 10 }}>拼车区</h1>
           <p style={{ color: MUTED, fontSize: '1rem', lineHeight: 1.8, maxWidth: 720 }}>
-            情感本、演绎本、缺角色、缺搭子、缺补贴，都先丢到这里。每条拼车会沉淀城市、日期、剧本、角色和补贴数据，后面直接接剧司辰拼车日历。
+            情感本、演绎本、缺角色、缺搭子、需要现金补贴或票价折扣，都先丢到这里。每条拼车会沉淀城市、日期、剧本、角色和补贴数据，后面直接接剧司辰拼车日历。
           </p>
           <div style={{ marginTop: 22, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <Link to="/carpools/new" className="btn-gold" style={{ padding: '10px 22px', textDecoration: 'none', fontSize: '0.92rem' }}>发布拼车</Link>
@@ -220,9 +225,9 @@ export default function Carpools() {
         <section style={{ borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(135deg, rgba(255,250,242,0.9), rgba(239,246,255,0.78))', padding: 18, marginBottom: 22 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
-              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', fontWeight: 900, marginBottom: 6 }}>AI 补贴助手接口</h2>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', fontWeight: 900, marginBottom: 6 }}>AI 现金补贴助手接口</h2>
               <p style={{ color: MUTED, lineHeight: 1.7, fontSize: '0.86rem', margin: 0 }}>
-                已预留 `/api/lc/carpools/assistant/compensation`。等拼车数据够多，就能按城市、本名、角色给出近期吃补/出补参考。
+                已预留 `/api/lc/carpools/assistant/compensation`。等拼车数据够多，就能按城市、本名、角色给出近期现金补贴和票价折扣参考。
               </p>
             </div>
             <span style={{ alignSelf: 'center', color: '#925f18', fontSize: '0.82rem', fontWeight: 900 }}>先收数据，再让 AI 有话可说</span>
@@ -272,7 +277,7 @@ export default function Carpools() {
                 <div style={{ marginTop: 12 }}>
                   <Label>申请说明 *</Label>
                   <textarea value={applyMessage} onChange={e => setApplyMessage(e.target.value)} rows={6}
-                    placeholder="写清楚你能来的时间、想玩的角色、补贴预期、是否能接受反串/换角色..."
+                    placeholder="写清楚你能来的时间、想玩的角色、现金补贴或票价折扣预期、是否能接受反串/换角色..."
                     style={{ ...inputStyle, resize: 'none', lineHeight: 1.7 }} />
                 </div>
                 {applyError && <p style={{ color: '#b91c1c', fontSize: '0.82rem', marginTop: 10 }}>{applyError}</p>}
@@ -293,7 +298,7 @@ export default function Carpools() {
 }
 
 function CarpoolCard({ item, showStatus, onApply, applied, ownItem }: { item: Carpool; showStatus?: boolean; onApply?: () => void; applied?: boolean; ownItem?: boolean }) {
-  const subsidyText = item.subsidy_mode === 'none' ? '无补贴' : `${SUBSIDY_LABEL[item.subsidy_mode]} ${item.subsidy_amount} 契约币`;
+  const subsidyText = formatSubsidy(item);
   return (
     <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: item.boost_amount > 0 ? '0 16px 36px rgba(217,168,87,0.18)' : '0 12px 30px rgba(31,41,55,0.06)' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>

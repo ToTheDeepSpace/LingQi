@@ -22,6 +22,17 @@ const SUBJECT_LABEL: Record<string, string> = {
   player: '玩家',
 };
 
+function formatCarpoolSubsidy(item: { subsidy_mode: 'none' | 'asking' | 'offering'; subsidy_amount: number; subsidy_note?: string | null }) {
+  if (item.subsidy_mode === 'none') return '无补贴';
+  const label = item.subsidy_mode === 'asking' ? '想吃补' : '车头出补';
+  const amount = item.subsidy_amount > 0 ? `${item.subsidy_amount} 元` : '';
+  const note = item.subsidy_note?.trim();
+  if (amount && note) return `${label} ${amount} · ${note}`;
+  if (amount) return `${label} ${amount}`;
+  if (note) return `${label} · ${note}`;
+  return label;
+}
+
 type ProofFile = { name?: string; url: string; type?: string };
 
 type Profile = {
@@ -114,6 +125,7 @@ type CarpoolReview = {
   needed_count: number;
   subsidy_mode: 'none' | 'asking' | 'offering';
   subsidy_amount: number;
+  subsidy_note?: string | null;
   store_name?: string | null;
   store_address?: string | null;
   leader_contact?: string | null;
@@ -675,7 +687,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         本名：{c.script_name}
                         {c.role_name ? ` · 角色：${c.role_name}` : ''}
                         {` · 缺口：${c.needed_count}`}
-                        {c.subsidy_mode !== 'none' ? ` · ${c.subsidy_mode === 'asking' ? '吃补' : '出补'} ${c.subsidy_amount}` : ' · 无补贴'}
+                        {` · ${formatCarpoolSubsidy(c)}`}
                         {c.boost_amount > 0 ? ` · 加权 ${c.boost_amount}` : ''}
                       </Meta>
                       {(c.store_name || c.leader_contact || c.contact_note) && (

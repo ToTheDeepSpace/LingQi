@@ -131,6 +131,7 @@ export interface Carpool {
   store_suggestion_status: 'none' | 'pending' | 'linked';
   subsidy_mode: 'none' | 'asking' | 'offering';
   subsidy_amount: number;
+  subsidy_note: string | null;
   needed_count: number;
   joined_count: number;
   leader_contact: string | null;

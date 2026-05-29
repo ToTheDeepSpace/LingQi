@@ -43,6 +43,7 @@ export default function CreateCarpool() {
   const [neededCount, setNeededCount] = useState(1);
   const [subsidyMode, setSubsidyMode] = useState<'none' | 'asking' | 'offering'>('none');
   const [subsidyAmount, setSubsidyAmount] = useState(0);
+  const [subsidyNote, setSubsidyNote] = useState('');
   const [storeName, setStoreName] = useState('');
   const [storeAddress, setStoreAddress] = useState('');
   const [storeSourceUrl, setStoreSourceUrl] = useState('');
@@ -89,6 +90,7 @@ export default function CreateCarpool() {
           neededCount,
           subsidyMode,
           subsidyAmount,
+          subsidyNote: subsidyNote.trim(),
           storeName: storeName.trim(),
           storeAddress: storeAddress.trim(),
           storeSourceUrl: storeSourceUrl.trim(),
@@ -118,7 +120,7 @@ export default function CreateCarpool() {
           <div style={{ display: 'grid', gap: 6 }}>
             <Link to="/carpools" style={backLinkStyle}>← 返回拼车区</Link>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>发布拼车</h1>
-            <p style={{ fontSize: '0.82rem', color: MUTED }}>日期、城市、剧本、角色和补贴信息会成为后续 AI 助手的数据基础。</p>
+            <p style={{ fontSize: '0.82rem', color: MUTED }}>日期、城市、剧本、角色和现金补贴/票价折扣信息会成为后续 AI 助手的数据基础。</p>
           </div>
           <Link to="/wallet" style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)', background: 'rgba(255,255,255,0.78)', color: '#925f18', textDecoration: 'none', fontWeight: 700, fontSize: '0.85rem' }}>
             契约币 {balance ?? '...'}
@@ -156,12 +158,15 @@ export default function CreateCarpool() {
             </Field>
           </Section>
 
-          <Section title="补贴与展示">
+          <Section title="补贴（现金/票价折扣）与展示">
+            <p style={{ color: MUTED, lineHeight: 1.7, fontSize: '0.84rem', marginTop: -4 }}>
+              补贴不是契约币。这里记录的是车头/恋陪位给其他玩家位的现金补贴或票价折扣；契约币只用于平台加权展示、发帖、投票等站内动作。
+            </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {[
                 ['none', '不写补贴'],
-                ['asking', '吃补'],
-                ['offering', '出补'],
+                ['asking', '我想吃补'],
+                ['offering', '车头出补'],
               ].map(([key, label]) => (
                 <button key={key} onClick={() => setSubsidyMode(key as 'none' | 'asking' | 'offering')}
                   style={{
@@ -172,13 +177,18 @@ export default function CreateCarpool() {
               ))}
             </div>
             {subsidyMode !== 'none' && (
-              <Field label="补贴金额（契约币口径，先当数字记录）">
-                <input type="number" min={0} value={subsidyAmount} onChange={e => setSubsidyAmount(Number(e.target.value) || 0)} style={inputStyle} />
-              </Field>
+              <>
+                <Field label="补贴金额（现金，元；票价折扣可填 0 后写说明）">
+                  <input type="number" min={0} value={subsidyAmount} onChange={e => setSubsidyAmount(Number(e.target.value) || 0)} style={inputStyle} />
+                </Field>
+                <Field label="补贴说明">
+                  <textarea value={subsidyNote} onChange={e => setSubsidyNote(e.target.value)} rows={3} placeholder="例：车头补 100 现金 / 免半张票 / 票价八折 / 具体私聊确认" style={{ ...inputStyle, resize: 'none', lineHeight: 1.7 }} />
+                </Field>
+              </>
             )}
             <Field label={`加权展示 · ${boostAmount} 契约币`}>
               <input type="range" min={0} max={100} step={10} value={boostAmount} onChange={e => setBoostAmount(Number(e.target.value))} style={{ width: '100%', accentColor: GOLD }} />
-              <p style={{ marginTop: 6, color: 'rgba(71,85,105,0.56)', fontSize: '0.76rem' }}>不加钱也能发；加权展示会在同筛选条件下更靠前。</p>
+              <p style={{ marginTop: 6, color: 'rgba(71,85,105,0.66)', fontSize: '0.76rem' }}>不加钱也能发；加权展示会在同筛选条件下更靠前。它是平台排序功能，和拼车现金补贴不是一回事。</p>
             </Field>
           </Section>
 
@@ -196,7 +206,7 @@ export default function CreateCarpool() {
 
           <Section title="拼车说明">
             <Field label="说明 *">
-              <textarea value={content} onChange={e => setContent(e.target.value)} rows={7} placeholder="写清楚现在缺什么、适合谁上车、补贴/AA/边界、是否可接受换角色。不要公开敏感联系方式。" style={{ ...inputStyle, resize: 'none', lineHeight: 1.8 }} />
+              <textarea value={content} onChange={e => setContent(e.target.value)} rows={7} placeholder="写清楚现在缺什么、适合谁上车、现金补贴或票价折扣、AA/边界、是否可接受换角色。不要公开敏感联系方式。" style={{ ...inputStyle, resize: 'none', lineHeight: 1.8 }} />
             </Field>
             <Input label="车头联系方式 *" value={leaderContact} onChange={setLeaderContact} placeholder="例：站内昵称 / 抖音主页 / 群二维码说明 / 微信需谨慎公开" />
             <Input label="联系补充" value={contactNote} onChange={setContactNote} placeholder="例：先站内申请，确认后再给具体联系方式" />

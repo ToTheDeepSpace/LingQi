@@ -466,6 +466,18 @@ function addHoursToClock(time: string, hours: number) {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
+function formatCarpoolSubsidy(carpool: Record<string, unknown>) {
+  if (carpool.subsidy_mode === 'none') return '无补贴';
+  const label = carpool.subsidy_mode === 'asking' ? '想吃补' : '车头出补';
+  const amount = Number(carpool.subsidy_amount || 0);
+  const note = cleanText(carpool.subsidy_note, 300);
+  const amountText = amount > 0 ? `${amount} 元` : '';
+  if (amountText && note) return `${label} ${amountText} · ${note}`;
+  if (amountText) return `${label} ${amountText}`;
+  if (note) return `${label} · ${note}`;
+  return label;
+}
+
 function buildJuzhangguiScheduleNote(carpool: Record<string, unknown>) {
   const lines = [
     `来源：灵契拼车区`,
@@ -475,7 +487,7 @@ function buildJuzhangguiScheduleNote(carpool: Record<string, unknown>) {
     `角色：${carpool.role_name || '未指定'}`,
     `截止：${carpool.deadline_date || '未填'}${carpool.deadline_time ? ` ${carpool.deadline_time}` : ''}`,
     `车头联系方式：${carpool.leader_contact || '未填'}`,
-    `补贴：${carpool.subsidy_mode === 'asking' ? '吃补' : carpool.subsidy_mode === 'offering' ? '出补' : '无'} ${carpool.subsidy_amount || 0}`,
+    `补贴：${formatCarpoolSubsidy(carpool)}`,
     `说明：${carpool.content || ''}`,
   ];
   return lines.join('\n').slice(0, 1800);
@@ -1054,6 +1066,7 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
     const content = cleanText(req.body.content, 1600);
     const subsidyMode = (['none', 'asking', 'offering'].includes(req.body.subsidyMode) ? req.body.subsidyMode : 'none') as SubsidyMode;
     const subsidyAmount = subsidyMode === 'none' ? 0 : parseCoinAmount(req.body.subsidyAmount, 0);
+    const subsidyNote = subsidyMode === 'none' ? '' : cleanText(req.body.subsidyNote, 300);
     const neededCount = Math.min(20, Math.max(1, parseCoinAmount(req.body.neededCount, 1)));
     const boostAmount = parseCoinAmount(req.body.boostAmount, 0);
 
@@ -1097,6 +1110,7 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       store_suggestion_status: storeName ? 'pending' : 'none',
       subsidy_mode: subsidyMode,
       subsidy_amount: subsidyAmount,
+      subsidy_note: subsidyNote || null,
       needed_count: neededCount,
       leader_contact: leaderContact,
       contact_note: contactNote || null,
@@ -1105,6 +1119,7 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       ai_assist_context: {
         source: 'lingqi_carpool_form',
         juzhanggui_sync: 'on_admin_approval',
+        subsidy_unit: 'cash_or_ticket_discount',
       },
     }).select('id').single();
     if (insErr) {
@@ -1216,10 +1231,10 @@ app.get('/api/lc/carpools/assistant/compensation', async (req, res) => {
     const role = cleanText(req.query.role, 80);
     const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
     let query = supabase.from('lc_carpools')
-      .select('city, script_name, role_name, subsidy_mode, subsidy_amount, event_date')
+      .select('city, script_name, role_name, subsidy_mode, subsidy_amount, subsidy_note, event_date')
       .eq('status', 'approved')
       .gte('created_at', since)
-      .gt('subsidy_amount', 0)
+      .neq('subsidy_mode', 'none')
       .limit(200);
     if (city && city !== 'all') query = query.eq('city', city);
     if (script) query = query.ilike('script_name', `%${script}%`);
@@ -1233,8 +1248,9 @@ app.get('/api/lc/carpools/assistant/compensation', async (req, res) => {
       const key = `${row.city || '未知'}|${row.script_name || '未知'}|${row.role_name || '未标注角色'}`;
       const current = groups.get(key) || { city: row.city || '未知', script_name: row.script_name || '未知', role_name: row.role_name || '未标注角色', asking: [], offering: [], count: 0 };
       current.count += 1;
-      if (row.subsidy_mode === 'asking') current.asking.push(Number(row.subsidy_amount || 0));
-      if (row.subsidy_mode === 'offering') current.offering.push(Number(row.subsidy_amount || 0));
+      const amount = Number(row.subsidy_amount || 0);
+      if (row.subsidy_mode === 'asking' && amount > 0) current.asking.push(amount);
+      if (row.subsidy_mode === 'offering' && amount > 0) current.offering.push(amount);
       groups.set(key, current);
     }
     const avg = (items: number[]) => items.length ? Math.round(items.reduce((a, b) => a + b, 0) / items.length) : null;
