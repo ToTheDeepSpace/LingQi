@@ -88,6 +88,29 @@ type CommentModal = { rankingId: string } | null;
 type RelatedFile = { name: string; url: string; type?: string };
 type RelatedCertModal = { rankingId: string; commentId: string } | null;
 type ReportTarget = { targetType: ReportTargetType; targetId: string; targetTitle: string };
+type AuditChange = { field: string; label?: string; before?: unknown; after?: unknown };
+type AuditEntry = {
+  id: string;
+  event_type: string;
+  content_hash: string;
+  previous_hash?: string | null;
+  entry_hash: string;
+  chain_date: string;
+  created_at: string;
+  canonical_payload?: Record<string, unknown> | null;
+  metadata?: {
+    before?: Record<string, unknown>;
+    after?: Record<string, unknown>;
+    changes?: AuditChange[];
+    [key: string]: unknown;
+  } | null;
+};
+type AuditData = {
+  entries: AuditEntry[];
+  daily_roots: { audit_date: string; root_hash: string; entry_count: number; generated_at?: string }[];
+  target?: Record<string, unknown> | null;
+};
+type AuditModal = { item: Ranking; loading: boolean; error: string; data?: AuditData } | null;
 
 const card: React.CSSProperties = {
   backgroundColor: '#fffdf8',
@@ -170,6 +193,52 @@ function voteDeadlineText(myVote: MyVote | null | undefined) {
 function shortHash(hash?: string | null) {
   if (!hash) return '';
   return `${hash.slice(0, 8)}...${hash.slice(-6)}`;
+}
+
+const AUDIT_EVENT_LABEL: Record<string, string> = {
+  ranking_approved: '审核通过',
+  ranking_reclassified_approved: '审核改类通过',
+  ranking_admin_edited: '管理员编辑',
+  comment_approved: '评论通过',
+  related_reply_pinned: '相关方回应置顶',
+  commission_approved: '委托需求通过',
+  carpool_approved: '拼车通过',
+};
+
+const AUDIT_FIELD_LABEL: Record<string, string> = {
+  type: '榜单类型',
+  subject_name: '对象名称',
+  subject_type: '对象分类',
+  subject_city: '所在城市',
+  subject_url: '社交主页',
+  content: '正文内容',
+  expires_at: '黑榜到期时间',
+};
+
+function formatAuditValue(field: string, value: unknown) {
+  if (value === null || value === undefined || value === '') return '未填写';
+  if (field === 'type') {
+    if (value === 'red') return '红榜';
+    if (value === 'black') return '黑榜';
+    if (value === 'white') return '白榜';
+  }
+  if (field === 'subject_type' && typeof value === 'string') return SUBJECT_LABEL[value] || value;
+  if (field.endsWith('_at') && typeof value === 'string') {
+    return new Date(value).toLocaleString('zh-CN', { hour12: false });
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+
+function formatAuditTime(value?: string) {
+  if (!value) return '';
+  return new Date(value).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -327,10 +396,12 @@ export default function Rankings() {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentError, setCommentError] = useState('');
   const [likingComment, setLikingComment] = useState('');
+  const [deletingComment, setDeletingComment] = useState('');
 
   const [openVotes, setOpenVotes] = useState<Set<string>>(new Set());
   const [votesMap, setVotesMap] = useState<Record<string, VoteRecord[]>>({});
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const [auditModal, setAuditModal] = useState<AuditModal>(null);
 
   const auth = getAuth();
 
@@ -671,6 +742,38 @@ export default function Rankings() {
     } finally { setLikingComment(''); }
   };
 
+  const deleteOwnComment = async (rankingId: string, commentId: string) => {
+    const current = requireAuth();
+    if (!current) return;
+    const confirmed = window.confirm('删除自己的评论后将不再公开显示。24小时内删除会退回 1 契约币，超过 24 小时不退款。确认删除吗？');
+    if (!confirmed) return;
+    setDeletingComment(commentId);
+    try {
+      const r = await fetch(`${API}/lc/rankings/${rankingId}/comments/${commentId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${current.token}` },
+      });
+      const d = await r.json();
+      if (!r.ok || !d.success) {
+        const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '删除失败');
+        window.alert(msg);
+        return;
+      }
+      setCommentsMap(prev => ({
+        ...prev,
+        [rankingId]: (prev[rankingId] || []).filter(c => c.id !== commentId),
+      }));
+      setItems(prev => prev.map(item => item.id === rankingId
+        ? { ...item, pinned_comments: (item.pinned_comments || []).filter(c => c.id !== commentId) }
+        : item));
+      fetchWallet();
+    } catch {
+      window.alert('网络错误，请稍后再试');
+    } finally {
+      setDeletingComment('');
+    }
+  };
+
   const openVoteModal = (id: string, voteType: 'like' | 'dislike' | 'joy') => {
     const current = requireAuth();
     if (!current) return;
@@ -691,6 +794,22 @@ export default function Rankings() {
     const current = requireAuth();
     if (!current) return;
     setReportTarget(target);
+  };
+
+  const openAuditModal = async (item: Ranking) => {
+    setAuditModal({ item, loading: true, error: '' });
+    try {
+      const r = await fetch(`${API}/lc/audit/ranking/${item.id}`);
+      const d = await r.json();
+      if (!r.ok || !d.success) {
+        const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '审计记录加载失败');
+        setAuditModal({ item, loading: false, error: errMsg });
+        return;
+      }
+      setAuditModal({ item, loading: false, error: '', data: d.data });
+    } catch {
+      setAuditModal({ item, loading: false, error: '网络错误' });
+    }
   };
 
   const tabBtn = (t: 'red' | 'black' | 'white', label: string, color: string) => (
@@ -857,7 +976,7 @@ export default function Rankings() {
                     borderColor: item.type === 'red' ? 'rgba(220,38,38,0.3)' : item.type === 'black' ? 'rgba(148,163,184,0.2)' : 'rgba(166,106,31,0.24)',
                     borderLeftColor: accentColor,
                   }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
                     <div style={{
                       width: 30, height: 30, borderRadius: 8, flexShrink: 0,
                       background: item.type === 'red' ? 'linear-gradient(135deg, #dc2626, #ef4444)' : item.type === 'black' ? 'linear-gradient(135deg, #374151, #4b5563)' : 'linear-gradient(135deg, #d9a857, #a66a1f)',
@@ -865,8 +984,21 @@ export default function Rankings() {
                       fontWeight: 900, fontSize: '0.82rem', color: '#fff',
                     }}>{idx + 1}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-                        <span style={{ fontWeight: 800, fontSize: '1rem' }}>{item.subject_name}</span>
+                      <p style={{
+                        fontSize: '0.95rem',
+                        color: 'rgba(17,24,39,0.92)',
+                        lineHeight: 1.72,
+                        margin: '0 0 10px',
+                        fontWeight: 560,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 5,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}>
+                        {renderContent(item.content)}
+                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'rgba(31,41,55,0.82)' }}>{item.subject_name}</span>
                         <span style={{
                           padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600,
                           background: item.type === 'red' ? 'rgba(220,38,38,0.12)' : item.type === 'black' ? 'rgba(148,163,184,0.12)' : 'rgba(166,106,31,0.12)',
@@ -896,21 +1028,30 @@ export default function Rankings() {
                           </span>
                         )}
                       </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '3px 9px',
+                          borderRadius: 999,
+                          background: 'rgba(166,106,31,0.08)',
+                          border: '1px solid rgba(166,106,31,0.14)',
+                          color: 'rgba(71,85,105,0.86)',
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
+                        }}>
+                          发布人 {renderName(item.author_name, item.is_realname)}
+                        </span>
+                        {item.lc_profiles?.verified_shop && (
+                          <span style={{ padding: '1px 5px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 900, background: '#3b82f6', color: '#fff' }} title="已认证店家">蓝V</span>
+                        )}
+                        {item.lc_profiles?.verified_dm && (
+                          <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-
-                  <p style={{
-                    fontSize: '0.86rem',
-                    color: 'rgba(31,41,55,0.86)',
-                    lineHeight: 1.65,
-                    marginBottom: 12,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 4,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  }}>
-                    {renderContent(item.content)}
-                  </p>
 
                   {item.files && item.files.length > 0 && (() => {
                     const pdfFiles = item.files.filter(f => {
@@ -936,51 +1077,21 @@ export default function Rankings() {
                     );
                   })()}
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-                    <span style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.58)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      — {renderName(item.author_name, item.is_realname)}
-                      {item.lc_profiles?.verified_shop && (
-                        <span style={{ padding: '1px 5px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 900, background: '#3b82f6', color: '#fff' }} title="已认证店家">蓝V</span>
-                      )}
-                      {item.lc_profiles?.verified_dm && (
-                        <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
-                      )}
-                      <span>· {item.created_at?.slice(0, 10)}</span>
-                      <span>· {item.type === 'white' && item.initial_amount === 0 ? '免费发布' : `初始 ${item.initial_amount} 契约币`}</span>
-                      {item.audit_proof && (
-                        <button
-                          type="button"
-                          onClick={() => window.open(`${API}/lc/audit/ranking/${item.id}`, '_blank')}
-                          title={`内容校验码：${item.audit_proof.content_hash}`}
-                          style={{
-                            border: '1px solid rgba(39,83,137,0.14)',
-                            background: 'rgba(239,246,255,0.62)',
-                            color: '#275389',
-                            borderRadius: 999,
-                            padding: '2px 8px',
-                            fontSize: '0.68rem',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          审计码 {shortHash(item.audit_proof.entry_hash)}
-                        </button>
-                      )}
-                    </span>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => openVoteModal(item.id, 'like')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.25)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#34d399', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
-                        {myVote?.vote_type === 'like' ? '已赞' : '👍'} {item.likes} <span style={{ fontSize: '0.7rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(52,211,153,0.6)' }}>1币</span>
-                      </button>
-                      <button onClick={() => openVoteModal(item.id, 'joy')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: myVote?.vote_type === 'joy' ? '1px solid rgba(166,106,31,0.42)' : '1px solid rgba(217,168,87,0.25)', background: myVote?.vote_type === 'joy' ? 'rgba(217,168,87,0.16)' : 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
-                        {myVote?.vote_type === 'joy' ? '已欢乐' : '😂'} {item.joys || 0} <span style={{ fontSize: '0.7rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
-                      </button>
-                      <button onClick={() => openVoteModal(item.id, 'dislike')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, border: myVote?.vote_type === 'dislike' ? '1px solid rgba(220,38,38,0.38)' : '1px solid rgba(248,113,113,0.2)', background: myVote?.vote_type === 'dislike' ? 'rgba(254,226,226,0.72)' : 'rgba(248,113,113,0.07)', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : RED, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}>
-                        {myVote?.vote_type === 'dislike' ? '已踩' : '👎'} {item.dislikes} <span style={{ fontSize: '0.7rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(248,113,113,0.5)' }}>1币</span>
-                      </button>
-                    </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <button onClick={() => openVoteModal(item.id, 'like')}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.22)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#219669', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
+                      {myVote?.vote_type === 'like' ? '已赞' : '👍'} {item.likes}
+                      {item.initial_amount > 0 && <span style={{ fontSize: '0.68rem', color: 'rgba(71,85,105,0.56)' }}>含初始 {item.initial_amount}</span>}
+                      <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(33,150,105,0.58)' }}>1币</span>
+                    </button>
+                    <button onClick={() => openVoteModal(item.id, 'joy')}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'joy' ? '1px solid rgba(166,106,31,0.42)' : '1px solid rgba(217,168,87,0.25)', background: myVote?.vote_type === 'joy' ? 'rgba(217,168,87,0.16)' : 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
+                      {myVote?.vote_type === 'joy' ? '已欢乐' : '😂'} {item.joys || 0} <span style={{ fontSize: '0.68rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
+                    </button>
+                    <button onClick={() => openVoteModal(item.id, 'dislike')}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'dislike' ? '1px solid rgba(220,38,38,0.38)' : '1px solid rgba(248,113,113,0.2)', background: myVote?.vote_type === 'dislike' ? 'rgba(254,226,226,0.72)' : 'rgba(248,113,113,0.07)', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : RED, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
+                      {myVote?.vote_type === 'dislike' ? '已踩' : '👎'} {item.dislikes} <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(248,113,113,0.5)' }}>1币</span>
+                    </button>
                   </div>
 
                   {pinnedComments.length > 0 && (
@@ -999,9 +1110,15 @@ export default function Rankings() {
                             <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.72rem' }}>
                               {renderName(c.author_name, c.is_realname)} · {c.created_at?.slice(0, 10)}
                             </span>
+                            {auth?.userId && c.author_id === auth.userId && (
+                              <button onClick={() => deleteOwnComment(item.id, c.id)} disabled={deletingComment === c.id}
+                                style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.50)', cursor: deletingComment === c.id ? 'not-allowed' : 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
+                                {deletingComment === c.id ? '删除中...' : '删除'}
+                              </button>
+                            )}
                             <button
                               onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${item.subject_name} 的置顶回应` })}
-                              style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'rgba(185,28,28,0.62)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 800 }}>
+                              style={{ marginLeft: auth?.userId && c.author_id === auth.userId ? 0 : 'auto', border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.40)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
                               举报
                             </button>
                           </div>
@@ -1013,7 +1130,7 @@ export default function Rankings() {
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 10, borderTop: '1px solid rgba(201,146,46,0.08)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 10, borderTop: '1px solid rgba(201,146,46,0.08)', flexWrap: 'wrap' }}>
                     <button onClick={() => toggleComments(item.id)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
@@ -1032,12 +1149,35 @@ export default function Rankings() {
                     </button>
                     <button
                       onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: item.subject_name })}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(185,28,28,0.68)', fontSize: '0.8rem', padding: '4px 0', fontWeight: 700 }}
-                      onMouseEnter={e => (e.currentTarget.style.color = '#991b1b')}
-                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(185,28,28,0.68)')}>
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.42)', fontSize: '0.78rem', padding: '4px 0', fontWeight: 600 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = 'rgba(185,28,28,0.78)')}
+                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.42)')}>
                       举报
                     </button>
+                    {item.audit_proof && (
+                      <button
+                        type="button"
+                        onClick={() => openAuditModal(item)}
+                        title={`内容校验码：${item.audit_proof.content_hash}`}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'rgba(71,85,105,0.38)',
+                          padding: '4px 0',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.color = '#275389')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.38)')}
+                      >
+                        审计 {shortHash(item.audit_proof.entry_hash)}
+                      </button>
+                    )}
                     <div style={{ flex: 1 }} />
+                    <span style={{ marginLeft: 'auto', color: 'rgba(71,85,105,0.42)', fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
+                      {item.created_at?.slice(0, 10)}
+                    </span>
                   </div>
 
                   {showVotes && (
@@ -1073,9 +1213,15 @@ export default function Rankings() {
                             )}
                             <button onClick={() => likeComment(item.id, c.id)} disabled={likingComment === c.id}
                               style={{ marginLeft: 'auto', border: 'none', background: 'none', color: '#34d399', cursor: 'pointer', fontSize: '0.75rem' }}>👍 {c.likes}</button>
+                            {auth?.userId && c.author_id === auth.userId && (
+                              <button onClick={() => deleteOwnComment(item.id, c.id)} disabled={deletingComment === c.id}
+                                style={{ border: 'none', background: 'none', color: 'rgba(71,85,105,0.48)', cursor: deletingComment === c.id ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>
+                                {deletingComment === c.id ? '删除中...' : '删除'}
+                              </button>
+                            )}
                             <button
                               onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${item.subject_name} 的评论` })}
-                              style={{ border: 'none', background: 'none', color: 'rgba(185,28,28,0.62)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>
+                              style={{ border: 'none', background: 'none', color: 'rgba(71,85,105,0.42)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>
                               举报
                             </button>
                           </span>
@@ -1297,6 +1443,83 @@ export default function Rankings() {
                   </button>
                 </div>
               </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {auditModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,17,23,0.58)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120, padding: 20 }}>
+          <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 26, maxWidth: 720, width: '100%', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 22px 60px rgba(17,24,39,0.24)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14 }}>
+              <div>
+                <h3 style={{ fontWeight: 900, fontSize: '1.08rem', marginBottom: 6 }}>审计记录</h3>
+                <p style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.72)', lineHeight: 1.7, margin: 0 }}>
+                  {auditModal.item.subject_name} · 每次审核通过或管理员编辑都会生成校验码。
+                </p>
+              </div>
+              <button onClick={() => setAuditModal(null)}
+                style={{ border: '1px solid rgba(71,85,105,0.14)', background: '#fffaf2', color: 'rgba(71,85,105,0.70)', borderRadius: 10, padding: '8px 12px', cursor: 'pointer', fontWeight: 700 }}>
+                关闭
+              </button>
+            </div>
+
+            {auditModal.loading && (
+              <p style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.84rem', padding: '24px 0' }}>审计记录加载中...</p>
+            )}
+            {!auditModal.loading && auditModal.error && (
+              <p style={{ color: RED, fontSize: '0.84rem', padding: '18px 0' }}>{auditModal.error}</p>
+            )}
+            {!auditModal.loading && !auditModal.error && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(auditModal.data?.entries || []).length === 0 && (
+                  <p style={{ color: 'rgba(71,85,105,0.60)', fontSize: '0.84rem', padding: '16px 0' }}>暂无审计记录。</p>
+                )}
+                {(auditModal.data?.entries || []).map(entry => {
+                  const changes = entry.metadata?.changes || [];
+                  const payload = entry.canonical_payload || {};
+                  return (
+                    <div key={entry.id} style={{ border: '1px solid rgba(166,106,31,0.14)', background: '#fffaf2', borderRadius: 14, padding: '13px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                        <strong style={{ color: GOLD, fontSize: '0.86rem' }}>
+                          {AUDIT_EVENT_LABEL[entry.event_type] || entry.event_type}
+                        </strong>
+                        <span style={{ color: 'rgba(71,85,105,0.56)', fontSize: '0.74rem' }}>{formatAuditTime(entry.created_at)}</span>
+                      </div>
+                      {changes.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {changes.map(change => (
+                            <div key={`${entry.id}-${change.field}`} style={{ fontSize: '0.8rem', color: 'rgba(31,41,55,0.82)', lineHeight: 1.7 }}>
+                              <span style={{ display: 'inline-block', minWidth: 82, color: 'rgba(71,85,105,0.58)', fontWeight: 800 }}>
+                                {change.label || AUDIT_FIELD_LABEL[change.field] || change.field}
+                              </span>
+                              <del style={{ color: 'rgba(185,28,28,0.72)', background: 'rgba(254,226,226,0.55)', padding: '1px 4px', borderRadius: 4 }}>
+                                {formatAuditValue(change.field, change.before)}
+                              </del>
+                              <span style={{ color: 'rgba(71,85,105,0.42)', margin: '0 6px' }}>→</span>
+                              <span style={{ color: '#15803d', background: 'rgba(220,252,231,0.72)', padding: '1px 4px', borderRadius: 4 }}>
+                                {formatAuditValue(change.field, change.after)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.8rem', color: 'rgba(31,41,55,0.78)', lineHeight: 1.75 }}>
+                          <div><strong style={{ color: 'rgba(71,85,105,0.68)' }}>对象：</strong>{formatAuditValue('subject_name', payload.subject_name)} · {formatAuditValue('type', payload.type)}</div>
+                          {typeof payload.content === 'string' && (
+                            <div style={{ marginTop: 5 }}><strong style={{ color: 'rgba(71,85,105,0.68)' }}>原文：</strong>{payload.content}</div>
+                          )}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8, color: 'rgba(71,85,105,0.44)', fontSize: '0.7rem' }}>
+                        <span>entry {shortHash(entry.entry_hash)}</span>
+                        <span>content {shortHash(entry.content_hash)}</span>
+                        {entry.previous_hash && <span>prev {shortHash(entry.previous_hash)}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>

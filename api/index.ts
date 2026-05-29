@@ -391,6 +391,39 @@ async function auditApprovedTarget(
   });
 }
 
+const RANKING_EDIT_LABELS: Record<string, string> = {
+  type: '榜单类型',
+  subject_name: '对象名称',
+  subject_type: '对象分类',
+  subject_city: '所在城市',
+  subject_url: '社交主页',
+  content: '正文内容',
+  expires_at: '黑榜到期时间',
+};
+
+const RANKING_SUBJECT_TYPES = ['creator', 'dm', 'store', 'player'];
+
+function auditComparable(value: unknown) {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value.trim();
+  return value;
+}
+
+function auditValuesEqual(a: unknown, b: unknown) {
+  return stableJson(auditComparable(a)) === stableJson(auditComparable(b));
+}
+
+function buildRankingChanges(before: Record<string, unknown>, after: Record<string, unknown>, fields: string[]) {
+  return fields
+    .filter(field => !auditValuesEqual(before[field], after[field]))
+    .map(field => ({
+      field,
+      label: RANKING_EDIT_LABELS[field] || field,
+      before: before[field] ?? null,
+      after: after[field] ?? null,
+    }));
+}
+
 type PublicAuditProof = {
   event_type: string;
   entry_hash: string;
@@ -1554,10 +1587,11 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_rankings').select('*').eq('status', 'approved').order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_comments').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_claims').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_commissions').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -1570,6 +1604,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       profiles: profiles || [],
       contactRequests: requests || [],
       rankings: rankings || [],
+      approvedRankings: approvedRankings || [],
       comments: comments || [],
       claims: claims || [],
       commissions: commissions || [],
@@ -1618,16 +1653,30 @@ app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
     if (!['ranking', 'comment', 'commission', 'carpool'].includes(targetType)) {
       return res.status(400).json(err(new Error('无效审计对象')));
     }
+    const selectFields = targetType === 'ranking'
+      ? 'id, target_type, target_id, event_type, content_hash, previous_hash, entry_hash, chain_date, created_at, canonical_payload, metadata'
+      : 'id, target_type, target_id, event_type, content_hash, previous_hash, entry_hash, chain_date, created_at';
     const { data: entries, error: qErr } = await supabase.from('lc_audit_chain_entries')
-      .select('id, target_type, target_id, event_type, content_hash, previous_hash, entry_hash, chain_date, created_at')
+      .select(selectFields)
       .eq('target_type', targetType)
       .eq('target_id', req.params.id)
       .order('created_at', { ascending: false })
       .limit(20);
     if (qErr && isMissingRelation(qErr, 'lc_audit_chain_entries')) {
-      return res.json(ok({ entries: [], daily_roots: [] }));
+      return res.json(ok({ entries: [], daily_roots: [], target: null }));
     }
     if (qErr) throw qErr;
+
+    let target: Record<string, unknown> | null = null;
+    if (targetType === 'ranking') {
+      const { data: ranking, error: targetErr } = await supabase.from('lc_rankings')
+        .select('*')
+        .eq('id', req.params.id)
+        .maybeSingle();
+      if (targetErr) throw targetErr;
+      target = ranking ? auditPayload('ranking', ranking) : null;
+    }
+
     const dates = Array.from(new Set((entries || []).map((entry: { chain_date: string }) => entry.chain_date).filter(Boolean)));
     let roots: Record<string, unknown>[] = [];
     if (dates.length > 0) {
@@ -1637,7 +1686,7 @@ app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
       if (rootErr) throw rootErr;
       roots = dailyRoots || [];
     }
-    res.json(ok({ entries: entries || [], daily_roots: roots }));
+    res.json(ok({ entries: entries || [], daily_roots: roots, target }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -2009,6 +2058,61 @@ app.post('/api/lc/rankings/:id/comments/:cid/like', authMiddleware, async (req, 
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.delete('/api/lc/rankings/:id/comments/:cid', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data: comment, error: qErr } = await supabase.from('lc_comments')
+      .select('id, author_id, author_name, content, status, created_at')
+      .eq('id', req.params.cid)
+      .eq('ranking_id', req.params.id)
+      .maybeSingle();
+    if (qErr) throw qErr;
+    if (!comment) return res.status(404).json(err(new Error('评论不存在')));
+    if (comment.author_id !== profile.id) return res.status(403).json(err(new Error('只能删除自己的评论')));
+    if (String(comment.status || '').startsWith('deleted')) return res.status(400).json(err(new Error('评论已经删除')));
+
+    const createdAt = new Date(comment.created_at).getTime();
+    const withinRefundWindow = Number.isFinite(createdAt) && Date.now() - createdAt <= 24 * 60 * 60 * 1000;
+    const nextStatus = withinRefundWindow ? 'deleted_by_author_refunded' : 'deleted_by_author';
+
+    const { data: deleted, error: updErr } = await supabase.from('lc_comments')
+      .update({ status: nextStatus, is_pinned: false })
+      .eq('id', req.params.cid)
+      .eq('author_id', profile.id)
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+
+    if (withinRefundWindow) {
+      await supabase.from('lc_profiles')
+        .update({ balance: (profile.balance || 0) + 1 })
+        .eq('id', profile.id);
+      await supabase.from('lc_transactions').insert({
+        profile_id: profile.id,
+        type: 'refund',
+        amount: 1,
+        description: '24小时内删除红黑榜评论退回 · 1 契约币',
+        status: 'approved',
+        ref_type: 'comment_delete_refund',
+        ref_id: req.params.cid,
+        idempotency_key: `comment-delete-refund:${req.params.cid}`,
+      });
+    }
+
+    const audit = await appendAuditEntry({
+      targetType: 'comment',
+      targetId: req.params.cid,
+      eventType: 'comment_deleted_by_author',
+      payload: auditPayload('comment', deleted),
+      actorId: profile.id,
+      actorRole: 'creator',
+      metadata: { refund_amount: withinRefundWindow ? 1 : 0, refund_window_hours: 24 },
+    });
+    res.json(ok({ id: req.params.cid, refunded: withinRefundWindow, audit }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 // ── 我是相关方 ──
 
 app.post('/api/lc/rankings/:id/claim', authMiddleware, async (req, res) => {
@@ -2051,6 +2155,74 @@ app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, a
       target_type_override: targetType,
     });
     res.json(ok({ audit }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/rankings/:id/edit', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data: before, error: findErr } = await supabase.from('lc_rankings')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (findErr) throw findErr;
+    if (!before) return res.status(404).json(err(new Error('帖子不存在')));
+
+    const patch: Record<string, unknown> = {};
+    const body = req.body || {};
+
+    if ('type' in body) {
+      const nextType = cleanText(body.type, 20);
+      if (!['red', 'black', 'white'].includes(nextType)) return res.status(400).json(err(new Error('无效榜单类型')));
+      patch.type = nextType;
+    }
+    if ('subject_name' in body) {
+      const value = cleanText(body.subject_name, 120);
+      if (!value) return res.status(400).json(err(new Error('对象名称不能为空')));
+      patch.subject_name = value;
+    }
+    if ('subject_type' in body) {
+      const value = cleanText(body.subject_type, 40);
+      if (!RANKING_SUBJECT_TYPES.includes(value)) return res.status(400).json(err(new Error('无效对象分类')));
+      patch.subject_type = value;
+    }
+    if ('subject_city' in body) {
+      patch.subject_city = cleanText(body.subject_city, 80) || null;
+    }
+    if ('subject_url' in body) {
+      patch.subject_url = cleanText(body.subject_url, 500) || null;
+    }
+    if ('content' in body) {
+      const value = cleanText(body.content, 4000);
+      if (!value) return res.status(400).json(err(new Error('正文不能为空')));
+      patch.content = value;
+    }
+
+    const nextType = String(patch.type || before.type || '');
+    if (nextType === 'black' && before.type !== 'black') {
+      patch.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (nextType !== 'black' && before.type === 'black') {
+      patch.expires_at = null;
+    }
+
+    const changedFields = Object.keys(patch).filter(field => !auditValuesEqual(before[field], patch[field]));
+    if (changedFields.length === 0) {
+      return res.json(ok({ item: before, changes: [] }));
+    }
+
+    const { data: updated, error: updErr } = await supabase.from('lc_rankings')
+      .update(patch)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+
+    const changes = buildRankingChanges(before, updated, changedFields);
+    const audit = await auditApprovedTarget('ranking', updated, 'ranking_admin_edited', getReq(req, 'creatorId'), {
+      before: auditPayload('ranking', before),
+      after: auditPayload('ranking', updated),
+      changes,
+    });
+    res.json(ok({ item: updated, changes, audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
