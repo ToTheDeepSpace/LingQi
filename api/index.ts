@@ -1850,7 +1850,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_reports').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
     ]);
     res.json(ok({
-      profiles: profiles || [],
+      profiles: (profiles || []).map(profile => sanitizeProfile(profile, true)),
       contactRequests: requests || [],
       rankings: rankings || [],
       approvedRankings: approvedRankings || [],
