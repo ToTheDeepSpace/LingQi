@@ -79,8 +79,21 @@ type Ranking = {
   content: string;
   author_name: string;
   initial_amount: number;
+  likes?: number;
+  dislikes?: number;
+  joys?: number;
+  status?: 'pending' | 'approved' | 'rejected';
   payment_proof: string | null;
   created_at: string;
+};
+
+type RankingEditForm = {
+  type: 'red' | 'black' | 'white';
+  subject_name: string;
+  subject_type: string;
+  subject_city: string;
+  subject_url: string;
+  content: string;
 };
 
 type CommentReview = {
@@ -187,7 +200,7 @@ type ReportReview = {
 };
 
 type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert';
-type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'reports' | 'wallet' | 'certs';
+type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'reports' | 'wallet' | 'certs';
 
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.04)',
@@ -227,6 +240,7 @@ export default function Admin() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [requests, setRequests] = useState<ContactReq[]>([]);
   const [rankings, setRankings] = useState<Ranking[]>([]);
+  const [approvedRankings, setApprovedRankings] = useState<Ranking[]>([]);
   const [comments, setComments] = useState<CommentReview[]>([]);
   const [claims, setClaims] = useState<ClaimReview[]>([]);
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
@@ -245,6 +259,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     reason: '',
     type: 'profile',
   });
+  const [rankingEdit, setRankingEdit] = useState<{ item: Ranking; form: RankingEditForm; saving: boolean; error: string } | null>(null);
 
   async function loadData(token?: string) {
     const t = token || getToken();
@@ -257,6 +272,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setProfiles((d.data as { profiles: Profile[] }).profiles || []);
         setRequests((d.data as { contactRequests: ContactReq[] }).contactRequests || []);
         setRankings((d.data as { rankings: Ranking[] }).rankings || []);
+        setApprovedRankings((d.data as { approvedRankings: Ranking[] }).approvedRankings || []);
         setComments((d.data as { comments: CommentReview[] }).comments || []);
         setClaims((d.data as { claims: ClaimReview[] }).claims || []);
         setCommissions((d.data as { commissions: CommissionReview[] }).commissions || []);
@@ -349,6 +365,48 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       body: JSON.stringify({ targetType }),
     });
     void loadData();
+  };
+
+  const openRankingEdit = (item: Ranking) => {
+    setRankingEdit({
+      item,
+      saving: false,
+      error: '',
+      form: {
+        type: item.type,
+        subject_name: item.subject_name || '',
+        subject_type: item.subject_type || 'creator',
+        subject_city: item.subject_city || '',
+        subject_url: item.subject_url || '',
+        content: item.content || '',
+      },
+    });
+  };
+
+  const updateRankingEditForm = (patch: Partial<RankingEditForm>) => {
+    setRankingEdit(prev => prev ? { ...prev, form: { ...prev.form, ...patch }, error: '' } : prev);
+  };
+
+  const saveRankingEdit = async () => {
+    if (!rankingEdit) return;
+    setRankingEdit(prev => prev ? { ...prev, saving: true, error: '' } : prev);
+    try {
+      const r = await fetch(`${API}/lc/admin/rankings/${rankingEdit.item.id}/edit`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(rankingEdit.form),
+      });
+      const d = await r.json();
+      if (!r.ok || !d.success) {
+        const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '保存失败');
+        setRankingEdit(prev => prev ? { ...prev, saving: false, error: errMsg } : prev);
+        return;
+      }
+      setRankingEdit(null);
+      void loadData();
+    } catch {
+      setRankingEdit(prev => prev ? { ...prev, saving: false, error: '网络错误' } : prev);
+    }
   };
 
   const approveComment = async (id: string) => {
@@ -460,6 +518,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setProfiles([]);
     setRequests([]);
     setRankings([]);
+    setApprovedRankings([]);
     setComments([]);
     setClaims([]);
     setCommissions([]);
@@ -533,6 +592,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             { label: '拼车', value: carpools.length, color: '#14b8a6' },
             { label: '举报', value: reports.length, color: '#f87171' },
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
+            { label: '已发布榜单', value: approvedRankings.length, color: '#60a5fa' },
             { label: '评论', value: comments.length, color: '#38bdf8' },
             { label: '相关方', value: claims.length, color: '#f97316' },
             { label: '认证', value: certs.length, color: '#3b82f6' },
@@ -553,6 +613,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
           <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
+          <button style={tabStyle(tab === 'publishedRankings')} onClick={() => setTab('publishedRankings')}>已发布 ({approvedRankings.length})</button>
           <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
           <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
           <button style={tabStyle(tab === 'certs')} onClick={() => setTab('certs')}>认证审核 {certs.length > 0 && `(${certs.length})`}</button>
@@ -673,6 +734,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       {r.payment_proof && <Proof>支付凭证：{r.payment_proof}</Proof>}
                     </div>
                     <Actions vertical>
+                      <ActionButton onClick={() => openRankingEdit(r)}>编辑</ActionButton>
                       <ActionButton kind="ok" onClick={() => approveRanking(r.id)}>通过</ActionButton>
                       {r.type === 'white' && (
                         <>
@@ -681,6 +743,31 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         </>
                       )}
                       <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'publishedRankings' && (
+              <ListEmpty empty={approvedRankings.length === 0} text="暂无已发布榜单">
+                {approvedRankings.map(r => (
+                  <Row key={r.id} accent={r.type === 'red' ? '#dc2626' : r.type === 'black' ? '#475569' : '#d9a857'}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={r.subject_name} pill={r.type === 'red' ? '🏅 红榜' : r.type === 'black' ? '👎 黑榜' : '✨ 白榜'} />
+                      <Meta>
+                        {SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'}
+                        {` · 作者：${r.author_name}`}
+                        {` · 👍 ${r.likes ?? r.initial_amount}${r.initial_amount > 0 ? `（含初始 ${r.initial_amount}）` : ''}`}
+                        {` · 👎 ${r.dislikes ?? 0}`}
+                        {r.joys ? ` · 😂 ${r.joys}` : ''}
+                        {r.created_at ? ` · ${r.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
+                      <ContentBox>{r.content}</ContentBox>
+                    </div>
+                    <Actions vertical>
+                      <ActionButton onClick={() => openRankingEdit(r)}>编辑并留痕</ActionButton>
                     </Actions>
                   </Row>
                 ))}
@@ -885,6 +972,77 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           </>
         )}
       </div>
+
+      {rankingEdit && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
+          <div style={{ backgroundColor: C2, border: '1px solid rgba(201,146,46,0.2)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3 style={{ fontWeight: 800, fontSize: '1.05rem', marginBottom: 8, color: 'rgba(186,207,231,0.92)' }}>编辑榜单记录</h3>
+            <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.55)', lineHeight: 1.7, marginBottom: 18 }}>
+              保存后会写入防篡改审计链，前台审计记录会展示原版、编辑版和变更时间。
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+              <label style={{ display: 'block' }}>
+                <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>榜单类型</span>
+                <select value={rankingEdit.form.type} onChange={e => updateRankingEditForm({ type: e.target.value as RankingEditForm['type'] })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }}>
+                  <option value="red">红榜</option>
+                  <option value="black">黑榜</option>
+                  <option value="white">白榜</option>
+                </select>
+              </label>
+              <label style={{ display: 'block' }}>
+                <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>对象分类</span>
+                <select value={rankingEdit.form.subject_type} onChange={e => updateRankingEditForm({ subject_type: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }}>
+                  {Object.entries(SUBJECT_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'block' }}>
+                <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>所在城市</span>
+                <input value={rankingEdit.form.subject_city} onChange={e => updateRankingEditForm({ subject_city: e.target.value })}
+                  placeholder="例：上海"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }} />
+              </label>
+            </div>
+
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>对象名称</span>
+              <input value={rankingEdit.form.subject_name} onChange={e => updateRankingEditForm({ subject_name: e.target.value })}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }} />
+            </label>
+
+            <label style={{ display: 'block', marginBottom: 12 }}>
+              <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>社交主页链接</span>
+              <input value={rankingEdit.form.subject_url} onChange={e => updateRankingEditForm({ subject_url: e.target.value })}
+                placeholder="可留空"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }} />
+            </label>
+
+            <label style={{ display: 'block' }}>
+              <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>正文内容</span>
+              <textarea value={rankingEdit.form.content} onChange={e => updateRankingEditForm({ content: e.target.value })}
+                rows={8}
+                style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none', lineHeight: 1.7 }} />
+            </label>
+
+            {rankingEdit.error && <p style={{ color: '#f87171', fontSize: '0.82rem', marginTop: 12 }}>{rankingEdit.error}</p>}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button onClick={() => setRankingEdit(null)}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: 'rgba(186,207,231,0.6)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
+                取消
+              </button>
+              <button onClick={saveRankingEdit} disabled={rankingEdit.saving}
+                style={{ flex: 1.4, padding: '10px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, cursor: rankingEdit.saving ? 'not-allowed' : 'pointer', fontWeight: 800, fontSize: '0.875rem', opacity: rankingEdit.saving ? 0.6 : 1 }}>
+                {rankingEdit.saving ? '保存中...' : '保存并留痕'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {rejectModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
