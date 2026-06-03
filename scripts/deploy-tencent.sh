@@ -16,6 +16,7 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 git push origin "$BRANCH"
+export GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new"
 git push "$SERVER_REMOTE" "$BRANCH"
 
 ssh -i "$SSH_KEY" "$SERVER_HOST" "systemctl is-active lingqi.service"
