@@ -36,6 +36,7 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/rules': pageLoaders.legal,
   '/terms': pageLoaders.legal,
   '/privacy': pageLoaders.legal,
+  '/security-assessment': pageLoaders.legal,
 };
 
 const loadedRoutes = new Set<string>();

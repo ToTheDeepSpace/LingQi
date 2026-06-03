@@ -24,6 +24,7 @@ const ShopDashboard = lazy(pageLoaders.shopDashboard);
 const ReviewRules = lazy(() => pageLoaders.legal().then(module => ({ default: module.ReviewRules })));
 const UserAgreement = lazy(() => pageLoaders.legal().then(module => ({ default: module.UserAgreement })));
 const PrivacyPolicy = lazy(() => pageLoaders.legal().then(module => ({ default: module.PrivacyPolicy })));
+const SecurityAssessment = lazy(() => pageLoaders.legal().then(module => ({ default: module.SecurityAssessment })));
 
 function AppLayout() {
   const { pathname } = useLocation();
@@ -52,6 +53,7 @@ function AppLayout() {
           <Route path="/rules" element={<ReviewRules />} />
           <Route path="/terms" element={<UserAgreement />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/security-assessment" element={<SecurityAssessment />} />
         </Routes>
       </Suspense>
       <SiteFooter />
@@ -91,7 +93,7 @@ function SiteFooter() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
               <FooterBadge>人工审核</FooterBadge>
               <FooterBadge>契约币原型期</FooterBadge>
-              <FooterBadge>ICP备案中</FooterBadge>
+              <FooterBadge>公安备案办理中</FooterBadge>
             </div>
           </div>
           <FooterColumn title="主要入口">
@@ -118,7 +120,8 @@ function SiteFooter() {
             <FooterLink to="/rules">审核规则</FooterLink>
             <FooterLink to="/terms">用户协议</FooterLink>
             <FooterLink to="/privacy">隐私政策</FooterLink>
-            <FooterText>备案号待公示</FooterText>
+            <FooterLink to="/security-assessment">安全评估说明</FooterLink>
+            <FooterText>ICP备案信息待公示</FooterText>
           </FooterColumn>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 34, paddingTop: 18, borderTop: '1px solid rgba(201,146,46,0.14)', fontSize: '0.76rem', color: 'rgba(71,85,105,0.58)' }}>

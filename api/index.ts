@@ -34,18 +34,44 @@ function err(e: unknown) {
 }
 
 // --- JWT 鉴权中间件 ---
-function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+async function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) {
     return res.status(401).json(err(new Error('请先登录')));
   }
+  let decoded: { creatorId: string; role?: string };
   try {
-    const decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId: string; role?: string };
-    (req as Record<string, unknown>).creatorId = decoded.creatorId;
-    (req as Record<string, unknown>).role = decoded.role || 'creator';
-    next();
+    decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId: string; role?: string };
   } catch {
     return res.status(401).json(err(new Error('登录已过期，请重新登录')));
+  }
+
+  (req as Record<string, unknown>).creatorId = decoded.creatorId;
+  (req as Record<string, unknown>).role = decoded.role || 'creator';
+
+  try {
+    if (decoded.role !== 'admin') {
+      const { data: profile, error: profileErr } = await supabase.from('lc_profiles')
+        .select('is_banned, ban_reason')
+        .eq('id', decoded.creatorId)
+        .maybeSingle();
+      if (profileErr && !isMissingRelation(profileErr, 'is_banned')) throw profileErr;
+      if (profile?.is_banned) {
+        await logSecurityEvent(req, {
+          action: 'auth_blocked_banned_user',
+          actorId: decoded.creatorId,
+          actorRole: decoded.role || 'creator',
+          targetType: 'profile',
+          targetId: decoded.creatorId,
+          metadata: { reason: profile.ban_reason || null },
+        });
+        return res.status(403).json(err(new Error('账号已被限制发布，请联系管理员申诉')));
+      }
+    }
+    next();
+  } catch (profileErr) {
+    console.error('[auth] profile status check failed', getErrorText(profileErr));
+    return res.status(500).json(err(new Error('账号状态检查失败，请稍后重试')));
   }
 }
 
@@ -69,6 +95,9 @@ function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
     delete safe.balance;
     delete safe.contact_phone;
     delete safe.contact_wechat;
+    delete safe.is_banned;
+    delete safe.ban_reason;
+    delete safe.banned_at;
   }
   return safe;
 }
@@ -120,7 +149,7 @@ function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefi
 async function getAuthedProfile(req: express.Request) {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance')
+    .select('id, display_name, is_realname, balance, is_banned, ban_reason')
     .eq('id', creatorId)
     .single();
   return data;
@@ -165,6 +194,48 @@ function isRelatedProofSchemaMiss(e: unknown) {
 
 function isMissingRelation(e: unknown, relation: string) {
   return getErrorText(e).includes(relation);
+}
+
+function getClientIp(req: express.Request) {
+  const forwarded = req.headers['x-forwarded-for'];
+  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const first = raw?.split(',')[0]?.trim();
+  return first || req.socket.remoteAddress || null;
+}
+
+function getUserAgent(req: express.Request) {
+  const ua = req.headers['user-agent'];
+  return Array.isArray(ua) ? ua.join(' ') : ua || null;
+}
+
+async function logSecurityEvent(req: express.Request, args: {
+  action: string;
+  targetType?: string | null;
+  targetId?: string | null;
+  actorId?: string | null;
+  actorRole?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  try {
+    const actorId = args.actorId ?? ((req as Record<string, unknown>).creatorId as string | undefined) ?? null;
+    const actorRole = args.actorRole ?? ((req as Record<string, unknown>).role as string | undefined) ?? 'anonymous';
+    const { error: logErr } = await supabase.from('lc_security_events').insert({
+      actor_id: actorId,
+      actor_role: actorRole,
+      action: args.action,
+      target_type: args.targetType || null,
+      target_id: args.targetId || null,
+      ip_address: getClientIp(req),
+      user_agent: getUserAgent(req),
+      request_path: req.originalUrl || req.url,
+      metadata: args.metadata || {},
+    });
+    if (logErr && !isMissingRelation(logErr, 'lc_security_events')) {
+      console.error('[security-log] insert failed', getErrorText(logErr));
+    }
+  } catch (logErr) {
+    console.error('[security-log] insert failed', getErrorText(logErr));
+  }
 }
 
 function encodeRelatedProofFallback(note: string, files: RelatedProofFile[]) {
@@ -805,10 +876,39 @@ app.post('/api/lc/auth', async (req, res) => {
 
     if (existing) {
       if (!existing.password_hash) {
+        await logSecurityEvent(req, {
+          action: 'auth_legacy_password_missing',
+          targetType: 'profile',
+          targetId: existing.id,
+          actorId: existing.id,
+          actorRole: existing.role || 'creator',
+          metadata: { phone_hash: sha256(String(phone)) },
+        });
         return res.status(409).json(err(new Error('该手机号已注册')));
       }
+      if (existing.is_banned) {
+        await logSecurityEvent(req, {
+          action: 'auth_login_blocked_banned_user',
+          targetType: 'profile',
+          targetId: existing.id,
+          actorId: existing.id,
+          actorRole: existing.role || 'creator',
+          metadata: { reason: existing.ban_reason || null },
+        });
+        return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
+      }
       const valid = await bcrypt.compare(password, existing.password_hash);
-      if (!valid) return res.status(401).json(err(new Error('密码错误')));
+      if (!valid) {
+        await logSecurityEvent(req, {
+          action: 'auth_login_failed',
+          targetType: 'profile',
+          targetId: existing.id,
+          actorId: existing.id,
+          actorRole: existing.role || 'creator',
+          metadata: { phone_hash: sha256(String(phone)), reason: 'bad_password' },
+        });
+        return res.status(401).json(err(new Error('密码错误')));
+      }
 
       if (displayName) {
         await supabase.from('lc_profiles').update({ display_name: displayName }).eq('id', existing.id);
@@ -816,6 +916,13 @@ app.post('/api/lc/auth', async (req, res) => {
 
       const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
       const isShop = existing.role === 'shop';
+      await logSecurityEvent(req, {
+        action: 'auth_login_success',
+        targetType: 'profile',
+        targetId: existing.id,
+        actorId: existing.id,
+        actorRole: existing.role || 'creator',
+      });
       return res.json(ok({
         id: existing.id, display_name: displayName || existing.display_name, phone: existing.phone,
         role: existing.role, token,
@@ -844,6 +951,14 @@ app.post('/api/lc/auth', async (req, res) => {
     });
 
     const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+    await logSecurityEvent(req, {
+      action: 'auth_register_success',
+      targetType: 'profile',
+      targetId: profile.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { welcome_credit: 30 },
+    });
     res.json(ok({
       id: profile.id, display_name: profile.display_name, phone: profile.phone, role: profile.role, token,
     }));
@@ -861,6 +976,12 @@ app.put('/api/lc/admin/profile/:id/realname', authMiddleware, adminMiddleware, a
   try {
     const { value } = req.body;
     await supabase.from('lc_profiles').update({ is_realname: !!value }).eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: value ? 'admin_profile_realname_marked' : 'admin_profile_realname_unmarked',
+      targetType: 'profile',
+      targetId: req.params.id,
+      metadata: { is_realname: !!value },
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1272,6 +1393,12 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
     }).select().single();
     if (insErr) throw insErr;
 
+    await logSecurityEvent(req, {
+      action: 'commission_submitted',
+      targetType: 'commission',
+      targetId: data?.id,
+      metadata: { city: city || null, target_type: targetType || null },
+    });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1294,6 +1421,11 @@ app.put('/api/lc/commissions/:id/close', authMiddleware, async (req, res) => {
       .eq('id', req.params.id)
       .eq('poster_id', profile.id);
     if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'commission_closed_by_author',
+      targetType: 'commission',
+      targetId: req.params.id,
+    });
     res.json(ok({ id: req.params.id, status: 'closed' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1446,6 +1578,12 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       // 审计链失败不阻断强时效拼车发布；后台巡检再补。
     }
 
+    await logSecurityEvent(req, {
+      action: 'carpool_submitted_auto_published',
+      targetType: 'carpool',
+      targetId: data?.id,
+      metadata: { city, event_date: eventDate, script_name: scriptName, boost_amount: boostAmount },
+    });
     res.json(ok({ id: data?.id, status: 'approved', balance: (profile.balance || 0) - boostAmount }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1464,6 +1602,12 @@ app.get('/api/lc/carpools/:id/contact', authMiddleware, async (req, res) => {
     if (carpool.status !== 'approved' && carpool.poster_id !== profile.id) {
       return res.status(403).json(err(new Error('这条拼车尚未公开')));
     }
+    await logSecurityEvent(req, {
+      action: 'carpool_contact_viewed',
+      targetType: 'carpool',
+      targetId: req.params.id,
+      metadata: { own_item: carpool.poster_id === profile.id },
+    });
     res.json(ok({
       leader_contact: carpool.leader_contact || '',
       contact_note: carpool.contact_note || null,
@@ -1591,6 +1735,12 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       if (isMissingRelation(insErr, 'lc_reports')) return res.status(503).json(err(new Error('举报表尚未初始化，请先执行 Supabase migration')));
       throw insErr;
     }
+    await logSecurityEvent(req, {
+      action: 'report_submitted',
+      targetType,
+      targetId,
+      metadata: { report_id: data?.id, reason, target_title: targetTitle },
+    });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1661,6 +1811,12 @@ app.post('/api/lc/carpools/:id/applications', authMiddleware, async (req, res) =
       if (insErr.code === '23505') return res.status(409).json(err(new Error('你已经提交过上车申请了')));
       throw insErr;
     }
+    await logSecurityEvent(req, {
+      action: 'carpool_application_submitted',
+      targetType: 'carpool',
+      targetId: req.params.id,
+      metadata: { application_id: data?.id, role_name: roleName || null },
+    });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1684,6 +1840,11 @@ app.put('/api/lc/carpools/:id/close', authMiddleware, async (req, res) => {
       .update({ status: 'closed', updated_at: new Date().toISOString() })
       .eq('id', req.params.id);
     if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'carpool_closed_by_author',
+      targetType: 'carpool',
+      targetId: req.params.id,
+    });
     res.json(ok({ closed: true }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1827,16 +1988,29 @@ app.get('/api/lc/contact-requests/:creatorId', authMiddleware, async (req, res) 
 app.post('/api/lc/admin/login', async (req, res) => {
   try {
     if (req.body.password !== ADMIN_PASSWORD) {
+      await logSecurityEvent(req, {
+        action: 'admin_login_failed',
+        actorRole: 'admin',
+        targetType: 'admin',
+        targetId: 'admin',
+      });
       return res.status(401).json(err(new Error('密码错误')));
     }
     const token = jwt.sign({ creatorId: 'admin', role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
+    await logSecurityEvent(req, {
+      action: 'admin_login_success',
+      actorId: 'admin',
+      actorRole: 'admin',
+      targetType: 'admin',
+      targetId: 'admin',
+    });
     res.json(ok({ authed: true, token }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: securityEvents }] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -1848,6 +2022,10 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_certifications').select('*, lc_profiles!inner(display_name, phone)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_carpools').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_reports').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_security_events')
+        .select('id, actor_id, actor_role, action, target_type, target_id, ip_address, user_agent, request_path, metadata, created_at')
+        .order('created_at', { ascending: false })
+        .limit(150),
     ]);
     res.json(ok({
       profiles: (profiles || []).map(profile => sanitizeProfile(profile, true)),
@@ -1861,6 +2039,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       certifications: certifications || [],
       carpools: carpools || [],
       reports: reports || [],
+      securityEvents: securityEvents || [],
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1869,6 +2048,12 @@ app.put('/api/lc/admin/profile/:id/flag', authMiddleware, adminMiddleware, async
   try {
     const rejectReason = req.body?.rejectReason || null;
     await supabase.from('lc_profiles').update({ is_visible: false, reject_reason: rejectReason }).eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: 'admin_profile_hidden',
+      targetType: 'profile',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason },
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1876,7 +2061,50 @@ app.put('/api/lc/admin/profile/:id/flag', authMiddleware, adminMiddleware, async
 app.put('/api/lc/admin/profile/:id/unflag', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     await supabase.from('lc_profiles').update({ is_visible: true }).eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: 'admin_profile_restored',
+      targetType: 'profile',
+      targetId: req.params.id,
+    });
     res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/profile/:id/ban', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const reason = cleanText(req.body?.reason || req.body?.rejectReason, 300) || '违反平台规则，限制账号功能';
+    const { error: updErr } = await supabase.from('lc_profiles').update({
+      is_banned: true,
+      ban_reason: reason,
+      banned_at: new Date().toISOString(),
+      is_visible: false,
+      reject_reason: reason,
+    }).eq('id', req.params.id);
+    if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'admin_profile_banned',
+      targetType: 'profile',
+      targetId: req.params.id,
+      metadata: { reason },
+    });
+    res.json(ok({ id: req.params.id, is_banned: true }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/profile/:id/unban', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { error: updErr } = await supabase.from('lc_profiles').update({
+      is_banned: false,
+      ban_reason: null,
+      banned_at: null,
+    }).eq('id', req.params.id);
+    if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'admin_profile_unbanned',
+      targetType: 'profile',
+      targetId: req.params.id,
+    });
+    res.json(ok({ id: req.params.id, is_banned: false }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -2102,6 +2330,12 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       });
     }
 
+    await logSecurityEvent(req, {
+      action: 'ranking_submitted',
+      targetType: 'ranking',
+      targetId: ranking?.id,
+      metadata: { ranking_type: type, subject_type: subjectType, subject_city: subjectCity || null, amount },
+    });
     res.json(ok({ id: ranking?.id }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2128,6 +2362,11 @@ app.put('/api/lc/rankings/:id/withdraw', authMiddleware, async (req, res) => {
       .eq('poster_id', profile.id)
       .eq('status', 'pending');
     if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'ranking_withdrawn_by_author',
+      targetType: 'ranking',
+      targetId: req.params.id,
+    });
     res.json(ok({ id: req.params.id, status: 'withdrawn' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2154,12 +2393,24 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     const myVote = serializeMyVote({ id: row.vote_id, vote_type: row.vote_type, created_at: row.vote_created_at });
 
     if (row.is_duplicate) {
+      await logSecurityEvent(req, {
+        action: 'ranking_vote_duplicate',
+        targetType: 'ranking',
+        targetId: req.params.id,
+        metadata: { vote_type: voteType },
+      });
       return res.status(409).json({
         ...err(new Error('你已经投过票了')),
         data: { myVote },
       });
     }
 
+    await logSecurityEvent(req, {
+      action: 'ranking_vote_applied',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      metadata: { vote_type: voteType, balance_delta: row.balance_delta || 0 },
+    });
     res.json(ok({
       likes: row.likes,
       dislikes: row.dislikes,
@@ -2185,6 +2436,12 @@ app.delete('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     const row = firstRpcRow<RankingVoteRpcResult>(data);
     if (!row) throw new Error('撤销结果为空');
 
+    await logSecurityEvent(req, {
+      action: 'ranking_vote_cancelled',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      metadata: { refunded: row.refunded || 0 },
+    });
     res.json(ok({
       likes: row.likes,
       dislikes: row.dislikes,
@@ -2242,6 +2499,12 @@ app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
       is_realname: !!profile.is_realname, real_name: null,
     }).select().single();
     if (insErr) throw insErr;
+    await logSecurityEvent(req, {
+      action: 'ranking_comment_submitted',
+      targetType: 'comment',
+      targetId: data?.id,
+      metadata: { ranking_id: req.params.id },
+    });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2284,9 +2547,21 @@ app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, a
         })
         .eq('id', req.params.cid);
       if (fallbackErr) throw fallbackErr;
+      await logSecurityEvent(req, {
+        action: 'related_party_certification_submitted',
+        targetType: 'comment',
+        targetId: req.params.cid,
+        metadata: { ranking_id: req.params.id, storage: 'fallback', file_count: relatedFiles.length },
+      });
       return res.json(ok({ id: req.params.cid, storage: 'fallback' }));
     }
     if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'related_party_certification_submitted',
+      targetType: 'comment',
+      targetId: req.params.cid,
+      metadata: { ranking_id: req.params.id, storage: 'columns', file_count: relatedFiles.length },
+    });
     res.json(ok({ id: req.params.cid }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2304,6 +2579,12 @@ app.post('/api/lc/rankings/:id/comments/:cid/like', authMiddleware, async (req, 
     }
     const newLikes = (c.likes || 0) + 1;
     await supabase.from('lc_comments').update({ likes: newLikes }).eq('id', req.params.cid);
+    await logSecurityEvent(req, {
+      action: 'ranking_comment_liked',
+      targetType: 'comment',
+      targetId: req.params.cid,
+      metadata: { ranking_id: req.params.id },
+    });
     res.json(ok({ likes: newLikes }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2359,6 +2640,12 @@ app.delete('/api/lc/rankings/:id/comments/:cid', authMiddleware, async (req, res
       actorRole: 'creator',
       metadata: { refund_amount: withinRefundWindow ? 1 : 0, refund_window_hours: 24 },
     });
+    await logSecurityEvent(req, {
+      action: 'ranking_comment_deleted_by_author',
+      targetType: 'comment',
+      targetId: req.params.cid,
+      metadata: { ranking_id: req.params.id, refunded: withinRefundWindow ? 1 : 0 },
+    });
     res.json(ok({ id: req.params.cid, refunded: withinRefundWindow, audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2374,6 +2661,11 @@ app.post('/api/lc/rankings/:id/claim', authMiddleware, async (req, res) => {
     await supabase.from('lc_claims').insert({
       ranking_id: req.params.id, contact, message: message || null,
       claimant_id: profile.id, claimant_name: profile.display_name,
+    });
+    await logSecurityEvent(req, {
+      action: 'legacy_related_claim_submitted',
+      targetType: 'ranking',
+      targetId: req.params.id,
     });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
@@ -2403,6 +2695,12 @@ app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, a
     if (updErr) throw updErr;
     const audit = await auditApprovedTarget('ranking', approved, targetType ? 'ranking_reclassified_approved' : 'ranking_approved', getReq(req, 'creatorId'), {
       target_type_override: targetType,
+    });
+    await logSecurityEvent(req, {
+      action: 'admin_ranking_approved',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      metadata: { original_type: r.type, approved_type: nextType, audit_entry_hash: audit?.entry_hash || null },
     });
     res.json(ok({ audit }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -2472,13 +2770,26 @@ app.put('/api/lc/admin/rankings/:id/edit', authMiddleware, adminMiddleware, asyn
       after: auditPayload('ranking', updated),
       changes,
     });
+    await logSecurityEvent(req, {
+      action: 'admin_ranking_edited',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      metadata: { changed_fields: changedFields, audit_entry_hash: audit?.entry_hash || null },
+    });
     res.json(ok({ item: updated, changes, audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.put('/api/lc/admin/rankings/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    const rejectReason = cleanText(req.body?.rejectReason, 300);
     await supabase.from('lc_rankings').update({ status: 'rejected' }).eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: 'admin_ranking_rejected',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason || null },
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2492,6 +2803,12 @@ app.put('/api/lc/admin/comments/:id/approve', authMiddleware, adminMiddleware, a
       .single();
     if (updErr) throw updErr;
     const audit = await auditApprovedTarget('comment', approved, approved?.is_pinned ? 'related_reply_pinned' : 'comment_approved', getReq(req, 'creatorId'));
+    await logSecurityEvent(req, {
+      action: approved?.is_pinned ? 'admin_related_reply_approved' : 'admin_comment_approved',
+      targetType: 'comment',
+      targetId: req.params.id,
+      metadata: { audit_entry_hash: audit?.entry_hash || null },
+    });
     res.json(ok({ audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2524,6 +2841,11 @@ app.put('/api/lc/admin/comments/:id/reject', authMiddleware, adminMiddleware, as
     } else {
       await supabase.from('lc_comments').update({ status: 'rejected' }).eq('id', req.params.id);
     }
+    await logSecurityEvent(req, {
+      action: comment?.is_pinned ? 'admin_related_reply_rejected' : 'admin_comment_rejected',
+      targetType: 'comment',
+      targetId: req.params.id,
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2531,6 +2853,11 @@ app.put('/api/lc/admin/comments/:id/reject', authMiddleware, adminMiddleware, as
 app.put('/api/lc/admin/claims/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     await supabase.from('lc_claims').update({ status: 'approved' }).eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: 'admin_legacy_related_claim_approved',
+      targetType: 'claim',
+      targetId: req.params.id,
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2538,6 +2865,11 @@ app.put('/api/lc/admin/claims/:id/approve', authMiddleware, adminMiddleware, asy
 app.put('/api/lc/admin/claims/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     await supabase.from('lc_claims').update({ status: 'rejected' }).eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: 'admin_legacy_related_claim_rejected',
+      targetType: 'claim',
+      targetId: req.params.id,
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2551,6 +2883,12 @@ app.put('/api/lc/admin/commissions/:id/approve', authMiddleware, adminMiddleware
       .single();
     if (updErr) throw updErr;
     const audit = await auditApprovedTarget('commission', approved, 'commission_approved', getReq(req, 'creatorId'));
+    await logSecurityEvent(req, {
+      action: 'admin_commission_approved',
+      targetType: 'commission',
+      targetId: req.params.id,
+      metadata: { audit_entry_hash: audit?.entry_hash || null },
+    });
     res.json(ok({ audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2561,6 +2899,12 @@ app.put('/api/lc/admin/commissions/:id/reject', authMiddleware, adminMiddleware,
     await supabase.from('lc_commissions')
       .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
       .eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: 'admin_commission_rejected',
+      targetType: 'commission',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason || null },
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2594,6 +2938,12 @@ app.put('/api/lc/admin/carpools/:id/approve', authMiddleware, adminMiddleware, a
       .single();
     if (updErr) throw updErr;
     const audit = await auditApprovedTarget('carpool', approved, 'carpool_approved', getReq(req, 'creatorId'), { sync: syncResult });
+    await logSecurityEvent(req, {
+      action: 'admin_carpool_approved',
+      targetType: 'carpool',
+      targetId: req.params.id,
+      metadata: { sync: syncResult, audit_entry_hash: audit?.entry_hash || null },
+    });
     res.json(ok({ sync: syncResult, audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2604,6 +2954,12 @@ app.put('/api/lc/admin/carpools/:id/reject', authMiddleware, adminMiddleware, as
     await supabase.from('lc_carpools')
       .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
       .eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: 'admin_carpool_rejected',
+      targetType: 'carpool',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason || null },
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2653,6 +3009,12 @@ app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, as
         updated_at: new Date().toISOString(),
       })
       .eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: hideTarget ? 'admin_report_resolved_and_target_hidden' : `admin_report_${action}`,
+      targetType: report.target_type,
+      targetId: report.target_id,
+      metadata: { report_id: req.params.id, hide_target: hideTarget, handler_note: handlerNote || null },
+    });
     res.json(ok({ status: action, hidden: hideTarget }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2661,6 +3023,11 @@ app.put('/api/lc/admin/transactions/:id/approve', authMiddleware, adminMiddlewar
   try {
     const { data, error } = await supabase.rpc('approve_lc_recharge', { p_transaction_id: req.params.id });
     if (error) throw error;
+    await logSecurityEvent(req, {
+      action: 'admin_wallet_recharge_approved',
+      targetType: 'transaction',
+      targetId: req.params.id,
+    });
     res.json(ok(data?.[0] || null));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2673,6 +3040,12 @@ app.put('/api/lc/admin/transactions/:id/reject', authMiddleware, adminMiddleware
       .eq('id', req.params.id)
       .eq('type', 'recharge')
       .eq('status', 'pending');
+    await logSecurityEvent(req, {
+      action: 'admin_wallet_recharge_rejected',
+      targetType: 'transaction',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason || null },
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2695,10 +3068,17 @@ app.post('/api/lc/wallet/recharge', authMiddleware, async (req, res) => {
     if (!amount || amount < 10) return res.status(400).json(err(new Error('充值金额最低 10 契约币')));
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    await supabase.from('lc_transactions').insert({
+    const { data: tx, error: txErr } = await supabase.from('lc_transactions').insert({
       profile_id: profile.id, type: 'recharge', amount: parseInt(amount),
       description: '契约币充值', payment_proof: paymentProof || null,
       status: 'pending',
+    }).select('id, amount').single();
+    if (txErr) throw txErr;
+    await logSecurityEvent(req, {
+      action: 'wallet_recharge_submitted',
+      targetType: 'transaction',
+      targetId: tx?.id,
+      metadata: { amount: tx?.amount || parseInt(amount) },
     });
     res.json(ok({ message: '充值申请已提交，管理员审核后到账' }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -2826,6 +3206,12 @@ app.post('/api/lc/certifications', authMiddleware, async (req, res) => {
     }).select().single();
 
     if (insErr) throw insErr;
+    await logSecurityEvent(req, {
+      action: 'certification_submitted',
+      targetType: 'certification',
+      targetId: data?.id,
+      metadata: { certification_type: type, file_count: files.length },
+    });
     res.json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2873,6 +3259,12 @@ app.put('/api/lc/admin/certifications/:id/approve', authMiddleware, adminMiddlew
       await supabase.from('lc_profiles').update({ verified_shop: true, role: 'shop' }).eq('id', cert.profile_id);
     }
 
+    await logSecurityEvent(req, {
+      action: 'admin_certification_approved',
+      targetType: 'certification',
+      targetId: req.params.id,
+      metadata: { certification_type: cert.type, profile_id: cert.profile_id },
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -2883,6 +3275,12 @@ app.put('/api/lc/admin/certifications/:id/reject', authMiddleware, adminMiddlewa
     await supabase.from('lc_certifications')
       .update({ status: 'rejected', reject_reason: rejectReason || null, updated_at: new Date().toISOString() })
       .eq('id', req.params.id);
+    await logSecurityEvent(req, {
+      action: 'admin_certification_rejected',
+      targetType: 'certification',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason || null },
+    });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });

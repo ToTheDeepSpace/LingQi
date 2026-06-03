@@ -56,6 +56,9 @@ type Profile = {
   updated_at?: string;
   is_visible: boolean;
   is_realname?: boolean;
+  is_banned?: boolean;
+  ban_reason?: string | null;
+  banned_at?: string | null;
   reject_reason?: string | null;
   role_type?: string;
 };
@@ -199,8 +202,22 @@ type ReportReview = {
   created_at: string;
 };
 
+type SecurityEvent = {
+  id: string;
+  actor_id?: string | null;
+  actor_role: string;
+  action: string;
+  target_type?: string | null;
+  target_id?: string | null;
+  ip_address?: string | null;
+  user_agent?: string | null;
+  request_path?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+};
+
 type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert';
-type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'reports' | 'wallet' | 'certs';
+type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'reports' | 'wallet' | 'certs' | 'security';
 
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.04)',
@@ -246,6 +263,7 @@ export default function Admin() {
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
   const [carpools, setCarpools] = useState<CarpoolReview[]>([]);
   const [reports, setReports] = useState<ReportReview[]>([]);
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [transactions, setTransactions] = useState<TransactionReview[]>([]);
   const [certs, setCerts] = useState<CertReview[]>([]);
 const [loading, setLoading] = useState(false);
@@ -280,6 +298,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
         setReports((d.data as { reports: ReportReview[] }).reports || []);
+        setSecurityEvents((d.data as { securityEvents: SecurityEvent[] }).securityEvents || []);
       } else {
         const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '加载失败');
         setError(errMsg);
@@ -336,6 +355,22 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ rejectReason: '管理员下线' }),
     });
+    void loadData();
+  };
+
+  const banProfile = async (id: string) => {
+    const reason = window.prompt('限制账号原因（会记录到安全日志）', '违反平台规则，限制账号功能');
+    if (reason === null) return;
+    await fetch(`${API}/lc/admin/profile/${id}/ban`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    void loadData();
+  };
+
+  const unbanProfile = async (id: string) => {
+    await fetch(`${API}/lc/admin/profile/${id}/unban`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
     void loadData();
   };
 
@@ -524,12 +559,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setCommissions([]);
     setCarpools([]);
     setReports([]);
+    setSecurityEvents([]);
     setTransactions([]);
     setCerts([]);
   };
 
   const pendingProfiles = profiles.filter(p => !p.is_visible && !p.reject_reason);
-  const activeProfiles = profiles.filter(p => p.is_visible);
+  const activeProfiles = profiles.filter(p => p.is_visible || p.is_banned);
 
   if (!authed) return (
     <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -585,12 +621,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginBottom: 28 }}>
           {[
             { label: '待审核创作者', value: pendingProfiles.length, color: '#fb7185' },
-            { label: '已上线创作者', value: activeProfiles.length, color: '#34d399' },
+            { label: '账号', value: activeProfiles.length, color: '#34d399' },
             { label: '联系申请', value: requests.length, color: GOLD },
             { label: '充值', value: transactions.length, color: '#22c55e' },
             { label: '委托需求', value: commissions.length, color: '#fbbf24' },
             { label: '拼车', value: carpools.length, color: '#14b8a6' },
             { label: '举报', value: reports.length, color: '#f87171' },
+            { label: '安全日志', value: securityEvents.length, color: '#fb923c' },
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
             { label: '已发布榜单', value: approvedRankings.length, color: '#60a5fa' },
             { label: '评论', value: comments.length, color: '#38bdf8' },
@@ -606,12 +643,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
 
         <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(201,146,46,0.1)', borderRadius: 14, marginBottom: 20 }}>
           <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>待审核 {pendingProfiles.length > 0 && `(${pendingProfiles.length})`}</button>
-          <button style={tabStyle(tab === 'active')} onClick={() => setTab('active')}>已上线 ({activeProfiles.length})</button>
+          <button style={tabStyle(tab === 'active')} onClick={() => setTab('active')}>账号 ({activeProfiles.length})</button>
           <button style={tabStyle(tab === 'requests')} onClick={() => setTab('requests')}>联系 {requests.length > 0 && `(${requests.length})`}</button>
           <button style={tabStyle(tab === 'wallet')} onClick={() => setTab('wallet')}>充值 {transactions.length > 0 && `(${transactions.length})`}</button>
           <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
           <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
           <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
+          <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
           <button style={tabStyle(tab === 'publishedRankings')} onClick={() => setTab('publishedRankings')}>已发布 ({approvedRankings.length})</button>
           <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
@@ -646,19 +684,24 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
 
             {tab === 'active' && (
-              <ListEmpty empty={activeProfiles.length === 0} text="还没有上线的创作者">
+              <ListEmpty empty={activeProfiles.length === 0} text="暂无可管理账号">
                 {activeProfiles.map(p => (
                   <Row key={p.id}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{p.display_name}</span>
                         {p.is_realname && <span style={{ fontSize: '0.72rem', color: GOLD }}>⭐ 实名</span>}
+                        {p.is_banned && <span style={{ fontSize: '0.72rem', color: '#f87171' }}>已限制</span>}
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.65)' }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.65)' }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.banned_at ? ` · 限制于 ${p.banned_at.slice(0, 10)}` : ''}</div>
+                      {p.ban_reason && <Proof>限制原因：{p.ban_reason}</Proof>}
                     </div>
                     <Actions>
                       <Link to={`/explore/${p.id}`} target="_blank" style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(201,146,46,0.2)', color: GOLD, fontSize: '0.82rem', textDecoration: 'none', fontWeight: 600 }}>主页</Link>
                       <ActionButton onClick={() => toggleRealname(p.id, !p.is_realname)}>{p.is_realname ? '取消实名' : '设为实名'}</ActionButton>
+                      {p.is_banned
+                        ? <ActionButton kind="ok" onClick={() => unbanProfile(p.id)}>解除限制</ActionButton>
+                        : <ActionButton kind="bad" onClick={() => banProfile(p.id)}>限制账号</ActionButton>}
                       <ActionButton kind="bad" onClick={() => hideProfile(p.id)}>下线</ActionButton>
                     </Actions>
                   </Row>
@@ -873,6 +916,29 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ActionButton kind="ok" onClick={() => resolveReport(r.id, 'resolved')}>标记已处理</ActionButton>
                       <ActionButton onClick={() => resolveReport(r.id, 'dismissed')}>暂不处理</ActionButton>
                     </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'security' && (
+              <ListEmpty empty={securityEvents.length === 0} text="暂无安全日志">
+                {securityEvents.map(event => (
+                  <Row key={event.id} accent="#fb923c">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={event.action} pill={event.actor_role || 'unknown'} />
+                      <Meta>
+                        {event.actor_id ? `操作者：${event.actor_id}` : '操作者：未登录'}
+                        {event.target_type ? ` · 对象：${event.target_type}/${event.target_id || '-'}` : ''}
+                        {event.ip_address ? ` · IP：${event.ip_address}` : ''}
+                        {event.created_at ? ` · ${event.created_at.slice(0, 19).replace('T', ' ')}` : ''}
+                      </Meta>
+                      {event.request_path && <Meta>路径：{event.request_path}</Meta>}
+                      {event.user_agent && <Proof>UA：{event.user_agent.slice(0, 220)}</Proof>}
+                      {event.metadata && Object.keys(event.metadata).length > 0 && (
+                        <ContentBox>{JSON.stringify(event.metadata, null, 2)}</ContentBox>
+                      )}
+                    </div>
                   </Row>
                 ))}
               </ListEmpty>
