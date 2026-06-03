@@ -58,6 +58,176 @@ body {
   contain-intrinsic-size: 320px;
 }
 
+/* ============ 首页首屏入口 ============ */
+.home-hero {
+  min-height: calc(100svh - 64px);
+  background: linear-gradient(180deg, #fffdf8 0%, #f7fbff 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1.1rem, 3svh, 2rem) 1.25rem clamp(1rem, 2.6svh, 2.2rem);
+}
+
+.home-hero-inner {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  max-width: 720px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.home-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgba(255, 250, 242, 0.86);
+  border: 1px solid rgba(201, 146, 46, 0.32);
+  color: #925f18;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: clamp(14px, 2.8svh, 28px);
+  box-shadow: 0 10px 26px rgba(146, 95, 24, 0.08);
+}
+
+.home-hero-title {
+  font-family: var(--font-serif);
+  font-weight: 900;
+  font-size: clamp(2.05rem, 8.5vmin, 4.6rem);
+  line-height: 1.06;
+  letter-spacing: 0;
+  margin-bottom: clamp(12px, 2svh, 20px);
+  text-align: center;
+}
+
+.home-hero-lead {
+  font-size: clamp(0.94rem, 2.2vmin, 1.12rem);
+  color: rgba(31, 41, 55, 0.86);
+  line-height: 1.7;
+  margin: 0 auto 8px;
+  text-align: center;
+  max-width: 580px;
+}
+
+.home-hero-subcopy {
+  font-size: clamp(0.84rem, 1.9vmin, 0.98rem);
+  color: rgba(71, 85, 105, 0.76);
+  line-height: 1.65;
+  margin: 0 auto clamp(16px, 2.6svh, 26px);
+  text-align: center;
+  max-width: 560px;
+}
+
+.home-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.home-entry-link {
+  min-height: 46px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 16px;
+  border-radius: 12px;
+  text-align: center;
+  text-decoration: none;
+  font-size: clamp(0.9rem, 2.2vmin, 1rem);
+  font-weight: 750;
+  line-height: 1.15;
+  letter-spacing: 0;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  white-space: nowrap;
+}
+
+.home-entry-link:hover {
+  transform: translateY(-1px);
+}
+
+.home-entry-red {
+  border: 1px solid rgba(192, 57, 43, 0.24);
+  background: rgba(254, 242, 242, 0.9);
+  color: #b42318;
+}
+
+.home-entry-red:hover {
+  background: rgba(254, 226, 226, 0.95);
+  border-color: #c0392b;
+}
+
+.home-entry-blue {
+  border: 1px solid rgba(39, 83, 137, 0.22);
+  background: rgba(239, 246, 255, 0.9);
+  color: #275389;
+}
+
+.home-entry-blue:hover {
+  background: rgba(219, 234, 254, 0.95);
+  border-color: #275389;
+}
+
+.home-hero-note {
+  margin-top: clamp(12px, 2.1svh, 20px);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: rgba(71, 85, 105, 0.62);
+  text-align: center;
+}
+
+@media (max-width: 420px) {
+  .home-hero {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .home-hero-badge {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    padding: 5px 12px;
+  }
+
+  .home-entry-grid {
+    gap: 8px;
+  }
+
+  .home-entry-link {
+    min-height: 43px;
+    padding: 10px 8px;
+    font-size: 0.86rem;
+  }
+
+  .home-hero-note {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+}
+
+@media (max-height: 680px) {
+  .home-hero-title {
+    font-size: clamp(1.9rem, 7.8vmin, 3.5rem);
+  }
+
+  .home-hero-lead,
+  .home-hero-subcopy {
+    line-height: 1.55;
+  }
+
+  .home-hero-badge {
+    margin-bottom: 12px;
+  }
+}
+
 /* ============ 水波纹 ============ */
 @keyframes ripple {
   0% { transform: scale(0.8); opacity: 0.4; }

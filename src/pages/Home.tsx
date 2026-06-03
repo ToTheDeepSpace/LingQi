@@ -33,60 +33,48 @@ export default function Home() {
     <div style={{ backgroundColor: C, color: INK }}>
 
       {/* ───────────── HERO ───────────── */}
-      <section style={{ minHeight: '100svh', background: 'linear-gradient(180deg, #fffdf8 0%, #f7fbff 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '3rem 1.25rem 5rem' }}>
+      <section className="home-hero">
 
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 50% 55%, rgba(217,168,87,0.18) 0%, rgba(85,135,186,0.08) 42%, transparent 72%)', pointerEvents: 'none' }} />
 
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 40% 30% at 50% 40%, rgba(255,255,255,0.72) 0%, transparent 100%)', pointerEvents: 'none' }} />
 
-        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', maxWidth: 700, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div className="home-hero-inner">
 
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 999, background: 'rgba(255,250,242,0.86)', border: '1px solid rgba(201,146,46,0.32)', color: '#925f18', fontSize: 11, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 36, boxShadow: '0 10px 26px rgba(146,95,24,0.08)' }}>
+          <div className="home-hero-badge">
             <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: GOLD }} />
             灵契师与委托人的连接之所
           </div>
 
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(2.2rem, 9vw, 5rem)', lineHeight: 1.1, letterSpacing: 0, marginBottom: 24, textAlign: 'center' }}>
+          <h1 className="home-hero-title">
             让虚拟人<br />
             短暂降临现实<br />
             <span className="gradient-text-gold">此之谓灵契</span>
           </h1>
 
-          <p style={{ fontSize: 'clamp(0.95rem, 2.5vw, 1.15rem)', color: 'rgba(31,41,55,0.86)', lineHeight: 1.8, marginBottom: 12, textAlign: 'center', maxWidth: 560 }}>
+          <p className="home-hero-lead">
             灵契师，是与虚拟人签订契约的人：让角色借由自己附身片刻，陪委托人走过一段真实时间。
           </p>
-          <p style={{ fontSize: 'clamp(0.85rem, 2vw, 1rem)', color: MUTED, lineHeight: 1.8, marginBottom: 36, textAlign: 'center', maxWidth: 560 }}>
+          <p className="home-hero-subcopy">
             灵契，是这份契约，也是这场降临。这里会成为委托人寻找灵契师时首先想到的地方。
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%', maxWidth: 360 }}>
-            <Link to="/explore" className="btn-gold" style={{ width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem', fontWeight: 600, letterSpacing: '0.03em' }}>
-              寻觅灵契师
+          <div className="home-entry-grid">
+            <Link to="/explore" className="btn-gold home-entry-link">
+              进入灵契大厅
             </Link>
-            <Link to="/login" className="btn-glass" style={{ width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem' }}>
-              我是灵契师，免费入驻
+            <Link to="/login" className="btn-glass home-entry-link">
+              灵契师入驻
             </Link>
-            <Link to="/rankings" style={{
-              width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem', fontWeight: 600,
-              borderRadius: 12, border: '1px solid rgba(192,57,43,0.24)', background: 'rgba(254,242,242,0.9)',
-              color: '#b42318', textDecoration: 'none', transition: 'all 0.3s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(254,226,226,0.95)'; e.currentTarget.style.borderColor = '#c0392b'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(254,242,242,0.9)'; e.currentTarget.style.borderColor = 'rgba(192,57,43,0.24)'; }}>
-              ⚖ 红黑榜 · 一人一票 · 真实口碑
+            <Link to="/rankings" className="home-entry-link home-entry-red">
+              红黑榜口碑
             </Link>
-            <Link to="/carpools" style={{
-              width: '100%', display: 'block', padding: '14px 32px', textAlign: 'center', fontSize: '1rem', fontWeight: 650,
-              borderRadius: 12, border: '1px solid rgba(39,83,137,0.22)', background: 'rgba(239,246,255,0.9)',
-              color: '#275389', textDecoration: 'none', transition: 'all 0.3s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(219,234,254,0.95)'; e.currentTarget.style.borderColor = '#275389'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,246,255,0.9)'; e.currentTarget.style.borderColor = 'rgba(39,83,137,0.22)'; }}>
-              🚗 拼车区 · 找搭子 · 看补贴
+            <Link to="/carpools" className="home-entry-link home-entry-blue">
+              拼车区
             </Link>
           </div>
 
-          <p style={{ marginTop: 24, fontSize: 11, letterSpacing: '0.08em', color: 'rgba(71,85,105,0.62)', textAlign: 'center' }}>
+          <p className="home-hero-note">
             注册即用 · 发布内容人工审核 · 口碑长期沉淀
           </p>
         </div>
