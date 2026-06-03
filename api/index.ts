@@ -441,7 +441,7 @@ function normalizeAlipayParams(input: unknown) {
 
 function buildAlipaySignContent(params: Record<string, string>) {
   return Object.keys(params)
-    .filter(key => key !== 'sign' && key !== 'sign_type' && params[key] !== '')
+    .filter(key => key !== 'sign' && params[key] !== '')
     .sort()
     .map(key => `${key}=${params[key]}`)
     .join('&');

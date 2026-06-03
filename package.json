@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "build:tencent": "npm run build && npm run build:server",
+    "deploy:tencent": "bash scripts/deploy-tencent.sh",
     "lint": "eslint .",
     "preview": "vite preview",
     "start:server": "node dist-server/server/standalone.js"
