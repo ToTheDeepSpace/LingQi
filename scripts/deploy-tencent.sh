@@ -15,7 +15,10 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
-git push origin "$BRANCH"
+if ! git push origin "$BRANCH"; then
+  echo "origin push failed; retrying without local proxy env..." >&2
+  HTTPS_PROXY= HTTP_PROXY= ALL_PROXY= git push origin "$BRANCH"
+fi
 export GIT_SSH_COMMAND="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new"
 git push "$SERVER_REMOTE" "$BRANCH"
 
