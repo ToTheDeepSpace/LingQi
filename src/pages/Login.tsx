@@ -1,68 +1,173 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 
 const API = '/api';
-const C    = '#fffdf8';
-const C2   = '#eef6ff';
+const C = '#fffdf8';
+const C2 = '#eef6ff';
 const GOLD = '#d9a857';
-const INK  = '#1f2937';
+const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '12px 16px', borderRadius: 10, fontSize: '0.9rem',
-  border: '1px solid rgba(201,146,46,0.28)', outline: 'none',
-  backgroundColor: '#fff', color: INK,
+  width: '100%',
+  padding: '12px 16px',
+  borderRadius: 10,
+  fontSize: '0.9rem',
+  border: '1px solid rgba(201,146,46,0.28)',
+  outline: 'none',
+  backgroundColor: '#fff',
+  color: INK,
   boxSizing: 'border-box',
 };
 
+type LoginMode = 'sms' | 'password';
+
+function storeLogin(data: Record<string, unknown>) {
+  localStorage.setItem('lc_creator', JSON.stringify(data));
+  window.dispatchEvent(new Event('lc-auth-changed'));
+}
+
+function decodeWechatPayload(payload: string) {
+  try {
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    return JSON.parse(decodeURIComponent(escape(atob(padded))));
+  } catch {
+    try {
+      return JSON.parse(atob(payload));
+    } catch {
+      return null;
+    }
+  }
+}
+
 export default function Login() {
   const navigate = useNavigate();
-  const [phone, setPhone]         = useState('');
-  const [password, setPassword]   = useState('');
-  const [name, setName]           = useState('');
+  const location = useLocation();
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [mode, setMode] = useState<LoginMode>('sms');
   const [isRegister, setIsRegister] = useState(false);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState('');
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!phone.trim() || phone.length < 5) { setError('请填写正确的手机号'); return; }
-    if (!password.trim() || password.length < 4) { setError('密码至少4位'); return; }
-    if (isRegister && !name.trim()) { setError('请填写昵称'); return; }
-    setLoading(true); setError('');
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const wechatLogin = params.get('wechat_login');
+    const authError = params.get('auth_error');
+    if (authError) {
+      window.setTimeout(() => setError(authError), 0);
+      window.history.replaceState(null, '', '/login');
+      return;
+    }
+    if (!wechatLogin) return;
+    const data = decodeWechatPayload(wechatLogin);
+    if (data?.token) {
+      storeLogin(data);
+      const redirect = params.get('redirect') || '/dashboard';
+      navigate(redirect.startsWith('/') ? redirect : '/dashboard', { replace: true });
+    } else {
+      window.setTimeout(() => setError('微信登录结果无效，请重试'), 0);
+      window.history.replaceState(null, '', '/login');
+    }
+  }, [location.search, navigate]);
+
+  const sendCode = async () => {
+    if (!phone.trim() || phone.replace(/\D/g, '').length !== 11) {
+      setError('请填写正确的手机号');
+      return;
+    }
+    setSending(true);
+    setError('');
     try {
-      const r = await fetch(`${API}/lc/auth`, {
+      const r = await fetch(`${API}/lc/auth/send-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phone.trim(), password: password.trim(), displayName: name.trim() || undefined }),
+        body: JSON.stringify({ phone: phone.trim() }),
       });
       const d = await r.json();
       if (d.success) {
-        localStorage.setItem('lc_creator', JSON.stringify(d.data));
-        window.dispatchEvent(new Event('lc-auth-changed'));
+        setSent(true);
+        setError('验证码已发送，请查看短信');
+      } else {
+        setError(d.error || '验证码发送失败');
+      }
+    } catch {
+      setError('网络错误');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const startWechatLogin = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const r = await fetch(`${API}/lc/auth/wechat/url?redirect=/dashboard`);
+      const d = await r.json();
+      if (d.success && d.data?.url) {
+        window.location.href = d.data.url;
+      } else {
+        setError(d.error || '微信扫码登录尚未配置');
+      }
+    } catch {
+      setError('微信登录启动失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phone.trim() || phone.replace(/\D/g, '').length !== 11) { setError('请填写正确的手机号'); return; }
+    if (mode === 'sms' && !code.trim()) { setError('请填写验证码'); return; }
+    if (mode === 'password' && (!password.trim() || password.length < 4)) { setError('密码至少4位'); return; }
+    if (mode === 'password' && isRegister && !name.trim()) { setError('请填写昵称'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const r = await fetch(mode === 'sms' ? `${API}/lc/auth/phone` : `${API}/lc/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mode === 'sms'
+          ? { phone: phone.trim(), code: code.trim(), displayName: name.trim() || undefined }
+          : { phone: phone.trim(), password: password.trim(), displayName: name.trim() || undefined }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        storeLogin(d.data);
         navigate('/dashboard');
       } else {
-        if (!isRegister && d.error?.includes('未设置密码')) {
+        if (mode === 'password' && !isRegister && d.error?.includes('未设置密码')) {
           setIsRegister(true);
           setError('该手机号尚未注册，请设置昵称和密码完成注册');
         } else {
           setError(d.error || '操作失败');
         }
       }
-    } catch { setError('网络错误'); }
-    finally { setLoading(false); }
+    } catch {
+      setError('网络错误');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', backgroundColor: C, color: INK }}>
-
-      {/* ── 左侧品牌面板 ── */}
       <div style={{
         display: 'none',
-        width: '45%', flexShrink: 0,
-        backgroundColor: C2, alignItems: 'center', justifyContent: 'center',
+        width: '45%',
+        flexShrink: 0,
+        backgroundColor: C2,
+        alignItems: 'center',
+        justifyContent: 'center',
         borderRight: '1px solid rgba(201,146,46,0.18)',
-        position: 'relative', overflow: 'hidden',
+        position: 'relative',
+        overflow: 'hidden',
       }} className="lg-flex">
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 70% 55% at 50% 45%, rgba(201,146,46,0.14) 0%, transparent 65%)', pointerEvents: 'none' }} />
         {[500, 360, 220].map((s) => (
@@ -74,23 +179,13 @@ export default function Login() {
           </div>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 32px' }} />
           <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: MUTED, lineHeight: 2 }}>
-            让每一次附身<br />都有名字、口碑<br />和被委托的理由
+            用手机号验证身份<br />用微信快速登录<br />把每一次委托留在自己名下
           </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 40 }}>
-            {['灵契师', '委托人', '配套服务', '红黑榜'].map(r => (
-              <span key={r} style={{ padding: '5px 14px', borderRadius: 999, fontSize: '0.8rem', background: 'rgba(255,255,255,0.72)', border: '1px solid rgba(201,146,46,0.2)', color: 'rgba(71,85,105,0.74)' }}>
-                {r}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
 
-      {/* ── 右侧表单面板 ── */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
         <div style={{ width: '100%', maxWidth: 420 }}>
-
-          {/* 移动端品牌标识 */}
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
             <Link to="/" style={{ textDecoration: 'none', fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '2rem', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               灵契
@@ -98,18 +193,29 @@ export default function Login() {
           </div>
 
           <div style={{ backgroundColor: '#fffaf2', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 20, padding: '36px 32px', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
-            <div style={{ textAlign: 'center', marginBottom: 28 }}>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 8, color: INK }}>
-                {isRegister ? '创建账号' : '欢迎回来'}
+                {mode === 'sms' ? '手机号验证登录' : isRegister ? '创建账号' : '密码登录'}
               </h1>
               <p style={{ fontSize: '0.85rem', color: MUTED }}>
-                {isRegister ? '注册后即可使用，发布内容再进入审核' : '登录你的灵契账号'}
+                {mode === 'sms' ? '注册和登录都先验证手机号，发布内容再进入审核' : '旧账号仍可使用密码登录'}
               </p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+              <button type="button" onClick={() => { setMode('sms'); setError(''); }} style={{
+                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
+                background: mode === 'sms' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'sms' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
+              }}>验证码</button>
+              <button type="button" onClick={() => { setMode('password'); setError(''); }} style={{
+                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
+                background: mode === 'password' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'password' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
+              }}>密码备用</button>
             </div>
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {error && (
-                <div style={{ padding: '12px 16px', backgroundColor: 'rgba(254,242,242,0.92)', border: '1px solid rgba(220,38,38,0.24)', borderRadius: 10, fontSize: '0.85rem', color: '#b91c1c' }}>
+                <div style={{ padding: '12px 16px', backgroundColor: error.includes('已发送') ? 'rgba(240,253,244,0.92)' : 'rgba(254,242,242,0.92)', border: `1px solid ${error.includes('已发送') ? 'rgba(34,197,94,0.24)' : 'rgba(220,38,38,0.24)'}`, borderRadius: 10, fontSize: '0.85rem', color: error.includes('已发送') ? '#15803d' : '#b91c1c' }}>
                   {error}
                 </div>
               )}
@@ -119,42 +225,66 @@ export default function Login() {
                 <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="输入手机号" required style={inputStyle} />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>密码</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isRegister ? '设置密码（至少4位）' : '输入密码'} required style={inputStyle} />
-              </div>
-
-              {isRegister && (
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>昵称 / 艺名</label>
-                  <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="你希望别人怎么称呼你" required style={inputStyle} />
-                </div>
+              {mode === 'sms' ? (
+                <>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>验证码</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 112px', gap: 8 }}>
+                      <input type="text" value={code} onChange={e => setCode(e.target.value)} placeholder="6位验证码" required style={inputStyle} />
+                      <button type="button" onClick={sendCode} disabled={sending} style={{ border: '1px solid rgba(201,146,46,0.32)', borderRadius: 10, background: '#fff', color: '#925f18', fontWeight: 800, cursor: sending ? 'not-allowed' : 'pointer' }}>
+                        {sending ? '发送中' : sent ? '重发' : '获取'}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>昵称 / 艺名（首次登录可填）</label>
+                    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="不填则使用手机号后四位生成昵称" style={inputStyle} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>密码</label>
+                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isRegister ? '设置密码（至少4位）' : '输入密码'} required style={inputStyle} />
+                  </div>
+                  {isRegister && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>昵称 / 艺名</label>
+                      <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="你希望别人怎么称呼你" required style={inputStyle} />
+                    </div>
+                  )}
+                </>
               )}
 
               <button type="submit" disabled={loading}
                 style={{
-                  marginTop: 8, padding: '13px', borderRadius: 10, border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+                  marginTop: 4, padding: '13px', borderRadius: 10, border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
                   background: loading ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                  color: loading ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 700, fontSize: '0.9rem',
+                  color: loading ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 800, fontSize: '0.9rem',
                 }}>
-                {loading ? '处理中...' : isRegister ? '注册并登录' : '登录'}
+                {loading ? '处理中...' : mode === 'sms' ? '验证并登录' : isRegister ? '注册并登录' : '登录'}
               </button>
 
-              <p style={{ fontSize: '0.82rem', color: MUTED, textAlign: 'center' }}>
-                {isRegister ? (
-                  <>已有账号？<button type="button" onClick={() => { setIsRegister(false); setError(''); }}
-                    style={{ background: 'none', border: 'none', color: '#925f18', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'underline' }}>去登录</button></>
-                ) : (
-                  <>没有账号？<button type="button" onClick={() => { setIsRegister(true); setError(''); }}
-                    style={{ background: 'none', border: 'none', color: '#925f18', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'underline' }}>立即注册</button></>
-                )}
-              </p>
+              <button type="button" onClick={startWechatLogin} disabled={loading}
+                style={{ padding: '12px', borderRadius: 10, border: '1px solid rgba(34,197,94,0.26)', background: '#f0fdf4', color: '#166534', fontWeight: 850, cursor: loading ? 'not-allowed' : 'pointer' }}>
+                微信扫码登录
+              </button>
 
-              {isRegister && (
-                <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.64)', textAlign: 'center', lineHeight: 1.7 }}>
-                  账号注册后立即可用；红黑榜内容、评论和相关方申请会先进入人工审核
+              {mode === 'password' && (
+                <p style={{ fontSize: '0.82rem', color: MUTED, textAlign: 'center' }}>
+                  {isRegister ? (
+                    <>已有账号？<button type="button" onClick={() => { setIsRegister(false); setError(''); }}
+                      style={{ background: 'none', border: 'none', color: '#925f18', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'underline' }}>去登录</button></>
+                  ) : (
+                    <>没有密码账号？<button type="button" onClick={() => { setIsRegister(true); setError(''); }}
+                      style={{ background: 'none', border: 'none', color: '#925f18', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'underline' }}>创建密码账号</button></>
+                  )}
                 </p>
               )}
+
+              <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.64)', textAlign: 'center', lineHeight: 1.7 }}>
+                验证码用于确认手机号归属；登录、发布、评论、举报等关键操作会依法留存必要日志。
+              </p>
             </form>
           </div>
 

@@ -6,7 +6,21 @@ import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
-import { createHash } from 'node:crypto';
+import { createHash, createSign, createVerify, randomInt } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+function envValue(name: string) {
+  const direct = process.env[name];
+  if (direct) return direct;
+  const file = process.env[`${name}_FILE`];
+  if (!file) return '';
+  try {
+    return readFileSync(file, 'utf8').trim();
+  } catch (e) {
+    console.error(`[env] failed to read ${name}_FILE`, e instanceof Error ? e.message : String(e));
+    return '';
+  }
+}
 
 // --- 环境变量 ---
 const JWT_SECRET = process.env.JWT_SECRET || 'lingqi-dev-secret-change-in-production';
@@ -14,6 +28,38 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const JUZHANGGUI_TENANT_ID = process.env.JUZHANGGUI_TENANT_ID || 'f0d6e011-6e75-4c14-95e9-dc61b26871e3';
+const AUTH_CODE_PEPPER = process.env.AUTH_CODE_PEPPER || JWT_SECRET;
+const SMS_CODE_TTL_MINUTES = Number(process.env.SMS_CODE_TTL_MINUTES || 5);
+const SMS_CODE_COOLDOWN_SECONDS = Number(process.env.SMS_CODE_COOLDOWN_SECONDS || 60);
+const TENCENT_SMS_REGION = process.env.TENCENT_SMS_REGION || 'ap-guangzhou';
+const TENCENT_SMS_SDK_APP_ID = process.env.TENCENT_SMS_SDK_APP_ID || '';
+const TENCENT_SMS_SIGN_NAME = process.env.TENCENT_SMS_SIGN_NAME || '';
+const TENCENT_SMS_TEMPLATE_ID = process.env.TENCENT_SMS_TEMPLATE_ID || '';
+const TENCENTCLOUD_SECRET_ID = process.env.TENCENTCLOUD_SECRET_ID || '';
+const TENCENTCLOUD_SECRET_KEY = process.env.TENCENTCLOUD_SECRET_KEY || '';
+const LINGQI_SITE_URL = (process.env.LINGQI_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://lingqi.jusichen.com').replace(/\/$/, '');
+const WECHAT_OPEN_APP_ID = process.env.WECHAT_OPEN_APP_ID || '';
+const WECHAT_OPEN_APP_SECRET = process.env.WECHAT_OPEN_APP_SECRET || '';
+const WECHAT_REDIRECT_URI = process.env.WECHAT_REDIRECT_URI || `${LINGQI_SITE_URL}/api/lc/auth/wechat/callback`;
+const ALIPAY_APP_ID = process.env.ALIPAY_APP_ID || '';
+const ALIPAY_PRIVATE_KEY = envValue('ALIPAY_PRIVATE_KEY');
+const ALIPAY_PUBLIC_KEY = envValue('ALIPAY_PUBLIC_KEY');
+const ALIPAY_GATEWAY = process.env.ALIPAY_GATEWAY || 'https://openapi.alipay.com/gateway.do';
+const ALIPAY_NOTIFY_URL = process.env.ALIPAY_NOTIFY_URL || `${LINGQI_SITE_URL}/api/lc/wallet/alipay/notify`;
+const ALIPAY_RETURN_URL = process.env.ALIPAY_RETURN_URL || `${LINGQI_SITE_URL}/wallet?alipay=return`;
+const ALIPAY_SELLER_ID = process.env.ALIPAY_SELLER_ID || '';
+
+type TencentSmsStatus = { Code?: string; Message?: string; SerialNo?: string };
+type TencentSmsClient = {
+  SendSms(params: Record<string, unknown>): Promise<{ SendStatusSet?: TencentSmsStatus[] }>;
+};
+type TencentCloudSdk = {
+  sms: {
+    v20210111: {
+      Client: new (config: Record<string, unknown>) => TencentSmsClient;
+    };
+  };
+};
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -21,6 +67,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // --- 工具函数 ---
 function ok(d?: unknown) { return { success: true, data: d }; }
@@ -208,6 +255,263 @@ function getUserAgent(req: express.Request) {
   return Array.isArray(ua) ? ua.join(' ') : ua || null;
 }
 
+function sha256(input: string) {
+  return createHash('sha256').update(input).digest('hex');
+}
+
+function normalizeChinaPhone(input: unknown) {
+  const phone = typeof input === 'string' ? input.replace(/\D/g, '') : '';
+  if (!/^1[3-9]\d{9}$/.test(phone)) throw new Error('请填写正确的中国大陆手机号');
+  return phone;
+}
+
+function makeAuthPhoneHash(phone: string) {
+  return sha256(`auth-phone:${phone}`);
+}
+
+function makeAuthCodeHash(phone: string, code: string) {
+  return sha256(`auth-code:${AUTH_CODE_PEPPER}:${phone}:${code}`);
+}
+
+function makeSmsCode() {
+  return String(randomInt(0, 1000000)).padStart(6, '0');
+}
+
+function isTencentSmsConfigured() {
+  return Boolean(TENCENTCLOUD_SECRET_ID && TENCENTCLOUD_SECRET_KEY && TENCENT_SMS_SDK_APP_ID && TENCENT_SMS_SIGN_NAME && TENCENT_SMS_TEMPLATE_ID);
+}
+
+async function sendTencentSmsCode(phone: string, code: string) {
+  if (!isTencentSmsConfigured()) {
+    if (process.env.NODE_ENV === 'production') throw new Error('短信服务未配置');
+    console.log(`[短信验证码][dev] ${phone}: ${code}`);
+    return { provider: 'dev-log' };
+  }
+
+  const imported = await import('tencentcloud-sdk-nodejs') as unknown as TencentCloudSdk & { default?: TencentCloudSdk };
+  const tencentcloud = imported.default || imported;
+  const SmsClient = tencentcloud.sms.v20210111.Client;
+  const client = new SmsClient({
+    credential: {
+      secretId: TENCENTCLOUD_SECRET_ID,
+      secretKey: TENCENTCLOUD_SECRET_KEY,
+    },
+    region: TENCENT_SMS_REGION,
+    profile: {
+      httpProfile: {
+        endpoint: 'sms.tencentcloudapi.com',
+        reqMethod: 'POST',
+        reqTimeout: 10,
+      },
+    },
+  });
+
+  const response = await client.SendSms({
+    SmsSdkAppId: TENCENT_SMS_SDK_APP_ID,
+    SignName: TENCENT_SMS_SIGN_NAME,
+    TemplateId: TENCENT_SMS_TEMPLATE_ID,
+    TemplateParamSet: [code, String(SMS_CODE_TTL_MINUTES)],
+    PhoneNumberSet: [`+86${phone}`],
+  });
+  const status = response?.SendStatusSet?.[0];
+  if (status && status.Code && status.Code !== 'Ok') {
+    throw new Error(status.Message || `短信发送失败：${status.Code}`);
+  }
+  return { provider: 'tencentcloud', serialNo: status?.SerialNo || null };
+}
+
+async function createAndSendPhoneCode(req: express.Request, project: 'lingqi' | 'juzhanggui', purpose: string, rawPhone: unknown) {
+  const phone = normalizeChinaPhone(rawPhone);
+  const phoneHash = makeAuthPhoneHash(phone);
+  const { data: latest, error: latestErr } = await supabase.from('lc_auth_verification_codes')
+    .select('id, created_at')
+    .eq('project', project)
+    .eq('purpose', purpose)
+    .eq('phone_hash', phoneHash)
+    .is('consumed_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestErr && !isMissingRelation(latestErr, 'lc_auth_verification_codes')) throw latestErr;
+  if (latest?.created_at && Date.now() - new Date(latest.created_at).getTime() < SMS_CODE_COOLDOWN_SECONDS * 1000) {
+    throw new Error(`验证码已发送，请 ${SMS_CODE_COOLDOWN_SECONDS} 秒后再试`);
+  }
+
+  const code = makeSmsCode();
+  const expiresAt = new Date(Date.now() + SMS_CODE_TTL_MINUTES * 60 * 1000).toISOString();
+  const { data: row, error: insertErr } = await supabase.from('lc_auth_verification_codes').insert({
+    project,
+    purpose,
+    phone_hash: phoneHash,
+    phone_last4: phone.slice(-4),
+    code_hash: makeAuthCodeHash(phone, code),
+    ip_address: getClientIp(req),
+    user_agent: getUserAgent(req),
+    expires_at: expiresAt,
+  }).select('id').single();
+  if (insertErr) throw insertErr;
+
+  try {
+    const result = await sendTencentSmsCode(phone, code);
+    return { phone, expiresAt, provider: result.provider };
+  } catch (sendErr) {
+    if (row?.id) await supabase.from('lc_auth_verification_codes').update({ consumed_at: new Date().toISOString() }).eq('id', row.id);
+    throw sendErr;
+  }
+}
+
+async function verifyPhoneCode(project: 'lingqi' | 'juzhanggui', purpose: string, rawPhone: unknown, rawCode: unknown) {
+  const phone = normalizeChinaPhone(rawPhone);
+  const code = typeof rawCode === 'string' ? rawCode.replace(/\D/g, '') : '';
+  if (!/^\d{4,8}$/.test(code)) throw new Error('请填写正确的验证码');
+  const phoneHash = makeAuthPhoneHash(phone);
+  const { data: row, error: qErr } = await supabase.from('lc_auth_verification_codes')
+    .select('id, code_hash, expires_at, attempts')
+    .eq('project', project)
+    .eq('purpose', purpose)
+    .eq('phone_hash', phoneHash)
+    .is('consumed_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (qErr) throw qErr;
+  if (!row) throw new Error('请先获取验证码');
+  if (new Date(row.expires_at).getTime() < Date.now()) throw new Error('验证码已过期，请重新获取');
+  if ((row.attempts || 0) >= 5) throw new Error('验证码错误次数过多，请重新获取');
+  if (row.code_hash !== makeAuthCodeHash(phone, code)) {
+    await supabase.from('lc_auth_verification_codes').update({ attempts: (row.attempts || 0) + 1 }).eq('id', row.id);
+    throw new Error('验证码错误');
+  }
+  await supabase.from('lc_auth_verification_codes').update({
+    attempts: (row.attempts || 0) + 1,
+    consumed_at: new Date().toISOString(),
+  }).eq('id', row.id);
+  return phone;
+}
+
+function isWechatLoginConfigured() {
+  return Boolean(WECHAT_OPEN_APP_ID && WECHAT_OPEN_APP_SECRET);
+}
+
+function safeFrontendRedirect(input: unknown) {
+  const raw = typeof input === 'string' ? input.trim() : '';
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/dashboard';
+  return raw.slice(0, 120);
+}
+
+function makeWechatAuthorizeUrl(redirectPath: string) {
+  const state = jwt.sign({ kind: 'lc_wechat_login', redirectPath }, JWT_SECRET, { expiresIn: '10m' });
+  const params = new URLSearchParams({
+    appid: WECHAT_OPEN_APP_ID,
+    redirect_uri: WECHAT_REDIRECT_URI,
+    response_type: 'code',
+    scope: 'snsapi_login',
+    state,
+  });
+  return `https://open.weixin.qq.com/connect/qrconnect?${params.toString()}#wechat_redirect`;
+}
+
+function normalizePemBlock(raw: string, label: 'PRIVATE KEY' | 'PUBLIC KEY') {
+  const text = raw.trim().replace(/\\n/g, '\n');
+  if (!text) return '';
+  if (text.includes('-----BEGIN ')) return text;
+  const compact = text.replace(/\s+/g, '');
+  const lines = compact.match(/.{1,64}/g)?.join('\n') || compact;
+  return `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----`;
+}
+
+function isAlipayConfigured() {
+  return Boolean(ALIPAY_APP_ID && ALIPAY_PRIVATE_KEY && ALIPAY_PUBLIC_KEY);
+}
+
+function formatAlipayTimestamp(date = new Date()) {
+  const china = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  return china.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function normalizeAlipayParams(input: unknown) {
+  const body = input && typeof input === 'object' ? input as Record<string, unknown> : {};
+  return Object.entries(body).reduce<Record<string, string>>((acc, [key, value]) => {
+    if (Array.isArray(value)) acc[key] = String(value[0] ?? '');
+    else if (value !== undefined && value !== null) acc[key] = String(value);
+    else acc[key] = '';
+    return acc;
+  }, {});
+}
+
+function buildAlipaySignContent(params: Record<string, string>) {
+  return Object.keys(params)
+    .filter(key => key !== 'sign' && key !== 'sign_type' && params[key] !== '')
+    .sort()
+    .map(key => `${key}=${params[key]}`)
+    .join('&');
+}
+
+function signAlipayParams(params: Record<string, string>) {
+  const signer = createSign('RSA-SHA256');
+  signer.update(buildAlipaySignContent(params), 'utf8');
+  signer.end();
+  return signer.sign(normalizePemBlock(ALIPAY_PRIVATE_KEY, 'PRIVATE KEY'), 'base64');
+}
+
+function verifyAlipayParams(params: Record<string, string>) {
+  if (!params.sign || !ALIPAY_PUBLIC_KEY) return false;
+  const verifier = createVerify('RSA-SHA256');
+  verifier.update(buildAlipaySignContent(params), 'utf8');
+  verifier.end();
+  return verifier.verify(normalizePemBlock(ALIPAY_PUBLIC_KEY, 'PUBLIC KEY'), params.sign, 'base64');
+}
+
+function makeAlipayOrderNo() {
+  return `LQ${Date.now()}${randomInt(100000, 1000000)}`;
+}
+
+function parseRechargeAmount(input: unknown) {
+  const amount = Number(input);
+  if (!Number.isInteger(amount) || amount < 10) throw new Error('充值最低 10 契约币');
+  if (amount > 5000) throw new Error('单次充值最多 5000 契约币');
+  return amount;
+}
+
+function makeAlipayPayUrl(outTradeNo: string, amount: number) {
+  const subject = `灵契契约币充值 ${amount}`;
+  const params: Record<string, string> = {
+    app_id: ALIPAY_APP_ID,
+    method: 'alipay.trade.page.pay',
+    format: 'JSON',
+    charset: 'utf-8',
+    sign_type: 'RSA2',
+    timestamp: formatAlipayTimestamp(),
+    version: '1.0',
+    notify_url: ALIPAY_NOTIFY_URL,
+    return_url: ALIPAY_RETURN_URL,
+    biz_content: JSON.stringify({
+      out_trade_no: outTradeNo,
+      total_amount: amount.toFixed(2),
+      subject,
+      product_code: 'FAST_INSTANT_TRADE_PAY',
+    }),
+  };
+  params.sign = signAlipayParams(params);
+  return {
+    payUrl: `${ALIPAY_GATEWAY}?${new URLSearchParams(params).toString()}`,
+    subject,
+    totalAmount: amount.toFixed(2),
+  };
+}
+
+function makeSafeAlipayPayload(params: Record<string, string>) {
+  const allowlist = [
+    'app_id', 'out_trade_no', 'trade_no', 'trade_status', 'total_amount',
+    'receipt_amount', 'buyer_id', 'buyer_logon_id', 'seller_id',
+    'notify_id', 'notify_time', 'gmt_payment',
+  ];
+  return allowlist.reduce<Record<string, string>>((acc, key) => {
+    if (params[key]) acc[key] = params[key];
+    return acc;
+  }, {});
+}
+
 async function logSecurityEvent(req: express.Request, args: {
   action: string;
   targetType?: string | null;
@@ -267,10 +571,6 @@ function normalizeAuditValue(value: unknown): unknown {
 
 function stableJson(value: unknown) {
   return JSON.stringify(normalizeAuditValue(value));
-}
-
-function sha256(value: string) {
-  return createHash('sha256').update(value).digest('hex');
 }
 
 function hashLooseValue(value: unknown) {
@@ -863,6 +1163,230 @@ function rankingVoteRpcStatus(message: string) {
 app.get('/api/health', (_req, res) => res.json(ok({ status: '灵契 running' })));
 
 // ==================== 创作者认证 ====================
+
+app.post('/api/lc/auth/send-code', async (req, res) => {
+  try {
+    const result = await createAndSendPhoneCode(req, 'lingqi', 'login', req.body?.phone);
+    await logSecurityEvent(req, {
+      action: 'auth_phone_code_sent',
+      metadata: { phone_hash: makeAuthPhoneHash(result.phone), provider: result.provider, expires_at: result.expiresAt },
+    });
+    res.json(ok({ sent: true, expires_at: result.expiresAt }));
+  } catch (e) { res.status(400).json(err(e)); }
+});
+
+app.post('/api/lc/auth/phone', async (req, res) => {
+  try {
+    const { displayName } = req.body;
+    const phone = await verifyPhoneCode('lingqi', 'login', req.body?.phone, req.body?.code);
+    const nowIso = new Date().toISOString();
+    const { data: existing } = await supabase.from('lc_profiles').select('*').eq('phone', phone).maybeSingle();
+
+    if (existing) {
+      if (existing.is_banned) {
+        await logSecurityEvent(req, {
+          action: 'auth_phone_login_blocked_banned_user',
+          targetType: 'profile',
+          targetId: existing.id,
+          actorId: existing.id,
+          actorRole: existing.role || 'creator',
+          metadata: { reason: existing.ban_reason || null },
+        });
+        return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
+      }
+      const patch: Record<string, unknown> = { phone_verified_at: nowIso, auth_provider: existing.auth_provider || 'phone' };
+      if (displayName && String(displayName).trim()) patch.display_name = String(displayName).trim().slice(0, 80);
+      await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
+      const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+      await logSecurityEvent(req, {
+        action: 'auth_phone_login_success',
+        targetType: 'profile',
+        targetId: existing.id,
+        actorId: existing.id,
+        actorRole: existing.role || 'creator',
+        metadata: { phone_verified_at: nowIso },
+      });
+      return res.json(ok({
+        id: existing.id,
+        display_name: String(patch.display_name || existing.display_name || `用户${phone.slice(-4)}`),
+        phone,
+        role: existing.role,
+        token,
+        new_user: false,
+      }));
+    }
+
+    const profileRole = 'player';
+    const { data: profile } = await supabase.from('lc_profiles').insert({
+      phone,
+      display_name: displayName && String(displayName).trim() ? String(displayName).trim().slice(0, 80) : `用户${phone.slice(-4)}`,
+      role: profileRole,
+      password_hash: null,
+      is_visible: true,
+      balance: 30,
+      phone_verified_at: nowIso,
+      auth_provider: 'phone',
+    }).select().single();
+    if (!profile) return res.status(500).json(err(new Error('注册失败')));
+
+    await supabase.from('lc_transactions').insert({
+      profile_id: profile.id,
+      type: 'recharge',
+      amount: 30,
+      description: '新用户注册赠送 30 契约币',
+      status: 'approved',
+    });
+    const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+    await logSecurityEvent(req, {
+      action: 'auth_phone_register_success',
+      targetType: 'profile',
+      targetId: profile.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { welcome_credit: 30, phone_verified_at: nowIso },
+    });
+    res.json(ok({
+      id: profile.id,
+      display_name: profile.display_name,
+      phone: profile.phone,
+      role: profile.role,
+      token,
+      new_user: true,
+    }));
+  } catch (e) { res.status(400).json(err(e)); }
+});
+
+app.get('/api/lc/auth/wechat/url', async (req, res) => {
+  try {
+    if (!isWechatLoginConfigured()) return res.status(503).json(err(new Error('微信扫码登录尚未配置')));
+    const redirectPath = safeFrontendRedirect(req.query.redirect);
+    res.json(ok({ enabled: true, url: makeWechatAuthorizeUrl(redirectPath) }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/auth/wechat/start', async (req, res) => {
+  try {
+    if (!isWechatLoginConfigured()) return res.status(503).json(err(new Error('微信扫码登录尚未配置')));
+    res.redirect(makeWechatAuthorizeUrl(safeFrontendRedirect(req.query.redirect)));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/auth/wechat/callback', async (req, res) => {
+  try {
+    if (!isWechatLoginConfigured()) throw new Error('微信扫码登录尚未配置');
+    const code = typeof req.query.code === 'string' ? req.query.code : '';
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    if (!code || !state) throw new Error('微信登录参数缺失');
+    const statePayload = jwt.verify(state, JWT_SECRET) as { kind?: string; redirectPath?: string };
+    if (statePayload.kind !== 'lc_wechat_login') throw new Error('微信登录状态无效');
+
+    const tokenUrl = new URL('https://api.weixin.qq.com/sns/oauth2/access_token');
+    tokenUrl.search = new URLSearchParams({
+      appid: WECHAT_OPEN_APP_ID,
+      secret: WECHAT_OPEN_APP_SECRET,
+      code,
+      grant_type: 'authorization_code',
+    }).toString();
+    const tokenResp = await fetch(tokenUrl);
+    const tokenData = await tokenResp.json() as Record<string, unknown>;
+    if (!tokenResp.ok || tokenData.errcode) throw new Error(String(tokenData.errmsg || '微信登录授权失败'));
+
+    const userUrl = new URL('https://api.weixin.qq.com/sns/userinfo');
+    userUrl.search = new URLSearchParams({
+      access_token: String(tokenData.access_token),
+      openid: String(tokenData.openid),
+      lang: 'zh_CN',
+    }).toString();
+    const userResp = await fetch(userUrl);
+    const wxUser = await userResp.json() as Record<string, unknown>;
+    if (!userResp.ok || wxUser.errcode) throw new Error(String(wxUser.errmsg || '微信用户信息获取失败'));
+
+    const openid = String(tokenData.openid || wxUser.openid || '');
+    const unionid = tokenData.unionid || wxUser.unionid || null;
+    if (!openid) throw new Error('微信登录缺少 openid');
+    const nickname = cleanText(wxUser.nickname, 80) || `微信用户${openid.slice(-4)}`;
+    const avatar = cleanText(wxUser.headimgurl, 800) || null;
+    const nowIso = new Date().toISOString();
+
+    let query = supabase.from('lc_profiles').select('*');
+    if (unionid) query = query.eq('wechat_unionid', unionid);
+    else query = query.eq('wechat_openid', openid);
+    let { data: profile } = await query.maybeSingle();
+
+    if (profile?.is_banned) {
+      await logSecurityEvent(req, {
+        action: 'auth_wechat_login_blocked_banned_user',
+        targetType: 'profile',
+        targetId: profile.id,
+        actorId: profile.id,
+        actorRole: profile.role || 'creator',
+        metadata: { reason: profile.ban_reason || null },
+      });
+      throw new Error('账号已被限制登录，请联系管理员申诉');
+    }
+
+    if (profile) {
+      await supabase.from('lc_profiles').update({
+        wechat_openid: openid,
+        wechat_unionid: unionid,
+        wechat_nickname: nickname,
+        wechat_avatar: avatar,
+        wechat_bound_at: nowIso,
+        auth_provider: profile.auth_provider || 'wechat',
+        display_name: profile.display_name || nickname,
+        avatar: profile.avatar || avatar,
+      }).eq('id', profile.id);
+    } else {
+      const inserted = await supabase.from('lc_profiles').insert({
+        phone: null,
+        display_name: nickname,
+        avatar,
+        role: 'player',
+        password_hash: null,
+        is_visible: true,
+        balance: 30,
+        auth_provider: 'wechat',
+        wechat_openid: openid,
+        wechat_unionid: unionid,
+        wechat_nickname: nickname,
+        wechat_avatar: avatar,
+        wechat_bound_at: nowIso,
+      }).select().single();
+      if (!inserted.data) throw inserted.error || new Error('微信登录创建账号失败');
+      profile = inserted.data;
+      await supabase.from('lc_transactions').insert({
+        profile_id: profile.id,
+        type: 'recharge',
+        amount: 30,
+        description: '新用户注册赠送 30 契约币',
+        status: 'approved',
+      });
+    }
+
+    const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+    await logSecurityEvent(req, {
+      action: 'auth_wechat_login_success',
+      targetType: 'profile',
+      targetId: profile.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { has_unionid: Boolean(unionid), wechat_bound_at: nowIso },
+    });
+
+    const payload = Buffer.from(JSON.stringify({
+      id: profile.id,
+      display_name: profile.display_name || nickname,
+      phone: profile.phone || '',
+      role: profile.role,
+      token,
+      auth_provider: 'wechat',
+    })).toString('base64url');
+    const redirectPath = safeFrontendRedirect(statePayload.redirectPath);
+    res.redirect(`${LINGQI_SITE_URL}/login?wechat_login=${encodeURIComponent(payload)}&redirect=${encodeURIComponent(redirectPath)}`);
+  } catch (e) {
+    res.redirect(`${LINGQI_SITE_URL}/login?auth_error=${encodeURIComponent(err(e).error || '微信登录失败')}`);
+  }
+});
 
 app.post('/api/lc/auth', async (req, res) => {
   try {
@@ -2018,7 +2542,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_comments').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_claims').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_commissions').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
-      supabase.from('lc_transactions').select('*, lc_profiles(display_name, phone)').eq('type', 'recharge').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_transactions').select('*, lc_profiles(display_name, phone)').eq('type', 'recharge').eq('status', 'pending').or('gateway.is.null,gateway.neq.alipay').order('created_at', { ascending: false }),
       supabase.from('lc_certifications').select('*, lc_profiles!inner(display_name, phone)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_carpools').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_reports').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -3021,6 +3545,14 @@ app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, as
 
 app.put('/api/lc/admin/transactions/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    const { data: tx, error: txErr } = await supabase.from('lc_transactions')
+      .select('gateway')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (txErr) throw txErr;
+    if (tx?.gateway === 'alipay') {
+      return res.status(400).json(err(new Error('支付宝自动支付流水不能人工到账，请等待支付宝异步通知')));
+    }
     const { data, error } = await supabase.rpc('approve_lc_recharge', { p_transaction_id: req.params.id });
     if (error) throw error;
     await logSecurityEvent(req, {
@@ -3034,6 +3566,14 @@ app.put('/api/lc/admin/transactions/:id/approve', authMiddleware, adminMiddlewar
 
 app.put('/api/lc/admin/transactions/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    const { data: tx, error: txErr } = await supabase.from('lc_transactions')
+      .select('gateway')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (txErr) throw txErr;
+    if (tx?.gateway === 'alipay') {
+      return res.status(400).json(err(new Error('支付宝自动支付流水不能人工拒绝，请按支付宝订单状态处理')));
+    }
     const rejectReason = req.body?.rejectReason || null;
     await supabase.from('lc_transactions')
       .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
@@ -3082,6 +3622,113 @@ app.post('/api/lc/wallet/recharge', authMiddleware, async (req, res) => {
     });
     res.json(ok({ message: '充值申请已提交，管理员审核后到账' }));
   } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/wallet/alipay/create', authMiddleware, async (req, res) => {
+  try {
+    if (!isAlipayConfigured()) return res.status(503).json(err(new Error('支付宝支付尚未配置')));
+    const amount = parseRechargeAmount(req.body?.amount);
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const outTradeNo = makeAlipayOrderNo();
+    const { payUrl, subject, totalAmount } = makeAlipayPayUrl(outTradeNo, amount);
+    const { data: tx, error: txErr } = await supabase.from('lc_transactions').insert({
+      profile_id: profile.id,
+      type: 'recharge',
+      amount,
+      description: `支付宝充值 · ${amount} 契约币`,
+      payment_proof: null,
+      status: 'pending',
+      gateway: 'alipay',
+      external_order_no: outTradeNo,
+      ref_type: 'alipay_order',
+      idempotency_key: `alipay:${outTradeNo}`,
+      metadata: {
+        provider: 'alipay_pc',
+        notify_url: ALIPAY_NOTIFY_URL,
+        return_url: ALIPAY_RETURN_URL,
+      },
+    }).select('id').single();
+    if (txErr) throw txErr;
+
+    const { data: order, error: orderErr } = await supabase.from('lc_alipay_orders').insert({
+      profile_id: profile.id,
+      transaction_id: tx.id,
+      out_trade_no: outTradeNo,
+      amount,
+      total_amount: totalAmount,
+      subject,
+      status: 'created',
+    }).select('id, out_trade_no').single();
+    if (orderErr) throw orderErr;
+
+    await supabase.from('lc_transactions')
+      .update({ ref_id: order.id })
+      .eq('id', tx.id);
+
+    await logSecurityEvent(req, {
+      action: 'wallet_alipay_order_created',
+      targetType: 'transaction',
+      targetId: tx.id,
+      metadata: { amount, out_trade_no: outTradeNo, order_id: order.id },
+    });
+
+    res.json(ok({ pay_url: payUrl, out_trade_no: outTradeNo, transaction_id: tx.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/wallet/alipay/notify', async (req, res) => {
+  const reply = (text: 'success' | 'failure') => res.status(200).type('text/plain').send(text);
+  try {
+    const params = normalizeAlipayParams(req.body);
+    if (!verifyAlipayParams(params)) {
+      console.error('[alipay] notify signature invalid', { out_trade_no: params.out_trade_no || null });
+      return reply('failure');
+    }
+    if (params.app_id !== ALIPAY_APP_ID) {
+      console.error('[alipay] notify app_id mismatch', { app_id: params.app_id || null });
+      return reply('failure');
+    }
+    if (ALIPAY_SELLER_ID && params.seller_id !== ALIPAY_SELLER_ID) {
+      console.error('[alipay] notify seller_id mismatch', { seller_id: params.seller_id || null });
+      return reply('failure');
+    }
+    if (!params.out_trade_no || !params.trade_no || !params.total_amount) {
+      console.error('[alipay] notify missing fields', { out_trade_no: params.out_trade_no || null });
+      return reply('failure');
+    }
+
+    if (!['TRADE_SUCCESS', 'TRADE_FINISHED'].includes(params.trade_status)) {
+      return reply('success');
+    }
+
+    const payload = makeSafeAlipayPayload(params);
+    const { data, error: rpcErr } = await supabase.rpc('lc_confirm_alipay_recharge', {
+      p_out_trade_no: params.out_trade_no,
+      p_trade_no: params.trade_no,
+      p_total_amount: Number(params.total_amount),
+      p_payload: payload,
+    });
+    if (rpcErr) throw rpcErr;
+    const result = Array.isArray(data) ? data[0] : data;
+    await logSecurityEvent(req, {
+      action: 'wallet_alipay_notify_paid',
+      targetType: 'transaction',
+      targetId: result?.transaction_id || null,
+      actorRole: 'alipay',
+      metadata: {
+        out_trade_no: params.out_trade_no,
+        trade_no: params.trade_no,
+        trade_status: params.trade_status,
+        already_processed: Boolean(result?.already_processed),
+      },
+    });
+    return reply('success');
+  } catch (e) {
+    console.error('[alipay] notify failed', getErrorText(e));
+    return reply('failure');
+  }
 });
 
 // ── 艾特解析 ──
