@@ -409,6 +409,143 @@ function CityFilter({
   );
 }
 
+const roadmapCardStyle: React.CSSProperties = {
+  backgroundColor: '#fff',
+  border: '1px solid #f1e3c3',
+  borderRadius: 12,
+  padding: 18,
+  boxShadow: '0 10px 24px rgba(146, 64, 14, 0.07)',
+};
+
+function RoadmapPreview() {
+  const roadmapItems = [
+    {
+      label: '01',
+      title: 'AI 发帖安全检查',
+      text: '先做事实表述、隐私打码、证据完整度和情绪化措辞提醒，降低发布风险，不替用户下结论。',
+    },
+    {
+      label: '02',
+      title: 'AI 审核摘要',
+      text: '给审核员整理事件要素、证据类型、重复记录和潜在攻击风险，最终处置仍由人工审核确认。',
+    },
+    {
+      label: '03',
+      title: '对象口碑档案',
+      text: '等记录规模足够后，按城市、对象、事件类型、回应和处理结果做信息聚合，形成可查询的行业口碑索引。',
+    },
+  ];
+
+  return (
+    <section
+      style={{
+        marginTop: 28,
+        background: 'linear-gradient(135deg, #fffdf7 0%, #fff7ed 55%, #f8fafc 100%)',
+        border: '1px solid #f1dba8',
+        borderRadius: 16,
+        padding: '24px',
+        boxShadow: '0 14px 36px rgba(146, 64, 14, 0.08)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 18,
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+          marginBottom: 18,
+        }}
+      >
+        <div style={{ maxWidth: 720 }}>
+          <p
+            style={{
+              margin: '0 0 8px',
+              color: '#92400e',
+              fontSize: 13,
+              fontWeight: 900,
+              letterSpacing: 0,
+            }}
+          >
+            灵契红黑榜发展预期
+          </p>
+          <h2 style={{ margin: 0, color: '#111827', fontSize: 24, lineHeight: 1.25 }}>
+            AI 先做辅助，不做裁判
+          </h2>
+          <p style={{ margin: '10px 0 0', color: '#4b5563', lineHeight: 1.7, fontSize: 15 }}>
+            当前优先验证真实发布、人工审核、相关方回应和带成本投票。AI 能力会在商业模式和数据规模验证后逐步开放，模型优先选择大陆可采购、低成本、中文语境更稳定的方案。
+          </p>
+        </div>
+        <Link
+          to="/contact"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 44,
+            padding: '0 18px',
+            borderRadius: 999,
+            backgroundColor: '#111827',
+            color: '#fff',
+            textDecoration: 'none',
+            fontWeight: 900,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          投资洽谈 / 行业共建
+        </Link>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: 14,
+        }}
+      >
+        {roadmapItems.map((item) => (
+          <div key={item.label} style={roadmapCardStyle}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 34,
+                height: 34,
+                borderRadius: 999,
+                backgroundColor: '#fef3c7',
+                color: '#92400e',
+                fontWeight: 900,
+                fontSize: 13,
+                marginBottom: 12,
+              }}
+            >
+              {item.label}
+            </div>
+            <h3 style={{ margin: '0 0 8px', color: '#111827', fontSize: 17 }}>{item.title}</h3>
+            <p style={{ margin: 0, color: '#4b5563', lineHeight: 1.65, fontSize: 14 }}>{item.text}</p>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          marginTop: 16,
+          padding: '14px 16px',
+          borderRadius: 12,
+          backgroundColor: 'rgba(255, 255, 255, 0.72)',
+          border: '1px solid #fde68a',
+          color: '#4b5563',
+          lineHeight: 1.7,
+          fontSize: 14,
+        }}
+      >
+        欢迎投资机构、沉浸式娱乐从业者、店家、DM、委托师和技术合作者提供样本、规则建议与共建资源。灵契会保持可替换的模型接口，避免被单一海外模型绑定。
+      </div>
+    </section>
+  );
+}
+
 export default function Rankings() {
   const navigate = useNavigate();
   const initialPreferredCities = getAuth()?.availableCities || [];
@@ -1317,6 +1454,8 @@ export default function Rankings() {
             })}
           </div>
         )}
+
+        <RoadmapPreview />
       </div>
 
       {/* Vote Modal */}

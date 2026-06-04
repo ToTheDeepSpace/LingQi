@@ -120,8 +120,11 @@ function SiteFooter() {
           <FooterColumn title="生态连接">
             <FooterExternal href="https://jusichen.com">剧司辰</FooterExternal>
             <FooterLink to="/shop/dashboard">店家后台</FooterLink>
+            <FooterLink to="/rankings">AI 口碑路线图</FooterLink>
+            <FooterLink to="/contact">投资洽谈 / 共建合作</FooterLink>
             <FooterText>摄影师 / 妆造师</FooterText>
             <FooterText>服装商 / 道具师</FooterText>
+            <FooterText>大陆低成本模型优先</FooterText>
           </FooterColumn>
           <FooterColumn title="规则与合规">
             <FooterLink to="/rules">审核规则</FooterLink>
