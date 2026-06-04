@@ -22,12 +22,17 @@ const inputStyle: React.CSSProperties = {
 };
 
 const QUICK_ACTIVITY_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '武汉', '南京'];
+const REFERRAL_STORAGE_KEY = 'lc_referral_code';
 
 type LoginMode = 'sms' | 'password';
 
 function storeLogin(data: Record<string, unknown>) {
   localStorage.setItem('lc_creator', JSON.stringify(data));
   window.dispatchEvent(new Event('lc-auth-changed'));
+}
+
+function normalizeReferralCode(input: string | null) {
+  return (input || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
 }
 
 function decodeWechatPayload(payload: string) {
@@ -58,9 +63,16 @@ export default function Login() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
+  const [referralCode, setReferralCode] = useState('');
+  const [referralOwner, setReferralOwner] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
+    const rawRef = params.get('ref');
+    const storedRef = localStorage.getItem(REFERRAL_STORAGE_KEY);
+    const normalizedRef = normalizeReferralCode(rawRef || storedRef);
+    if (rawRef && normalizedRef) localStorage.setItem(REFERRAL_STORAGE_KEY, normalizedRef);
+    if (normalizedRef) window.setTimeout(() => setReferralCode(normalizedRef), 0);
     const wechatLogin = params.get('wechat_login');
     const authError = params.get('auth_error');
     if (authError) {
@@ -72,6 +84,7 @@ export default function Login() {
     const data = decodeWechatPayload(wechatLogin);
     if (data?.token) {
       storeLogin(data);
+      localStorage.removeItem(REFERRAL_STORAGE_KEY);
       const redirect = params.get('redirect') || '/dashboard';
       navigate(redirect.startsWith('/') ? redirect : '/dashboard', { replace: true });
     } else {
@@ -79,6 +92,24 @@ export default function Login() {
       window.history.replaceState(null, '', '/login');
     }
   }, [location.search, navigate]);
+
+  useEffect(() => {
+    if (!referralCode) {
+      window.setTimeout(() => setReferralOwner(''), 0);
+      return;
+    }
+    let alive = true;
+    fetch(`${API}/lc/referrals/resolve/${encodeURIComponent(referralCode)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!alive) return;
+        setReferralOwner(d.success && d.data?.display_name ? d.data.display_name : '');
+      })
+      .catch(() => {
+        if (alive) setReferralOwner('');
+      });
+    return () => { alive = false; };
+  }, [referralCode]);
 
   const sendCode = async () => {
     if (!phone.trim() || phone.replace(/\D/g, '').length !== 11) {
@@ -111,7 +142,9 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
-      const r = await fetch(`${API}/lc/auth/wechat/url?redirect=/dashboard`);
+      const params = new URLSearchParams({ redirect: '/dashboard' });
+      if (referralCode) params.set('ref', referralCode);
+      const r = await fetch(`${API}/lc/auth/wechat/url?${params.toString()}`);
       const d = await r.json();
       if (d.success && d.data?.url) {
         window.location.href = d.data.url;
@@ -138,12 +171,13 @@ export default function Login() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mode === 'sms'
-          ? { phone: phone.trim(), code: code.trim(), displayName: name.trim() || undefined, activityCities }
-          : { phone: phone.trim(), password: password.trim(), displayName: name.trim() || undefined, activityCities }),
+          ? { phone: phone.trim(), code: code.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }
+          : { phone: phone.trim(), password: password.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }),
       });
       const d = await r.json();
       if (d.success) {
         storeLogin(d.data);
+        localStorage.removeItem(REFERRAL_STORAGE_KEY);
         navigate('/dashboard');
       } else {
         if (mode === 'password' && !isRegister && d.error?.includes('未设置密码')) {
@@ -216,6 +250,12 @@ export default function Login() {
                 background: mode === 'password' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'password' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
               }}>密码备用</button>
             </div>
+
+            {referralCode && (
+              <div style={{ padding: '12px 14px', borderRadius: 12, marginBottom: 18, background: 'rgba(240,253,244,0.88)', border: '1px solid rgba(22,163,74,0.18)', color: '#166534', fontSize: '0.82rem', lineHeight: 1.65, fontWeight: 750 }}>
+                {referralOwner ? `${referralOwner} 邀请你加入灵契` : '已识别邀请链接'}，注册后额外赠送 10 契约币。
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {error && (

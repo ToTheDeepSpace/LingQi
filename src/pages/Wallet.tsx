@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -112,6 +112,9 @@ export default function Wallet() {
           <div>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的契约币</h1>
             <p style={{ fontSize: '0.82rem', color: MUTED }}>契约币用于红黑榜发布、投票、评论</p>
+            <Link to="/referrals" style={{ display: 'inline-flex', marginTop: 10, padding: '6px 10px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.24)', color: '#925f18', background: 'rgba(255,255,255,0.78)', textDecoration: 'none', fontSize: '0.78rem', fontWeight: 850 }}>
+              查看邀请奖励
+            </Link>
           </div>
           <div style={{
             padding: '16px 24px', borderRadius: 14,

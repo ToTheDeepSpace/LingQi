@@ -19,6 +19,7 @@ const CreateCommission = lazy(pageLoaders.createCommission);
 const Carpools = lazy(pageLoaders.carpools);
 const CreateCarpool = lazy(pageLoaders.createCarpool);
 const Wallet = lazy(pageLoaders.wallet);
+const Referrals = lazy(pageLoaders.referrals);
 const CertificationPage = lazy(pageLoaders.certification);
 const ShopDashboard = lazy(pageLoaders.shopDashboard);
 const Contact = lazy(pageLoaders.contact);
@@ -53,6 +54,7 @@ function AppLayout() {
           <Route path="/carpools" element={<Carpools />} />
           <Route path="/carpools/new" element={<CreateCarpool />} />
           <Route path="/wallet" element={<Wallet />} />
+          <Route path="/referrals" element={<Referrals />} />
           <Route path="/certification" element={<CertificationPage />} />
           <Route path="/shop/dashboard" element={<ShopDashboard />} />
           <Route path="/contact" element={<Contact />} />
@@ -109,6 +111,7 @@ function SiteFooter() {
             <FooterLink to="/carpools">拼车区</FooterLink>
             <FooterLink to="/rankings">红黑白榜</FooterLink>
             <FooterLink to="/wallet">我的契约币</FooterLink>
+            <FooterLink to="/referrals">我的邀请</FooterLink>
           </FooterColumn>
           <FooterColumn title="发布与认证">
             <FooterLink to="/commissions/new">发布委托</FooterLink>

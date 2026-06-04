@@ -203,7 +203,7 @@ function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefi
 async function getAuthedProfile(req: express.Request) {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, is_banned, ban_reason, avatar, phone, phone_verified_at')
+    .select('id, display_name, is_realname, balance, is_banned, ban_reason, avatar, phone, phone_verified_at, referral_code, community_role, community_role_expires_at')
     .eq('id', creatorId)
     .single();
   return data;
@@ -214,6 +214,275 @@ function getSpeakBlockReason(profile: { avatar?: string | null; phone_verified_a
   if (!profile.phone_verified_at) return '发言前请先用手机号验证码完成认证';
   if (!profile.avatar) return '发言前请先到个人后台上传头像';
   return '';
+}
+
+const REFERRAL_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+type ReferralRecord = {
+  id: string;
+  referrer_id: string;
+  invitee_id: string;
+  referral_code: string;
+  status: 'registered' | 'qualified' | 'converted' | 'rejected';
+  invitee_bonus_awarded_at?: string | null;
+  stage1_awarded_at?: string | null;
+  stage2_awarded_at?: string | null;
+};
+
+type ReferralProfile = {
+  id: string;
+  display_name?: string | null;
+  avatar?: string | null;
+  phone_verified_at?: string | null;
+  referral_code?: string | null;
+  community_role?: string | null;
+  community_role_expires_at?: string | null;
+};
+
+type WalletCreditResult = {
+  transaction_id: string;
+  balance: number;
+  applied: boolean;
+};
+
+function normalizeReferralCode(input: unknown) {
+  return cleanText(input, 40).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
+}
+
+function makeReferralCode() {
+  let suffix = '';
+  for (let i = 0; i < 6; i += 1) {
+    suffix += REFERRAL_CODE_ALPHABET[randomInt(0, REFERRAL_CODE_ALPHABET.length)];
+  }
+  return `LQ${suffix}`;
+}
+
+async function applyWalletCredit(args: {
+  profileId: string;
+  amount: number;
+  description: string;
+  refType: string;
+  refId: string;
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const { data, error } = await supabase.rpc('lc_apply_wallet_credit', {
+    p_profile_id: args.profileId,
+    p_amount: args.amount,
+    p_description: args.description,
+    p_ref_type: args.refType,
+    p_ref_id: args.refId,
+    p_idempotency_key: args.idempotencyKey,
+    p_metadata: args.metadata || {},
+  });
+  if (error) throw error;
+  return firstRpcRow(data as WalletCreditResult | WalletCreditResult[] | null);
+}
+
+async function ensureReferralCodeForProfile(profileOrId: ReferralProfile | string) {
+  const profileId = typeof profileOrId === 'string' ? profileOrId : profileOrId.id;
+  const existingCode = typeof profileOrId === 'string' ? '' : normalizeReferralCode(profileOrId.referral_code);
+  if (existingCode) return existingCode;
+
+  const { data: existing } = await supabase.from('lc_profiles')
+    .select('id, referral_code')
+    .eq('id', profileId)
+    .maybeSingle();
+  const existingDbCode = normalizeReferralCode(existing?.referral_code);
+  if (existingDbCode) return existingDbCode;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = makeReferralCode();
+    const { data, error } = await supabase.from('lc_profiles')
+      .update({ referral_code: code, updated_at: new Date().toISOString() })
+      .eq('id', profileId)
+      .is('referral_code', null)
+      .select('referral_code')
+      .maybeSingle();
+    if (data?.referral_code) return normalizeReferralCode(data.referral_code);
+    if (error && !getErrorText(error).includes('duplicate key')) throw error;
+
+    const { data: afterRace } = await supabase.from('lc_profiles')
+      .select('referral_code')
+      .eq('id', profileId)
+      .maybeSingle();
+    const afterRaceCode = normalizeReferralCode(afterRace?.referral_code);
+    if (afterRaceCode) return afterRaceCode;
+  }
+
+  throw new Error('邀请码生成失败，请稍后重试');
+}
+
+async function findReferralOwner(codeInput: unknown) {
+  const code = normalizeReferralCode(codeInput);
+  if (!code) return null;
+  const { data } = await supabase.from('lc_profiles')
+    .select('id, display_name, referral_code')
+    .eq('referral_code', code)
+    .maybeSingle();
+  return data as ReferralProfile | null;
+}
+
+function nextReferralMilestone(validInvites: number) {
+  if (validInvites < 3) return { target: 3, title: '社区推荐人', remaining: 3 - validInvites };
+  if (validInvites < 10) return { target: 10, title: '社区观察员 · 7天', remaining: 10 - validInvites };
+  if (validInvites < 30) return { target: 30, title: '社区观察员 · 30天', remaining: 30 - validInvites };
+  if (validInvites < 100) return { target: 100, title: '创始推荐人 / 城市共建人', remaining: 100 - validInvites };
+  return { target: 100, title: '创始推荐人 / 城市共建人', remaining: 0 };
+}
+
+async function refreshCommunityRole(referrerId: string) {
+  const { data: rows } = await supabase.from('lc_referrals')
+    .select('stage1_awarded_at, stage2_awarded_at')
+    .eq('referrer_id', referrerId);
+  const validInvites = (rows || []).filter((row: { stage1_awarded_at?: string | null; stage2_awarded_at?: string | null }) => row.stage1_awarded_at || row.stage2_awarded_at).length;
+  const now = Date.now();
+  let communityRole: string | null = null;
+  let expiresAt: string | null = null;
+
+  if (validInvites >= 100) {
+    communityRole = 'founding_referrer';
+  } else if (validInvites >= 30) {
+    communityRole = 'community_observer';
+    expiresAt = new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString();
+  } else if (validInvites >= 10) {
+    communityRole = 'community_observer';
+    expiresAt = new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString();
+  } else if (validInvites >= 3) {
+    communityRole = 'community_referrer';
+  }
+
+  await supabase.from('lc_profiles')
+    .update({ community_role: communityRole, community_role_expires_at: expiresAt, updated_at: new Date().toISOString() })
+    .eq('id', referrerId);
+
+  return { validInvites, communityRole, expiresAt, nextMilestone: nextReferralMilestone(validInvites) };
+}
+
+async function registerReferralForNewProfile(profile: ReferralProfile, referralCodeInput: unknown) {
+  const code = normalizeReferralCode(referralCodeInput);
+  if (!code) return null;
+  const referrer = await findReferralOwner(code);
+  if (!referrer || referrer.id === profile.id) return null;
+
+  await supabase.from('lc_profiles')
+    .update({
+      referred_by: referrer.id,
+      referral_source_code: normalizeReferralCode(referrer.referral_code) || code,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', profile.id)
+    .is('referred_by', null);
+
+  let referral: ReferralRecord | null;
+  const { data: inserted, error: insertErr } = await supabase.from('lc_referrals').insert({
+    referrer_id: referrer.id,
+    invitee_id: profile.id,
+    referral_code: normalizeReferralCode(referrer.referral_code) || code,
+    status: 'registered',
+    metadata: { source: 'signup' },
+  }).select('*').maybeSingle();
+
+  if (insertErr) {
+    const { data: existing } = await supabase.from('lc_referrals')
+      .select('*')
+      .eq('invitee_id', profile.id)
+      .maybeSingle();
+    referral = existing as ReferralRecord | null;
+  } else {
+    referral = inserted as ReferralRecord | null;
+  }
+
+  if (!referral) return null;
+
+  const credit = await applyWalletCredit({
+    profileId: profile.id,
+    amount: 10,
+    description: '受邀注册额外赠送 10 契约币',
+    refType: 'referral_invitee_bonus',
+    refId: referral.id,
+    idempotencyKey: `referral:invitee:${referral.id}`,
+    metadata: { referrer_id: referrer.id, referral_code: code },
+  });
+
+  if (credit) {
+    await supabase.from('lc_referrals')
+      .update({ invitee_bonus_awarded_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', referral.id)
+      .is('invitee_bonus_awarded_at', null);
+  }
+
+  await maybeAwardReferralStage1(profile.id);
+  return { referral, referrer, inviteeBonusApplied: Boolean(credit?.applied) };
+}
+
+async function getReferralForInvitee(inviteeId: string) {
+  const { data } = await supabase.from('lc_referrals')
+    .select('*')
+    .eq('invitee_id', inviteeId)
+    .maybeSingle();
+  return data as ReferralRecord | null;
+}
+
+async function maybeAwardReferralStage1(inviteeId: string) {
+  const referral = await getReferralForInvitee(inviteeId);
+  if (!referral || referral.stage1_awarded_at) return null;
+
+  const { data: invitee } = await supabase.from('lc_profiles')
+    .select('id, display_name, avatar, phone_verified_at')
+    .eq('id', inviteeId)
+    .maybeSingle();
+  if (!invitee?.phone_verified_at || !invitee.avatar) return null;
+
+  const credit = await applyWalletCredit({
+    profileId: referral.referrer_id,
+    amount: 10,
+    description: '邀请好友完成手机号验证和头像奖励 10 契约币',
+    refType: 'referral_stage1',
+    refId: referral.id,
+    idempotencyKey: `referral:stage1:${referral.id}`,
+    metadata: { invitee_id: inviteeId },
+  });
+
+  await supabase.from('lc_referrals')
+    .update({ stage1_awarded_at: new Date().toISOString(), status: referral.stage2_awarded_at ? 'converted' : 'qualified', updated_at: new Date().toISOString() })
+    .eq('id', referral.id)
+    .is('stage1_awarded_at', null);
+  await refreshCommunityRole(referral.referrer_id);
+  return credit;
+}
+
+async function maybeAwardReferralStage2(inviteeId: string | null | undefined, reason: string) {
+  if (!inviteeId) return null;
+  await maybeAwardReferralStage1(inviteeId);
+  const referral = await getReferralForInvitee(inviteeId);
+  if (!referral || referral.stage2_awarded_at) return null;
+
+  const credit = await applyWalletCredit({
+    profileId: referral.referrer_id,
+    amount: 20,
+    description: '邀请好友完成有效互动奖励 20 契约币',
+    refType: 'referral_stage2',
+    refId: referral.id,
+    idempotencyKey: `referral:stage2:${referral.id}`,
+    metadata: { invitee_id: inviteeId, reason },
+  });
+
+  await supabase.from('lc_referrals')
+    .update({ stage2_awarded_at: new Date().toISOString(), stage2_reason: reason, status: 'converted', updated_at: new Date().toISOString() })
+    .eq('id', referral.id)
+    .is('stage2_awarded_at', null);
+  await refreshCommunityRole(referral.referrer_id);
+  return credit;
+}
+
+async function runReferralSideEffect<T>(label: string, task: () => Promise<T>) {
+  try {
+    return await task();
+  } catch (referralErr) {
+    console.error(`[referral] ${label} failed`, getErrorText(referralErr));
+    return null;
+  }
 }
 
 type RelatedProofFile = { name: string; url: string; type?: string };
@@ -413,8 +682,9 @@ function safeFrontendRedirect(input: unknown) {
   return raw.slice(0, 120);
 }
 
-function makeWechatAuthorizeUrl(redirectPath: string) {
-  const state = jwt.sign({ kind: 'lc_wechat_login', redirectPath }, JWT_SECRET, { expiresIn: '10m' });
+function makeWechatAuthorizeUrl(redirectPath: string, referralCode?: string) {
+  const normalizedReferralCode = normalizeReferralCode(referralCode);
+  const state = jwt.sign({ kind: 'lc_wechat_login', redirectPath, referralCode: normalizedReferralCode || undefined }, JWT_SECRET, { expiresIn: '10m' });
   const params = new URLSearchParams({
     appid: WECHAT_OPEN_APP_ID,
     redirect_uri: WECHAT_REDIRECT_URI,
@@ -1207,7 +1477,7 @@ app.post('/api/lc/auth/send-code', async (req, res) => {
 
 app.post('/api/lc/auth/phone', async (req, res) => {
   try {
-    const { displayName, activityCities } = req.body;
+    const { displayName, activityCities, referralCode } = req.body;
     const activityCityList = normalizeActivityCities(activityCities, req.body?.city);
     const primaryCity = activityCityList[0] || null;
     const phone = await verifyPhoneCode('lingqi', 'login', req.body?.phone, req.body?.code);
@@ -1233,6 +1503,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
         if (!existing.city && primaryCity) patch.city = primaryCity;
       }
       await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
+      await runReferralSideEffect('stage1-after-phone-login', () => maybeAwardReferralStage1(existing.id));
       const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
       await logSecurityEvent(req, {
         action: 'auth_phone_login_success',
@@ -1276,6 +1547,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       description: '新用户注册赠送 30 契约币',
       status: 'approved',
     });
+    const referralResult = await runReferralSideEffect('phone-signup', () => registerReferralForNewProfile(profile, referralCode));
     const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
     await logSecurityEvent(req, {
       action: 'auth_phone_register_success',
@@ -1283,7 +1555,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       targetId: profile.id,
       actorId: profile.id,
       actorRole: profile.role || 'creator',
-      metadata: { welcome_credit: 30, phone_verified_at: nowIso, activity_cities_count: activityCityList.length },
+      metadata: { welcome_credit: 30, phone_verified_at: nowIso, activity_cities_count: activityCityList.length, referral_applied: Boolean(referralResult?.referral) },
     });
     res.json(ok({
       id: profile.id,
@@ -1302,14 +1574,14 @@ app.get('/api/lc/auth/wechat/url', async (req, res) => {
   try {
     if (!isWechatLoginConfigured()) return res.status(503).json(err(new Error('微信扫码登录尚未配置')));
     const redirectPath = safeFrontendRedirect(req.query.redirect);
-    res.json(ok({ enabled: true, url: makeWechatAuthorizeUrl(redirectPath) }));
+    res.json(ok({ enabled: true, url: makeWechatAuthorizeUrl(redirectPath, String(req.query.ref || '')) }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.get('/api/lc/auth/wechat/start', async (req, res) => {
   try {
     if (!isWechatLoginConfigured()) return res.status(503).json(err(new Error('微信扫码登录尚未配置')));
-    res.redirect(makeWechatAuthorizeUrl(safeFrontendRedirect(req.query.redirect)));
+    res.redirect(makeWechatAuthorizeUrl(safeFrontendRedirect(req.query.redirect), String(req.query.ref || '')));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -1319,7 +1591,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
     const code = typeof req.query.code === 'string' ? req.query.code : '';
     const state = typeof req.query.state === 'string' ? req.query.state : '';
     if (!code || !state) throw new Error('微信登录参数缺失');
-    const statePayload = jwt.verify(state, JWT_SECRET) as { kind?: string; redirectPath?: string };
+    const statePayload = jwt.verify(state, JWT_SECRET) as { kind?: string; redirectPath?: string; referralCode?: string };
     if (statePayload.kind !== 'lc_wechat_login') throw new Error('微信登录状态无效');
 
     const tokenUrl = new URL('https://api.weixin.qq.com/sns/oauth2/access_token');
@@ -1403,6 +1675,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
         description: '新用户注册赠送 30 契约币',
         status: 'approved',
       });
+      await runReferralSideEffect('wechat-signup', () => registerReferralForNewProfile(profile, statePayload.referralCode));
     }
 
     const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
@@ -1434,7 +1707,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
 
 app.post('/api/lc/auth', async (req, res) => {
   try {
-    const { phone, password, displayName, activityCities } = req.body;
+    const { phone, password, displayName, activityCities, referralCode } = req.body;
     const activityCityList = normalizeActivityCities(activityCities, req.body?.city);
     const primaryCity = activityCityList[0] || null;
     const profileRole = 'player';
@@ -1532,6 +1805,7 @@ app.post('/api/lc/auth', async (req, res) => {
       description: '新用户注册赠送 30 契约币',
       status: 'approved',
     });
+    const referralResult = await runReferralSideEffect('password-signup', () => registerReferralForNewProfile(profile, referralCode));
 
     const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
     await logSecurityEvent(req, {
@@ -1540,7 +1814,7 @@ app.post('/api/lc/auth', async (req, res) => {
       targetId: profile.id,
       actorId: profile.id,
       actorRole: profile.role || 'creator',
-      metadata: { welcome_credit: 30, activity_cities_count: activityCityList.length },
+      metadata: { welcome_credit: 30, activity_cities_count: activityCityList.length, referral_applied: Boolean(referralResult?.referral) },
     });
     res.json(ok({
       id: profile.id,
@@ -1557,10 +1831,101 @@ app.post('/api/lc/auth', async (req, res) => {
 app.get('/api/lc/me', authMiddleware, async (req, res) => {
   try {
     const { data } = await supabase.from('lc_profiles')
-      .select('id, display_name, avatar, phone, phone_verified_at, is_realname, city, available_cities')
+      .select('id, display_name, avatar, phone, phone_verified_at, is_realname, city, available_cities, referral_code, community_role, community_role_expires_at')
       .eq('id', getReq(req, 'creatorId'))
       .single();
     res.json(ok(data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/referrals/resolve/:code', async (req, res) => {
+  try {
+    const owner = await findReferralOwner(req.params.code);
+    if (!owner) return res.json(ok(null));
+    res.json(ok({
+      referral_code: normalizeReferralCode(owner.referral_code),
+      display_name: owner.display_name || '灵契用户',
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/referrals/me', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req) as ReferralProfile & { balance?: number };
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const referralCode = await ensureReferralCodeForProfile(profile);
+    const { data: referralRows, error: referralErr } = await supabase.from('lc_referrals')
+      .select('id, invitee_id, referral_code, status, invitee_bonus_awarded_at, stage1_awarded_at, stage2_awarded_at, stage2_reason, created_at')
+      .eq('referrer_id', profile.id)
+      .order('created_at', { ascending: false });
+    if (referralErr) throw referralErr;
+
+    const inviteeIds = Array.from(new Set((referralRows || []).map((row: { invitee_id: string }) => row.invitee_id).filter(Boolean)));
+    let inviteeMap = new Map<string, { id: string; display_name?: string | null; avatar?: string | null; created_at?: string | null }>();
+    if (inviteeIds.length > 0) {
+      const { data: invitees, error: inviteeErr } = await supabase.from('lc_profiles')
+        .select('id, display_name, avatar, created_at')
+        .in('id', inviteeIds);
+      if (inviteeErr) throw inviteeErr;
+      inviteeMap = new Map((invitees || []).map((item: { id: string; display_name?: string | null; avatar?: string | null; created_at?: string | null }) => [item.id, item]));
+    }
+
+    const referrals = (referralRows || []).map((row: {
+      id: string;
+      invitee_id: string;
+      status: string;
+      invitee_bonus_awarded_at?: string | null;
+      stage1_awarded_at?: string | null;
+      stage2_awarded_at?: string | null;
+      stage2_reason?: string | null;
+      created_at: string;
+    }) => {
+      const invitee = inviteeMap.get(row.invitee_id);
+      return {
+        id: row.id,
+        status: row.status,
+        invitee: {
+          id: row.invitee_id,
+          display_name: invitee?.display_name || '灵契新用户',
+          avatar: invitee?.avatar || null,
+        },
+        invitee_bonus_awarded_at: row.invitee_bonus_awarded_at || null,
+        stage1_awarded_at: row.stage1_awarded_at || null,
+        stage2_awarded_at: row.stage2_awarded_at || null,
+        stage2_reason: row.stage2_reason || null,
+        created_at: row.created_at,
+      };
+    });
+
+    const validInvites = referrals.filter(row => row.stage1_awarded_at || row.stage2_awarded_at).length;
+    const convertedInvites = referrals.filter(row => row.stage2_awarded_at).length;
+    const inviteeBonusCount = referrals.filter(row => row.invitee_bonus_awarded_at).length;
+    const stage1RewardCount = referrals.filter(row => row.stage1_awarded_at).length;
+    const stage2RewardCount = referrals.filter(row => row.stage2_awarded_at).length;
+    const nextMilestone = nextReferralMilestone(validInvites);
+
+    res.json(ok({
+      referral_code: referralCode,
+      share_url: `${LINGQI_SITE_URL}/login?ref=${encodeURIComponent(referralCode)}`,
+      community_role: profile.community_role || null,
+      community_role_expires_at: profile.community_role_expires_at || null,
+      stats: {
+        registered_invites: referrals.length,
+        valid_invites: validInvites,
+        converted_invites: convertedInvites,
+        invitee_bonus_count: inviteeBonusCount,
+        referrer_reward_total: stage1RewardCount * 10 + stage2RewardCount * 20,
+        next_milestone: nextMilestone,
+      },
+      rules: {
+        new_user_base_bonus: 30,
+        invitee_extra_bonus: 10,
+        referrer_stage1_bonus: 10,
+        referrer_stage2_bonus: 20,
+      },
+      referrals,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -1568,6 +1933,9 @@ app.put('/api/lc/admin/profile/:id/realname', authMiddleware, adminMiddleware, a
   try {
     const { value } = req.body;
     await supabase.from('lc_profiles').update({ is_realname: !!value }).eq('id', req.params.id);
+    if (value) {
+      await runReferralSideEffect('stage2-after-realname', () => maybeAwardReferralStage2(req.params.id, 'realname_approved'));
+    }
     await logSecurityEvent(req, {
       action: value ? 'admin_profile_realname_marked' : 'admin_profile_realname_unmarked',
       targetType: 'profile',
@@ -1652,6 +2020,7 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
       social_snapshots: socialSnapshots,
       updated_at: new Date().toISOString(),
     }).eq('id', req.params.id);
+    await runReferralSideEffect('stage1-after-profile-update', () => maybeAwardReferralStage1(req.params.id));
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -3364,6 +3733,7 @@ app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, a
     const audit = await auditApprovedTarget('ranking', approved, targetType ? 'ranking_reclassified_approved' : 'ranking_approved', getReq(req, 'creatorId'), {
       target_type_override: targetType,
     });
+    await runReferralSideEffect('stage2-after-ranking-approved', () => maybeAwardReferralStage2(approved?.poster_id, 'ranking_approved'));
     await logSecurityEvent(req, {
       action: 'admin_ranking_approved',
       targetType: 'ranking',
@@ -3471,6 +3841,7 @@ app.put('/api/lc/admin/comments/:id/approve', authMiddleware, adminMiddleware, a
       .single();
     if (updErr) throw updErr;
     const audit = await auditApprovedTarget('comment', approved, approved?.is_pinned ? 'related_reply_pinned' : 'comment_approved', getReq(req, 'creatorId'));
+    await runReferralSideEffect('stage2-after-comment-approved', () => maybeAwardReferralStage2(approved?.author_id, 'comment_approved'));
     await logSecurityEvent(req, {
       action: approved?.is_pinned ? 'admin_related_reply_approved' : 'admin_comment_approved',
       targetType: 'comment',
@@ -3551,6 +3922,7 @@ app.put('/api/lc/admin/commissions/:id/approve', authMiddleware, adminMiddleware
       .single();
     if (updErr) throw updErr;
     const audit = await auditApprovedTarget('commission', approved, 'commission_approved', getReq(req, 'creatorId'));
+    await runReferralSideEffect('stage2-after-commission-approved', () => maybeAwardReferralStage2(approved?.poster_id, 'commission_approved'));
     await logSecurityEvent(req, {
       action: 'admin_commission_approved',
       targetType: 'commission',
@@ -3606,6 +3978,7 @@ app.put('/api/lc/admin/carpools/:id/approve', authMiddleware, adminMiddleware, a
       .single();
     if (updErr) throw updErr;
     const audit = await auditApprovedTarget('carpool', approved, 'carpool_approved', getReq(req, 'creatorId'), { sync: syncResult });
+    await runReferralSideEffect('stage2-after-carpool-approved', () => maybeAwardReferralStage2(approved?.poster_id, 'carpool_approved'));
     await logSecurityEvent(req, {
       action: 'admin_carpool_approved',
       targetType: 'carpool',
@@ -3699,6 +4072,8 @@ app.put('/api/lc/admin/transactions/:id/approve', authMiddleware, adminMiddlewar
     }
     const { data, error } = await supabase.rpc('approve_lc_recharge', { p_transaction_id: req.params.id });
     if (error) throw error;
+    const result = firstRpcRow(data as { profile_id?: string } | { profile_id?: string }[] | null);
+    await runReferralSideEffect('stage2-after-manual-recharge', () => maybeAwardReferralStage2(result?.profile_id, 'wallet_recharge_approved'));
     await logSecurityEvent(req, {
       action: 'admin_wallet_recharge_approved',
       targetType: 'transaction',
@@ -3856,6 +4231,9 @@ app.post('/api/lc/wallet/alipay/notify', async (req, res) => {
     });
     if (rpcErr) throw rpcErr;
     const result = Array.isArray(data) ? data[0] : data;
+    if (!result?.already_processed) {
+      await runReferralSideEffect('stage2-after-alipay-recharge', () => maybeAwardReferralStage2(result?.profile_id, 'wallet_alipay_paid'));
+    }
     await logSecurityEvent(req, {
       action: 'wallet_alipay_notify_paid',
       targetType: 'transaction',
@@ -4049,6 +4427,7 @@ app.put('/api/lc/admin/certifications/:id/approve', authMiddleware, adminMiddlew
     } else if (cert.type === 'shop') {
       await supabase.from('lc_profiles').update({ verified_shop: true, role: 'shop' }).eq('id', cert.profile_id);
     }
+    await runReferralSideEffect('stage2-after-certification-approved', () => maybeAwardReferralStage2(cert.profile_id, `certification_${cert.type}_approved`));
 
     await logSecurityEvent(req, {
       action: 'admin_certification_approved',

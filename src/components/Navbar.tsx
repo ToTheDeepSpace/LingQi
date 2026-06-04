@@ -145,6 +145,7 @@ export default function Navbar() {
           {isLoggedIn
             ? <>
               <NavLink to="/dashboard">我的主页</NavLink>
+              <NavLink to="/referrals">邀请</NavLink>
               <NavLink to="/certification">认证</NavLink>
               {isShop && <NavLink to="/shop/dashboard">店家后台</NavLink>}
               <button onClick={handleLogout}
@@ -210,6 +211,7 @@ export default function Navbar() {
           {isLoggedIn
             ? <>
               <MobileLink to="/dashboard" onClick={() => setMenuOpen(false)}>我的主页</MobileLink>
+              <MobileLink to="/referrals" onClick={() => setMenuOpen(false)}>我的邀请</MobileLink>
               <MobileLink to="/certification" onClick={() => setMenuOpen(false)}>认证</MobileLink>
               {isShop && <MobileLink to="/shop/dashboard" onClick={() => setMenuOpen(false)}>店家后台</MobileLink>}
               <button onClick={() => { setMenuOpen(false); handleLogout(); }}
