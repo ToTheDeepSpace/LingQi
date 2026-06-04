@@ -147,6 +147,8 @@ function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
     delete safe.wechat_openid;
     delete safe.wechat_unionid;
     delete safe.wechat_avatar;
+    delete safe.wechat_nickname;
+    delete safe.wechat_bound_at;
     delete safe.is_banned;
     delete safe.ban_reason;
     delete safe.banned_at;
