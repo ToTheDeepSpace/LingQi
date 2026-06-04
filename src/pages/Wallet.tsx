@@ -37,10 +37,15 @@ export default function Wallet() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [amount, setAmount] = useState(50);
+  const [amountInput, setAmountInput] = useState('50');
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
   const [showReturnNotice, setShowReturnNotice] = useState(() => new URLSearchParams(window.location.search).get('alipay') === 'return');
+  const rechargeAmount = Number(amountInput);
+  const amountValid = Number.isInteger(rechargeAmount) && rechargeAmount >= 10 && rechargeAmount <= 5000;
+  const amountError = amountInput.trim() && !amountValid
+    ? (rechargeAmount > 5000 ? '单次最多 5000 契约币' : '最低 10 契约币，且只能输入整数')
+    : '';
 
   const fetchWallet = useCallback(() => {
     if (!auth) return;
@@ -68,13 +73,17 @@ export default function Wallet() {
 
   const startAlipayRecharge = async () => {
     if (!auth) return;
+    if (!amountValid) {
+      setPayError(amountError || '请输入有效充值金额');
+      return;
+    }
     setPaying(true);
     setPayError('');
     try {
       const r = await fetch(`${API}/lc/wallet/alipay/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ amount: rechargeAmount }),
       });
       const d = await r.json();
       if (d.success && d.data?.pay_url) {
@@ -125,7 +134,7 @@ export default function Wallet() {
         }}>
           <h2 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>充值</h2>
           <p style={{ fontSize: '0.82rem', color: MUTED, lineHeight: 1.7, marginBottom: 20 }}>
-            选择契约币数量后跳转支付宝收银台。支付成功后由支付宝异步通知自动到账，不再需要上传凭证。
+            输入充值金额后跳转支付宝收银台，最低 10 契约币。支付成功后由支付宝异步通知自动到账，不再需要上传凭证。
           </p>
 
           {showReturnNotice && (
@@ -145,19 +154,42 @@ export default function Wallet() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <p style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: 8, color: 'rgba(71,85,105,0.78)' }}>
-                充值契约币 · <span style={{ color: GOLD }}>{amount}</span>
+                充值契约币 · <span style={{ color: GOLD }}>{amountInput || '--'}</span>
               </p>
+              <input
+                type="number"
+                min={10}
+                max={5000}
+                step={1}
+                value={amountInput}
+                onChange={e => setAmountInput(e.target.value)}
+                placeholder="输入充值金额，最低 10"
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  border: amountError ? `1px solid ${RED}` : '1px solid rgba(201,146,46,0.22)',
+                  background: '#fff',
+                  color: INK,
+                  fontSize: '0.95rem',
+                  fontWeight: 700,
+                  outline: 'none',
+                  marginBottom: 10,
+                }}
+              />
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                {[20, 50, 100, 200, 500].map(a => (
-                  <button key={a} onClick={() => setAmount(a)}
+                {[10, 20, 50, 100, 200, 500].map(a => (
+                  <button key={a} onClick={() => setAmountInput(String(a))}
                     style={{
                       padding: '8px 18px', borderRadius: 10, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
-                      border: amount === a ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.15)',
-                      background: amount === a ? 'rgba(201,146,46,0.12)' : '#fff',
-                      color: amount === a ? '#925f18' : 'rgba(71,85,105,0.66)',
+                      border: rechargeAmount === a ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.15)',
+                      background: rechargeAmount === a ? 'rgba(201,146,46,0.12)' : '#fff',
+                      color: rechargeAmount === a ? '#925f18' : 'rgba(71,85,105,0.66)',
                     }}>{a} 契约币</button>
                 ))}
               </div>
+              {amountError && <p style={{ color: RED, fontSize: '0.76rem', fontWeight: 700 }}>{amountError}</p>}
             </div>
 
             <div style={{
@@ -170,6 +202,7 @@ export default function Wallet() {
               lineHeight: 1.7,
             }}>
               充值创建后会生成一笔待确认流水；只有支付宝异步通知验签通过后才会入账。未付款订单不会进入人工到账审核。
+              已支付充值原则上不支持提现或退款；如需发票，可按实际支付金额申请普通电子发票，企业用户可按公司开票规则提交专票信息。
             </div>
 
             {payError && (
@@ -177,14 +210,14 @@ export default function Wallet() {
                 {payError}
               </div>
             )}
-            <button onClick={startAlipayRecharge} disabled={paying}
+            <button onClick={startAlipayRecharge} disabled={paying || !amountValid}
               style={{
                 padding: '14px 0', borderRadius: 12, fontWeight: 700, fontSize: '0.95rem',
-                cursor: paying ? 'not-allowed' : 'pointer',
-                background: paying ? 'rgba(201,146,46,0.15)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                color: paying ? 'rgba(201,146,46,0.4)' : INK, border: 'none',
+                cursor: paying || !amountValid ? 'not-allowed' : 'pointer',
+                background: paying || !amountValid ? 'rgba(201,146,46,0.15)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                color: paying || !amountValid ? 'rgba(201,146,46,0.4)' : INK, border: 'none',
               }}>
-              {paying ? '正在创建支付订单...' : `支付宝支付 · ${amount} 契约币`}
+              {paying ? '正在创建支付订单...' : `支付宝支付 · ${amountValid ? rechargeAmount : '--'} 契约币`}
             </button>
           </div>
         </div>
