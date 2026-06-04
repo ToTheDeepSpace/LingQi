@@ -1,6 +1,7 @@
 export interface Creator {
   id: string;
   phone?: string;
+  phone_verified_at?: string | null;
   display_name: string;
   avatar: string | null;
   bio: string | null;

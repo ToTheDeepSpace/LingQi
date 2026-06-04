@@ -216,8 +216,21 @@ type SecurityEvent = {
   created_at: string;
 };
 
+type SiteMessage = {
+  id: string;
+  sender_id?: string | null;
+  sender_name: string;
+  subject: string;
+  content: string;
+  contact?: string | null;
+  status: 'pending' | 'resolved';
+  admin_note?: string | null;
+  created_at: string;
+  updated_at?: string;
+};
+
 type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert';
-type Tab = 'pending' | 'active' | 'requests' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'reports' | 'wallet' | 'certs' | 'security';
+type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'reports' | 'wallet' | 'certs' | 'security';
 
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.04)',
@@ -263,6 +276,7 @@ export default function Admin() {
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
   const [carpools, setCarpools] = useState<CarpoolReview[]>([]);
   const [reports, setReports] = useState<ReportReview[]>([]);
+  const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [transactions, setTransactions] = useState<TransactionReview[]>([]);
   const [certs, setCerts] = useState<CertReview[]>([]);
@@ -298,6 +312,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
         setReports((d.data as { reports: ReportReview[] }).reports || []);
+        setSiteMessages((d.data as { siteMessages: SiteMessage[] }).siteMessages || []);
         setSecurityEvents((d.data as { securityEvents: SecurityEvent[] }).securityEvents || []);
       } else {
         const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '加载失败');
@@ -480,6 +495,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
+  const resolveSiteMessage = async (id: string) => {
+    await fetch(`${API}/lc/admin/site-messages/${id}/resolve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminNote: '已处理' }),
+    });
+    setSiteMessages(prev => prev.filter(item => item.id !== id));
+    void loadData();
+  };
+
   const approveTransaction = async (id: string) => {
     setTransactionLoading(true);
     setTransactionMsg(null);
@@ -559,6 +584,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setCommissions([]);
     setCarpools([]);
     setReports([]);
+    setSiteMessages([]);
     setSecurityEvents([]);
     setTransactions([]);
     setCerts([]);
@@ -627,6 +653,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             { label: '委托需求', value: commissions.length, color: '#fbbf24' },
             { label: '拼车', value: carpools.length, color: '#14b8a6' },
             { label: '举报', value: reports.length, color: '#f87171' },
+            { label: '站内信', value: siteMessages.length, color: '#38bdf8' },
             { label: '安全日志', value: securityEvents.length, color: '#fb923c' },
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
             { label: '已发布榜单', value: approvedRankings.length, color: '#60a5fa' },
@@ -649,6 +676,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
           <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
           <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
+          <button style={tabStyle(tab === 'messages')} onClick={() => setTab('messages')}>站内信 {siteMessages.length > 0 && `(${siteMessages.length})`}</button>
           <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
           <button style={tabStyle(tab === 'publishedRankings')} onClick={() => setTab('publishedRankings')}>已发布 ({approvedRankings.length})</button>
@@ -915,6 +943,27 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ActionButton kind="bad" onClick={() => resolveReport(r.id, 'resolved', true)}>下架并处理</ActionButton>
                       <ActionButton kind="ok" onClick={() => resolveReport(r.id, 'resolved')}>标记已处理</ActionButton>
                       <ActionButton onClick={() => resolveReport(r.id, 'dismissed')}>暂不处理</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'messages' && (
+              <ListEmpty empty={siteMessages.length === 0} text="暂无待处理站内信">
+                {siteMessages.map(m => (
+                  <Row key={m.id} accent="#38bdf8">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={m.subject} pill="站内信" />
+                      <Meta>
+                        发送人：{m.sender_name}
+                        {m.contact ? ` · 联系方式：${m.contact}` : ''}
+                        {m.created_at ? ` · ${m.created_at.slice(0, 19).replace('T', ' ')}` : ''}
+                      </Meta>
+                      <ContentBox>{m.content}</ContentBox>
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => resolveSiteMessage(m.id)}>标记已处理</ActionButton>
                     </Actions>
                   </Row>
                 ))}

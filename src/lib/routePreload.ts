@@ -14,6 +14,7 @@ export const pageLoaders = {
   wallet: () => import('../pages/Wallet'),
   certification: () => import('../pages/CertificationPage'),
   shopDashboard: () => import('../pages/ShopDashboard'),
+  contact: () => import('../pages/Contact'),
   legal: () => import('../pages/Legal'),
 } as const;
 
@@ -33,6 +34,7 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/wallet': pageLoaders.wallet,
   '/certification': pageLoaders.certification,
   '/shop/dashboard': pageLoaders.shopDashboard,
+  '/contact': pageLoaders.contact,
   '/rules': pageLoaders.legal,
   '/terms': pageLoaders.legal,
   '/privacy': pageLoaders.legal,

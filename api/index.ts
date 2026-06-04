@@ -196,10 +196,17 @@ function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefi
 async function getAuthedProfile(req: express.Request) {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, is_banned, ban_reason')
+    .select('id, display_name, is_realname, balance, is_banned, ban_reason, avatar, phone, phone_verified_at')
     .eq('id', creatorId)
     .single();
   return data;
+}
+
+function getSpeakBlockReason(profile: { avatar?: string | null; phone_verified_at?: string | null } | null) {
+  if (!profile) return '用户不存在';
+  if (!profile.phone_verified_at) return '发言前请先用手机号验证码完成认证';
+  if (!profile.avatar) return '发言前请先到个人后台上传头像';
+  return '';
 }
 
 type RelatedProofFile = { name: string; url: string; type?: string };
@@ -1491,7 +1498,10 @@ app.post('/api/lc/auth', async (req, res) => {
 
 app.get('/api/lc/me', authMiddleware, async (req, res) => {
   try {
-    const { data } = await supabase.from('lc_profiles').select('id, display_name, is_realname, city').eq('id', getReq(req, 'creatorId')).single();
+    const { data } = await supabase.from('lc_profiles')
+      .select('id, display_name, avatar, phone, phone_verified_at, is_realname, city')
+      .eq('id', getReq(req, 'creatorId'))
+      .single();
     res.json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1899,6 +1909,8 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
 
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
 
     const { data, error: insErr } = await supabase.from('lc_commissions').insert({
       poster_id: profile.id,
@@ -2003,6 +2015,8 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
 
     const title = cleanText(req.body.title, 80);
     const city = cleanText(req.body.city, 40);
@@ -2269,6 +2283,37 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.post('/api/lc/site-messages', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const subject = cleanText(req.body?.subject, 80);
+    const content = cleanText(req.body?.content, 2000);
+    const contact = cleanText(req.body?.contact, 300);
+    if (!subject || !content) return res.status(400).json(err(new Error('请填写站内信标题和内容')));
+
+    const { data, error: insErr } = await supabase.from('lc_site_messages').insert({
+      sender_id: profile.id,
+      sender_name: profile.display_name,
+      subject,
+      content,
+      contact: contact || null,
+      status: 'pending',
+    }).select('id').single();
+    if (insErr) {
+      if (isMissingRelation(insErr, 'lc_site_messages')) return res.status(503).json(err(new Error('站内信表尚未初始化，请先执行 Supabase migration')));
+      throw insErr;
+    }
+    await logSecurityEvent(req, {
+      action: 'site_message_submitted',
+      targetType: 'site_message',
+      targetId: data?.id,
+      metadata: { subject },
+    });
+    res.json(ok({ id: data?.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.get('/api/lc/carpools/applications/sent', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
@@ -2310,6 +2355,8 @@ app.post('/api/lc/carpools/:id/applications', authMiddleware, async (req, res) =
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     const message = cleanText(req.body.message, 1200);
     const roleName = cleanText(req.body.roleName, 80);
     if (!message) return res.status(400).json(err(new Error('请填写上车申请')));
@@ -2455,6 +2502,8 @@ app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res
 
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
 
     const { data: commission } = await supabase.from('lc_commissions')
       .select('id, poster_id, status')
@@ -2534,7 +2583,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: securityEvents }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: securityEvents }] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -2546,6 +2595,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_certifications').select('*, lc_profiles!inner(display_name, phone)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_carpools').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_reports').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_site_messages').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_security_events')
         .select('id, actor_id, actor_role, action, target_type, target_id, ip_address, user_agent, request_path, metadata, created_at')
         .order('created_at', { ascending: false })
@@ -2563,6 +2613,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       certifications: certifications || [],
       carpools: carpools || [],
       reports: reports || [],
+      siteMessages: siteMessages || [],
       securityEvents: securityEvents || [],
     }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -2591,6 +2642,28 @@ app.put('/api/lc/admin/profile/:id/unflag', authMiddleware, adminMiddleware, asy
       targetId: req.params.id,
     });
     res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/site-messages/:id/resolve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const adminNote = cleanText(req.body?.adminNote, 800);
+    const { data, error: updErr } = await supabase.from('lc_site_messages')
+      .update({ status: 'resolved', admin_note: adminNote || null, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select('id')
+      .single();
+    if (updErr) {
+      if (isMissingRelation(updErr, 'lc_site_messages')) return res.status(503).json(err(new Error('站内信表尚未初始化')));
+      throw updErr;
+    }
+    await logSecurityEvent(req, {
+      action: 'site_message_resolved',
+      actorRole: 'admin',
+      targetType: 'site_message',
+      targetId: data?.id || req.params.id,
+    });
+    res.json(ok({ id: data?.id || req.params.id, status: 'resolved' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -2721,7 +2794,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     const viewerId = getOptionalCreatorId(req);
     let query = supabase
       .from('lc_rankings')
-      .select('*, lc_profiles!poster_id(verified_dm, verified_shop, role)')
+      .select('*, lc_profiles!poster_id(display_name, avatar, verified_dm, verified_shop, role)')
       .eq('status', 'approved')
       .order('likes', { ascending: false })
       .order('created_at', { ascending: false });
@@ -2812,6 +2885,8 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
     // 契约币支付
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     if (amount > 0 && (profile.balance || 0) < amount) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
     const posterId = getReq(req, 'creatorId');
@@ -2900,6 +2975,8 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     const voteType = req.body.voteType as RankingVoteType;
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     if (!['like', 'dislike', 'joy'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
 
     const { data, error: voteErr } = await supabase.rpc('lc_apply_ranking_vote', {
@@ -3008,6 +3085,8 @@ app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
     if (!content) return res.status(400).json(err(new Error('缺少评论内容')));
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
 
     // 扣 1 契约币
@@ -3037,6 +3116,8 @@ app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, a
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     const relatedNote = typeof req.body?.relatedNote === 'string' ? req.body.relatedNote.trim().slice(0, 1000) : '';
     const relatedFiles = sanitizeRelatedFiles(req.body?.relatedFiles);
     if (!relatedNote && relatedFiles.length === 0) {
@@ -3094,6 +3175,8 @@ app.post('/api/lc/rankings/:id/comments/:cid/like', authMiddleware, async (req, 
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     const { data: c } = await supabase.from('lc_comments').select('likes').eq('id', req.params.cid).eq('ranking_id', req.params.id).single();
     if (!c) return res.status(404).json(err(new Error('评论不存在')));
     const { error: voteErr } = await supabase.from('lc_comment_votes').insert({ comment_id: req.params.cid, voter_id: profile.id });

@@ -96,7 +96,7 @@ export function SecurityAssessment() {
 
       <Section title="二、账号核验与身份标识">
         <List items={[
-          '用户发布内容前需要注册登录账号；当前账号以手机号、昵称和密码为基础，后续接入微信登录或短信服务时会继续完善身份核验。',
+          '用户发布、评论、投票、接单/上车申请等公开互动前需要注册登录账号，并完成手机号验证和头像上传。',
           '前台默认展示昵称，不直接展示真实姓名、手机号或微信号。',
           '实名认证、DM 认证、店家认证等只展示认证标识，证件和证明材料仅供审核使用。',
           '发现冒用身份、恶意刷票、造谣、泄露隐私或其他明显违规行为时，管理员可以下架内容、限制公开展示或限制账号继续发布。',
@@ -127,7 +127,7 @@ export function SecurityAssessment() {
           '公开内容旁会尽量提供举报入口；恶意举报同样会留下记录。',
           '相关方可以先发布评论，再提交相关方认证材料申请置顶回应。',
           '用户对审核、下架、账号限制或公开评价有异议时，可以补充材料并通过站内方式向管理员申诉。',
-          `对外联系邮箱：${CONTACT_EMAIL}。ICP备案号：${ICP_RECORD_NO}；公安联网备案号当前办理中，完成后会继续补充公示。`,
+          `用户可以通过站内信或对外联系邮箱 ${CONTACT_EMAIL} 联系平台。ICP备案号：${ICP_RECORD_NO}；公安联网备案号当前办理中，完成后会继续补充公示。`,
         ]} />
       </Section>
 
@@ -293,7 +293,7 @@ export function PrivacyPolicy() {
       </Section>
 
       <Section title="十、联系与反馈">
-        <p style={pStyle}>当前原型期的隐私、审核、申诉和删除请求，先通过站内管理员人工处理，也可以发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号办理完成后会继续补充公示。</p>
+        <p style={pStyle}>当前原型期的隐私、审核、申诉和删除请求，先通过站内管理员人工处理，也可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号办理完成后会继续补充公示。</p>
       </Section>
     </LegalLayout>
   );
@@ -315,7 +315,7 @@ export function UserAgreement() {
 
       <Section title="二、账号与身份">
         <List items={[
-          '你需要使用真实可用的手机号或平台支持的方式注册账号，并妥善保管登录信息。',
+          '你需要使用真实可用的手机号或平台支持的方式注册账号，并妥善保管登录信息；公开发言、投票、评论、接单/上车申请等互动前需要完成手机号验证和头像上传。',
           '你不得冒用他人身份、盗用他人账号、使用他人联系方式注册或发布内容。',
           '前台默认显示昵称，不直接展示实名；实名、DM、店家等认证状态可能以星标或认证标识展示。',
           '如账号存在异常登录、恶意刷票、造谣、骚扰、诈骗等风险，平台可以限制、冻结或下线相关功能。',
@@ -391,7 +391,7 @@ export function UserAgreement() {
       </Section>
 
       <Section title="十一、联系与备案">
-        <p style={pStyle}>如需联系客服、申请发票、提交隐私请求、投诉举报或申诉审核结果，可以发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号当前办理中，完成后会继续公示。</p>
+        <p style={pStyle}>如需联系客服、申请发票、提交隐私请求、投诉举报或申诉审核结果，可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号当前办理中，完成后会继续公示。</p>
       </Section>
     </LegalLayout>
   );

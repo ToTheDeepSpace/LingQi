@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
+import { generatedAvatarDataUrl } from '../lib/avatar';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import ReportModal, { type ReportTargetType } from '../components/ReportModal';
 
@@ -9,7 +10,6 @@ const API = '/api';
 const C = '#f6efe4';
 const GOLD = '#a66a1f';
 const RED = '#f87171';
-const RED2 = '#dc2626';
 const BLK = '#94a3b8';
 
 const SUBJECT_LABEL: Record<string, string> = {
@@ -35,6 +35,7 @@ type MyVote = {
 
 type Ranking = {
   id: string;
+  poster_id?: string | null;
   type: 'red' | 'black' | 'white';
   subject_name: string;
   subject_type: string;
@@ -51,7 +52,7 @@ type Ranking = {
   expires_at?: string;
   expiry_override?: string;
   files?: { name: string; url: string; type?: string }[];
-  lc_profiles?: { verified_dm?: boolean; verified_shop?: boolean; role?: string };
+  lc_profiles?: { display_name?: string; avatar?: string | null; verified_dm?: boolean; verified_shop?: boolean; role?: string };
   my_vote?: MyVote | null;
   audit_proof?: {
     event_type: string;
@@ -258,6 +259,34 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
       }}>
       {children}
     </button>
+  );
+}
+
+function AuthorAvatar({
+  name,
+  src,
+  seed,
+  size = 34,
+}: {
+  name: string;
+  src?: string | null;
+  seed?: string | null;
+  size?: number;
+}) {
+  return (
+    <img
+      src={src || generatedAvatarDataUrl(name, seed)}
+      alt=""
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 10,
+        objectFit: 'cover',
+        flexShrink: 0,
+        border: '1px solid rgba(166,106,31,0.18)',
+        background: '#fffaf2',
+      }}
+    />
   );
 }
 
@@ -817,9 +846,9 @@ export default function Rankings() {
       style={{
         flex: 1, padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer',
         fontWeight: 700, fontSize: '1rem', transition: 'all 0.2s',
-        background: tab === t ? color : 'transparent',
-        color: tab === t ? '#fff' : 'rgba(71,85,105,0.70)',
-        boxShadow: tab === t ? `0 4px 16px ${color}50` : 'none',
+        background: tab === t ? `${color}18` : 'transparent',
+        color: tab === t ? color : 'rgba(71,85,105,0.70)',
+        boxShadow: tab === t ? `inset 0 0 0 1px ${color}36` : 'none',
       }}>{label}</button>
   );
 
@@ -870,7 +899,7 @@ export default function Rankings() {
       <div style={{ maxWidth: 1180, margin: '0 auto', padding: '24px 20px 80px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
           <div style={{ width: 'min(100%, 420px)', display: 'flex', gap: 4, padding: 4, backgroundColor: '#fffdf8', border: '1px solid rgba(166,106,31,0.16)', borderRadius: 14, boxShadow: '0 8px 20px rgba(102,70,30,0.06)' }}>
-            {tabBtn('red', '🏅 红榜', '#dc2626')}
+            {tabBtn('red', '🏅 红榜', '#b91c1c')}
             {tabBtn('white', '✨ 白榜', '#b8860b')}
             {tabBtn('black', '👎 黑榜', '#475569')}
           </div>
@@ -956,7 +985,9 @@ export default function Rankings() {
         {!loading && !error && rankedItems.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start' }}>
             {rankedItems.map((item, idx) => {
-              const accentColor = item.type === 'red' ? RED2 : item.type === 'black' ? BLK : GOLD;
+              const accentColor = item.type === 'red' ? '#b91c1c' : item.type === 'black' ? BLK : GOLD;
+              const subtleAccentBg = item.type === 'red' ? 'rgba(185,28,28,0.08)' : item.type === 'black' ? 'rgba(148,163,184,0.10)' : 'rgba(166,106,31,0.10)';
+              const subtleAccentBorder = item.type === 'red' ? 'rgba(185,28,28,0.16)' : item.type === 'black' ? 'rgba(148,163,184,0.20)' : 'rgba(166,106,31,0.24)';
               const loadedComments = commentsMap[item.id];
               const comments = loadedComments || item.pinned_comments || [];
               const pinnedComments = (loadedComments || item.pinned_comments || []).filter(c => c.is_pinned);
@@ -973,16 +1004,22 @@ export default function Rankings() {
                   style={{
                     ...card,
                     borderLeft: `3px solid ${accentColor}`,
-                    borderColor: item.type === 'red' ? 'rgba(220,38,38,0.3)' : item.type === 'black' ? 'rgba(148,163,184,0.2)' : 'rgba(166,106,31,0.24)',
+                    borderColor: subtleAccentBorder,
                     borderLeftColor: accentColor,
                   }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-                    <div style={{
-                      width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                      background: item.type === 'red' ? 'linear-gradient(135deg, #dc2626, #ef4444)' : item.type === 'black' ? 'linear-gradient(135deg, #374151, #4b5563)' : 'linear-gradient(135deg, #d9a857, #a66a1f)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 900, fontSize: '0.82rem', color: '#fff',
-                    }}>{idx + 1}</div>
+                    <div style={{ width: 38, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                      <AuthorAvatar name={item.author_name} src={item.lc_profiles?.avatar} seed={item.poster_id || item.id} size={34} />
+                      <span style={{
+                        padding: '2px 7px',
+                        borderRadius: 999,
+                        background: subtleAccentBg,
+                        border: `1px solid ${subtleAccentBorder}`,
+                        color: accentColor,
+                        fontSize: '0.68rem',
+                        fontWeight: 900,
+                      }}>#{idx + 1}</span>
+                    </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{
                         fontSize: '0.95rem',
@@ -1001,9 +1038,9 @@ export default function Rankings() {
                         <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'rgba(31,41,55,0.82)' }}>{item.subject_name}</span>
                         <span style={{
                           padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600,
-                          background: item.type === 'red' ? 'rgba(220,38,38,0.12)' : item.type === 'black' ? 'rgba(148,163,184,0.12)' : 'rgba(166,106,31,0.12)',
-                          color: item.type === 'red' ? '#f87171' : item.type === 'black' ? BLK : GOLD,
-                          border: `1px solid ${item.type === 'red' ? 'rgba(220,38,38,0.25)' : item.type === 'black' ? 'rgba(148,163,184,0.2)' : 'rgba(166,106,31,0.24)'}`,
+                          background: subtleAccentBg,
+                          color: accentColor,
+                          border: `1px solid ${subtleAccentBorder}`,
                         }}>{SUBJECT_LABEL[item.subject_type] || item.subject_type}</span>
                         {item.subject_city && (
                           <span style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.70)' }}>📍 {item.subject_city}</span>
@@ -1145,7 +1182,7 @@ export default function Rankings() {
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
                       onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>
-                      {showVotes ? '收起投票记录' : '查看投票记录'}
+                        {showVotes ? '收起投票人' : '谁投了票'}
                     </button>
                     <button
                       onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: item.subject_name })}

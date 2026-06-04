@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import ImageUpload from '../components/ImageUpload';
+import { generatedAvatarDataUrl } from '../lib/avatar';
 import type { Creator, Service, Portfolio, AuthData, Availability } from '../types';
 
 const API  = '/api';
@@ -453,6 +454,9 @@ export default function Dashboard() {
     </button>
   );
 
+  const profileAvatarUrl = form.avatar || generatedAvatarDataUrl(form.display_name || creator.display_name, creator.id);
+  const phoneVerified = !!creator.phone_verified_at;
+  const hasUploadedAvatar = !!form.avatar;
   const availableItems = availItems.filter(item => !item.is_booked);
   const busyItems = availItems.filter(item => item.is_booked);
   const busyDateSet = new Set(busyItems.map(item => item.date));
@@ -530,15 +534,40 @@ export default function Dashboard() {
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     color: '#925f18', fontSize: 28, fontWeight: 900,
                   }}>
-                    {form.avatar
-                      ? <img src={form.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : (form.display_name || '灵').slice(0, 1)
-                    }
+                    <img src={profileAvatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   </div>
                   <div>
                     <p style={{ color: INK, fontWeight: 800, fontSize: '0.92rem', marginBottom: 8 }}>主页头像</p>
                     <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="上传头像" />
-                    <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', marginTop: 8 }}>上传后会同步显示到公开主页。</p>
+                    <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', marginTop: 8 }}>
+                      未上传时会显示系统生成头像；发布、评论、投票和接单前必须上传本人头像。
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
+                  <div style={{
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    backgroundColor: phoneVerified ? 'rgba(220,252,231,0.78)' : 'rgba(254,242,242,0.82)',
+                    border: `1px solid ${phoneVerified ? 'rgba(22,163,74,0.18)' : 'rgba(185,28,28,0.18)'}`,
+                    color: phoneVerified ? '#15803d' : '#b91c1c',
+                    fontSize: '0.82rem',
+                    lineHeight: 1.65,
+                    fontWeight: 700,
+                  }}>
+                    {phoneVerified ? '手机号已验证，可以参与公开发言。' : '手机号未验证：请用手机号验证码登录一次，否则不能发布、评论、投票或接单。'}
+                  </div>
+                  <div style={{
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    backgroundColor: hasUploadedAvatar ? 'rgba(220,252,231,0.78)' : 'rgba(255,247,237,0.92)',
+                    border: `1px solid ${hasUploadedAvatar ? 'rgba(22,163,74,0.18)' : 'rgba(217,168,87,0.24)'}`,
+                    color: hasUploadedAvatar ? '#15803d' : '#925f18',
+                    fontSize: '0.82rem',
+                    lineHeight: 1.65,
+                    fontWeight: 700,
+                  }}>
+                    {hasUploadedAvatar ? '头像已上传，可以参与公开发言。' : '头像未上传：当前只是默认头像，上传后才能公开发言。'}
                   </div>
                 </div>
                 <div style={{

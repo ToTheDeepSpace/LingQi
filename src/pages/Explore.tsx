@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Creator, PaginatedResponse } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
+import { generatedAvatarDataUrl } from '../lib/avatar';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -20,22 +21,13 @@ const FILTERS = [
   { key: 'prop', label: '道具师' },
 ];
 
-const ROLE_EMOJI: Record<string, string> = {
-  creator: '✦',
-  photographer: '◐',
-  makeup: '◇',
-  costume: '◈',
-  prop: '◆',
-  coser: '✦',
-};
-
 const ROLE_LABEL: Record<string, string> = {
   creator: '灵契师',
   photographer: '摄影师',
   makeup: '妆造师',
   costume: '服装商',
   prop: '道具师',
-  coser: '委托人',
+  coser: 'Coser',
 };
 
 const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
@@ -389,10 +381,11 @@ function CreatorCard({ creator }: { creator: Creator }) {
           color: GOLD,
           fontWeight: 900,
         }}>
-          {creator.avatar
-            ? <img src={creator.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : ROLE_EMOJI[creator.role_type || ''] || '✦'
-          }
+          <img
+            src={creator.avatar || generatedAvatarDataUrl(creator.display_name, creator.id)}
+            alt=""
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
         </div>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>

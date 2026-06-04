@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { Availability, Creator, Service, Portfolio, SocialSnapshot } from '../types';
 import ReportModal from '../components/ReportModal';
+import { generatedAvatarDataUrl } from '../lib/avatar';
 
 const API  = '/api';
 const C    = '#fffdf8';
@@ -10,11 +11,9 @@ const GOLD = '#d9a857';
 const INK  = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
-const ROLE_EMOJI: Record<string, string> = {
-  creator: '🎭', coser: '⭐', photographer: '📸', makeup: '💄',
-};
 const ROLE_LABEL: Record<string, string> = {
   creator: '灵契师', coser: 'Coser', photographer: '摄影师', makeup: '妆造师',
+  costume: '服装商', prop: '道具师',
 };
 
 const card: React.CSSProperties = {
@@ -151,10 +150,11 @@ export default function CreatorProfile() {
               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, overflow: 'hidden',
               boxShadow: '0 18px 52px rgba(31,41,55,0.14)',
             }}>
-              {creator.avatar
-                ? <img src={creator.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : ROLE_EMOJI[creator.role_type || ''] || '🎭'
-              }
+              <img
+                src={creator.avatar || generatedAvatarDataUrl(creator.display_name, creator.id)}
+                alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
             </div>
             <div>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.4rem, 3vw, 2rem)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

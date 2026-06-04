@@ -21,6 +21,7 @@ const CreateCarpool = lazy(pageLoaders.createCarpool);
 const Wallet = lazy(pageLoaders.wallet);
 const CertificationPage = lazy(pageLoaders.certification);
 const ShopDashboard = lazy(pageLoaders.shopDashboard);
+const Contact = lazy(pageLoaders.contact);
 const ReviewRules = lazy(() => pageLoaders.legal().then(module => ({ default: module.ReviewRules })));
 const UserAgreement = lazy(() => pageLoaders.legal().then(module => ({ default: module.UserAgreement })));
 const PrivacyPolicy = lazy(() => pageLoaders.legal().then(module => ({ default: module.PrivacyPolicy })));
@@ -53,6 +54,7 @@ function AppLayout() {
           <Route path="/wallet" element={<Wallet />} />
           <Route path="/certification" element={<CertificationPage />} />
           <Route path="/shop/dashboard" element={<ShopDashboard />} />
+          <Route path="/contact" element={<Contact />} />
           <Route path="/rules" element={<ReviewRules />} />
           <Route path="/terms" element={<UserAgreement />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
@@ -124,7 +126,8 @@ function SiteFooter() {
             <FooterLink to="/terms">用户协议</FooterLink>
             <FooterLink to="/privacy">隐私政策</FooterLink>
             <FooterLink to="/security-assessment">安全评估说明</FooterLink>
-            <FooterExternal href={`mailto:${CONTACT_EMAIL}`}>联系我们</FooterExternal>
+            <FooterLink to="/contact">联系我们 / 站内信</FooterLink>
+            <FooterExternal href={`mailto:${CONTACT_EMAIL}`}>客服邮箱</FooterExternal>
             <FooterExternal href="https://beian.miit.gov.cn/">{ICP_RECORD_NO}</FooterExternal>
             <FooterText>公安联网备案办理中</FooterText>
           </FooterColumn>
