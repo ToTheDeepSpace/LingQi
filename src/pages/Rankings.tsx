@@ -16,13 +16,14 @@ const SUBJECT_LABEL: Record<string, string> = {
   creator: '委托师',
   dm: '卡司',
   store: '店家',
+  takeaway: '外卖',
   player: '玩家',
 };
 
-const SUBJECT_TYPES = ['creator', 'dm', 'store', 'player'] as const;
+const SUBJECT_TYPES = ['creator', 'dm', 'store', 'takeaway', 'player'] as const;
 const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
 
-type AuthSession = { token: string; displayName: string; userId?: string };
+type AuthSession = { token: string; displayName: string; userId?: string; city?: string | null; availableCities: string[] };
 
 type MyVote = {
   id: string;
@@ -143,7 +144,17 @@ function getAuth(): AuthSession | null {
     if (!data?.token) return null;
     const payload = JSON.parse(atob(data.token.split('.')[1]));
     if (payload.exp * 1000 < Date.now()) return null;
-    return { token: data.token, displayName: data.display_name || '用户', userId: payload.creatorId };
+    const availableCities = Array.isArray(data.available_cities)
+      ? data.available_cities.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+      : [];
+    const fallbackCity = String(data.city || '').trim();
+    return {
+      token: data.token,
+      displayName: data.display_name || '用户',
+      userId: payload.creatorId,
+      city: fallbackCity || null,
+      availableCities: availableCities.length > 0 ? availableCities : (fallbackCity ? [fallbackCity] : []),
+    };
   } catch { return null; }
 }
 
@@ -291,9 +302,10 @@ function AuthorAvatar({
 }
 
 function CityFilter({
-  city, open, query, options, onToggle, onQuery, onSelect, onClose,
+  city, preferredCities, open, query, options, onToggle, onQuery, onSelect, onClose,
 }: {
   city: string;
+  preferredCities: string[];
   open: boolean;
   query: string;
   options: string[];
@@ -302,6 +314,10 @@ function CityFilter({
   onSelect: (city: string) => void;
   onClose: () => void;
 }) {
+  const cityLabel = city === 'preferred'
+    ? `我的城市${preferredCities.length > 0 ? `：${preferredCities.slice(0, 2).join('、')}${preferredCities.length > 2 ? '等' : ''}` : ''}`
+    : city === 'all' ? '全部城市' : city;
+
   return (
     <div style={{ position: 'relative' }}>
       <button onClick={onToggle}
@@ -317,7 +333,7 @@ function CityFilter({
           fontWeight: 800,
           whiteSpace: 'nowrap',
         }}>
-        📍 {city === 'all' ? '全部城市' : city} ▾
+        📍 {cityLabel} ▾
       </button>
 
       {open && (
@@ -356,6 +372,9 @@ function CityFilter({
             />
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
               <FilterPill active={city === 'all'} onClick={() => onSelect('all')}>全部</FilterPill>
+              {preferredCities.length > 0 && (
+                <FilterPill active={city === 'preferred'} onClick={() => onSelect('preferred')}>我的城市</FilterPill>
+              )}
               {POPULAR_CITIES.map(c => (
                 <FilterPill key={c} active={city === c} onClick={() => onSelect(c)}>{c}</FilterPill>
               ))}
@@ -392,9 +411,12 @@ function CityFilter({
 
 export default function Rankings() {
   const navigate = useNavigate();
+  const initialPreferredCities = getAuth()?.availableCities || [];
   const [tab, setTab] = useState<'red' | 'black' | 'white'>('red');
   const [subjectTab, setSubjectTab] = useState<string>('all');
-  const [city, setCity] = useState('all');
+  const [city, setCity] = useState(initialPreferredCities.length > 0 ? 'preferred' : 'all');
+  const [preferredCities, setPreferredCities] = useState<string[]>(initialPreferredCities);
+  const [cityTouched, setCityTouched] = useState(false);
   const [cityOpen, setCityOpen] = useState(false);
   const [cityQuery, setCityQuery] = useState('');
   const [items, setItems] = useState<Ranking[]>([]);
@@ -433,6 +455,7 @@ export default function Rankings() {
   const [auditModal, setAuditModal] = useState<AuditModal>(null);
 
   const auth = getAuth();
+  const preferredCityParam = preferredCities.join(',');
 
   const requireAuth = (): AuthSession | null => {
     const current = getAuth();
@@ -477,6 +500,26 @@ export default function Rankings() {
   }, []);
 
   useEffect(() => {
+    const current = getAuth();
+    if (!current) return;
+    let alive = true;
+    fetch(`${API}/lc/me`, { headers: { Authorization: `Bearer ${current.token}` } })
+      .then(r => r.json())
+      .then(d => {
+        if (!alive || !d.success) return;
+        const profileCities = Array.isArray(d.data?.available_cities)
+          ? d.data.available_cities.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+          : [];
+        const fallbackCity = String(d.data?.city || '').trim();
+        const nextCities = profileCities.length > 0 ? profileCities : (fallbackCity ? [fallbackCity] : []);
+        setPreferredCities(nextCities);
+        if (!cityTouched && nextCities.length > 0) setCity('preferred');
+      })
+      .catch(() => { /* profile city preference is optional */ });
+    return () => { alive = false; };
+  }, [cityTouched]);
+
+  useEffect(() => {
     let alive = true;
     const loadRankings = async () => {
       setLoading(true);
@@ -485,7 +528,8 @@ export default function Rankings() {
       try {
         const params = new URLSearchParams({ type: tab });
         if (subjectTab !== 'all') params.set('subjectType', subjectTab);
-        if (city !== 'all') params.set('city', city);
+        if (city === 'preferred' && preferredCityParam) params.set('cities', preferredCityParam);
+        else if (city !== 'all' && city !== 'preferred') params.set('city', city);
         const current = getAuth();
         const r = await fetch(`${API}/lc/rankings?${params}`, {
           headers: current ? { Authorization: `Bearer ${current.token}` } : undefined,
@@ -507,9 +551,10 @@ export default function Rankings() {
     };
     void loadRankings();
     return () => { alive = false; };
-  }, [tab, subjectTab, city, fetchWallet]);
+  }, [tab, subjectTab, city, preferredCityParam, fetchWallet]);
 
   const setCityAndClose = (nextCity: string) => {
+    setCityTouched(true);
     setCity(nextCity);
     setCityOpen(false);
     setCityQuery('');
@@ -878,7 +923,7 @@ export default function Rankings() {
             <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 14 }} />
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 8 }}>灵契红黑榜</h1>
             <p style={{ color: 'rgba(71,85,105,0.80)', fontSize: '0.95rem' }}>
-              委托师、卡司、店家、玩家都可以被评价 · 点赞越高越靠前 · 欢乐免费
+              委托师、卡司、店家、外卖、玩家都可以被评价 · 点赞越高越靠前 · 欢乐免费
             </p>
           </div>
           {auth && (
@@ -923,6 +968,7 @@ export default function Rankings() {
           </p>
           <CityFilter
             city={city}
+            preferredCities={preferredCities}
             open={cityOpen}
             query={cityQuery}
             options={cityOptions}

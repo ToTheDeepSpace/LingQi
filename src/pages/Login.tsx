@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { CITIES } from '../constants/cities';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -19,6 +20,8 @@ const inputStyle: React.CSSProperties = {
   color: INK,
   boxSizing: 'border-box',
 };
+
+const QUICK_ACTIVITY_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '武汉', '南京'];
 
 type LoginMode = 'sms' | 'password';
 
@@ -48,6 +51,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
+  const [activityCities, setActivityCities] = useState<string[]>([]);
   const [mode, setMode] = useState<LoginMode>('sms');
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -134,8 +138,8 @@ export default function Login() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mode === 'sms'
-          ? { phone: phone.trim(), code: code.trim(), displayName: name.trim() || undefined }
-          : { phone: phone.trim(), password: password.trim(), displayName: name.trim() || undefined }),
+          ? { phone: phone.trim(), code: code.trim(), displayName: name.trim() || undefined, activityCities }
+          : { phone: phone.trim(), password: password.trim(), displayName: name.trim() || undefined, activityCities }),
       });
       const d = await r.json();
       if (d.success) {
@@ -240,6 +244,7 @@ export default function Login() {
                     <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>昵称 / 艺名（首次登录可填）</label>
                     <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="不填则使用手机号后四位生成昵称" style={inputStyle} />
                   </div>
+                  <CityPreferenceField cities={activityCities} onChange={setActivityCities} />
                 </>
               ) : (
                 <>
@@ -253,6 +258,7 @@ export default function Login() {
                       <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="你希望别人怎么称呼你" required style={inputStyle} />
                     </div>
                   )}
+                  {isRegister && <CityPreferenceField cities={activityCities} onChange={setActivityCities} />}
                 </>
               )}
 
@@ -303,6 +309,110 @@ export default function Login() {
           .lg-flex { display: flex !important; }
         }
       `}</style>
+    </div>
+  );
+}
+
+function CityPreferenceField({ cities, onChange }: { cities: string[]; onChange: (value: string[]) => void }) {
+  const [draft, setDraft] = useState('');
+  const addCity = (value = draft) => {
+    const next = value.trim().slice(0, 40);
+    if (!next) return;
+    if (cities.includes(next)) {
+      setDraft('');
+      return;
+    }
+    onChange([...cities, next].slice(0, 8));
+    setDraft('');
+  };
+  const removeCity = (value: string) => onChange(cities.filter(item => item !== value));
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>
+        主要活动城市（可多选，用于默认展示同城红黑榜）
+      </label>
+      {cities.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {cities.map(item => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => removeCity(item)}
+              style={{
+                border: '1px solid rgba(217,168,87,0.32)',
+                borderRadius: 999,
+                padding: '5px 9px',
+                background: 'rgba(217,168,87,0.12)',
+                color: '#925f18',
+                fontSize: '0.76rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              {item} ×
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 72px', gap: 8 }}>
+        <input
+          type="text"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addCity();
+            }
+          }}
+          placeholder="例如：北京、上海、保定"
+          list="lc-login-city-options"
+          style={inputStyle}
+        />
+        <button
+          type="button"
+          onClick={() => addCity()}
+          style={{
+            border: '1px solid rgba(201,146,46,0.32)',
+            borderRadius: 10,
+            background: '#fff',
+            color: '#925f18',
+            fontWeight: 850,
+            cursor: 'pointer',
+          }}
+        >
+          添加
+        </button>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {QUICK_ACTIVITY_CITIES.map(item => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => addCity(item)}
+            disabled={cities.includes(item)}
+            style={{
+              border: '1px solid rgba(201,146,46,0.18)',
+              borderRadius: 999,
+              padding: '4px 8px',
+              background: cities.includes(item) ? 'rgba(148,163,184,0.12)' : '#fff',
+              color: cities.includes(item) ? 'rgba(71,85,105,0.42)' : 'rgba(39,83,137,0.78)',
+              fontSize: '0.72rem',
+              fontWeight: 750,
+              cursor: cities.includes(item) ? 'default' : 'pointer',
+            }}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+      <p style={{ margin: 0, color: 'rgba(71,85,105,0.56)', fontSize: '0.72rem', lineHeight: 1.55 }}>
+        之后可以在个人后台继续修改；未选择时默认看全部城市。
+      </p>
+      <datalist id="lc-login-city-options">
+        {CITIES.map(item => <option key={item} value={item} />)}
+      </datalist>
     </div>
   );
 }

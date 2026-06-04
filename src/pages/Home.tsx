@@ -132,13 +132,14 @@ export default function Home() {
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <p style={{ fontSize: '1rem', color: MUTED, lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
-            店、灵契师、玩家——三类红黑榜，用真金白银投票。<br />
+            店、灵契师、卡司、玩家、外卖——五类红黑榜，用真金白银投票。<br />
             每条评价都经过人工审核，实名发布带星标。不是有钱就能删帖。
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 36 }}>
             {[              
               { icon: '🏪', label: '店家榜', desc: '店面环境、服务质量、管理水平' },
+              { icon: '🥡', label: '外卖榜', desc: '出餐速度、包装份量、踩雷记录' },
               { icon: '🎭', label: '玩家榜', desc: '素质、迟到率、历史评价' },
               { icon: '🎬', label: '卡司榜', desc: '带本水平、演绎能力、控场能力' },
               { icon: '🌙', label: '委托师榜', desc: '还原度、陪伴体验、专业程度' },

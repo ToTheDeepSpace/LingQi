@@ -13,6 +13,7 @@ const SUBJECT_LABEL: Record<string, string> = {
   creator: '委托师',
   dm: '卡司',
   store: '店家',
+  takeaway: '外卖',
   player: '玩家',
 };
 
@@ -357,7 +358,7 @@ export default function CreateRanking() {
             )}
 
             {/* 对象名称 */}
-            <Input label="对象名称 *" value={subjectName} onChange={setSubjectName} placeholder="店名 / 人名 / DM名 / 灵契师名" />
+            <Input label="对象名称 *" value={subjectName} onChange={setSubjectName} placeholder="店名 / 外卖店 / 人名 / DM名 / 灵契师名" />
 
             {/* 城市 */}
             <div style={{ position: 'relative' }}>

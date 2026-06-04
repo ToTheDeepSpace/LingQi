@@ -799,7 +799,23 @@ const RANKING_EDIT_LABELS: Record<string, string> = {
   expires_at: '黑榜到期时间',
 };
 
-const RANKING_SUBJECT_TYPES = ['creator', 'dm', 'store', 'player'];
+const RANKING_SUBJECT_TYPES = ['creator', 'dm', 'store', 'takeaway', 'player'];
+
+function normalizeActivityCities(value: unknown, fallback?: unknown) {
+  const raw = [
+    ...(Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[,\s，、;；]+/) : []),
+    ...(fallback ? [fallback] : []),
+  ];
+  const seen = new Set<string>();
+  const cities: string[] = [];
+  raw.forEach(item => {
+    const city = cleanText(item, 40);
+    if (!city || seen.has(city)) return;
+    seen.add(city);
+    cities.push(city);
+  });
+  return cities.slice(0, 8);
+}
 
 function auditComparable(value: unknown) {
   if (value === undefined || value === null) return '';
@@ -1191,7 +1207,9 @@ app.post('/api/lc/auth/send-code', async (req, res) => {
 
 app.post('/api/lc/auth/phone', async (req, res) => {
   try {
-    const { displayName } = req.body;
+    const { displayName, activityCities } = req.body;
+    const activityCityList = normalizeActivityCities(activityCities, req.body?.city);
+    const primaryCity = activityCityList[0] || null;
     const phone = await verifyPhoneCode('lingqi', 'login', req.body?.phone, req.body?.code);
     const nowIso = new Date().toISOString();
     const { data: existing } = await supabase.from('lc_profiles').select('*').eq('phone', phone).maybeSingle();
@@ -1210,6 +1228,10 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       }
       const patch: Record<string, unknown> = { phone_verified_at: nowIso, auth_provider: existing.auth_provider || 'phone' };
       if (displayName && String(displayName).trim()) patch.display_name = String(displayName).trim().slice(0, 80);
+      if (activityCityList.length > 0) {
+        patch.available_cities = activityCityList;
+        if (!existing.city && primaryCity) patch.city = primaryCity;
+      }
       await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
       const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
       await logSecurityEvent(req, {
@@ -1218,13 +1240,15 @@ app.post('/api/lc/auth/phone', async (req, res) => {
         targetId: existing.id,
         actorId: existing.id,
         actorRole: existing.role || 'creator',
-        metadata: { phone_verified_at: nowIso },
+        metadata: { phone_verified_at: nowIso, activity_cities_count: activityCityList.length },
       });
       return res.json(ok({
         id: existing.id,
         display_name: String(patch.display_name || existing.display_name || `用户${phone.slice(-4)}`),
         phone,
         role: existing.role,
+        city: patch.city || existing.city || null,
+        available_cities: patch.available_cities || existing.available_cities || [],
         token,
         new_user: false,
       }));
@@ -1240,6 +1264,8 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       balance: 30,
       phone_verified_at: nowIso,
       auth_provider: 'phone',
+      city: primaryCity,
+      available_cities: activityCityList,
     }).select().single();
     if (!profile) return res.status(500).json(err(new Error('注册失败')));
 
@@ -1257,13 +1283,15 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       targetId: profile.id,
       actorId: profile.id,
       actorRole: profile.role || 'creator',
-      metadata: { welcome_credit: 30, phone_verified_at: nowIso },
+      metadata: { welcome_credit: 30, phone_verified_at: nowIso, activity_cities_count: activityCityList.length },
     });
     res.json(ok({
       id: profile.id,
       display_name: profile.display_name,
       phone: profile.phone,
       role: profile.role,
+      city: profile.city || null,
+      available_cities: profile.available_cities || [],
       token,
       new_user: true,
     }));
@@ -1391,6 +1419,8 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
       id: profile.id,
       display_name: profile.display_name || nickname,
       phone: profile.phone || '',
+      city: profile.city || null,
+      available_cities: profile.available_cities || [],
       role: profile.role,
       token,
       auth_provider: 'wechat',
@@ -1404,7 +1434,9 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
 
 app.post('/api/lc/auth', async (req, res) => {
   try {
-    const { phone, password, displayName } = req.body;
+    const { phone, password, displayName, activityCities } = req.body;
+    const activityCityList = normalizeActivityCities(activityCities, req.body?.city);
+    const primaryCity = activityCityList[0] || null;
     const profileRole = 'player';
     if (!phone || !password) {
       return res.status(400).json(err(new Error('请填写手机号和密码')));
@@ -1448,8 +1480,14 @@ app.post('/api/lc/auth', async (req, res) => {
         return res.status(401).json(err(new Error('密码错误')));
       }
 
-      if (displayName) {
-        await supabase.from('lc_profiles').update({ display_name: displayName }).eq('id', existing.id);
+      const profilePatch: Record<string, unknown> = {};
+      if (displayName) profilePatch.display_name = displayName;
+      if (activityCityList.length > 0) {
+        profilePatch.available_cities = activityCityList;
+        if (!existing.city && primaryCity) profilePatch.city = primaryCity;
+      }
+      if (Object.keys(profilePatch).length > 0) {
+        await supabase.from('lc_profiles').update(profilePatch).eq('id', existing.id);
       }
 
       const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
@@ -1462,8 +1500,13 @@ app.post('/api/lc/auth', async (req, res) => {
         actorRole: existing.role || 'creator',
       });
       return res.json(ok({
-        id: existing.id, display_name: displayName || existing.display_name, phone: existing.phone,
-        role: existing.role, token,
+        id: existing.id,
+        display_name: String(profilePatch.display_name || existing.display_name),
+        phone: existing.phone,
+        city: profilePatch.city || existing.city || null,
+        available_cities: profilePatch.available_cities || existing.available_cities || [],
+        role: existing.role,
+        token,
         ...(isShop ? { juzhanggui_link: 'https://jusichen.com' } : {}),
       }));
     }
@@ -1473,6 +1516,8 @@ app.post('/api/lc/auth', async (req, res) => {
     const insertData: Record<string, unknown> = {
       phone, display_name: displayName || '用户', role: profileRole,
       password_hash: passwordHash, is_visible: true, balance: 30,
+      city: primaryCity,
+      available_cities: activityCityList,
     };
     const { data: profile } = await supabase.from('lc_profiles')
       .insert(insertData)
@@ -1495,10 +1540,16 @@ app.post('/api/lc/auth', async (req, res) => {
       targetId: profile.id,
       actorId: profile.id,
       actorRole: profile.role || 'creator',
-      metadata: { welcome_credit: 30 },
+      metadata: { welcome_credit: 30, activity_cities_count: activityCityList.length },
     });
     res.json(ok({
-      id: profile.id, display_name: profile.display_name, phone: profile.phone, role: profile.role, token,
+      id: profile.id,
+      display_name: profile.display_name,
+      phone: profile.phone,
+      city: profile.city || null,
+      available_cities: profile.available_cities || [],
+      role: profile.role,
+      token,
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -1506,7 +1557,7 @@ app.post('/api/lc/auth', async (req, res) => {
 app.get('/api/lc/me', authMiddleware, async (req, res) => {
   try {
     const { data } = await supabase.from('lc_profiles')
-      .select('id, display_name, avatar, phone, phone_verified_at, is_realname, city')
+      .select('id, display_name, avatar, phone, phone_verified_at, is_realname, city, available_cities')
       .eq('id', getReq(req, 'creatorId'))
       .single();
     res.json(ok(data));
@@ -2797,6 +2848,7 @@ app.get('/api/lc/rankings', async (req, res) => {
   try {
     const type = req.query.type as string;
     const city = req.query.city as string;
+    const cities = normalizeActivityCities(req.query.cities);
     const subjectType = req.query.subjectType as string;
     const viewerId = getOptionalCreatorId(req);
     let query = supabase
@@ -2807,7 +2859,8 @@ app.get('/api/lc/rankings', async (req, res) => {
       .order('created_at', { ascending: false });
     if (type && type !== 'all') query = query.eq('type', type);
     if (subjectType && subjectType !== 'all') query = query.eq('subject_type', subjectType);
-    if (city && city !== 'all') query = query.eq('subject_city', city);
+    if (cities.length > 0) query = query.in('subject_city', cities);
+    else if (city && city !== 'all') query = query.eq('subject_city', city);
 
     const { data, error } = await query;
     if (error) throw error;
@@ -2885,6 +2938,7 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       return res.status(400).json(err(new Error('缺少必填字段')));
     }
     if (!['red', 'black', 'white'].includes(type)) return res.status(400).json(err(new Error('无效榜单类型')));
+    if (!RANKING_SUBJECT_TYPES.includes(subjectType)) return res.status(400).json(err(new Error('无效对象分类')));
     if (type !== 'white' && (!Array.isArray(files) || files.length === 0)) return res.status(400).json(err(new Error('请至少上传一份证据文件')));
     const amount = type === 'white' ? 0 : parseInt(initialAmount);
     if (type !== 'white' && (amount < 10 || amount > 100)) return res.status(400).json(err(new Error('契约币须在10~100之间')));

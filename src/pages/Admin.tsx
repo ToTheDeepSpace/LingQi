@@ -19,6 +19,7 @@ const SUBJECT_LABEL: Record<string, string> = {
   creator: '委托师',
   dm: '卡司',
   store: '店家',
+  takeaway: '外卖',
   player: '玩家',
 };
 
