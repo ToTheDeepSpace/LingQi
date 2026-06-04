@@ -26,6 +26,7 @@ const ReviewRules = lazy(() => pageLoaders.legal().then(module => ({ default: mo
 const UserAgreement = lazy(() => pageLoaders.legal().then(module => ({ default: module.UserAgreement })));
 const PrivacyPolicy = lazy(() => pageLoaders.legal().then(module => ({ default: module.PrivacyPolicy })));
 const SecurityAssessment = lazy(() => pageLoaders.legal().then(module => ({ default: module.SecurityAssessment })));
+const BusinessLicense = lazy(() => pageLoaders.legal().then(module => ({ default: module.BusinessLicense })));
 
 const CONTACT_EMAIL = 'basara-twenty@foxmail.com';
 const ICP_RECORD_NO = '冀ICP备2026019163号-1';
@@ -59,6 +60,7 @@ function AppLayout() {
           <Route path="/terms" element={<UserAgreement />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/security-assessment" element={<SecurityAssessment />} />
+          <Route path="/business-license" element={<BusinessLicense />} />
         </Routes>
       </Suspense>
       <SiteFooter />
@@ -126,6 +128,7 @@ function SiteFooter() {
             <FooterLink to="/terms">用户协议</FooterLink>
             <FooterLink to="/privacy">隐私政策</FooterLink>
             <FooterLink to="/security-assessment">安全评估说明</FooterLink>
+            <FooterLink to="/business-license">经营主体信息</FooterLink>
             <FooterLink to="/contact">联系我们 / 站内信</FooterLink>
             <FooterExternal href={`mailto:${CONTACT_EMAIL}`}>客服邮箱</FooterExternal>
             <FooterExternal href="https://beian.miit.gov.cn/">{ICP_RECORD_NO}</FooterExternal>

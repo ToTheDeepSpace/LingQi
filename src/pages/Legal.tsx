@@ -8,6 +8,7 @@ const TEXT = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 const CONTACT_EMAIL = 'basara-twenty@foxmail.com';
 const ICP_RECORD_NO = '冀ICP备2026019163号-1';
+const BUSINESS_LICENSE_IMAGE = '/legal/business-license-huilan.jpg';
 
 const sectionStyle: React.CSSProperties = {
   border: '1px solid rgba(217,168,87,0.22)',
@@ -76,6 +77,73 @@ function List({ items }: { items: string[] }) {
     <ul style={listStyle}>
       {items.map(item => <li key={item}>{item}</li>)}
     </ul>
+  );
+}
+
+function InfoRows({ rows }: { rows: Array<[string, string]> }) {
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {rows.map(([label, value]) => (
+        <div key={label} style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(110px, 160px) 1fr',
+          gap: 12,
+          alignItems: 'baseline',
+          padding: '10px 0',
+          borderBottom: '1px solid rgba(217,168,87,0.12)',
+        }}>
+          <span style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.82rem', fontWeight: 850 }}>{label}</span>
+          <span style={{ color: TEXT, fontSize: '0.92rem', lineHeight: 1.75, fontWeight: 650 }}>{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function BusinessLicense() {
+  return (
+    <LegalLayout
+      title="经营主体信息"
+      intro="本页面用于公示灵契当前运营主体、备案信息和营业执照。用户如需核对主体、申请发票、投诉申诉或联系平台，可通过站内信或客服邮箱处理。"
+    >
+      <Section title="一、经营主体">
+        <InfoRows rows={[
+          ['运营主体', '河北雄安澜洄娱乐有限公司'],
+          ['统一社会信用代码', '91130629MAEX8NGU6H'],
+          ['主体类型', '有限责任公司（自然人独资）'],
+          ['成立日期', '2025年09月16日'],
+          ['注册地址', '河北雄安新区容城县容城镇奥威路130号3幢1-076（自主申报）'],
+          ['网站域名', 'lingqi.jusichen.com'],
+          ['ICP备案号', ICP_RECORD_NO],
+          ['客服邮箱', CONTACT_EMAIL],
+        ]} />
+      </Section>
+
+      <Section title="二、营业执照">
+        <div style={{
+          border: '1px solid rgba(217,168,87,0.18)',
+          borderRadius: 14,
+          padding: 12,
+          background: '#fff',
+          boxShadow: '0 12px 28px rgba(31,41,55,0.05)',
+        }}>
+          <img
+            src={BUSINESS_LICENSE_IMAGE}
+            alt="河北雄安澜洄娱乐有限公司营业执照"
+            style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 10 }}
+          />
+        </div>
+      </Section>
+
+      <Section title="三、说明">
+        <List items={[
+          '本页公示信息用于说明灵契当前运营主体和用户联系渠道，不构成对任何线下交易、委托服务或第三方内容真实性的担保。',
+          '营业执照图片仅用于经营主体公示。用户可结合国家企业信用信息公示系统等公开渠道自行核验主体登记信息。',
+          '如需申请发票、处理充值异常、投诉举报、隐私请求或审核申诉，可使用站内信或客服邮箱联系平台。',
+        ]} />
+        <p style={pStyle}>联系方式：<Link to="/contact" style={linkStyle}>站内信</Link> / <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号办理完成后会继续补充公示。</p>
+      </Section>
+    </LegalLayout>
   );
 }
 
@@ -293,7 +361,7 @@ export function PrivacyPolicy() {
       </Section>
 
       <Section title="十、联系与反馈">
-        <p style={pStyle}>当前原型期的隐私、审核、申诉和删除请求，先通过站内管理员人工处理，也可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号办理完成后会继续补充公示。</p>
+        <p style={pStyle}>当前原型期的隐私、审核、申诉和删除请求，先通过站内管理员人工处理，也可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。经营主体信息见 <Link to="/business-license" style={linkStyle}>经营主体信息</Link>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号办理完成后会继续补充公示。</p>
       </Section>
     </LegalLayout>
   );
@@ -391,7 +459,7 @@ export function UserAgreement() {
       </Section>
 
       <Section title="十一、联系与备案">
-        <p style={pStyle}>如需联系客服、申请发票、提交隐私请求、投诉举报或申诉审核结果，可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号当前办理中，完成后会继续公示。</p>
+        <p style={pStyle}>如需联系客服、申请发票、提交隐私请求、投诉举报或申诉审核结果，可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。经营主体信息见 <Link to="/business-license" style={linkStyle}>经营主体信息</Link>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号当前办理中，完成后会继续公示。</p>
       </Section>
     </LegalLayout>
   );

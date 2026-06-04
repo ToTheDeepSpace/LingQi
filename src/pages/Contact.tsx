@@ -132,6 +132,7 @@ export default function Contact() {
           <h2 style={{ fontSize: '0.98rem', fontWeight: 900, marginBottom: 12 }}>其他方式</h2>
           <div style={{ display: 'grid', gap: 12, color: MUTED, fontSize: '0.86rem', lineHeight: 1.75 }}>
             <p style={{ margin: 0 }}>客服邮箱：<a href="mailto:basara-twenty@foxmail.com" style={{ color: '#275389', fontWeight: 800, textDecoration: 'none' }}>basara-twenty@foxmail.com</a></p>
+            <p style={{ margin: 0 }}>经营主体：<Link to="/business-license" style={{ color: '#275389', fontWeight: 800, textDecoration: 'none' }}>查看营业执照与主体信息</Link></p>
             <p style={{ margin: 0 }}>举报公开内容时，优先使用对应卡片上的“举报”按钮，系统会自动保存目标快照。</p>
             <p style={{ margin: 0 }}>涉及充值、发票、申诉时，请尽量写清楚账号手机号后四位、订单金额、页面链接和时间。</p>
           </div>
