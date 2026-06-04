@@ -18,6 +18,12 @@ const steps = [
   { n: '03', title: '见证一次降临', desc: '与灵契师、摄影师、妆造师一起，完成这场跨越次元的相遇' },
 ];
 
+const playerPraise = [
+  { n: '01', title: '愿意把时间交给故事', desc: '认真赴约、认真倾听、认真进入角色，本身就是一种很稀缺的温柔。' },
+  { n: '02', title: '愿意照顾同桌体验', desc: '好的玩家不只是想赢，也会接住别人的表达、保护秘密、让每个人都有戏。' },
+  { n: '03', title: '愿意在虚构里练习真实', desc: '我们在剧本里经历误会、选择、告别和和解，也会把这些带回现实生活。' },
+];
+
 const C = '#fffdf8';
 const C2 = '#eef6ff';
 const GOLD = '#d9a857';
@@ -75,7 +81,34 @@ export default function Home() {
           </div>
 
           <p className="home-hero-note">
-            注册即用 · 发布内容人工审核 · 口碑长期沉淀
+            注册即用 · 发布内容人工审核 · 认真玩本的人值得被看见
+          </p>
+        </div>
+      </section>
+
+      {/* ───────────── 夸一夸来玩本的人 ───────────── */}
+      <section style={{ backgroundColor: '#f8fbff', padding: '5rem 1.25rem' }}>
+        <div style={{ maxWidth: 920, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 38 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(39,83,137,0.62)', marginBottom: 12 }}>写给玩家</p>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.7rem, 4vw, 2.5rem)', marginBottom: 16, color: INK }}>认真玩本的人，值得被看见</h2>
+            <p style={{ color: MUTED, lineHeight: 1.9, fontSize: '1rem', maxWidth: 680, margin: '0 auto' }}>
+              能坐下来听一个故事、相信一次角色、照顾一桌人的情绪和节奏，这不是一件小事。通过剧本杀，我们认识别人，也认识更好的自己。这样的人值得被好好夸一夸。
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+            {playerPraise.map(({ n, title, desc }) => (
+              <article key={n} style={{ background: '#fff', border: '1px solid rgba(39,83,137,0.14)', borderRadius: 16, padding: '22px 20px', boxShadow: '0 14px 32px rgba(31,41,55,0.05)' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 12, background: 'rgba(238,246,255,0.95)', color: '#275389', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '0.82rem', marginBottom: 14 }}>{n}</div>
+                <h3 style={{ margin: '0 0 9px', color: INK, fontSize: '1rem', fontWeight: 800 }}>{title}</h3>
+                <p style={{ margin: 0, color: 'rgba(71,85,105,0.74)', lineHeight: 1.75, fontSize: '0.86rem' }}>{desc}</p>
+              </article>
+            ))}
+          </div>
+
+          <p style={{ margin: '22px auto 0', maxWidth: 760, color: 'rgba(71,85,105,0.72)', fontSize: '0.92rem', lineHeight: 1.85, textAlign: 'center' }}>
+            灵契希望记录的不只是推荐和避坑，也包括玩家之间慢慢长出来的默契：守时、守密、有边界感、会沟通、愿意共情。这些礼仪从剧本杀开始，也可以回到所有真实社交里。
           </p>
         </div>
       </section>
@@ -133,7 +166,7 @@ export default function Home() {
 
           <p style={{ fontSize: '1rem', color: MUTED, lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
             店、灵契师、卡司、玩家、外卖——五类红黑榜，用真金白银投票。<br />
-            每条评价都经过人工审核，实名发布带星标。不是有钱就能删帖。
+            每条评价都经过人工审核，实名发布带星标。黑榜公开期结束后，也可以去标识化沉淀为共性问题和社交礼仪。
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 36 }}>

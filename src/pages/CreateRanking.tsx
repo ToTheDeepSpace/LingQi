@@ -550,7 +550,7 @@ function RankingRulesNotice({ type, accepted, onAcceptedChange }: { type: Rankin
         <RuleLine text="同一账号对同一帖子只保留一票；禁止多号刷赞、刷踩、刷欢乐或重复提交同一事件。" />
         <RuleLine text="审核通过只代表符合展示规则，不代表平台确认所有陈述完全真实。" />
         <RuleLine text="相关方回应不是删帖入口：先发普通评论，通过后再提交关系材料申请置顶。" />
-        <RuleLine text="黑榜默认公开展示 30 天后过期隐藏，重大争议仍可进入人工复核。" />
+        <RuleLine text="黑榜默认公开展示 30 天后过期隐藏；这不是删除记录，后续可去标识化沉淀为共性问题和礼仪建议。" />
       </div>
 
       <label style={{
