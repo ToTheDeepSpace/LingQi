@@ -26,6 +26,9 @@ const UserAgreement = lazy(() => pageLoaders.legal().then(module => ({ default: 
 const PrivacyPolicy = lazy(() => pageLoaders.legal().then(module => ({ default: module.PrivacyPolicy })));
 const SecurityAssessment = lazy(() => pageLoaders.legal().then(module => ({ default: module.SecurityAssessment })));
 
+const CONTACT_EMAIL = 'basara-twenty@foxmail.com';
+const ICP_RECORD_NO = '冀ICP备2026019163号-1';
+
 function AppLayout() {
   const { pathname } = useLocation();
   const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new';
@@ -121,12 +124,17 @@ function SiteFooter() {
             <FooterLink to="/terms">用户协议</FooterLink>
             <FooterLink to="/privacy">隐私政策</FooterLink>
             <FooterLink to="/security-assessment">安全评估说明</FooterLink>
-            <FooterText>ICP备案信息待公示</FooterText>
+            <FooterExternal href={`mailto:${CONTACT_EMAIL}`}>联系我们</FooterExternal>
+            <FooterExternal href="https://beian.miit.gov.cn/">{ICP_RECORD_NO}</FooterExternal>
+            <FooterText>公安联网备案办理中</FooterText>
           </FooterColumn>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 34, paddingTop: 18, borderTop: '1px solid rgba(201,146,46,0.14)', fontSize: '0.76rem', color: 'rgba(71,85,105,0.58)' }}>
           <span>© {new Date().getFullYear()} 灵契 LingQi. 原型期运营中。</span>
-          <span>不公开联系方式、不展示实名，只显示昵称与认证标识。</span>
+          <span style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(39,83,137,0.72)', textDecoration: 'none', fontWeight: 700 }}>{ICP_RECORD_NO}</a>
+            <span>公安联网备案办理中</span>
+          </span>
         </div>
       </div>
     </footer>
@@ -156,7 +164,17 @@ function FooterLink({ to, children }: { to: string; children: React.ReactNode })
 }
 
 function FooterExternal({ href, children }: { href: string; children: React.ReactNode }) {
-  return <a href={href} target="_blank" rel="noopener noreferrer" style={footerLinkStyle}>{children}</a>;
+  const isMailto = href.startsWith('mailto:');
+  return (
+    <a
+      href={href}
+      target={isMailto ? undefined : '_blank'}
+      rel={isMailto ? undefined : 'noopener noreferrer'}
+      style={footerLinkStyle}
+    >
+      {children}
+    </a>
+  );
 }
 
 function FooterText({ children }: { children: React.ReactNode }) {

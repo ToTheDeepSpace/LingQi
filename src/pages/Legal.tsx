@@ -6,6 +6,8 @@ const BG = '#fffdf8';
 const PANEL = '#fffaf2';
 const TEXT = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
+const CONTACT_EMAIL = 'basara-twenty@foxmail.com';
+const ICP_RECORD_NO = '冀ICP备2026019163号-1';
 
 const sectionStyle: React.CSSProperties = {
   border: '1px solid rgba(217,168,87,0.22)',
@@ -36,6 +38,12 @@ const listStyle: React.CSSProperties = {
   margin: 0,
 };
 
+const linkStyle: React.CSSProperties = {
+  color: '#275389',
+  textDecoration: 'none',
+  fontWeight: 800,
+};
+
 function LegalLayout({ title, intro, children }: { title: string; intro: string; children: React.ReactNode }) {
   return (
     <main style={{ background: BG, minHeight: '100vh', color: TEXT }}>
@@ -44,7 +52,7 @@ function LegalLayout({ title, intro, children }: { title: string; intro: string;
           <Link to="/" style={{ color: GOLD, textDecoration: 'none', fontSize: '0.84rem', fontWeight: 800 }}>返回灵契首页</Link>
           <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 2.8rem)', margin: '18px 0 12px' }}>{title}</h1>
           <p style={{ ...pStyle, color: MUTED, maxWidth: 760 }}>{intro}</p>
-          <p style={{ color: 'rgba(71,85,105,0.56)', fontSize: '0.78rem', marginTop: 14 }}>更新时间：2026-06-03 · 原型期版本</p>
+          <p style={{ color: 'rgba(71,85,105,0.56)', fontSize: '0.78rem', marginTop: 14 }}>更新时间：2026-06-04 · 原型期版本</p>
         </div>
       </section>
       <section style={{ maxWidth: 920, margin: '0 auto', padding: '30px 20px 70px', display: 'grid', gap: 16 }}>
@@ -119,7 +127,7 @@ export function SecurityAssessment() {
           '公开内容旁会尽量提供举报入口；恶意举报同样会留下记录。',
           '相关方可以先发布评论，再提交相关方认证材料申请置顶回应。',
           '用户对审核、下架、账号限制或公开评价有异议时，可以补充材料并通过站内方式向管理员申诉。',
-          '正式运营主体、备案号和对外联系方式完善后，本页面会同步补充公示信息。',
+          `对外联系邮箱：${CONTACT_EMAIL}。ICP备案号：${ICP_RECORD_NO}；公安联网备案号当前办理中，完成后会继续补充公示。`,
         ]} />
       </Section>
 
@@ -206,7 +214,7 @@ export function ReviewRules() {
       </Section>
 
       <Section title="八、申诉与调整">
-        <p style={pStyle}>审核规则会随着产品和社区风险继续调整。用户可以通过相关方回应、补充材料或联系管理员提出申诉。平台保留对明显风险内容进行隐藏、下架、限制传播或重新审核的权利。</p>
+        <p style={pStyle}>审核规则会随着产品和社区风险继续调整。用户可以通过相关方回应、补充材料或联系管理员提出申诉，也可以发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。平台保留对明显风险内容进行隐藏、下架、限制传播或重新审核的权利。</p>
       </Section>
     </LegalLayout>
   );
@@ -250,7 +258,7 @@ export function PrivacyPolicy() {
       </Section>
 
       <Section title="四、第三方服务">
-        <p style={pStyle}>灵契当前使用 Vercel 提供部署和访问服务，使用 Supabase 提供数据库与文件/数据能力。未来可能接入短信、微信登录、支付宝或微信支付等服务。接入新的第三方服务时，我们会尽量只传递完成对应功能所需的信息。</p>
+        <p style={pStyle}>灵契当前使用腾讯云提供服务器、域名解析、证书和对象存储等基础能力，使用 Supabase 提供数据库能力，使用支付宝提供充值支付能力。未来可能接入短信、微信登录或微信支付等服务。接入新的第三方服务时，我们会尽量只传递完成对应功能所需的信息。</p>
       </Section>
 
       <Section title="五、信息保存与安全">
@@ -285,7 +293,7 @@ export function PrivacyPolicy() {
       </Section>
 
       <Section title="十、联系与反馈">
-        <p style={pStyle}>当前原型期的隐私、审核、申诉和删除请求，先通过站内管理员人工处理。正式备案和运营主体信息完善后，本页面会补充完整的运营方名称、联系方式和备案信息。</p>
+        <p style={pStyle}>当前原型期的隐私、审核、申诉和删除请求，先通过站内管理员人工处理，也可以发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号办理完成后会继续补充公示。</p>
       </Section>
     </LegalLayout>
   );
@@ -380,6 +388,10 @@ export function UserAgreement() {
 
       <Section title="十、协议更新">
         <p style={pStyle}>灵契可能根据产品功能、审核规则、支付方式、部署环境和法律合规要求更新本协议。更新后继续使用灵契，即视为你接受新的协议内容。重大变化会尽量在页面显著位置提示。</p>
+      </Section>
+
+      <Section title="十一、联系与备案">
+        <p style={pStyle}>如需联系客服、申请发票、提交隐私请求、投诉举报或申诉审核结果，可以发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号当前办理中，完成后会继续公示。</p>
       </Section>
     </LegalLayout>
   );
