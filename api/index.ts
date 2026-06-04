@@ -469,7 +469,7 @@ function makeAlipayOrderNo() {
 function parseRechargeAmount(input: unknown) {
   const amount = Number(input);
   if (!Number.isInteger(amount) || amount < 10) throw new Error('充值最低 10 契约币');
-  if (amount > 5000) throw new Error('单次充值最多 5000 契约币');
+  if (amount > 500) throw new Error('单次充值最多 500 契约币');
   return amount;
 }
 

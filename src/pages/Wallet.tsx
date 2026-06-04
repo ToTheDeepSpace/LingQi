@@ -7,6 +7,7 @@ const GOLD = '#d9a857';
 const RED = '#b91c1c';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
+const MAX_RECHARGE_AMOUNT = 500;
 
 type Transaction = {
   id: string;
@@ -42,9 +43,9 @@ export default function Wallet() {
   const [payError, setPayError] = useState('');
   const [showReturnNotice, setShowReturnNotice] = useState(() => new URLSearchParams(window.location.search).get('alipay') === 'return');
   const rechargeAmount = Number(amountInput);
-  const amountValid = Number.isInteger(rechargeAmount) && rechargeAmount >= 10 && rechargeAmount <= 5000;
+  const amountValid = Number.isInteger(rechargeAmount) && rechargeAmount >= 10 && rechargeAmount <= MAX_RECHARGE_AMOUNT;
   const amountError = amountInput.trim() && !amountValid
-    ? (rechargeAmount > 5000 ? '单次最多 5000 契约币' : '最低 10 契约币，且只能输入整数')
+    ? (rechargeAmount > MAX_RECHARGE_AMOUNT ? `单次最多 ${MAX_RECHARGE_AMOUNT} 契约币` : '最低 10 契约币，且只能输入整数')
     : '';
 
   const fetchWallet = useCallback(() => {
@@ -134,7 +135,7 @@ export default function Wallet() {
         }}>
           <h2 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>充值</h2>
           <p style={{ fontSize: '0.82rem', color: MUTED, lineHeight: 1.7, marginBottom: 20 }}>
-            输入充值金额后跳转支付宝收银台，最低 10 契约币。支付成功后由支付宝异步通知自动到账，不再需要上传凭证。
+            输入充值金额后跳转支付宝收银台，最低 10 契约币，单次最多 {MAX_RECHARGE_AMOUNT} 契约币。建议按实际需要小额充值。
           </p>
 
           {showReturnNotice && (
@@ -159,7 +160,7 @@ export default function Wallet() {
               <input
                 type="number"
                 min={10}
-                max={5000}
+                max={MAX_RECHARGE_AMOUNT}
                 step={1}
                 value={amountInput}
                 onChange={e => setAmountInput(e.target.value)}
@@ -201,8 +202,7 @@ export default function Wallet() {
               fontSize: '0.8rem',
               lineHeight: 1.7,
             }}>
-              充值创建后会生成一笔待确认流水；只有支付宝异步通知验签通过后才会入账。未付款订单不会进入人工到账审核。
-              已支付充值原则上不支持提现或退款；如需发票，可按实际支付金额申请普通电子发票，企业用户可按公司开票规则提交专票信息。
+              只有支付宝异步通知验签通过后才会入账。契约币是站内服务预付额度，充值入账后会产生支付通道、开票和账务处理成本，原则上不支持提现或无理由退款；如遇重复扣款、支付成功未到账、平台原因无法使用等异常，可联系平台核查处理。发票可按实际支付金额申请，企业用户可按公司开票规则提交专票信息。
             </div>
 
             {payError && (
