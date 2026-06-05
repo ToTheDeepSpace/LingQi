@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { AuthData, Commission, CommissionApplication } from '../types';
+import type { AuthData, Commission, CommissionApplication, ScriptCatalogItem } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
@@ -12,6 +12,17 @@ const C2 = '#eef6ff';
 const GOLD = '#d9a857';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  borderRadius: 11,
+  border: '1px solid rgba(217,168,87,0.25)',
+  background: '#fff',
+  color: INK,
+  padding: '10px 12px',
+  outline: 'none',
+};
 
 const TARGET_LABEL: Record<string, string> = {
   creator: '灵契师',
@@ -37,12 +48,15 @@ export default function Commissions() {
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState<Commission[]>([]);
   const [myItems, setMyItems] = useState<Commission[]>([]);
+  const [scripts, setScripts] = useState<ScriptCatalogItem[]>([]);
   const [receivedApplications, setReceivedApplications] = useState<CommissionApplication[]>([]);
   const [sentApplications, setSentApplications] = useState<{ id: string; commission_id: string; status: string; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [city, setCity] = useState('all');
   const [targetType, setTargetType] = useState('all');
+  const [scriptId, setScriptId] = useState('all');
+  const [view, setView] = useState<'active' | 'expired'>('active');
   const [cityOpen, setCityOpen] = useState(false);
   const [applicationModal, setApplicationModal] = useState<Commission | null>(null);
   const [applicationLetter, setApplicationLetter] = useState('');
@@ -54,6 +68,24 @@ export default function Commissions() {
 
   useEffect(() => {
     let alive = true;
+    const loadScripts = async () => {
+      try {
+        const { data: d } = await getJsonCached<{ success: boolean; data?: ScriptCatalogItem[] }>(
+          `${API}/lc/scripts`,
+          undefined,
+          60_000,
+        );
+        if (alive && d.success) setScripts(d.data || []);
+      } catch {
+        if (alive) setScripts([]);
+      }
+    };
+    void loadScripts();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
     const load = async () => {
       setLoading(true);
       setError('');
@@ -61,6 +93,7 @@ export default function Commissions() {
         const qs = new URLSearchParams();
         if (city !== 'all') qs.set('city', city);
         if (targetType !== 'all') qs.set('targetType', targetType);
+        if (scriptId !== 'all') qs.set('scriptId', scriptId);
         const { data: d } = await getJsonCached<{ success: boolean; data?: Commission[]; error?: string }>(
           `${API}/lc/commissions?${qs.toString()}`,
           undefined,
@@ -77,7 +110,7 @@ export default function Commissions() {
     };
     void load();
     return () => { alive = false; };
-  }, [city, targetType]);
+  }, [city, targetType, scriptId]);
 
   useEffect(() => {
     let alive = true;
@@ -113,8 +146,12 @@ export default function Commissions() {
 
   const privateItems = myItems.filter(item => item.status !== 'approved');
   const sentApplicationIds = useMemo(() => new Set(sentApplications.map(item => item.commission_id)), [sentApplications]);
+  const activeItems = useMemo(() => items.filter(item => !item.is_expired), [items]);
+  const expiredItems = useMemo(() => items.filter(item => item.is_expired), [items]);
+  const visibleItems = view === 'active' ? activeItems : expiredItems;
 
   const openApplicationModal = (item: Commission) => {
+    if (item.is_expired) return;
     const auth = getAuth();
     if (!auth) {
       navigate('/login');
@@ -308,6 +345,22 @@ export default function Commissions() {
           </div>
         </div>
 
+        <section style={{ borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'rgba(255,255,255,0.72)', padding: 16, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, alignItems: 'end' }}>
+            <div>
+              <Label>剧本选单</Label>
+              <select value={scriptId} onChange={e => setScriptId(e.target.value)} style={inputStyle}>
+                <option value="all">全部剧本</option>
+                {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <ViewButton active={view === 'active'} onClick={() => setView('active')}>进行中 {activeItems.length}</ViewButton>
+              <ViewButton active={view === 'expired'} onClick={() => setView('expired')}>已过期 {expiredItems.length}</ViewButton>
+            </div>
+          </div>
+        </section>
+
         {loading && <StateText text="正在展开委托卷轴..." />}
         {error && <StateText text={error} danger />}
         {!loading && !error && items.length === 0 && (
@@ -318,9 +371,18 @@ export default function Commissions() {
           </div>
         )}
 
-        {!loading && !error && items.length > 0 && (
+        {!loading && !error && items.length > 0 && visibleItems.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '76px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 16, background: 'rgba(255,250,242,0.82)' }}>
+            <p style={{ color: MUTED, marginBottom: 16 }}>{view === 'active' ? '这个筛选下没有进行中的委托' : '这个筛选下没有已过期委托'}</p>
+            <button onClick={() => setView(view === 'active' ? 'expired' : 'active')} style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(255,255,255,0.82)', color: '#925f18', cursor: 'pointer', fontWeight: 800 }}>
+              看看{view === 'active' ? '已过期' : '进行中'}
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && visibleItems.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-            {items.map(item => (
+            {visibleItems.map(item => (
               <CommissionCard
                 key={item.id}
                 item={item}
@@ -387,10 +449,13 @@ export default function Commissions() {
 }
 
 function CommissionCard({ item, showStatus, onDelete, onApply, onReport, applied, ownItem }: { item: Commission; showStatus?: boolean; onDelete?: () => void; onApply?: () => void; onReport?: () => void; applied?: boolean; ownItem?: boolean }) {
+  const expired = !!item.is_expired;
   return (
     <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: '0 12px 30px rgba(31,41,55,0.06)' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {showStatus && <StatusPill status={item.status} />}
+        {expired && <ExpiredPill />}
+        {item.script_name && <Pill>{item.script_name}</Pill>}
         {item.needed_date && <Pill>{item.needed_date}</Pill>}
         {item.city && <Pill>{item.city}</Pill>}
         {item.target_type && <Pill>{TARGET_LABEL[item.target_type] || item.target_type}</Pill>}
@@ -417,16 +482,16 @@ function CommissionCard({ item, showStatus, onDelete, onApply, onReport, applied
       {(onApply || onReport) && (
         <div style={{ display: 'grid', gridTemplateColumns: onApply && onReport ? '1fr auto' : '1fr', gap: 10, marginTop: 14, alignItems: 'center' }}>
           {onApply && (
-            <button onClick={onApply} disabled={applied || ownItem}
+            <button onClick={onApply} disabled={applied || ownItem || expired}
               style={{
                 width: '100%', padding: '10px 14px', borderRadius: 10,
-                border: applied || ownItem ? '1px solid rgba(125,147,170,0.18)' : '1px solid rgba(217,168,87,0.28)',
-                background: applied || ownItem ? 'rgba(241,245,249,0.8)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
-                color: applied || ownItem ? 'rgba(71,85,105,0.52)' : '#925f18',
-                cursor: applied || ownItem ? 'not-allowed' : 'pointer',
+                border: applied || ownItem || expired ? '1px solid rgba(125,147,170,0.18)' : '1px solid rgba(217,168,87,0.28)',
+                background: applied || ownItem || expired ? 'rgba(241,245,249,0.8)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
+                color: applied || ownItem || expired ? 'rgba(71,85,105,0.52)' : '#925f18',
+                cursor: applied || ownItem || expired ? 'not-allowed' : 'pointer',
                 fontWeight: 900,
               }}>
-              {ownItem ? '自己的需求' : applied ? '已提交申请' : '我要接单'}
+              {expired ? '已过期' : ownItem ? '自己的需求' : applied ? '已提交申请' : '我要接单'}
             </button>
           )}
           {onReport && (
@@ -445,13 +510,39 @@ function Pill({ children }: { children: React.ReactNode }) {
   return <span style={{ padding: '4px 9px', borderRadius: 999, background: 'rgba(217,168,87,0.13)', border: '1px solid rgba(217,168,87,0.22)', color: '#925f18', fontSize: '0.75rem', fontWeight: 700 }}>{children}</span>;
 }
 
+function ExpiredPill() {
+  return <span style={{ padding: '4px 9px', borderRadius: 999, background: 'rgba(241,245,249,0.92)', border: '1px solid rgba(100,116,139,0.22)', color: '#64748b', fontSize: '0.75rem', fontWeight: 800 }}>已过期</span>;
+}
+
 function StatusPill({ status }: { status: Commission['status'] }) {
   const map = {
     pending: { label: '待审核', color: GOLD, bg: 'rgba(217,168,87,0.13)', border: 'rgba(217,168,87,0.24)' },
     rejected: { label: '未通过', color: '#b91c1c', bg: 'rgba(254,242,242,0.9)', border: 'rgba(220,38,38,0.24)' },
     approved: { label: '已公开', color: '#166534', bg: 'rgba(240,253,244,0.9)', border: 'rgba(34,197,94,0.22)' },
+    closed: { label: '已关闭', color: '#64748b', bg: 'rgba(241,245,249,0.9)', border: 'rgba(100,116,139,0.22)' },
   }[status];
   return <span style={{ padding: '4px 9px', borderRadius: 999, background: map.bg, border: `1px solid ${map.border}`, color: map.color, fontSize: '0.75rem', fontWeight: 800 }}>{map.label}</span>;
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return <p style={{ fontSize: '0.78rem', fontWeight: 800, marginBottom: 7, color: 'rgba(71,85,105,0.74)' }}>{children}</p>;
+}
+
+function ViewButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '9px 14px',
+      borderRadius: 999,
+      border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.18)',
+      background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.86)',
+      color: active ? '#925f18' : 'rgba(71,85,105,0.72)',
+      cursor: 'pointer',
+      fontWeight: 900,
+      whiteSpace: 'nowrap',
+    }}>
+      {children}
+    </button>
+  );
 }
 
 function StateText({ text, danger }: { text: string; danger?: boolean }) {

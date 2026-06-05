@@ -20,6 +20,8 @@ const Carpools = lazy(pageLoaders.carpools);
 const CreateCarpool = lazy(pageLoaders.createCarpool);
 const Wallet = lazy(pageLoaders.wallet);
 const Referrals = lazy(pageLoaders.referrals);
+const Roadmap = lazy(pageLoaders.roadmap);
+const ScriptContribute = lazy(pageLoaders.scriptContribute);
 const CertificationPage = lazy(pageLoaders.certification);
 const ShopDashboard = lazy(pageLoaders.shopDashboard);
 const Contact = lazy(pageLoaders.contact);
@@ -55,6 +57,8 @@ function AppLayout() {
           <Route path="/carpools/new" element={<CreateCarpool />} />
           <Route path="/wallet" element={<Wallet />} />
           <Route path="/referrals" element={<Referrals />} />
+          <Route path="/roadmap" element={<Roadmap />} />
+          <Route path="/scripts/contribute" element={<ScriptContribute />} />
           <Route path="/certification" element={<CertificationPage />} />
           <Route path="/shop/dashboard" element={<ShopDashboard />} />
           <Route path="/contact" element={<Contact />} />
@@ -117,13 +121,14 @@ function SiteFooter() {
             <FooterLink to="/commissions/new">发布委托</FooterLink>
             <FooterLink to="/carpools/new">发布拼车</FooterLink>
             <FooterLink to="/rankings/new">发布口碑</FooterLink>
+            <FooterLink to="/scripts/contribute">维护剧本库</FooterLink>
             <FooterLink to="/certification">身份认证</FooterLink>
             <FooterLink to="/dashboard">个人后台</FooterLink>
           </FooterColumn>
           <FooterColumn title="生态连接">
             <FooterExternal href="https://jusichen.com">剧司辰</FooterExternal>
             <FooterLink to="/shop/dashboard">店家后台</FooterLink>
-            <FooterLink to="/rankings">AI 口碑路线图</FooterLink>
+            <FooterLink to="/roadmap">AI 口碑路线图</FooterLink>
             <FooterLink to="/contact">投资洽谈 / 共建合作</FooterLink>
             <FooterText>摄影师 / 妆造师</FooterText>
             <FooterText>服装商 / 道具师</FooterText>

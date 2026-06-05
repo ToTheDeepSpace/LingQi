@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
-import type { AuthData } from '../types';
+import type { AuthData, ScriptCatalogItem } from '../types';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 
 const API = '/api';
@@ -46,6 +46,9 @@ export default function CreateCommission() {
   const auth = useMemo(() => getAuth(), []);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [scripts, setScripts] = useState<ScriptCatalogItem[]>([]);
+  const [scriptId, setScriptId] = useState('');
+  const [scriptName, setScriptName] = useState('');
   const [desiredRole, setDesiredRole] = useState('');
   const [targetType, setTargetType] = useState('creator');
   const [neededDate, setNeededDate] = useState('');
@@ -55,6 +58,21 @@ export default function CreateCommission() {
   const [contactNote, setContactNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    const loadScripts = async () => {
+      try {
+        const r = await fetch(`${API}/lc/scripts`);
+        const d = await r.json();
+        if (alive && d.success) setScripts(d.data || []);
+      } catch {
+        if (alive) setScripts([]);
+      }
+    };
+    void loadScripts();
+    return () => { alive = false; };
+  }, []);
 
   if (!auth) {
     return (
@@ -80,6 +98,7 @@ export default function CreateCommission() {
         reserved: true,
         source: 'manual_form_v1',
         fields_present: {
+          script: !!(scriptId || scriptName.trim()),
           neededDate: !!neededDate,
           city: !!city,
           desiredRole: !!desiredRole,
@@ -90,7 +109,7 @@ export default function CreateCommission() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
         body: JSON.stringify({
-          title, content, desiredRole, targetType, neededDate, city, location, budget, contactNote, aiAssistContext,
+          title, content, scriptId: scriptId || null, scriptName: scriptName.trim() || null, desiredRole, targetType, neededDate, city, location, budget, contactNote, aiAssistContext,
         }),
       });
       const d = await r.json();
@@ -131,6 +150,25 @@ export default function CreateCommission() {
             <div>
               <label style={labelStyle}>需求内容</label>
               <textarea value={content} onChange={e => setContent(e.target.value)} rows={7} placeholder="写下你想要的角色、陪伴场景、时间长度、氛围偏好。也可以只写一段愿望。" style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.7 }} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+              <div>
+                <label style={labelStyle}>关联剧本（可选）</label>
+                <select value={scriptId} onChange={e => {
+                  const id = e.target.value;
+                  const selected = scripts.find(script => script.id === id);
+                  setScriptId(id);
+                  setScriptName(selected?.name || '');
+                }} style={inputStyle}>
+                  <option value="">暂不指定 / 手动填写</option>
+                  {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>剧本名补充（可选）</label>
+                <input value={scriptName} onChange={e => { setScriptName(e.target.value); setScriptId(''); }} placeholder="剧本库没有时可先手动填" style={inputStyle} />
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>

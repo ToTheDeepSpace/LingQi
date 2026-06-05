@@ -4,6 +4,7 @@ import type { AuthData, Carpool, CarpoolApplication } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { formatDetailedSubsidy } from '../lib/carpoolMessage';
+import { generatedAvatarDataUrl } from '../lib/avatar';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import ReportModal from '../components/ReportModal';
 
@@ -25,6 +26,37 @@ function getAuth(): AuthData | null {
   } catch { return null; }
 }
 
+function roleKey(value?: string | null) {
+  return (value || '').trim().replace(/\s+/g, '').toLowerCase();
+}
+
+function rolesForCarpool(item: Carpool) {
+  const roles = Array.isArray(item.script_roles) ? item.script_roles.filter(role => role.role_name) : [];
+  if (roles.length > 0) return roles;
+  const fallbackName = item.role_name || '待定角色';
+  const count = Math.max(1, item.needed_count || 1);
+  return Array.from({ length: count }, (_, index) => ({
+    role_name: count > 1 ? `${fallbackName} ${index + 1}` : fallbackName,
+    gender: null,
+    tags: [],
+    status: index < (item.joined_count || 0) ? 'seated' as const : 'needed' as const,
+    player_name: null,
+    player_gender: null,
+  }));
+}
+
+function applicationForRole(item: Carpool, roleName: string, used: Set<string>) {
+  const apps = item.applications || [];
+  const exact = apps.find(app => !used.has(app.id) && roleKey(app.role_name) === roleKey(roleName));
+  if (exact) {
+    used.add(exact.id);
+    return exact;
+  }
+  const next = apps.find(app => !used.has(app.id));
+  if (next) used.add(next.id);
+  return next || null;
+}
+
 export default function Carpools() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -37,6 +69,7 @@ export default function Carpools() {
   const [city, setCity] = useState('all');
   const [date, setDate] = useState('');
   const [script, setScript] = useState('');
+  const [view, setView] = useState<'active' | 'expired'>('active');
   const [cityOpen, setCityOpen] = useState(false);
   const [applyModal, setApplyModal] = useState<Carpool | null>(null);
   const [applyRole, setApplyRole] = useState('');
@@ -96,12 +129,19 @@ export default function Carpools() {
 
   const privateItems = myItems.filter(item => item.status !== 'approved');
   const sentIds = useMemo(() => new Set(sentApplications.map(item => item.carpool_id)), [sentApplications]);
+  const sentStatus = useMemo(() => new Map(sentApplications.map(item => [item.carpool_id, item.status])), [sentApplications]);
+  const activeItems = useMemo(() => items.filter(item => !item.is_expired), [items]);
+  const expiredItems = useMemo(() => items.filter(item => item.is_expired), [items]);
+  const visibleItems = view === 'active' ? activeItems : expiredItems;
 
   const openApply = (item: Carpool) => {
+    if (item.is_expired) return;
     const auth = getAuth();
     if (!auth) return navigate('/login');
+    const taken = new Set((item.applications || []).map(app => roleKey(app.role_name)));
+    const firstOpenRole = rolesForCarpool(item).find(role => role.status !== 'seated' && !taken.has(roleKey(role.role_name)));
     setApplyModal(item);
-    setApplyRole(item.role_name || '');
+    setApplyRole(firstOpenRole?.role_name || item.role_name || '');
     setApplyMessage('');
     setApplyError('');
     setApplyDone(false);
@@ -124,10 +164,11 @@ export default function Carpools() {
     setSubmittingApply(true);
     setApplyError('');
     try {
+      const selectedRole = rolesForCarpool(applyModal).find(role => role.role_name === applyRole);
       const r = await fetch(`${API}/lc/carpools/${applyModal.id}/applications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-        body: JSON.stringify({ roleName: applyRole.trim(), message: applyMessage.trim() }),
+        body: JSON.stringify({ roleName: applyRole.trim(), roleGender: selectedRole?.gender || '', message: applyMessage.trim() }),
       });
       const d = await r.json();
       if (d.success) {
@@ -168,6 +209,29 @@ export default function Carpools() {
     setReportModal(item);
   };
 
+  const reviewApplication = async (id: string, action: 'accept' | 'reject') => {
+    const auth = getAuth();
+    if (!auth) return navigate('/login');
+    try {
+      const r = await fetch(`${API}/lc/carpools/applications/${id}/${action}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${auth.token}` },
+      });
+      const d = await r.json();
+      if (d.success) {
+        setReceivedApplications(prev => prev.map(app => app.id === id ? { ...app, status: action === 'accept' ? 'accepted' : 'rejected' } : app));
+        void loadPublic();
+      }
+    } catch {
+      // 列表下次刷新会恢复真实状态。
+    }
+  };
+
+  const applyRoles = applyModal ? rolesForCarpool(applyModal).filter(role => {
+    const taken = new Set((applyModal.applications || []).map(app => roleKey(app.role_name)));
+    return role.status !== 'seated' && !taken.has(roleKey(role.role_name));
+  }) : [];
+
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
       <div style={{ background: `radial-gradient(circle at 18% 0%, rgba(217,168,87,0.16), transparent 34%), linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '52px 20px 42px' }}>
@@ -207,8 +271,29 @@ export default function Carpools() {
               {receivedApplications.map(app => (
                 <article key={app.id} style={{ borderRadius: 12, background: '#fff', border: '1px solid rgba(59,130,246,0.16)', padding: 14 }}>
                   <Meta>{app.carpool?.title || '未知拼车'} · {app.created_at?.slice(0, 10)}</Meta>
-                  <h3 style={{ fontWeight: 900, fontSize: '0.98rem', margin: '6px 0', color: '#275389' }}>{app.applicant_is_realname ? '⭐ ' : ''}{app.applicant_name}{app.role_name ? ` · ${app.role_name}` : ''}</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0' }}>
+                    <img
+                      src={app.applicant_avatar || generatedAvatarDataUrl(app.applicant_name, app.applicant_id)}
+                      alt=""
+                      style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(59,130,246,0.2)' }}
+                    />
+                    <div>
+                      <h3 style={{ fontWeight: 900, fontSize: '0.98rem', margin: 0, color: '#275389' }}>{app.applicant_is_realname ? '⭐ ' : ''}{app.applicant_name}{app.role_name ? ` · ${app.role_name}` : ''}</h3>
+                      {(app.applicant_gender || app.role_gender) && (
+                        <Meta>{app.applicant_gender ? `玩家${app.applicant_gender}` : ''}{app.applicant_gender && app.role_gender ? ' · ' : ''}{app.role_gender ? `角色${app.role_gender}` : ''}</Meta>
+                      )}
+                    </div>
+                  </div>
                   <p style={{ color: MUTED, lineHeight: 1.7, fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{app.message}</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                    <StatusChip status={app.status} />
+                    {app.status === 'submitted' && (
+                      <>
+                        <button onClick={() => void reviewApplication(app.id, 'accept')} style={{ ...smallActionStyle, borderColor: 'rgba(22,163,74,0.24)', color: '#166534', background: 'rgba(240,253,244,0.9)' }}>确认上车</button>
+                        <button onClick={() => void reviewApplication(app.id, 'reject')} style={{ ...smallActionStyle, borderColor: 'rgba(185,28,28,0.18)', color: '#b91c1c', background: 'rgba(254,242,242,0.82)' }}>拒绝</button>
+                      </>
+                    )}
+                  </div>
                 </article>
               ))}
             </div>
@@ -241,6 +326,11 @@ export default function Carpools() {
           </div>
         </section>
 
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: 18 }}>
+          <ViewButton active={view === 'active'} onClick={() => setView('active')}>招募中 {activeItems.length}</ViewButton>
+          <ViewButton active={view === 'expired'} onClick={() => setView('expired')}>已过期 {expiredItems.length}</ViewButton>
+        </div>
+
         <div style={{ marginBottom: 22 }}>
           <ResponsibilityNotice />
         </div>
@@ -267,9 +357,18 @@ export default function Carpools() {
           </div>
         )}
 
-        {!loading && !error && items.length > 0 && (
+        {!loading && !error && items.length > 0 && visibleItems.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '76px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 16, background: 'rgba(255,250,242,0.82)' }}>
+            <p style={{ color: MUTED, marginBottom: 16 }}>{view === 'active' ? '这个筛选下没有招募中的拼车' : '这个筛选下没有已过期拼车'}</p>
+            <button onClick={() => setView(view === 'active' ? 'expired' : 'active')} style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(255,255,255,0.82)', color: '#925f18', cursor: 'pointer', fontWeight: 800 }}>
+              看看{view === 'active' ? '已过期' : '招募中'}
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && visibleItems.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 16 }}>
-            {items.map(item => (
+            {visibleItems.map(item => (
               <CarpoolCard
                 key={item.id}
                 item={item}
@@ -277,6 +376,7 @@ export default function Carpools() {
                 onContact={() => void openContact(item)}
                 onReport={() => openReport(item)}
                 applied={sentIds.has(item.id)}
+                applicationStatus={sentStatus.get(item.id)}
                 ownItem={getAuth()?.id === item.poster_id}
               />
             ))}
@@ -291,14 +391,27 @@ export default function Carpools() {
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 42, marginBottom: 12 }}>✅</div>
                 <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.25rem', marginBottom: 8 }}>上车申请已提交</h3>
-                <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 20 }}>发布者可以在拼车区看到你的申请。后面再补正式消息提醒。</p>
+                <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 20 }}>申请已提交，等车头确认后才会点亮你的头像。</p>
                 <button onClick={closeApply} className="btn-gold" style={{ padding: '10px 24px' }}>关闭</button>
               </div>
             ) : (
               <>
                 <p style={{ color: GOLD, fontSize: '0.78rem', fontWeight: 900, letterSpacing: '0.04em', marginBottom: 8 }}>我要上车</p>
                 <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.25rem', marginBottom: 8 }}>{applyModal.title}</h3>
-                <Input label="想接/想玩的角色" value={applyRole} onChange={setApplyRole} placeholder="可选，例如：姐姐 / NPC / 男A" />
+                {applyRoles.length > 0 ? (
+                  <div>
+                    <Label>想接/想玩的角色</Label>
+                    <select value={applyRole} onChange={e => setApplyRole(e.target.value)} style={inputStyle}>
+                      {applyRoles.map((role, index) => (
+                        <option key={`${role.role_name}-${index}`} value={role.role_name}>
+                          {role.role_name}{role.gender ? `（${role.gender}）` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <Input label="想接/想玩的角色" value={applyRole} onChange={setApplyRole} placeholder="可选，例如：姐姐 / NPC / 男A" />
+                )}
                 <div style={{ marginTop: 12 }}>
                   <Label>申请说明 *</Label>
                   <textarea value={applyMessage} onChange={e => setApplyMessage(e.target.value)} rows={6}
@@ -355,12 +468,20 @@ export default function Carpools() {
   );
 }
 
-function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, ownItem }: { item: Carpool; showStatus?: boolean; onApply?: () => void; onContact?: () => void; onReport?: () => void; applied?: boolean; ownItem?: boolean }) {
+function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, applicationStatus, ownItem }: { item: Carpool; showStatus?: boolean; onApply?: () => void; onContact?: () => void; onReport?: () => void; applied?: boolean; applicationStatus?: string; ownItem?: boolean }) {
   const subsidyText = formatDetailedSubsidy(item);
+  const roleRows = rolesForCarpool(item);
+  const expired = !!item.is_expired;
+  const seatedCount = roleRows.filter(role => role.status === 'seated').length;
+  const acceptedCount = item.applications?.length || Math.max(0, (item.joined_count || 0) - seatedCount);
+  const occupiedCount = Math.max(item.joined_count || 0, seatedCount + acceptedCount);
+  const totalSlots = Math.max(roleRows.length, seatedCount + (item.needed_count || 1), 1);
+  const full = roleRows.length > 0 && (acceptedCount >= Math.max(1, item.needed_count || 1) || occupiedCount >= totalSlots);
   return (
     <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: item.boost_amount > 0 ? '0 16px 36px rgba(217,168,87,0.18)' : '0 12px 30px rgba(31,41,55,0.06)' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {showStatus && <StatusPill status={item.status} />}
+        {expired && <ExpiredPill />}
         {item.boost_amount > 0 && <Pill>置顶加权 {item.boost_amount}</Pill>}
         <Pill>{item.event_date}</Pill>
         {item.deadline_date && <Pill>截止 {item.deadline_date}{item.deadline_time ? ` ${item.deadline_time}` : ''}</Pill>}
@@ -369,10 +490,11 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
       </div>
       <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.13rem', fontWeight: 900, marginBottom: 8, color: INK }}>{item.title}</h2>
       <Meta>{item.script_name}{item.role_name ? ` · ${item.role_name}` : ''}{item.start_time ? ` · ${item.start_time}` : ''}</Meta>
+      <SeatBoard item={item} />
       <p style={{ color: MUTED, lineHeight: 1.75, fontSize: '0.9rem', margin: '12px 0 14px', whiteSpace: 'pre-wrap' }}>{item.content}</p>
       <div style={{ display: 'grid', gap: 7, fontSize: '0.8rem', color: 'rgba(71,85,105,0.66)' }}>
         {item.role_note && <span>角色说明：{item.role_note}</span>}
-        <span>缺口：{item.joined_count}/{item.needed_count}</span>
+        <span>上车：{occupiedCount}/{totalSlots}</span>
         {item.store_name && <span>店家：{item.store_name}{item.store_address ? ` · ${item.store_address}` : ''}</span>}
         {showStatus && item.leader_contact && <span>车头联系方式：{item.leader_contact}</span>}
         {showStatus && item.contact_note && <span>联系说明：{item.contact_note}</span>}
@@ -385,25 +507,28 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
       {(onApply || onContact || onReport) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))', gap: 10, marginTop: 14 }}>
           {onApply && (
-            <button onClick={onApply} disabled={applied || ownItem}
+            <button onClick={onApply} disabled={applied || ownItem || full || expired}
               style={{
                 padding: '10px 14px', borderRadius: 10,
-                border: applied || ownItem ? '1px solid rgba(125,147,170,0.18)' : '1px solid rgba(217,168,87,0.28)',
-                background: applied || ownItem ? 'rgba(241,245,249,0.8)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
-                color: applied || ownItem ? 'rgba(71,85,105,0.52)' : '#925f18',
-                cursor: applied || ownItem ? 'not-allowed' : 'pointer',
+                border: applied || ownItem || full || expired ? '1px solid rgba(125,147,170,0.18)' : '1px solid rgba(217,168,87,0.28)',
+                background: applied || ownItem || full || expired ? 'rgba(241,245,249,0.8)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
+                color: applied || ownItem || full || expired ? 'rgba(71,85,105,0.52)' : '#925f18',
+                cursor: applied || ownItem || full || expired ? 'not-allowed' : 'pointer',
                 fontWeight: 900,
               }}>
-              {ownItem ? '自己的拼车' : applied ? '已申请' : '我要上车'}
+              {expired ? '已过期' : ownItem ? '自己的拼车' : applicationStatus === 'accepted' ? '已上车' : applicationStatus === 'rejected' ? '未通过' : applied ? '待车头确认' : full ? '已满' : '我要上车'}
             </button>
           )}
           {onContact && (
-            <button onClick={onContact}
+            <button onClick={onContact} disabled={expired}
               style={{
                 padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(39,83,137,0.24)',
-                background: 'rgba(239,246,255,0.86)', color: '#275389', cursor: 'pointer', fontWeight: 900,
+                background: expired ? 'rgba(241,245,249,0.8)' : 'rgba(239,246,255,0.86)',
+                color: expired ? 'rgba(71,85,105,0.52)' : '#275389',
+                cursor: expired ? 'not-allowed' : 'pointer',
+                fontWeight: 900,
               }}>
-              联系车头
+              {expired ? '已过期' : '联系车头'}
             </button>
           )}
           {onReport && (
@@ -418,6 +543,78 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
         </div>
       )}
     </article>
+  );
+}
+
+function StatusChip({ status }: { status: CarpoolApplication['status'] }) {
+  const map = {
+    submitted: { label: '待车头确认', color: '#925f18', bg: 'rgba(254,243,199,0.72)', border: 'rgba(245,158,11,0.22)' },
+    accepted: { label: '已确认上车', color: '#166534', bg: 'rgba(240,253,244,0.9)', border: 'rgba(22,163,74,0.22)' },
+    rejected: { label: '已拒绝', color: '#b91c1c', bg: 'rgba(254,242,242,0.82)', border: 'rgba(185,28,28,0.18)' },
+  }[status];
+  return <span style={{ padding: '6px 10px', borderRadius: 999, border: `1px solid ${map.border}`, background: map.bg, color: map.color, fontSize: '0.75rem', fontWeight: 900 }}>{map.label}</span>;
+}
+
+function SeatBoard({ item }: { item: Carpool }) {
+  const used = new Set<string>();
+  const roles = rolesForCarpool(item);
+  if (roles.length === 0) return null;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(86px, 1fr))', gap: 10, marginTop: 14 }}>
+      {roles.map((role, index) => {
+        const app = applicationForRole(item, role.role_name, used);
+        const occupied = !!app || role.status === 'seated';
+        const name = app?.applicant_name || role.player_name || '';
+        const gender = app?.applicant_gender || role.player_gender || '';
+        const avatar = app?.applicant_avatar || (name ? generatedAvatarDataUrl(name, app?.applicant_id || `${item.id}-${index}`) : '');
+        return (
+          <div key={`${role.role_name}-${index}`} style={{
+            minHeight: 112,
+            borderRadius: 12,
+            border: occupied ? '1px solid rgba(22,163,74,0.24)' : '1px dashed rgba(125,147,170,0.24)',
+            background: occupied ? 'rgba(240,253,244,0.9)' : 'rgba(248,250,252,0.86)',
+            padding: 10,
+            display: 'grid',
+            justifyItems: 'center',
+            alignContent: 'center',
+            gap: 6,
+            textAlign: 'center',
+          }}>
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: occupied ? 'linear-gradient(135deg, rgba(217,168,87,0.28), rgba(34,197,94,0.22))' : 'rgba(226,232,240,0.9)',
+              border: occupied ? '2px solid rgba(22,163,74,0.28)' : '2px solid rgba(148,163,184,0.2)',
+              color: occupied ? '#166534' : 'rgba(100,116,139,0.58)',
+              fontWeight: 900,
+              fontSize: '0.9rem',
+            }}>
+              {avatar ? <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '空'}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ color: INK, fontSize: '0.78rem', fontWeight: 900, margin: 0, overflowWrap: 'anywhere' }}>{role.role_name}</p>
+              <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.72rem', marginTop: 3, lineHeight: 1.45 }}>
+                {role.gender ? `角色${role.gender}` : '角色性别未填'}
+                {occupied && gender ? ` · 玩家${gender}` : ''}
+              </p>
+              <p style={{ color: occupied ? '#166534' : 'rgba(100,116,139,0.62)', fontSize: '0.72rem', fontWeight: 800, marginTop: 3, overflowWrap: 'anywhere' }}>
+                {occupied ? (name || '已上车') : '待上车'}
+              </p>
+              {role.tags && role.tags.length > 0 && (
+                <p style={{ color: '#925f18', fontSize: '0.68rem', fontWeight: 800, marginTop: 4, lineHeight: 1.4, overflowWrap: 'anywhere' }}>
+                  {role.tags.slice(0, 3).join(' / ')}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -440,6 +637,27 @@ function Meta({ children }: { children: React.ReactNode }) {
 
 function Pill({ children }: { children: React.ReactNode }) {
   return <span style={{ padding: '4px 9px', borderRadius: 999, background: 'rgba(217,168,87,0.13)', border: '1px solid rgba(217,168,87,0.22)', color: '#925f18', fontSize: '0.75rem', fontWeight: 700 }}>{children}</span>;
+}
+
+function ExpiredPill() {
+  return <span style={{ padding: '4px 9px', borderRadius: 999, background: 'rgba(241,245,249,0.92)', border: '1px solid rgba(100,116,139,0.22)', color: '#64748b', fontSize: '0.75rem', fontWeight: 800 }}>已过期</span>;
+}
+
+function ViewButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '9px 14px',
+      borderRadius: 999,
+      border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.18)',
+      background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.86)',
+      color: active ? '#925f18' : 'rgba(71,85,105,0.72)',
+      cursor: 'pointer',
+      fontWeight: 900,
+      whiteSpace: 'nowrap',
+    }}>
+      {children}
+    </button>
+  );
 }
 
 function StatusPill({ status }: { status: Carpool['status'] }) {
@@ -480,4 +698,13 @@ const inputStyle: React.CSSProperties = {
   color: INK,
   padding: '10px 12px',
   outline: 'none',
+};
+
+const smallActionStyle: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 999,
+  border: '1px solid rgba(217,168,87,0.24)',
+  cursor: 'pointer',
+  fontSize: '0.75rem',
+  fontWeight: 900,
 };

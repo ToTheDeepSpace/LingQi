@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { AuthData, CarpoolSubsidyType } from '../types';
+import type { AuthData, CarpoolRole, CarpoolSubsidyType, ScriptCatalogItem, StoreCatalogItem } from '../types';
 import { CITIES } from '../constants/cities';
 import { formatDetailedSubsidy, generateCarpoolMessage, parseCarpoolMessage } from '../lib/carpoolMessage';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
@@ -20,6 +20,11 @@ const subsidyOptions: { value: CarpoolSubsidyType; label: string }[] = [
   { value: 'fixed_deduct', label: '减金额' },
   { value: 'custom', label: '自定义' },
 ];
+
+type RoleDraft = CarpoolRole & { id: string };
+
+const roleGenderOptions = ['', '男', '女', '可男可女', '其他'];
+const playerGenderOptions = ['', '男', '女', '其他', '不公开'];
 
 const backLinkStyle: React.CSSProperties = {
   color: 'rgba(39,83,137,0.82)',
@@ -54,10 +59,50 @@ function modeFromType(type: CarpoolSubsidyType): 'none' | 'asking' | 'offering' 
   return 'offering';
 }
 
+function makeRoleId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeRoleText(text: string) {
+  return text.trim().replace(/\s+/g, ' ');
+}
+
+function rolesFromText(text: string): RoleDraft[] {
+  return text
+    .split(/[、，,/\n]/)
+    .map(normalizeRoleText)
+    .filter(Boolean)
+    .slice(0, 20)
+    .map(role_name => ({
+      id: makeRoleId(),
+      role_name,
+      gender: '',
+      tags: [],
+      status: 'needed',
+      player_name: '',
+      player_gender: '',
+    }));
+}
+
+function rolesFromScript(script: ScriptCatalogItem): RoleDraft[] {
+  return (script.player_roles || []).map(role => ({
+    id: makeRoleId(),
+    role_name: role.role_name,
+    gender: role.gender || '',
+    tags: role.tags || [],
+    status: 'needed',
+    player_name: '',
+    player_gender: '',
+  }));
+}
+
 export default function CreateCarpool() {
   const navigate = useNavigate();
   const [auth] = useState(() => getAuth());
   const [balance, setBalance] = useState<number | null>(null);
+  const [scriptCatalog, setScriptCatalog] = useState<ScriptCatalogItem[]>([]);
+  const [storeCatalog, setStoreCatalog] = useState<StoreCatalogItem[]>([]);
+  const [storeLoading, setStoreLoading] = useState(false);
   const [rawMessage, setRawMessage] = useState('');
   const [generatedMessage, setGeneratedMessage] = useState('');
   const [parseWarnings, setParseWarnings] = useState<string[]>([]);
@@ -70,7 +115,9 @@ export default function CreateCarpool() {
   const [startTime, setStartTime] = useState('');
   const [deadlineDate, setDeadlineDate] = useState('');
   const [deadlineTime, setDeadlineTime] = useState('18:00');
+  const [scriptId, setScriptId] = useState('');
   const [scriptName, setScriptName] = useState('');
+  const [scriptRoles, setScriptRoles] = useState<RoleDraft[]>([]);
   const [roleName, setRoleName] = useState('');
   const [roleNote, setRoleNote] = useState('');
   const [neededCount, setNeededCount] = useState(1);
@@ -79,6 +126,7 @@ export default function CreateCarpool() {
   const [subsidyDiscount, setSubsidyDiscount] = useState('');
   const [subsidyNote, setSubsidyNote] = useState('');
   const [storeName, setStoreName] = useState('');
+  const [storeId, setStoreId] = useState('');
   const [storeAddress, setStoreAddress] = useState('');
   const [storeSourceUrl, setStoreSourceUrl] = useState('');
   const [storeVerifyNote, setStoreVerifyNote] = useState('');
@@ -95,15 +143,77 @@ export default function CreateCarpool() {
       .then(r => r.json())
       .then(d => { if (d.success) setBalance(d.data.balance); })
       .catch(() => setBalance(null));
+    fetch(`${API}/lc/scripts`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setScriptCatalog(d.data || []); })
+      .catch(() => setScriptCatalog([]));
   }, [auth, navigate]);
+
+  useEffect(() => {
+    if (!auth || !city) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setStoreLoading(true);
+      fetch(`${API}/lc/stores?city=${encodeURIComponent(city)}`, { signal: controller.signal })
+        .then(r => r.json())
+        .then(d => {
+          const stores = d.success ? (d.data || []) : [];
+          setStoreCatalog(stores);
+          setStoreId(current => (current && stores.some((store: StoreCatalogItem) => store.id === current)) ? current : '');
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setStoreCatalog([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setStoreLoading(false);
+        });
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [auth, city]);
+
+  useEffect(() => {
+    if (city) return;
+    const timer = window.setTimeout(() => {
+      setStoreCatalog([]);
+      setStoreId('');
+      setStoreLoading(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [city]);
+
+  const cleanRoles = useMemo(() => scriptRoles
+    .map(role => ({
+      ...role,
+      role_name: normalizeRoleText(role.role_name || ''),
+      gender: role.gender || '',
+      tags: role.tags || [],
+      status: role.status === 'seated' ? 'seated' : 'needed',
+      player_name: role.player_name || '',
+      player_gender: role.player_gender || '',
+    }))
+    .filter(role => role.role_name), [scriptRoles]);
+
+  const derivedRoleName = useMemo(() => {
+    const needed = cleanRoles.filter(role => role.status !== 'seated');
+    const names = needed.map(role => role.gender ? `${role.role_name}(${role.gender})` : role.role_name);
+    return names.join('、') || roleName;
+  }, [cleanRoles, roleName]);
+
+  const derivedNeededCount = useMemo(() => {
+    const count = cleanRoles.filter(role => role.status !== 'seated').length;
+    return count > 0 ? count : neededCount;
+  }, [cleanRoles, neededCount]);
 
   const currentGeneratedMessage = useMemo(() => generateCarpoolMessage({
     eventDate,
     startTime,
     city,
     scriptName,
-    roleName,
-    neededCount,
+    roleName: derivedRoleName,
+    neededCount: derivedNeededCount,
     subsidyType,
     subsidyAmount,
     subsidyDiscount: subsidyDiscount ? Number(subsidyDiscount) : null,
@@ -112,7 +222,7 @@ export default function CreateCarpool() {
     deadlineTime,
     leaderContact,
     content,
-  }), [city, content, deadlineDate, deadlineTime, eventDate, leaderContact, neededCount, roleName, scriptName, startTime, subsidyAmount, subsidyDiscount, subsidyNote, subsidyType]);
+  }), [city, content, deadlineDate, deadlineTime, derivedNeededCount, derivedRoleName, eventDate, leaderContact, scriptName, startTime, subsidyAmount, subsidyDiscount, subsidyNote, subsidyType]);
 
   const applyParsed = () => {
     if (!rawMessage.trim()) {
@@ -129,8 +239,11 @@ export default function CreateCarpool() {
       setEventDate('');
     }
     if (parsed.startTime) setStartTime(parsed.startTime);
-    if (parsed.scriptName) setScriptName(parsed.scriptName);
-    if (parsed.roleName) setRoleName(parsed.roleName);
+    if (parsed.scriptName) updateScriptName(parsed.scriptName);
+    if (parsed.roleName) {
+      setRoleName(parsed.roleName);
+      if (scriptRoles.length === 0) setScriptRoles(rolesFromText(parsed.roleName));
+    }
     if (parsed.roleNote) setRoleNote(parsed.roleNote);
     setSubsidyType(parsed.subsidyType);
     setSubsidyAmount(parsed.subsidyAmount);
@@ -144,8 +257,8 @@ export default function CreateCarpool() {
       startTime: parsed.startTime,
       city,
       scriptName: parsed.scriptName || '',
-      roleName: parsed.roleName,
-      neededCount,
+      roleName: parsed.roleName || derivedRoleName,
+      neededCount: derivedNeededCount,
       subsidyType: parsed.subsidyType,
       subsidyAmount: parsed.subsidyAmount,
       subsidyDiscount: parsed.subsidyDiscount,
@@ -177,11 +290,69 @@ export default function CreateCarpool() {
     }
   };
 
+  const applyScriptFromCatalog = (id: string) => {
+    setScriptId(id);
+    const selected = scriptCatalog.find(item => item.id === id);
+    if (!selected) return;
+    setScriptName(selected.name);
+    setScriptRoles(rolesFromScript(selected));
+    setRoleName('');
+    setNeededCount(Math.max(1, selected.player_roles?.length || 1));
+  };
+
+  const applyStoreFromCatalog = (id: string) => {
+    setStoreId(id);
+    const selected = storeCatalog.find(item => item.id === id);
+    if (!selected) return;
+    setStoreName(selected.name);
+    setStoreAddress(selected.address || '');
+    setStoreSourceUrl('');
+    setStoreVerifyNote('');
+  };
+
+  const updateScriptName = (value: string) => {
+    setScriptName(value);
+    const exact = scriptCatalog.find(item => item.name === value);
+    if (exact) {
+      setScriptId(exact.id);
+      setScriptRoles(rolesFromScript(exact));
+      setRoleName('');
+    } else {
+      setScriptId('');
+    }
+  };
+
+  const updateRole = (id: string, patch: Partial<RoleDraft>) => {
+    setScriptRoles(prev => prev.map(role => role.id === id ? { ...role, ...patch } : role));
+  };
+
+  const addRole = () => {
+    setScriptRoles(prev => [...prev, {
+      id: makeRoleId(),
+      role_name: '',
+      gender: '',
+      tags: [],
+      status: 'needed',
+      player_name: '',
+      player_gender: '',
+    }]);
+  };
+
+  const removeRole = (id: string) => {
+    setScriptRoles(prev => prev.filter(role => role.id !== id));
+  };
+
   const submit = async () => {
     if (!auth) return navigate('/login');
     if (dateExpired || !eventDate) return setError('日期已过期或未确认，请手动选择有效日期');
     if (!city || !deadlineDate || !scriptName.trim() || !leaderContact.trim()) {
       return setError('请填写城市、报名截止日期、本名和车头微信');
+    }
+    if (!scriptId && cleanRoles.length === 0) {
+      return setError('库里没有这个本时，请手动添加至少一个角色');
+    }
+    if (cleanRoles.some(role => role.status === 'seated' && !role.player_gender)) {
+      return setError('已上车角色需要备注玩家性别');
     }
     const finalContent = content.trim() || currentGeneratedMessage.replace(/联系：.+$/m, '').trim();
     if (!finalContent) return setError('请填写公开说明，联系方式不会公开展示');
@@ -202,16 +373,26 @@ export default function CreateCarpool() {
           startTime,
           deadlineDate,
           deadlineTime,
+          scriptId,
           scriptName: scriptName.trim(),
-          roleName: roleName.trim(),
+          scriptRoles: cleanRoles.map(role => ({
+            role_name: role.role_name,
+            gender: role.gender || '',
+            tags: role.tags || [],
+            status: role.status,
+            player_name: role.player_name || '',
+            player_gender: role.player_gender || '',
+          })),
+          roleName: derivedRoleName.trim(),
           roleNote: roleNote.trim(),
-          neededCount,
+          neededCount: derivedNeededCount,
           subsidyMode,
           subsidyType,
           subsidyAmount,
           subsidyDiscount: subsidyDiscount ? Number(subsidyDiscount) : null,
           subsidyNote: subsidyNote.trim(),
           storeName: storeName.trim(),
+          storeId,
           storeAddress: storeAddress.trim(),
           storeSourceUrl: storeSourceUrl.trim(),
           storeVerifyNote: storeVerifyNote.trim(),
@@ -241,8 +422,8 @@ export default function CreateCarpool() {
         <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'grid', gap: 6 }}>
             <Link to="/carpools" style={backLinkStyle}>← 返回拼车区</Link>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.55rem', marginBottom: 4 }}>车头消息工作台</h1>
-            <p style={{ fontSize: '0.84rem', color: MUTED }}>粘贴车头姐原话，先生成能发群的消息，再沉淀成拼车数据。</p>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.55rem', marginBottom: 4 }}>发布拼车</h1>
+            <p style={{ fontSize: '0.84rem', color: MUTED }}>先把群消息解析成车次，也可以直接填车次，再单独生成可粘贴文案。</p>
           </div>
           <Link to="/wallet" style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)', background: 'rgba(255,255,255,0.78)', color: '#925f18', textDecoration: 'none', fontWeight: 700, fontSize: '0.85rem' }}>
             契约币 {balance ?? '...'}
@@ -253,7 +434,8 @@ export default function CreateCarpool() {
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '30px 20px 80px' }}>
         <div style={{ display: 'grid', gap: 18 }}>
           <section style={heroCardStyle}>
-            <Field label="粘贴车头消息">
+            <h2 style={sectionTitleStyle}>粘贴消息解析车次</h2>
+            <Field label="原始群消息">
               <textarea
                 value={rawMessage}
                 onChange={e => setRawMessage(e.target.value)}
@@ -263,14 +445,11 @@ export default function CreateCarpool() {
               />
             </Field>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button onClick={applyParsed} style={secondaryButtonStyle}>解析拼车消息</button>
-              <button onClick={refreshGenerated} style={secondaryButtonStyle}>生成可转发消息</button>
-              <button onClick={() => void copyGenerated()} className="btn-gold" style={{ padding: '10px 18px' }}>复制消息</button>
+              <button onClick={applyParsed} style={secondaryButtonStyle}>解析为车次字段</button>
             </div>
-            {(parseWarnings.length > 0 || copyMsg) && (
+            {parseWarnings.length > 0 && (
               <div style={{ display: 'grid', gap: 6 }}>
                 {parseWarnings.map(item => <p key={item} style={warningStyle}>{item}</p>)}
-                {copyMsg && <p style={{ color: '#166534', fontSize: '0.8rem', fontWeight: 800 }}>{copyMsg}</p>}
               </div>
             )}
           </section>
@@ -282,21 +461,114 @@ export default function CreateCarpool() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
               <Field label="日期 *"><input type="date" value={eventDate} onChange={e => { setEventDate(e.target.value); setDateExpired(false); if (!deadlineDate) setDeadlineDate(defaultDeadline(e.target.value)); }} style={inputStyle} /></Field>
               <Field label="城市 *">
-                <select value={city} onChange={e => setCity(e.target.value)} style={inputStyle}>
+                <select value={city} onChange={e => { setCity(e.target.value); setStoreId(''); setStoreCatalog([]); }} style={inputStyle}>
                   <option value="">选择城市</option>
                   {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Field>
-              <Input label="本名 *" value={scriptName} onChange={setScriptName} placeholder="例：琳琅 / 无限x琳琅" />
+              <Field label="本名 *">
+                <input
+                  list="shared-script-options"
+                  value={scriptName}
+                  onChange={e => updateScriptName(e.target.value)}
+                  placeholder="例：流氓叙事 / 琳琅"
+                  style={inputStyle}
+                />
+                <datalist id="shared-script-options">
+                  {scriptCatalog.map(item => <option key={item.id} value={item.name} />)}
+                </datalist>
+              </Field>
               <Input label="车头微信 *" value={leaderContact} onChange={setLeaderContact} placeholder="登录后才给用户查看" />
             </div>
+            {scriptCatalog.length > 0 && (
+              <Field label="从剧司辰剧本库选择">
+                <select value={scriptId} onChange={e => applyScriptFromCatalog(e.target.value)} style={inputStyle}>
+                  <option value="">手动输入或库外新本</option>
+                  {scriptCatalog.map(item => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </Field>
+            )}
             {dateExpired && <p style={warningStyle}>这条消息里的日期已经过了。请确认它仍有效，并手动选择新的有效日期。</p>}
           </section>
 
           <section style={heroCardStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div>
+                <h2 style={sectionTitleStyle}>角色座位</h2>
+                <p style={{ marginTop: 6, color: MUTED, fontSize: '0.82rem', lineHeight: 1.7 }}>
+                  库外新本要先补角色；已上车的角色填玩家性别，缺人的角色会进入拼车缺口。
+                </p>
+              </div>
+              <button onClick={addRole} style={secondaryButtonStyle}>添加角色</button>
+            </div>
+
+            {scriptRoles.length === 0 && (
+              <div style={{ borderRadius: 12, border: '1px dashed rgba(217,168,87,0.28)', background: 'rgba(255,250,242,0.74)', padding: 14, color: 'rgba(71,85,105,0.66)', fontSize: '0.84rem', lineHeight: 1.7 }}>
+                从剧司辰剧本库选择会自动带角色；如果是库里没有的新本，点“添加角色”手动补。
+              </div>
+            )}
+
+            {scriptRoles.length > 0 && (
+              <div style={{ display: 'grid', gap: 10 }}>
+                {scriptRoles.map((role, index) => (
+                  <div key={role.id} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, alignItems: 'end' }}>
+                    <Field label={index === 0 ? '角色' : ' '}>
+                      <input value={role.role_name || ''} onChange={e => updateRole(role.id, { role_name: e.target.value })} placeholder="角色名" style={inputStyle} />
+                    </Field>
+                    <Field label={index === 0 ? '角色性别' : ' '}>
+                      <select value={role.gender || ''} onChange={e => updateRole(role.id, { gender: e.target.value })} style={inputStyle}>
+                        {roleGenderOptions.map(item => <option key={item || 'empty'} value={item}>{item || '未填'}</option>)}
+                      </select>
+                    </Field>
+                    <Field label={index === 0 ? '状态' : ' '}>
+                      <select value={role.status || 'needed'} onChange={e => updateRole(role.id, { status: e.target.value as RoleDraft['status'] })} style={inputStyle}>
+                        <option value="needed">缺人</option>
+                        <option value="seated">已上车</option>
+                      </select>
+                    </Field>
+                    <Field label={index === 0 ? '角色标签' : ' '}>
+                      <input
+                        value={(role.tags || []).join(', ')}
+                        onChange={e => updateRole(role.id, { tags: e.target.value.split(/[，,、/]/).map(t => t.trim()).filter(Boolean) })}
+                        placeholder="例：高光, 亡夫, 情感"
+                        style={inputStyle}
+                      />
+                    </Field>
+                    <Field label={index === 0 ? '已上车玩家' : ' '}>
+                      <input value={role.player_name || ''} onChange={e => updateRole(role.id, { player_name: e.target.value })} placeholder="可选昵称" style={inputStyle} />
+                    </Field>
+                    <Field label={index === 0 ? '玩家性别' : ' '}>
+                      <select value={role.player_gender || ''} onChange={e => updateRole(role.id, { player_gender: e.target.value })} style={inputStyle}>
+                        {playerGenderOptions.map(item => <option key={item || 'empty'} value={item}>{item || '未填'}</option>)}
+                      </select>
+                    </Field>
+                    <button onClick={() => removeRole(role.id)} title="删除角色" style={{ height: 42, borderRadius: 10, border: '1px solid rgba(220,38,38,0.18)', background: 'rgba(254,242,242,0.82)', color: '#b91c1c', cursor: 'pointer', fontWeight: 900 }}>×</button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', color: 'rgba(71,85,105,0.66)', fontSize: '0.8rem', fontWeight: 800 }}>
+                  <span>缺人 {derivedNeededCount}</span>
+                  <span>已上车 {cleanRoles.filter(role => role.status === 'seated').length}</span>
+                  {derivedRoleName && <span>缺口：{derivedRoleName}</span>}
+                </div>
+              </div>
+            )}
+
+            <Field label="角色补充">
+              <textarea value={roleNote} onChange={e => setRoleNote(e.target.value)} rows={3} placeholder="性别、反串、是否可换角色、需要什么风格..." style={{ ...inputStyle, resize: 'none', lineHeight: 1.7 }} />
+            </Field>
+          </section>
+
+          <section style={heroCardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-              <h2 style={sectionTitleStyle}>生成结果</h2>
+              <h2 style={sectionTitleStyle}>车次生成粘贴文案</h2>
               <span style={{ color: '#925f18', fontWeight: 900, fontSize: '0.82rem' }}>{formatDetailedSubsidy({ subsidy_type: subsidyType, subsidy_amount: subsidyAmount, subsidy_discount: subsidyDiscount ? Number(subsidyDiscount) : null, subsidy_note: subsidyNote })}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button onClick={refreshGenerated} style={secondaryButtonStyle}>生成可转发消息</button>
+              <button onClick={() => void copyGenerated()} className="btn-gold" style={{ padding: '10px 18px' }}>复制消息</button>
+              {copyMsg && <span style={{ alignSelf: 'center', color: '#166534', fontSize: '0.8rem', fontWeight: 800 }}>{copyMsg}</span>}
             </div>
             <Field label="可转发拼车消息">
               <textarea
@@ -317,7 +589,7 @@ export default function CreateCarpool() {
 
           {showMore && (
             <div style={{ display: 'grid', gap: 18 }}>
-              <Section title="角色与时间">
+              <Section title="标题与截止时间">
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
                   <Input label="标题" value={title} onChange={setTitle} placeholder="可不填，系统自动生成" />
                   <Input label="时间" value={startTime} onChange={setStartTime} placeholder="例：19:30" />
@@ -326,15 +598,11 @@ export default function CreateCarpool() {
                   <Field label="报名截止日期 *"><input type="date" value={deadlineDate} onChange={e => setDeadlineDate(e.target.value)} style={inputStyle} /></Field>
                   <Input label="截止时间" value={deadlineTime} onChange={setDeadlineTime} placeholder="例：18:00" />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
-                  <Input label="缺/约的角色" value={roleName} onChange={setRoleName} placeholder="例：祝魇cp / 祁江" />
-                  <Field label="缺口人数">
+                {cleanRoles.length === 0 && (
+                  <Field label="兜底缺口人数">
                     <input type="number" min={1} max={20} value={neededCount} onChange={e => setNeededCount(Number(e.target.value) || 1)} style={inputStyle} />
                   </Field>
-                </div>
-                <Field label="角色补充">
-                  <textarea value={roleNote} onChange={e => setRoleNote(e.target.value)} rows={3} placeholder="性别、反串、是否可换角色、需要什么风格..." style={{ ...inputStyle, resize: 'none', lineHeight: 1.7 }} />
-                </Field>
+                )}
               </Section>
 
               <Section title="补贴与展示">
@@ -372,9 +640,22 @@ export default function CreateCarpool() {
               </Section>
 
               <Section title="店家线索">
-                <Input label="店家名称" value={storeName} onChange={setStoreName} placeholder="例：某某沉浸式剧场" />
-                <Input label="店家地址" value={storeAddress} onChange={setStoreAddress} placeholder="可选，城市内具体商圈/地址" />
-                <Input label="店家主页/资料链接" value={storeSourceUrl} onChange={setStoreSourceUrl} placeholder="抖音/小红书/地图/公众号链接" />
+                <Field label="选择城市店家">
+                  <select value={storeId} onChange={e => applyStoreFromCatalog(e.target.value)} disabled={!city || storeLoading} style={inputStyle}>
+                    <option value="">{city ? '手动填写店家 / 暂不选择' : '先选择城市'}</option>
+                    {storeCatalog.map(store => (
+                      <option key={store.id} value={store.id}>
+                        {store.name}{store.city && store.city !== '未设置' ? ` · ${store.city}` : ''}{store.address ? ` · ${store.address}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p style={{ marginTop: 6, color: 'rgba(71,85,105,0.6)', fontSize: '0.76rem', lineHeight: 1.6 }}>
+                    {storeLoading ? '正在读取城市店家...' : '选已有店家会直接关联；没有就手动填写，后续可由店家认领。'}
+                  </p>
+                </Field>
+                <Input label="店家名称" value={storeName} onChange={(value) => { setStoreId(''); setStoreName(value); }} placeholder="例：某某沉浸式剧场" />
+                <Input label="店家地址" value={storeAddress} onChange={(value) => { setStoreId(''); setStoreAddress(value); }} placeholder="可选，城市内具体商圈/地址" />
+                <Input label="店家主页/资料链接" value={storeSourceUrl} onChange={(value) => { setStoreId(''); setStoreSourceUrl(value); }} placeholder="抖音/小红书/地图/公众号链接" />
                 <Field label="店家说明">
                   <textarea value={storeVerifyNote} onChange={e => setStoreVerifyNote(e.target.value)} rows={3} placeholder="你为什么认为这是这家店？有没有公开资料或剧司辰店铺链接？" style={{ ...inputStyle, resize: 'none', lineHeight: 1.7 }} />
                 </Field>

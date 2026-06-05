@@ -12,6 +12,7 @@ const INK  = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 const ROLE_LABEL: Record<string, string> = {
+  player: '玩家', dm: 'DM', shop: '店家', store: '店家',
   creator: '灵契师', coser: 'Coser', photographer: '摄影师', makeup: '妆造师',
   costume: '服装商', prop: '道具师',
 };
@@ -127,6 +128,14 @@ export default function CreatorProfile() {
 
   const availableSlots = availability.filter(item => !item.is_booked);
   const busySlots = availability.filter(item => item.is_booked);
+  const profileTraits = [
+    creator.gender && creator.gender !== '不公开' ? `性别：${creator.gender}` : '',
+    creator.sexual_orientation && creator.sexual_orientation !== '不公开' ? `取向：${creator.sexual_orientation}` : '',
+    ...(creator.preferred_story_lines || []).map(line => `吃${line}`),
+  ].filter(Boolean);
+  const displayRole = creator.verified_dm && (!creator.role_type || creator.role_type === 'player')
+    ? 'dm'
+    : creator.role_type || creator.identity_roles?.[0] || '';
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
@@ -191,7 +200,7 @@ export default function CreatorProfile() {
                 )}
               </h1>
               <p style={{ color: MUTED, fontSize: '0.92rem', marginBottom: 10 }}>
-                {creator.city || '未知城市'} · {ROLE_LABEL[creator.role_type || ''] || creator.role_type}
+                {creator.city || '未知城市'} · {ROLE_LABEL[displayRole] || displayRole || '玩家'}
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {creator.is_realname && <Badge>⭐ 实名</Badge>}
@@ -231,7 +240,16 @@ export default function CreatorProfile() {
                   ))}
                 </div>
               )}
-              {!creator.bio && !creator.tags?.length && (
+              {profileTraits.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: creator.tags?.length ? 12 : 0 }}>
+                  {profileTraits.map(item => (
+                    <span key={item} style={{ padding: '4px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(239,246,255,0.9)', border: '1px solid rgba(59,130,246,0.16)', color: '#275389' }}>
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {!creator.bio && !creator.tags?.length && profileTraits.length === 0 && (
                 <p style={{ color: 'rgba(71,85,105,0.52)', fontSize: '0.875rem' }}>创作者还没有填写简介</p>
               )}
               {creator.available_cities && creator.available_cities.length > 0 && (

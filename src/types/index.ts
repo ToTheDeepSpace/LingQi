@@ -7,7 +7,12 @@ export interface Creator {
   bio: string | null;
   tags: string[];
   city: string | null;
+  gender?: string | null;
+  sexual_orientation?: string | null;
+  preferred_story_lines?: string[];
+  role?: string;
   role_type: string;
+  identity_roles?: string[];
   social_links: Record<string, string>;
   social_snapshots?: Record<string, SocialSnapshot>;
   wechat?: string | null;
@@ -71,9 +76,28 @@ export interface AuthData {
   phone: string;
   token: string;
   role: string;
+  role_type?: string;
+  identity_roles?: string[];
 }
 
 export type CarpoolSubsidyType = 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
+
+export interface ScriptCatalogItem {
+  id: string;
+  name: string;
+  credits?: Record<string, string[]>;
+  player_roles: { role_name: string; gender?: string | null; tags?: string[] }[];
+  duration_minutes?: number | null;
+  min_duration_hours?: number | null;
+  max_duration_hours?: number | null;
+}
+
+export interface StoreCatalogItem {
+  id: string;
+  name: string;
+  city?: string | null;
+  address?: string | null;
+}
 
 export interface SocialSnapshot {
   url: string;
@@ -90,6 +114,8 @@ export interface Commission {
   poster_is_realname: boolean;
   title: string;
   content: string;
+  script_id?: string | null;
+  script_name?: string | null;
   desired_role: string | null;
   target_type: string | null;
   needed_date: string | null;
@@ -98,8 +124,9 @@ export interface Commission {
   budget: string | null;
   contact_note: string | null;
   ai_assist_context?: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'closed';
   reject_reason: string | null;
+  is_expired?: boolean;
   created_at: string;
 }
 
@@ -126,9 +153,13 @@ export interface Carpool {
   start_time: string | null;
   deadline_date: string | null;
   deadline_time: string | null;
+  script_id?: string | null;
   script_name: string;
   role_name: string | null;
   role_note: string | null;
+  script_roles?: CarpoolRole[];
+  seated_roles?: CarpoolRole[];
+  store_id?: string | null;
   store_name: string | null;
   store_city: string | null;
   store_address: string | null;
@@ -151,7 +182,18 @@ export interface Carpool {
   juzhanggui_sync_status: 'pending' | 'synced' | 'failed' | 'disabled';
   juzhanggui_schedule_id: string | null;
   ai_assist_context?: Record<string, unknown>;
+  applications?: CarpoolApplication[];
+  is_expired?: boolean;
   created_at: string;
+}
+
+export interface CarpoolRole {
+  role_name: string;
+  gender?: string | null;
+  tags?: string[];
+  status?: 'needed' | 'seated';
+  player_name?: string | null;
+  player_gender?: string | null;
 }
 
 export interface CarpoolApplication {
@@ -160,7 +202,10 @@ export interface CarpoolApplication {
   applicant_id: string;
   applicant_name: string;
   applicant_is_realname: boolean;
+  applicant_avatar?: string | null;
+  applicant_gender?: string | null;
   role_name: string | null;
+  role_gender?: string | null;
   message: string;
   status: 'submitted' | 'accepted' | 'rejected';
   created_at: string;
@@ -170,7 +215,7 @@ export interface CarpoolApplication {
 export interface Certification {
   id: string;
   profile_id: string;
-  type: 'dm' | 'shop';
+  type: 'realname' | 'dm' | 'shop';
   status: 'pending' | 'approved' | 'rejected';
   files: { name: string; url: string }[];
   description: string | null;

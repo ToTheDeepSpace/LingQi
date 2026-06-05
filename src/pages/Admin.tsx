@@ -23,6 +23,19 @@ const SUBJECT_LABEL: Record<string, string> = {
   player: '玩家',
 };
 
+const SCRIPT_CREDIT_LABEL: Record<string, string> = {
+  authors: '作者',
+  publisher: '发行方',
+  supervisor: '监制',
+};
+
+function formatCredits(value?: Record<string, string[]> | null) {
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value)
+    .filter(([key, items]) => !!SCRIPT_CREDIT_LABEL[key] && Array.isArray(items) && items.length > 0)
+    .map(([key, items]) => `${SCRIPT_CREDIT_LABEL[key]}：${items.join('、')}`);
+}
+
 function formatCarpoolSubsidy(item: {
   subsidy_mode: 'none' | 'asking' | 'offering';
   subsidy_type?: 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
@@ -169,6 +182,20 @@ type CarpoolReview = {
   created_at: string;
 };
 
+type ScriptContributionReview = {
+  id: string;
+  profile_id?: string | null;
+  profile_name: string;
+  script_id?: string | null;
+  script_name: string;
+  player_roles: { role_name?: string; gender?: string | null; tags?: string[] }[];
+  credits_patch?: Record<string, string[]>;
+  note?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  reward_amount: number;
+  created_at: string;
+};
+
 type TransactionReview = {
   id: string;
   profile_id: string;
@@ -182,7 +209,7 @@ type TransactionReview = {
 type CertReview = {
   id: string;
   profile_id: string;
-  type: 'dm' | 'shop';
+  type: 'realname' | 'dm' | 'shop';
   status: 'pending' | 'approved' | 'rejected';
   files: ProofFile[];
   description: string | null;
@@ -231,7 +258,14 @@ type SiteMessage = {
 };
 
 type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert';
-type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'reports' | 'wallet' | 'certs' | 'security';
+type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'reports' | 'wallet' | 'certs' | 'security';
+
+function certificationTypeLabel(type: string) {
+  if (type === 'realname') return '⭐ 实名认证';
+  if (type === 'dm') return '🎭 DM 开本记录认证';
+  if (type === 'shop') return '🏪 店家营业执照认证';
+  return '认证申请';
+}
 
 const card: React.CSSProperties = {
   backgroundColor: 'rgba(255,255,255,0.04)',
@@ -276,6 +310,7 @@ export default function Admin() {
   const [claims, setClaims] = useState<ClaimReview[]>([]);
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
   const [carpools, setCarpools] = useState<CarpoolReview[]>([]);
+  const [scriptContributions, setScriptContributions] = useState<ScriptContributionReview[]>([]);
   const [reports, setReports] = useState<ReportReview[]>([]);
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
@@ -310,6 +345,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setClaims((d.data as { claims: ClaimReview[] }).claims || []);
         setCommissions((d.data as { commissions: CommissionReview[] }).commissions || []);
         setCarpools((d.data as { carpools: CarpoolReview[] }).carpools || []);
+        setScriptContributions((d.data as { scriptContributions: ScriptContributionReview[] }).scriptContributions || []);
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
         setReports((d.data as { reports: ReportReview[] }).reports || []);
@@ -480,6 +516,27 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
+  const approveScriptContribution = async (id: string) => {
+    await fetch(`${API}/lc/admin/script-contributions/${id}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewNote: '剧本库维护通过' }),
+    });
+    void loadData();
+  };
+
+  const rejectScriptContribution = async (id: string) => {
+    const reviewNote = window.prompt('拒绝原因（可不填）', '');
+    if (reviewNote === null) return;
+    await fetch(`${API}/lc/admin/script-contributions/${id}/reject`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewNote }),
+    });
+    setScriptContributions(prev => prev.filter(item => item.id !== id));
+    void loadData();
+  };
+
   const resolveReport = async (id: string, action: 'resolved' | 'dismissed', hideTarget = false) => {
     await fetch(`${API}/lc/admin/reports/${id}/resolve`, {
       method: 'PUT',
@@ -584,6 +641,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setClaims([]);
     setCommissions([]);
     setCarpools([]);
+    setScriptContributions([]);
     setReports([]);
     setSiteMessages([]);
     setSecurityEvents([]);
@@ -653,6 +711,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             { label: '充值', value: transactions.length, color: '#22c55e' },
             { label: '委托需求', value: commissions.length, color: '#fbbf24' },
             { label: '拼车', value: carpools.length, color: '#14b8a6' },
+            { label: '剧本库', value: scriptContributions.length, color: '#f59e0b' },
             { label: '举报', value: reports.length, color: '#f87171' },
             { label: '站内信', value: siteMessages.length, color: '#38bdf8' },
             { label: '安全日志', value: securityEvents.length, color: '#fb923c' },
@@ -676,6 +735,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           <button style={tabStyle(tab === 'wallet')} onClick={() => setTab('wallet')}>充值 {transactions.length > 0 && `(${transactions.length})`}</button>
           <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
           <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
+          <button style={tabStyle(tab === 'scriptContributions')} onClick={() => setTab('scriptContributions')}>剧本库 {scriptContributions.length > 0 && `(${scriptContributions.length})`}</button>
           <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
           <button style={tabStyle(tab === 'messages')} onClick={() => setTab('messages')}>站内信 {siteMessages.length > 0 && `(${siteMessages.length})`}</button>
           <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
@@ -916,6 +976,52 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </ListEmpty>
             )}
 
+            {tab === 'scriptContributions' && (
+              <ListEmpty empty={scriptContributions.length === 0} text="暂无待审核剧本库维护">
+                {scriptContributions.map(item => {
+                  const contributionRoles = item.player_roles || [];
+                  const canReward = contributionRoles.length > 0 && contributionRoles.every(role => role.role_name?.trim() && role.gender);
+                  return (
+                    <Row key={item.id} accent="#f59e0b">
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <TitleLine title={item.script_name || '未命名剧本'} pill="剧本库维护" />
+                        <Meta>
+                          提交人：{item.profile_name || item.profile_id || '未知用户'}
+                          {` · 奖励：${item.reward_amount || 0} 灵契币`}
+                          {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
+                        </Meta>
+                        <Meta>基础有效维护：剧本名 + 角色名 + 角色性别；作品资料和 tag 作为补充。</Meta>
+                        {!canReward && <Meta>缺角色或角色性别，不能通过发币。</Meta>}
+                        {item.note && <ContentBox>{item.note}</ContentBox>}
+                        {formatCredits(item.credits_patch).length > 0 && (
+                          <Proof>
+                            {formatCredits(item.credits_patch).map(line => (
+                              <div key={line}>{line}</div>
+                            ))}
+                          </Proof>
+                        )}
+                        <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                          {contributionRoles.map((role, index) => (
+                            <div key={`${role.role_name || 'role'}-${index}`} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(201,146,46,0.12)', background: 'rgba(255,255,255,0.03)' }}>
+                              <Meta>
+                                {role.role_name || `角色 ${index + 1}`}
+                                {role.gender ? ` · ${role.gender}` : ' · 性别未定义'}
+                                {role.tags && role.tags.length > 0 ? ` · ${role.tags.join(' / ')}` : ''}
+                              </Meta>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <Actions vertical>
+                        <ActionButton kind="ok" disabled={!canReward} onClick={() => approveScriptContribution(item.id)}>通过并发币</ActionButton>
+                        <ActionButton kind="bad" onClick={() => rejectScriptContribution(item.id)}>拒绝</ActionButton>
+                      </Actions>
+                    </Row>
+                  );
+                })}
+              </ListEmpty>
+            )}
+
             {tab === 'reports' && (
               <ListEmpty empty={reports.length === 0} text="暂无待处理举报">
                 {reports.map(r => (
@@ -1058,7 +1164,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <TitleLine
                         title={c.lc_profiles?.display_name || '未知用户'}
-                        pill={c.type === 'dm' ? '🎭 DM 开本记录认证' : '🏪 店家营业执照认证'}
+                        pill={certificationTypeLabel(c.type)}
                       />
                       <Meta>
                         用户：{c.lc_profiles?.display_name || '未知用户'}
@@ -1066,6 +1172,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         {c.created_at ? ` · ${c.created_at.slice(0, 10)}` : ''}
                       </Meta>
                       {c.description && <ContentBox>{c.description}</ContentBox>}
+                      {c.type === 'realname' && <Meta>身份证材料应已带“仅用于灵契实名认证”水印；审核通过后只给前台实名标识，不公开证件。</Meta>}
                       {c.files && c.files.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                           {c.files.map((f, i) => (

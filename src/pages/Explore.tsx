@@ -14,6 +14,8 @@ const PAPER_DIM = 'rgba(71,85,105,0.76)';
 
 const FILTERS = [
   { key: 'all', label: '全部' },
+  { key: 'player', label: '玩家' },
+  { key: 'dm', label: 'DM' },
   { key: 'creator', label: '灵契师' },
   { key: 'photographer', label: '摄影师' },
   { key: 'makeup', label: '妆造师' },
@@ -22,6 +24,10 @@ const FILTERS = [
 ];
 
 const ROLE_LABEL: Record<string, string> = {
+  player: '玩家',
+  dm: 'DM',
+  shop: '店家',
+  store: '店家',
   creator: '灵契师',
   photographer: '摄影师',
   makeup: '妆造师',
@@ -93,7 +99,17 @@ export default function Explore() {
     setCityQuery('');
   };
 
-  const filtered = filter === 'all' ? creators : creators.filter(c => c.role_type === filter);
+  const hasIdentity = (creator: Creator, key: string) => {
+    const roles = new Set([
+      creator.role_type,
+      creator.role,
+      ...(creator.identity_roles || []),
+      creator.verified_dm ? 'dm' : '',
+      creator.verified_shop ? 'shop' : '',
+    ].filter(Boolean));
+    return roles.has(key);
+  };
+  const filtered = filter === 'all' ? creators : creators.filter(c => hasIdentity(c, filter));
   const creatorCountText = loading ? '正在加载' : `${filtered.length} 位可查看`;
 
   return (
@@ -339,7 +355,10 @@ function SearchableCitySelect({
 }
 
 function CreatorCard({ creator }: { creator: Creator }) {
-  const role = ROLE_LABEL[creator.role_type || ''] || creator.role_type || '灵契师';
+  const displayRole = creator.verified_dm && (!creator.role_type || creator.role_type === 'player')
+    ? 'dm'
+    : creator.role_type || creator.identity_roles?.[0] || '';
+  const role = ROLE_LABEL[displayRole] || displayRole || '灵契师';
   const tags = creator.tags || [];
   const travelStatus = creator.travel_status;
   const availableCities = creator.available_cities || [];

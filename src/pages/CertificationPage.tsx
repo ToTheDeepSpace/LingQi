@@ -11,7 +11,47 @@ const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 type AuthSession = { token: string; id: string };
-type CertFile = { name: string; url: string; type?: string; size?: number };
+type CertificationType = 'realname' | 'dm' | 'shop';
+type CertFile = { name: string; url: string; type?: string; size?: number; watermark?: string };
+
+const REALNAME_WATERMARK_TEXT = '仅用于灵契实名认证';
+const certTypeMeta: Record<CertificationType, {
+  label: string;
+  shortLabel: string;
+  title: string;
+  uploadLabel: string;
+  descriptionLabel: string;
+  placeholder: string;
+  accent: string;
+}> = {
+  realname: {
+    label: '实名认证',
+    shortLabel: '实名',
+    title: '实名认证',
+    uploadLabel: '上传身份证照片',
+    descriptionLabel: '补充说明（可选）',
+    placeholder: '例如：用于灵契实名认证审核。前台只展示实名标识，不公开证件信息。',
+    accent: GOLD,
+  },
+  dm: {
+    label: 'DM 开本记录认证',
+    shortLabel: 'DM',
+    title: 'DM 开本记录认证',
+    uploadLabel: '上传开本记录截图（可多张）',
+    descriptionLabel: '开本说明（开本次数、剧本类型等）',
+    placeholder: '例如：主持过 20+ 场剧本杀，擅长情感本、硬核推理...',
+    accent: GOLD,
+  },
+  shop: {
+    label: '店家营业执照认证',
+    shortLabel: '店家',
+    title: '店家营业执照认证',
+    uploadLabel: '上传营业执照',
+    descriptionLabel: '店铺说明（可选）',
+    placeholder: '例如：XX剧本杀店，位于XX城市...',
+    accent: BLUE,
+  },
+};
 
 function getAuth(): AuthSession | null {
   try {
@@ -57,10 +97,63 @@ const STATUS_COLOR: Record<string, string> = {
   rejected: '#b91c1c',
 };
 
+function readImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('图片读取失败'));
+    };
+    image.src = url;
+  });
+}
+
+async function addRealnameWatermark(file: File) {
+  const image = await readImage(file);
+  const maxSide = 2200;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('图片处理失败');
+
+  ctx.drawImage(image, 0, 0, width, height);
+  const fontSize = Math.max(24, Math.round(Math.min(width, height) / 16));
+  const stepX = Math.max(280, fontSize * 12);
+  const stepY = Math.max(140, fontSize * 5);
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate(-Math.PI / 6);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+  ctx.fillStyle = 'rgba(185, 28, 28, 0.26)';
+  for (let y = -height; y <= height; y += stepY) {
+    for (let x = -width; x <= width; x += stepX) {
+      ctx.fillText(REALNAME_WATERMARK_TEXT, x, y);
+    }
+  }
+  ctx.restore();
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(result => result ? resolve(result) : reject(new Error('水印图片生成失败')), 'image/jpeg', 0.88);
+  });
+  const safeName = file.name.replace(/\.[^.]+$/, '').slice(0, 80) || 'identity';
+  return new File([blob], `${safeName}-watermarked.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+}
+
 export default function CertificationPage() {
   const navigate = useNavigate();
   const auth = useMemo(() => getAuth(), []);
-  const [type, setType] = useState<'dm' | 'shop'>('dm');
+  const [type, setType] = useState<CertificationType>('realname');
   const [description, setDescription] = useState('');
   const [files, setFiles] = useState<CertFile[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -80,8 +173,10 @@ export default function CertificationPage() {
       const r = await fetch(`${API}/lc/certifications/my`, {
         headers: { Authorization: `Bearer ${current.token}` },
       });
-      const d = await r.json();
-      if (d.success) setMyCerts(d.data || []);
+      const d = await r.json().catch(() => null);
+      if (r.ok && d?.success) setMyCerts(d.data || []);
+    } catch {
+      // Keep the page usable if the record list cannot be loaded.
     } finally {
       setCertsLoading(false);
     }
@@ -119,9 +214,14 @@ export default function CertificationPage() {
         continue;
       }
       try {
+        const uploadFile = type === 'realname' ? await addRealnameWatermark(file) : file;
+        if (uploadFile.size > 10 * 1024 * 1024) {
+          setUploadError('水印处理后的图片仍超过 10MB，请换一张更小的图片');
+          continue;
+        }
         const formData = new FormData();
-        formData.append('file', file);
-        formData.append('scope', 'certification-proof');
+        formData.append('file', uploadFile);
+        formData.append('scope', type === 'realname' ? 'realname-certification' : 'certification-proof');
         const r = await fetch(`${API}/lc/upload`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${current.token}` },
@@ -133,13 +233,14 @@ export default function CertificationPage() {
           throw new Error(msg);
         }
         newFiles.push({
-          name: d.data?.name || file.name,
+          name: d.data?.name || uploadFile.name,
           url: d.data?.url,
-          type: d.data?.type || file.type,
-          size: d.data?.size || file.size,
+          type: d.data?.type || uploadFile.type,
+          size: d.data?.size || uploadFile.size,
+          watermark: type === 'realname' ? REALNAME_WATERMARK_TEXT : undefined,
         });
-      } catch {
-        setUploadError('部分文件上传失败');
+      } catch (uploadErr) {
+        setUploadError(uploadErr instanceof Error ? uploadErr.message : '部分文件上传失败');
       }
     }
 
@@ -185,8 +286,12 @@ export default function CertificationPage() {
     }
   };
 
-  const hasApprovedDm = myCerts.some(c => c.type === 'dm' && c.status === 'approved');
-  const hasApprovedShop = myCerts.some(c => c.type === 'shop' && c.status === 'approved');
+  const hasApproved: Record<CertificationType, boolean> = {
+    realname: myCerts.some(c => c.type === 'realname' && c.status === 'approved'),
+    dm: myCerts.some(c => c.type === 'dm' && c.status === 'approved'),
+    shop: myCerts.some(c => c.type === 'shop' && c.status === 'approved'),
+  };
+  const currentMeta = certTypeMeta[type];
 
   if (!auth) return null;
 
@@ -215,25 +320,22 @@ export default function CertificationPage() {
             <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 16, color: INK }}>
               选择认证类型
             </h3>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setType('dm'); setSubmitDone(false); }}
-                style={{
-                  flex: 1, padding: '14px', borderRadius: 12, border: type === 'dm' ? `2px solid ${GOLD}` : '1px solid rgba(201,146,46,0.2)',
-                  background: type === 'dm' ? 'rgba(201,146,46,0.12)' : '#fff',
-                  color: type === 'dm' ? '#925f18' : 'rgba(71,85,105,0.66)', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
-                  transition: 'all 0.2s',
-                }}>
-                🎭 DM 开本记录认证
-              </button>
-              <button onClick={() => { setType('shop'); setSubmitDone(false); }}
-                style={{
-                  flex: 1, padding: '14px', borderRadius: 12, border: type === 'shop' ? `2px solid ${BLUE}` : '1px solid rgba(201,146,46,0.2)',
-                  background: type === 'shop' ? 'rgba(59,130,246,0.12)' : '#fff',
-                  color: type === 'shop' ? BLUE : 'rgba(71,85,105,0.66)', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
-                  transition: 'all 0.2s',
-                }}>
-                🏪 店家营业执照认证
-              </button>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))', gap: 10 }}>
+              {(Object.keys(certTypeMeta) as CertificationType[]).map(item => {
+                const meta = certTypeMeta[item];
+                const active = type === item;
+                return (
+                  <button key={item} onClick={() => { setType(item); setSubmitDone(false); setFiles([]); setUploadError(''); }}
+                    style={{
+                      padding: '14px', borderRadius: 12, border: active ? `2px solid ${meta.accent}` : '1px solid rgba(201,146,46,0.2)',
+                      background: active ? (item === 'shop' ? 'rgba(59,130,246,0.12)' : 'rgba(201,146,46,0.12)') : '#fff',
+                      color: active ? (item === 'shop' ? BLUE : '#925f18') : 'rgba(71,85,105,0.66)', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
+                      transition: 'all 0.2s',
+                    }}>
+                    {item === 'realname' ? '⭐' : item === 'dm' ? '🎭' : '🏪'} {meta.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -252,14 +354,9 @@ export default function CertificationPage() {
           ) : (
             <div style={card}>
               <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 16, color: INK }}>
-                {type === 'dm' ? 'DM 开本记录认证' : '店家营业执照认证'}
-                {type === 'dm' && hasApprovedDm && (
+                {currentMeta.title}
+                {hasApproved[type] && (
                   <span style={{ marginLeft: 10, padding: '2px 10px', borderRadius: 999, fontSize: '0.75rem', background: 'rgba(240,253,244,0.9)', color: '#15803d', border: '1px solid rgba(34,197,94,0.22)', fontWeight: 500 }}>
-                    已认证
-                  </span>
-                )}
-                {type === 'shop' && hasApprovedShop && (
-                  <span style={{ marginLeft: 10, padding: '2px 10px', borderRadius: 999, fontSize: '0.75rem', background: 'rgba(59,130,246,0.1)', color: BLUE, border: '1px solid rgba(59,130,246,0.2)', fontWeight: 500 }}>
                     已认证
                   </span>
                 )}
@@ -267,8 +364,13 @@ export default function CertificationPage() {
 
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(71,85,105,0.78)', marginBottom: 6 }}>
-                  {type === 'dm' ? '上传开本记录截图（可多张）' : '上传营业执照'}
+                  {currentMeta.uploadLabel}
                 </label>
+                {type === 'realname' && (
+                  <p style={{ color: MUTED, fontSize: '0.78rem', lineHeight: 1.7, margin: '-2px 0 10px' }}>
+                    选择身份证照片后，会先在本机浏览器内加上“{REALNAME_WATERMARK_TEXT}”水印，再上传审核；后台只看水印后的图片。
+                  </p>
+                )}
                 <input
                   type="file"
                   accept="image/*"
@@ -291,7 +393,7 @@ export default function CertificationPage() {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
                   </svg>
-                  {uploading ? '上传中...' : '上传图片'}
+                  {uploading ? '处理中...' : type === 'realname' ? '上传并加水印' : '上传图片'}
                 </label>
                 {uploadError && <p style={{ fontSize: '0.78rem', color: '#b91c1c', marginTop: 8 }}>{uploadError}</p>}
               </div>
@@ -312,12 +414,12 @@ export default function CertificationPage() {
 
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(71,85,105,0.78)', marginBottom: 6 }}>
-                  {type === 'dm' ? '开本说明（开本次数、剧本类型等）' : '店铺说明（可选）'}
+                  {currentMeta.descriptionLabel}
                 </label>
                 <textarea
                   value={description}
                   onChange={e => setDescription(e.target.value)}
-                  placeholder={type === 'dm' ? '例如：主持过 20+ 场剧本杀，擅长情感本、硬核推理...' : '例如：XX剧本杀店，位于XX城市...'}
+                  placeholder={currentMeta.placeholder}
                   rows={4}
                   style={{ ...inputStyle, resize: 'none' }}
                 />
@@ -359,7 +461,7 @@ export default function CertificationPage() {
                   }}>
                     <div>
                       <span style={{ fontWeight: 700, fontSize: '0.9rem', marginRight: 10 }}>
-                        {cert.type === 'dm' ? '🎭 DM 认证' : '🏪 店家认证'}
+                        {cert.type === 'realname' ? '⭐ 实名认证' : cert.type === 'dm' ? '🎭 DM 认证' : '🏪 店家认证'}
                       </span>
                       <span style={{
                         padding: '2px 10px', borderRadius: 999, fontSize: '0.75rem', fontWeight: 600,

@@ -108,6 +108,7 @@ export default function Dashboard() {
   const [form, setForm] = useState({
     display_name: '', avatar: '', bio: '', city: '', wechat: '', tags: '',
     douyin: '', xiaohongshu: '', available_cities: '', travel_status: '常驻本地',
+    gender: '', sexual_orientation: '', preferred_story_lines: '',
     contact_unlock_enabled: false, contact_intent_amount: '',
   });
   const [newSvc, setNewSvc] = useState({ service_type: '', price: '', duration: '', description: '' });
@@ -159,6 +160,9 @@ export default function Dashboard() {
           city: profile.city || '',
           wechat: profile.wechat || '',
           tags: (profile.tags || []).join(', '),
+          gender: profile.gender || '',
+          sexual_orientation: profile.sexual_orientation || '',
+          preferred_story_lines: (profile.preferred_story_lines || []).join(', '),
           douyin: profile.social_links?.douyin || '',
           xiaohongshu: profile.social_links?.xiaohongshu || '',
           available_cities: (profile.available_cities || []).join(', '),
@@ -182,6 +186,7 @@ export default function Dashboard() {
     try {
       const tags = form.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
       const available_cities = form.available_cities.split(',').map((t: string) => t.trim()).filter(Boolean);
+      const preferred_story_lines = form.preferred_story_lines.split(/[，,、/]/).map((t: string) => t.trim()).filter(Boolean);
       const social_links = {
         douyin: form.douyin.trim(),
         xiaohongshu: form.xiaohongshu.trim(),
@@ -196,6 +201,9 @@ export default function Dashboard() {
           city: form.city,
           wechat: form.wechat,
           tags,
+          gender: form.gender,
+          sexual_orientation: form.sexual_orientation,
+          preferred_story_lines,
           social_links,
           available_cities,
           travel_status: form.travel_status,
@@ -205,7 +213,14 @@ export default function Dashboard() {
       });
       const d = await r.json();
       if (d.success) {
-        setCreator(prev => prev ? { ...prev, avatar: avatarOverride ?? form.avatar, display_name: form.display_name } : prev);
+        setCreator(prev => prev ? {
+          ...prev,
+          avatar: avatarOverride ?? form.avatar,
+          display_name: form.display_name,
+          gender: form.gender,
+          sexual_orientation: form.sexual_orientation,
+          preferred_story_lines,
+        } : prev);
         setMsg('已保存');
         setTimeout(() => setMsg(''), 2500);
       }
@@ -587,7 +602,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <p style={{ color: 'rgba(71,85,105,0.64)', fontSize: '0.8rem', lineHeight: 1.7 }}>
-                    实名由后台审核，前台只显示星标和昵称，不公开真实姓名。需要认证时请联系管理员提交材料。
+                    实名由后台审核，前台只显示星标和昵称，不公开真实姓名。需要认证时可到 <Link to="/certification" style={{ color: GOLD, fontWeight: 800, textDecoration: 'none' }}>身份认证</Link> 提交水印身份证材料。
                   </p>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
@@ -599,6 +614,35 @@ export default function Dashboard() {
                     <label style={labelStyle}>城市</label>
                     <input type="text" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="如：上海" style={inputStyle} />
                   </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                  <div>
+                    <label style={labelStyle}>性别</label>
+                    <select value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })} style={inputStyle}>
+                      <option value="">不填写</option>
+                      <option value="男">男</option>
+                      <option value="女">女</option>
+                      <option value="其他">其他</option>
+                      <option value="不公开">不公开</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>性取向</label>
+                    <select value={form.sexual_orientation} onChange={e => setForm({ ...form, sexual_orientation: e.target.value })} style={inputStyle}>
+                      <option value="">不填写</option>
+                      <option value="异性恋">异性恋</option>
+                      <option value="同性恋">同性恋</option>
+                      <option value="双性恋">双性恋</option>
+                      <option value="泛性恋">泛性恋</option>
+                      <option value="无性恋">无性恋</option>
+                      <option value="其他">其他</option>
+                      <option value="不公开">不公开</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>吃什么线（逗号分隔）</label>
+                  <input type="text" value={form.preferred_story_lines} onChange={e => setForm({ ...form, preferred_story_lines: e.target.value })} placeholder="亲情线, 爱情线, 权谋线, 事业线" style={inputStyle} />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>
