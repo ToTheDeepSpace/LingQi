@@ -110,7 +110,7 @@ function SiteFooter() {
             </div>
           </div>
           <FooterColumn title="主要入口">
-            <FooterLink to="/explore">灵契大厅</FooterLink>
+            <FooterLink to="/explore">浏览灵契师</FooterLink>
             <FooterLink to="/commissions">委托需求墙</FooterLink>
             <FooterLink to="/carpools">拼车区</FooterLink>
             <FooterLink to="/rankings">红黑白榜</FooterLink>

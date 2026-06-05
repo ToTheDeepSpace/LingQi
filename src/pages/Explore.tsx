@@ -124,7 +124,7 @@ export default function Explore() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 24, flexWrap: 'wrap' }}>
             <div style={{ maxWidth: 690 }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.85rem, 4vw, 2.75rem)', marginBottom: 10, color: PAPER }}>
-                灵契大厅
+                灵契师主页
               </h1>
               <p style={{ color: PAPER_DIM, fontSize: '1rem', lineHeight: 1.85 }}>
                 查看灵契师的主页、档期、可接城市和社交展示。想要指定角色或日期，也可以先去委托需求墙挂一段愿望。
@@ -185,7 +185,7 @@ export default function Explore() {
           <div style={stateWrap}>
             <div style={{ fontSize: 34, marginBottom: 14, color: GOLD }}>✦</div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', fontWeight: 900, color: PAPER, marginBottom: 8 }}>
-              大厅暂时没连上
+              灵契师主页暂时没连上
             </h2>
             <p style={{ color: PAPER_DIM, lineHeight: 1.8, marginBottom: 18 }}>
               可能是网络或服务接口短暂波动。你可以刷新重试，或者先去委托需求墙挂一条需求。
@@ -210,7 +210,7 @@ export default function Explore() {
             <div style={{ maxWidth: 580, margin: '0 auto', textAlign: 'center' }}>
               <div style={{ fontSize: 42, marginBottom: 16, color: GOLD }}>✦</div>
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.35rem', fontWeight: 900, color: PAPER, marginBottom: 10 }}>
-                {city !== 'all' ? `${city} 暂无公开主页` : filter === 'all' ? '大厅还在等待第一批灵契师' : '这个身份暂时没有公开主页'}
+                {city !== 'all' ? `${city} 暂无公开主页` : filter === 'all' ? '还在等待第一批灵契师' : '这个身份暂时没有公开主页'}
               </h2>
               <p style={{ color: PAPER_DIM, lineHeight: 1.8, marginBottom: 22 }}>
                 可以先发布一条委托需求，让合适的人来回应你；也可以自己入驻，把主页先挂出来。

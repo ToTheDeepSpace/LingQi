@@ -14,7 +14,7 @@ const features = [
 
 const steps = [
   { n: '01', title: '描述你的委托', desc: '写下你想见到的角色、场景与情绪，让灵契师了解你的期待' },
-  { n: '02', title: '寻找你的灵契师', desc: '浏览大厅，查看作品与口碑，找到那个能将角色真实带来的人' },
+  { n: '02', title: '寻找你的灵契师', desc: '浏览灵契师主页，查看作品与口碑，找到那个能将角色真实带来的人' },
   { n: '03', title: '见证一次降临', desc: '与灵契师、摄影师、妆造师一起，完成这场跨越次元的相遇' },
 ];
 
@@ -67,7 +67,7 @@ export default function Home() {
 
           <div className="home-entry-grid">
             <Link to="/explore" className="btn-gold home-entry-link">
-              进入灵契大厅
+              浏览灵契师
             </Link>
             <Link to="/login" className="btn-glass home-entry-link">
               灵契师入驻
@@ -113,12 +113,12 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ───────────── 大厅里有谁 ───────────── */}
+      {/* ───────────── 这里能找到谁 ───────────── */}
       <section style={{ backgroundColor: C, padding: '5rem 1.25rem' }}>
         <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
 
-          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.7)', marginBottom: 12 }}>大厅告示板</p>
-          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>大厅里有谁</h2>
+          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.7)', marginBottom: 12 }}>灵契师名片</p>
+          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>这里能找到谁</h2>
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
@@ -227,7 +227,7 @@ export default function Home() {
           <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 3rem)', marginBottom: 16, lineHeight: 1.2 }}>开始你的灵契之旅</h2>
           <p style={{ color: MUTED, fontSize: '1.05rem', marginBottom: 36, lineHeight: 1.8 }}>无论你是委托人，还是灵契师——这里都为这场契约留好了入口。</p>
           <Link to="/explore" className="btn-gold" style={{ display: 'inline-block', padding: '14px 48px', fontSize: '1rem', fontWeight: 600 }}>
-            进入灵契大厅
+            浏览灵契师
           </Link>
         </div>
       </section>
@@ -238,7 +238,7 @@ export default function Home() {
           <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.25rem' }}>灵契</span>
           <span>与虚拟人签订契约，让其借由灵契师短暂附身并降临现实，此之谓灵契</span>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <Link to="/explore" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>进入大厅</Link>
+            <Link to="/explore" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>浏览灵契师</Link>
             <Link to="/commissions" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>委托需求</Link>
             <Link to="/rankings" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>红黑榜</Link>
             <Link to="/login" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>入驻</Link>

@@ -121,7 +121,7 @@ export default function CreatorProfile() {
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 56, marginBottom: 20, opacity: 0.3 }}>🌊</div>
         <p style={{ color: MUTED, marginBottom: 20 }}>创作者不存在</p>
-        <Link to="/explore" style={{ color: GOLD, fontSize: '0.875rem', textDecoration: 'underline' }}>返回大厅</Link>
+        <Link to="/explore" style={{ color: GOLD, fontSize: '0.875rem', textDecoration: 'underline' }}>返回灵契师主页</Link>
       </div>
     </div>
   );
@@ -149,7 +149,7 @@ export default function CreatorProfile() {
           <Link to="/explore" style={{ color: 'rgba(39,83,137,0.78)', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}
             onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
             onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>
-            ← 返回灵契大厅
+            ← 返回灵契师主页
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
             <div style={{

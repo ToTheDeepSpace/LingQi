@@ -270,7 +270,7 @@ export default function Commissions() {
               <div>
                 <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 900, marginBottom: 6 }}>我的委托进度</h2>
                 <p style={{ color: MUTED, fontSize: '0.86rem', lineHeight: 1.7 }}>
-                  这些内容暂时不公开，审核通过后才会进入大厅。
+                  这些内容暂时不公开，审核通过后才会进入委托需求墙。
                 </p>
               </div>
               <Link to="/commissions/new" style={{ color: GOLD, textDecoration: 'none', fontSize: '0.84rem', fontWeight: 800 }}>继续发布</Link>
