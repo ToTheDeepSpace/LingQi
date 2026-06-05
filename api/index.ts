@@ -48,6 +48,10 @@ const ALIPAY_GATEWAY = process.env.ALIPAY_GATEWAY || 'https://openapi.alipay.com
 const ALIPAY_NOTIFY_URL = process.env.ALIPAY_NOTIFY_URL || `${LINGQI_SITE_URL}/api/lc/wallet/alipay/notify`;
 const ALIPAY_RETURN_URL = process.env.ALIPAY_RETURN_URL || `${LINGQI_SITE_URL}/wallet?alipay=return`;
 const ALIPAY_SELLER_ID = process.env.ALIPAY_SELLER_ID || '';
+const RAW_PAYMENT_ORDER_TTL_MINUTES = Number(process.env.PAYMENT_ORDER_TTL_MINUTES || 30);
+const PAYMENT_ORDER_TTL_MINUTES = Number.isFinite(RAW_PAYMENT_ORDER_TTL_MINUTES)
+  ? Math.max(1, RAW_PAYMENT_ORDER_TTL_MINUTES)
+  : 30;
 const WECHAT_PAY_APP_ID = process.env.WECHAT_PAY_APP_ID || '';
 const WECHAT_PAY_MCH_ID = process.env.WECHAT_PAY_MCH_ID || '';
 const WECHAT_PAY_MCH_SERIAL_NO = process.env.WECHAT_PAY_MCH_SERIAL_NO || '';
@@ -807,6 +811,14 @@ function parseRechargeAmount(input: unknown) {
   return amount;
 }
 
+function makePaymentExpiresAt(date = new Date()) {
+  return new Date(date.getTime() + PAYMENT_ORDER_TTL_MINUTES * 60 * 1000);
+}
+
+function formatWechatPayTimeExpire(date: Date) {
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 function makeAlipayPayUrl(outTradeNo: string, amount: number) {
   const subject = `灵契契约币充值 ${amount}`;
   const params: Record<string, string> = {
@@ -824,6 +836,7 @@ function makeAlipayPayUrl(outTradeNo: string, amount: number) {
       total_amount: amount.toFixed(2),
       subject,
       product_code: 'FAST_INSTANT_TRADE_PAY',
+      timeout_express: `${PAYMENT_ORDER_TTL_MINUTES}m`,
     }),
   };
   params.sign = signAlipayParams(params);
@@ -940,7 +953,7 @@ function makeWechatPayDescription(amount: number) {
   return `灵契契约币充值 ${amount}`;
 }
 
-async function createWechatPayNativeOrder(outTradeNo: string, amount: number) {
+async function createWechatPayNativeOrder(outTradeNo: string, amount: number, expiresAt = makePaymentExpiresAt()) {
   const description = makeWechatPayDescription(amount);
   const totalFee = amount * 100;
   const data = await wechatPayRequest<{ code_url?: string }>('POST', '/v3/pay/transactions/native', {
@@ -948,6 +961,7 @@ async function createWechatPayNativeOrder(outTradeNo: string, amount: number) {
     mchid: WECHAT_PAY_MCH_ID,
     description,
     out_trade_no: outTradeNo,
+    time_expire: formatWechatPayTimeExpire(expiresAt),
     notify_url: WECHAT_PAY_NOTIFY_URL,
     attach: 'lingqi_wallet_recharge',
     amount: {
@@ -956,7 +970,7 @@ async function createWechatPayNativeOrder(outTradeNo: string, amount: number) {
     },
   });
   if (!data?.code_url) throw new Error('微信支付未返回二维码链接');
-  return { codeUrl: data.code_url, description, totalFee };
+  return { codeUrl: data.code_url, description, totalFee, expiresAt };
 }
 
 function decryptWechatPayResource(resource: Record<string, unknown>) {
@@ -998,6 +1012,26 @@ function makeSafeWechatPayPayload(transaction: Record<string, unknown>, notifica
     notify_time: notification.create_time || null,
     event_type: notification.event_type || null,
   };
+}
+
+async function expireStalePaymentRecharges(profileId?: string | null) {
+  try {
+    const { data, error } = await supabase.rpc('lc_expire_stale_payment_recharges', {
+      p_profile_id: profileId || null,
+      p_ttl_minutes: PAYMENT_ORDER_TTL_MINUTES,
+    });
+    if (error) {
+      if (!isMissingRelation(error, 'lc_expire_stale_payment_recharges')) {
+        console.error('[wallet] expire stale payments failed', getErrorText(error));
+      }
+      return 0;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    return Number(row?.expired_count || 0);
+  } catch (expireErr) {
+    console.error('[wallet] expire stale payments failed', getErrorText(expireErr));
+    return 0;
+  }
 }
 
 async function logSecurityEvent(req: express.Request, args: {
@@ -5052,8 +5086,9 @@ app.get('/api/lc/wallet', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    await expireStalePaymentRecharges(profile.id);
     const { data: txs } = await supabase.from('lc_transactions')
-      .select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(50);
+      .select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100);
     res.json(ok({ balance: profile.balance || 0, transactions: txs || [] }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -5088,6 +5123,7 @@ app.post('/api/lc/wallet/alipay/create', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
 
     const outTradeNo = makeAlipayOrderNo();
+    const expiresAt = makePaymentExpiresAt();
     const { payUrl, subject, totalAmount } = makeAlipayPayUrl(outTradeNo, amount);
     const { data: tx, error: txErr } = await supabase.from('lc_transactions').insert({
       profile_id: profile.id,
@@ -5104,6 +5140,7 @@ app.post('/api/lc/wallet/alipay/create', authMiddleware, async (req, res) => {
         provider: 'alipay_pc',
         notify_url: ALIPAY_NOTIFY_URL,
         return_url: ALIPAY_RETURN_URL,
+        expires_at: expiresAt.toISOString(),
       },
     }).select('id').single();
     if (txErr) throw txErr;
@@ -5116,6 +5153,7 @@ app.post('/api/lc/wallet/alipay/create', authMiddleware, async (req, res) => {
       total_amount: totalAmount,
       subject,
       status: 'created',
+      expires_at: expiresAt.toISOString(),
     }).select('id, out_trade_no').single();
     if (orderErr) throw orderErr;
 
@@ -5147,6 +5185,7 @@ app.post('/api/lc/wallet/wechat/create', authMiddleware, async (req, res) => {
     const outTradeNo = makeWechatPayOrderNo();
     const description = makeWechatPayDescription(amount);
     const totalFee = amount * 100;
+    const expiresAt = makePaymentExpiresAt();
     const { data: tx, error: txErr } = await supabase.from('lc_transactions').insert({
       profile_id: profile.id,
       type: 'recharge',
@@ -5161,6 +5200,7 @@ app.post('/api/lc/wallet/wechat/create', authMiddleware, async (req, res) => {
       metadata: {
         provider: 'wechat_pay_native',
         notify_url: WECHAT_PAY_NOTIFY_URL,
+        expires_at: expiresAt.toISOString(),
       },
     }).select('id').single();
     if (txErr) throw txErr;
@@ -5174,6 +5214,7 @@ app.post('/api/lc/wallet/wechat/create', authMiddleware, async (req, res) => {
       total_fee: totalFee,
       description,
       status: 'created',
+      expires_at: expiresAt.toISOString(),
     }).select('id, out_trade_no').single();
     if (orderErr) throw orderErr;
     orderId = order.id;
@@ -5184,7 +5225,7 @@ app.post('/api/lc/wallet/wechat/create', authMiddleware, async (req, res) => {
 
     let codeUrl = '';
     try {
-      const created = await createWechatPayNativeOrder(outTradeNo, amount);
+      const created = await createWechatPayNativeOrder(outTradeNo, amount, expiresAt);
       codeUrl = created.codeUrl;
     } catch (payErr) {
       await supabase.from('lc_wechat_pay_orders')

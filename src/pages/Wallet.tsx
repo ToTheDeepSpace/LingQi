@@ -9,6 +9,7 @@ const RED = '#b91c1c';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 const MAX_RECHARGE_AMOUNT = 500;
+const PAYMENT_ORDER_TTL_MINUTES = 30;
 
 type Transaction = {
   id: string;
@@ -18,6 +19,7 @@ type Transaction = {
   status: 'pending' | 'approved' | 'rejected';
   gateway?: string | null;
   external_order_no?: string | null;
+  reject_reason?: string | null;
   created_at: string;
 };
 
@@ -51,6 +53,7 @@ export default function Wallet() {
   const [payingGateway, setPayingGateway] = useState<'alipay' | 'wechat_pay' | ''>('');
   const [payError, setPayError] = useState('');
   const [wechatOrder, setWechatOrder] = useState<WechatPayOrder | null>(null);
+  const [transactionFilter, setTransactionFilter] = useState<'active' | 'failed'>('active');
   const [showReturnNotice, setShowReturnNotice] = useState(() => new URLSearchParams(window.location.search).get('alipay') === 'return');
   const rechargeAmount = Number(amountInput);
   const amountValid = Number.isInteger(rechargeAmount) && rechargeAmount >= 10 && rechargeAmount <= MAX_RECHARGE_AMOUNT;
@@ -153,10 +156,17 @@ export default function Wallet() {
 
   const getRechargeStatus = (tx: Transaction) => {
     if (tx.status === 'approved') return '已到账';
+    if (tx.status === 'rejected' && tx.gateway) return '支付失败/已过期';
     if (tx.status === 'rejected') return '已拒绝';
     if (tx.gateway === 'alipay' || tx.gateway === 'wechat_pay') return '待支付/确认中';
     return '审核中';
   };
+
+  const isFailedRecharge = (tx: Transaction) => tx.type === 'recharge' && tx.status === 'rejected';
+  const failedTransactions = transactions.filter(isFailedRecharge);
+  const activeTransactions = transactions.filter(tx => !isFailedRecharge(tx));
+  const visibleTransactions = transactionFilter === 'failed' ? failedTransactions : activeTransactions;
+  const emptyText = transactionFilter === 'failed' ? '暂无失败或已过期充值' : '暂无交易记录';
 
   if (!auth) return null;
 
@@ -193,7 +203,7 @@ export default function Wallet() {
         }}>
           <h2 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>充值</h2>
           <p style={{ fontSize: '0.82rem', color: MUTED, lineHeight: 1.7, marginBottom: 20 }}>
-            输入充值金额后选择微信扫码或支付宝电脑支付，最低 10 契约币，单次最多 {MAX_RECHARGE_AMOUNT} 契约币。建议按实际需要小额充值。
+            输入充值金额后选择微信扫码或支付宝电脑支付，支付订单 {PAYMENT_ORDER_TTL_MINUTES} 分钟内有效。最低 10 契约币，单次最多 {MAX_RECHARGE_AMOUNT} 契约币。建议按实际需要小额充值。
           </p>
 
           {showReturnNotice && (
@@ -282,7 +292,7 @@ export default function Wallet() {
                 <div>
                   <p style={{ margin: '0 0 6px', fontWeight: 900, color: '#166534' }}>微信扫码支付 · {wechatOrder.amount} 契约币</p>
                   <p style={{ margin: '0 0 12px', color: '#166534', fontSize: '0.8rem', lineHeight: 1.7 }}>
-                    使用微信扫码完成支付。支付成功后通常会自动到账；如果余额暂时没变，等一分钟再刷新。
+                    使用微信扫码完成支付，二维码 {PAYMENT_ORDER_TTL_MINUTES} 分钟内有效。支付成功后通常会自动到账；如果余额暂时没变，等一分钟再刷新。
                   </p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button onClick={() => fetchWallet()}
@@ -327,14 +337,44 @@ export default function Wallet() {
         </div>
 
         {/* 交易记录 */}
-        <h2 style={{ fontWeight: 800, fontSize: '1rem', marginBottom: 16 }}>交易记录</h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <h2 style={{ fontWeight: 800, fontSize: '1rem', margin: 0 }}>交易记录</h2>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => setTransactionFilter('active')}
+              style={{
+                border: transactionFilter === 'active' ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.18)',
+                background: transactionFilter === 'active' ? 'rgba(201,146,46,0.12)' : '#fff',
+                color: transactionFilter === 'active' ? '#925f18' : 'rgba(71,85,105,0.66)',
+                borderRadius: 999,
+                padding: '6px 12px',
+                fontSize: '0.76rem',
+                fontWeight: 850,
+                cursor: 'pointer',
+              }}>
+              正常记录 {activeTransactions.length}
+            </button>
+            <button onClick={() => setTransactionFilter('failed')}
+              style={{
+                border: transactionFilter === 'failed' ? `1px solid ${RED}` : '1px solid rgba(220,38,38,0.18)',
+                background: transactionFilter === 'failed' ? 'rgba(254,242,242,0.95)' : '#fff',
+                color: transactionFilter === 'failed' ? RED : 'rgba(127,29,29,0.62)',
+                borderRadius: 999,
+                padding: '6px 12px',
+                fontSize: '0.76rem',
+                fontWeight: 850,
+                cursor: 'pointer',
+              }}>
+              失败/已过期 {failedTransactions.length}
+            </button>
+          </div>
+        </div>
         {loading ? (
           <p style={{ color: 'rgba(71,85,105,0.52)', fontSize: '0.85rem' }}>加载中...</p>
-        ) : transactions.length === 0 ? (
-          <p style={{ color: 'rgba(71,85,105,0.42)', fontSize: '0.85rem', textAlign: 'center', padding: '40px 0' }}>暂无交易记录</p>
+        ) : visibleTransactions.length === 0 ? (
+          <p style={{ color: 'rgba(71,85,105,0.42)', fontSize: '0.85rem', textAlign: 'center', padding: '40px 0' }}>{emptyText}</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {transactions.map(tx => (
+            {visibleTransactions.map(tx => (
               <div key={tx.id} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
                 padding: '12px 16px', borderRadius: 10,
@@ -343,11 +383,18 @@ export default function Wallet() {
                 <div>
                   <p style={{ fontSize: '0.85rem', fontWeight: 600 }}>{tx.description}</p>
                   <p style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.5)' }}>{tx.created_at?.slice(0, 10)}</p>
+                  {tx.type === 'recharge' && tx.status === 'rejected' && tx.reject_reason && (
+                    <p style={{ fontSize: '0.72rem', color: 'rgba(185,28,28,0.72)', marginTop: 2 }}>{tx.reject_reason}</p>
+                  )}
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <p style={{
                     fontSize: '0.9rem', fontWeight: 700,
-                    color: tx.amount > 0 ? '#15803d' : (tx.type === 'recharge' && tx.status === 'pending' ? '#925f18' : RED),
+                    color: tx.type === 'recharge' && tx.status === 'rejected'
+                      ? RED
+                      : tx.amount > 0
+                        ? '#15803d'
+                        : (tx.type === 'recharge' && tx.status === 'pending' ? '#925f18' : RED),
                   }}>
                     {tx.amount > 0 ? '+' : ''}{tx.amount} 契约币
                   </p>
