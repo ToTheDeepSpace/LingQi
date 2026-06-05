@@ -1138,6 +1138,17 @@ type CarpoolRoleDraft = {
   player_gender?: string | null;
 };
 
+type ProfileRolePreferenceDraft = {
+  script_id: string | null;
+  script_name: string;
+  role_name: string;
+  role_gender: string | null;
+  role_tags: string[];
+  is_recommended: boolean;
+  note: string;
+  sort_order: number;
+};
+
 const SCRIPT_CONTRIBUTION_REWARD = 5;
 const CERTIFICATION_TYPES = ['realname', 'dm', 'shop'];
 const REALNAME_WATERMARK_TEXT = '仅用于灵契实名认证';
@@ -1245,6 +1256,57 @@ function existingScriptRoles(script: Record<string, unknown> | null | undefined)
     player_name: null,
     player_gender: null,
   })).filter(role => role.role_name);
+}
+
+function sanitizeProfileRolePreferences(input: unknown): ProfileRolePreferenceDraft[] {
+  const source = Array.isArray(input) ? input : [];
+  const seen = new Map<string, ProfileRolePreferenceDraft>();
+
+  source.slice(0, 50).forEach((raw, index) => {
+    const item = raw as Record<string, unknown>;
+    const scriptName = cleanText(item.script_name ?? item.scriptName, 120);
+    const roleName = cleanText(item.role_name ?? item.roleName, 80);
+    if (!scriptName || !roleName) return;
+    const scriptId = cleanText(item.script_id ?? item.scriptId, 80);
+    const key = `${normalizeRoleKey(scriptName)}:${normalizeRoleKey(roleName)}`;
+    const draft: ProfileRolePreferenceDraft = {
+      script_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(scriptId) ? scriptId : null,
+      script_name: scriptName,
+      role_name: roleName,
+      role_gender: cleanText(item.role_gender ?? item.gender ?? item.roleGender, 20) || null,
+      role_tags: cleanTextArray(item.role_tags ?? item.tags, 8, 18),
+      is_recommended: item.is_recommended === true || item.recommended === true,
+      note: cleanText(item.note, 200),
+      sort_order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index,
+    };
+    const existing = seen.get(key);
+    if (existing) {
+      seen.set(key, {
+        ...existing,
+        role_gender: existing.role_gender || draft.role_gender,
+        role_tags: Array.from(new Set([...existing.role_tags, ...draft.role_tags])).slice(0, 8),
+        is_recommended: existing.is_recommended || draft.is_recommended,
+        note: existing.note || draft.note,
+      });
+    } else {
+      seen.set(key, draft);
+    }
+  });
+
+  return Array.from(seen.values())
+    .slice(0, 40)
+    .map((item, index) => ({ ...item, sort_order: index }));
+}
+
+async function loadProfileRolePreferences(profileId: string) {
+  const { data, error: qErr } = await supabase.from('lc_profile_role_preferences')
+    .select('id, profile_id, script_id, script_name, role_name, role_gender, role_tags, is_recommended, note, sort_order')
+    .eq('profile_id', profileId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (qErr && isMissingRelation(qErr, 'lc_profile_role_preferences')) return [];
+  if (qErr) throw qErr;
+  return data || [];
 }
 
 async function getActiveStore(storeIdInput: unknown) {
@@ -2570,10 +2632,11 @@ app.get('/api/lc/creators/:id', async (req, res) => {
     const viewerId = getOptionalCreatorId(req);
     const profilePayload = sanitizeProfile(profile, viewerId === profile.id);
 
-    const [{ data: services }, { data: portfolio }, { data: pendingCerts }] = await Promise.all([
+    const [{ data: services }, { data: portfolio }, { data: pendingCerts }, rolePreferences] = await Promise.all([
       supabase.from('lc_services').select('*').eq('creator_id', req.params.id).eq('is_active', true),
       supabase.from('lc_portfolio').select('*').eq('creator_id', req.params.id).order('created_at', { ascending: false }),
       supabase.from('lc_certifications').select('type, status').eq('profile_id', req.params.id).eq('status', 'pending'),
+      loadProfileRolePreferences(req.params.id),
     ]);
 
     const hasPendingShopCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'shop');
@@ -2583,6 +2646,7 @@ app.get('/api/lc/creators/:id', async (req, res) => {
       ...profilePayload,
       services: services || [],
       portfolio: portfolio || [],
+      role_preferences: rolePreferences || [],
       has_pending_shop_cert: hasPendingShopCert,
       has_pending_dm_cert: hasPendingDmCert,
     }));
@@ -2599,11 +2663,12 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
     const {
       display_name, avatar, bio, tags, city, social_links, wechat,
       available_cities, travel_status, contact_unlock_enabled, contact_intent_amount,
-      gender, sexual_orientation, preferred_story_lines,
+      gender, sexual_orientation, preferred_story_lines, role_preferences,
     } = req.body;
     const socialSnapshots = makeSocialSnapshots(social_links);
+    const rolePreferences = sanitizeProfileRolePreferences(role_preferences);
 
-    await supabase.from('lc_profiles').update({
+    const { error: profileErr } = await supabase.from('lc_profiles').update({
       display_name, avatar, bio, tags, city, social_links, wechat,
       gender: cleanChoice(gender, PROFILE_GENDER_OPTIONS),
       sexual_orientation: cleanChoice(sexual_orientation, PROFILE_ORIENTATION_OPTIONS),
@@ -2615,6 +2680,31 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
       social_snapshots: socialSnapshots,
       updated_at: new Date().toISOString(),
     }).eq('id', req.params.id);
+    if (profileErr) throw profileErr;
+
+    if (Array.isArray(role_preferences)) {
+      const { error: deleteErr } = await supabase.from('lc_profile_role_preferences')
+        .delete()
+        .eq('profile_id', req.params.id);
+      if (deleteErr && !isMissingRelation(deleteErr, 'lc_profile_role_preferences')) throw deleteErr;
+      if (!deleteErr && rolePreferences.length > 0) {
+        const { error: insertErr } = await supabase.from('lc_profile_role_preferences').insert(
+          rolePreferences.map((item, index) => ({
+            profile_id: req.params.id,
+            script_id: item.script_id,
+            script_name: item.script_name,
+            role_name: item.role_name,
+            role_gender: item.role_gender,
+            role_tags: item.role_tags,
+            is_recommended: item.is_recommended,
+            note: item.note,
+            sort_order: index,
+            updated_at: new Date().toISOString(),
+          })),
+        );
+        if (insertErr) throw insertErr;
+      }
+    }
     await runReferralSideEffect('stage1-after-profile-update', () => maybeAwardReferralStage1(req.params.id));
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }

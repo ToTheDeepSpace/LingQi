@@ -4,7 +4,7 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
-import type { Creator, Service, Portfolio, AuthData, Availability } from '../types';
+import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePreference, ScriptCatalogItem } from '../types';
 
 const API  = '/api';
 const C    = '#fffdf8';
@@ -68,6 +68,16 @@ type MyCarpool = {
   created_at: string;
 };
 
+type RolePreferenceDraft = {
+  script_id: string;
+  script_name: string;
+  role_name: string;
+  role_gender: string;
+  role_tags: string[];
+  is_recommended: boolean;
+  note: string;
+};
+
 const card: React.CSSProperties = {
   backgroundColor: '#fffaf2',
   border: '1px solid rgba(201,146,46,0.22)',
@@ -91,6 +101,10 @@ function formatDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function rolePreferenceKey(item: Pick<RolePreferenceDraft, 'script_name' | 'role_name'>) {
+  return `${item.script_name.replace(/\s+/g, '').toLowerCase()}:${item.role_name.replace(/\s+/g, '').toLowerCase()}`;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [creator, setCreator]   = useState<Creator | null>(null);
@@ -99,6 +113,11 @@ export default function Dashboard() {
   const [myRankings, setMyRankings] = useState<MyRanking[]>([]);
   const [myCommissions, setMyCommissions] = useState<MyCommission[]>([]);
   const [myCarpools, setMyCarpools] = useState<MyCarpool[]>([]);
+  const [scripts, setScripts] = useState<ScriptCatalogItem[]>([]);
+  const [rolePreferences, setRolePreferences] = useState<RolePreferenceDraft[]>([]);
+  const [roleDraft, setRoleDraft] = useState<RolePreferenceDraft>({
+    script_id: '', script_name: '', role_name: '', role_gender: '', role_tags: [], is_recommended: true, note: '',
+  });
   const [tab, setTab]           = useState('profile');
   const [saving, setSaving]     = useState(false);
   const [msg, setMsg]           = useState('');
@@ -147,12 +166,22 @@ export default function Dashboard() {
       fetch(`${API}/lc/rankings/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/commissions/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/carpools/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
-    ]).then(([profileData, availData, rankingsData, commissionsData, carpoolsData]) => {
+      fetch(`${API}/lc/scripts`).then(r => r.json()),
+    ]).then(([profileData, availData, rankingsData, commissionsData, carpoolsData, scriptsData]) => {
       if (profileData.success && profileData.data) {
         const { services: svc, portfolio: port, ...profile } = profileData.data;
         setCreator(profile);
         setServices(svc || []);
         setPortfolio(port || []);
+        setRolePreferences(((profile.role_preferences || []) as ProfileRolePreference[]).map(item => ({
+          script_id: item.script_id || '',
+          script_name: item.script_name || '',
+          role_name: item.role_name || '',
+          role_gender: item.role_gender || '',
+          role_tags: item.role_tags || [],
+          is_recommended: !!item.is_recommended,
+          note: item.note || '',
+        })).filter(item => item.script_name && item.role_name));
         setForm({
           display_name: profile.display_name || '',
           avatar: profile.avatar || '',
@@ -177,8 +206,69 @@ export default function Dashboard() {
       if (rankingsData.success) setMyRankings(rankingsData.data || []);
       if (commissionsData.success) setMyCommissions(commissionsData.data || []);
       if (carpoolsData.success) setMyCarpools(carpoolsData.data || []);
+      if (scriptsData.success) setScripts(scriptsData.data || []);
     }).catch(() => setError('网络错误')).finally(() => setLoading(false));
   }, [navigate]);
+
+  const selectedScript = scripts.find(script => script.id === roleDraft.script_id) || null;
+  const selectedScriptRoles = selectedScript?.player_roles || [];
+
+  const selectRoleScript = (scriptId: string) => {
+    const script = scripts.find(item => item.id === scriptId);
+    setRoleDraft(prev => ({
+      ...prev,
+      script_id: script?.id || '',
+      script_name: script?.name || '',
+      role_name: '',
+      role_gender: '',
+      role_tags: [],
+    }));
+  };
+
+  const selectRoleName = (roleName: string) => {
+    const role = selectedScriptRoles.find(item => item.role_name === roleName);
+    setRoleDraft(prev => ({
+      ...prev,
+      role_name: role?.role_name || roleName,
+      role_gender: role?.gender || prev.role_gender,
+      role_tags: role?.tags || [],
+    }));
+  };
+
+  const addRolePreference = () => {
+    const next = {
+      ...roleDraft,
+      script_name: roleDraft.script_name.trim(),
+      role_name: roleDraft.role_name.trim(),
+      role_gender: roleDraft.role_gender.trim(),
+      note: roleDraft.note.trim(),
+    };
+    if (!next.script_name || !next.role_name) {
+      setError('请先填写本名和角色名');
+      return;
+    }
+    setError('');
+    const key = rolePreferenceKey(next);
+    setRolePreferences(prev => {
+      const existingIndex = prev.findIndex(item => rolePreferenceKey(item) === key);
+      if (existingIndex === -1) return [...prev, next];
+      return prev.map((item, index) => index === existingIndex ? {
+        ...item,
+        ...next,
+        role_tags: Array.from(new Set([...(item.role_tags || []), ...(next.role_tags || [])])),
+        is_recommended: item.is_recommended || next.is_recommended,
+      } : item);
+    });
+    setRoleDraft({ script_id: '', script_name: '', role_name: '', role_gender: '', role_tags: [], is_recommended: true, note: '' });
+  };
+
+  const removeRolePreference = (index: number) => {
+    setRolePreferences(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const toggleRolePreferenceRecommended = (index: number) => {
+    setRolePreferences(prev => prev.map((item, i) => i === index ? { ...item, is_recommended: !item.is_recommended } : item));
+  };
 
   const saveProfile = async (avatarOverride?: string) => {
     if (!creator) return;
@@ -209,6 +299,16 @@ export default function Dashboard() {
           travel_status: form.travel_status,
           contact_unlock_enabled: form.contact_unlock_enabled,
           contact_intent_amount: form.contact_intent_amount,
+          role_preferences: rolePreferences.map((item, index) => ({
+            script_id: item.script_id || null,
+            script_name: item.script_name,
+            role_name: item.role_name,
+            role_gender: item.role_gender,
+            role_tags: item.role_tags,
+            is_recommended: item.is_recommended,
+            note: item.note,
+            sort_order: index,
+          })),
         }),
       });
       const d = await r.json();
@@ -220,6 +320,16 @@ export default function Dashboard() {
           gender: form.gender,
           sexual_orientation: form.sexual_orientation,
           preferred_story_lines,
+          role_preferences: rolePreferences.map((item, index) => ({
+            script_id: item.script_id || null,
+            script_name: item.script_name,
+            role_name: item.role_name,
+            role_gender: item.role_gender,
+            role_tags: item.role_tags,
+            is_recommended: item.is_recommended,
+            note: item.note,
+            sort_order: index,
+          })),
         } : prev);
         setMsg('已保存');
         setTimeout(() => setMsg(''), 2500);
@@ -643,6 +753,111 @@ export default function Dashboard() {
                 <div style={{ marginBottom: 16 }}>
                   <label style={labelStyle}>吃什么线（逗号分隔）</label>
                   <input type="text" value={form.preferred_story_lines} onChange={e => setForm({ ...form, preferred_story_lines: e.target.value })} placeholder="亲情线, 爱情线, 权谋线, 事业线" style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 18, padding: '16px', borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.72)', border: '1px solid rgba(201,146,46,0.18)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                    <div>
+                      <p style={{ fontWeight: 800, color: INK, fontSize: '0.92rem', marginBottom: 4 }}>可接本与角色</p>
+                      <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.65 }}>公开主页会展示你能接哪些本、哪些角色；推荐角色会排在前面。</p>
+                    </div>
+                    <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(217,168,87,0.12)', color: '#925f18', fontSize: '0.76rem', fontWeight: 800 }}>
+                      {rolePreferences.length} 个角色
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={labelStyle}>从剧本库选择</label>
+                      <select value={roleDraft.script_id} onChange={e => selectRoleScript(e.target.value)} style={inputStyle}>
+                        <option value="">手动填写本名</option>
+                        {scripts.map(script => (
+                          <option key={script.id} value={script.id}>{script.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>本名</label>
+                      <input value={roleDraft.script_name} onChange={e => setRoleDraft(prev => ({ ...prev, script_name: e.target.value, script_id: '' }))} placeholder="如：流氓叙事" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>从角色库选择</label>
+                      <select value={roleDraft.role_name} onChange={e => selectRoleName(e.target.value)} disabled={selectedScriptRoles.length === 0} style={{ ...inputStyle, opacity: selectedScriptRoles.length === 0 ? 0.65 : 1 }}>
+                        <option value="">手动填写角色</option>
+                        {selectedScriptRoles.map(role => (
+                          <option key={role.role_name} value={role.role_name}>{role.role_name}{role.gender ? `（${role.gender}）` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>角色名</label>
+                      <input value={roleDraft.role_name} onChange={e => setRoleDraft(prev => ({ ...prev, role_name: e.target.value }))} placeholder="如：程聿怀" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>角色性别</label>
+                      <select value={roleDraft.role_gender} onChange={e => setRoleDraft(prev => ({ ...prev, role_gender: e.target.value }))} style={inputStyle}>
+                        <option value="">不填写</option>
+                        <option value="男">男</option>
+                        <option value="女">女</option>
+                        <option value="可男可女">可男可女</option>
+                        <option value="其他">其他</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>备注</label>
+                      <input value={roleDraft.note} onChange={e => setRoleDraft(prev => ({ ...prev, note: e.target.value }))} placeholder="如：最推荐 / 情绪线更稳" style={inputStyle} />
+                    </div>
+                  </div>
+
+                  {roleDraft.role_tags.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                      {roleDraft.role_tags.map(tag => (
+                        <span key={tag} style={{ padding: '3px 9px', borderRadius: 999, background: 'rgba(239,246,255,0.9)', border: '1px solid rgba(59,130,246,0.16)', color: '#275389', fontSize: '0.74rem', fontWeight: 700 }}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: rolePreferences.length ? 14 : 0 }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'rgba(71,85,105,0.78)', fontSize: '0.82rem', fontWeight: 700 }}>
+                      <input type="checkbox" checked={roleDraft.is_recommended} onChange={e => setRoleDraft(prev => ({ ...prev, is_recommended: e.target.checked }))} />
+                      推荐角色
+                    </label>
+                    <button type="button" onClick={addRolePreference}
+                      style={{ padding: '9px 16px', borderRadius: 10, border: 'none', background: 'rgba(31,41,55,0.92)', color: '#fffaf2', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>
+                      加入清单
+                    </button>
+                  </div>
+
+                  {rolePreferences.length > 0 && (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {rolePreferences.map((item, index) => (
+                        <div key={`${item.script_name}-${item.role_name}-${index}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(201,146,46,0.16)', background: 'rgba(255,250,242,0.86)' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ color: INK, fontSize: '0.86rem', fontWeight: 800, marginBottom: 4 }}>
+                              {item.script_name} · {item.role_name}
+                              {item.role_gender && <span style={{ color: 'rgba(71,85,105,0.6)', fontWeight: 700 }}>（{item.role_gender}）</span>}
+                            </p>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {item.is_recommended && <span style={{ padding: '2px 8px', borderRadius: 999, background: 'rgba(217,168,87,0.16)', color: '#925f18', fontSize: '0.7rem', fontWeight: 900 }}>推荐</span>}
+                              {item.role_tags.map(tag => <span key={tag} style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.74rem' }}>#{tag}</span>)}
+                              {item.note && <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.74rem' }}>{item.note}</span>}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                            <button type="button" onClick={() => toggleRolePreferenceRecommended(index)}
+                              style={{ padding: '6px 10px', borderRadius: 9, border: '1px solid rgba(201,146,46,0.22)', background: item.is_recommended ? 'rgba(217,168,87,0.16)' : '#fff', color: '#925f18', fontSize: '0.74rem', fontWeight: 800, cursor: 'pointer' }}>
+                              {item.is_recommended ? '取消推荐' : '设为推荐'}
+                            </button>
+                            <button type="button" onClick={() => removeRolePreference(index)}
+                              style={{ padding: '6px 10px', borderRadius: 9, border: '1px solid rgba(185,28,28,0.18)', background: 'rgba(254,242,242,0.72)', color: '#b91c1c', fontSize: '0.74rem', fontWeight: 800, cursor: 'pointer' }}>
+                              删除
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>

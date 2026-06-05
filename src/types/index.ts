@@ -28,6 +28,20 @@ export interface Creator {
   verified_shop?: boolean;
   has_pending_shop_cert?: boolean;
   has_pending_dm_cert?: boolean;
+  role_preferences?: ProfileRolePreference[];
+}
+
+export interface ProfileRolePreference {
+  id?: string;
+  profile_id?: string;
+  script_id?: string | null;
+  script_name: string;
+  role_name: string;
+  role_gender?: string | null;
+  role_tags?: string[];
+  is_recommended?: boolean;
+  note?: string | null;
+  sort_order?: number;
 }
 
 export interface Service {

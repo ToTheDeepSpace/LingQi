@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import type { Availability, Creator, Service, Portfolio, SocialSnapshot } from '../types';
+import type { Availability, Creator, Service, Portfolio, ProfileRolePreference, SocialSnapshot } from '../types';
 import ReportModal from '../components/ReportModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 
@@ -136,6 +136,19 @@ export default function CreatorProfile() {
   const displayRole = creator.verified_dm && (!creator.role_type || creator.role_type === 'player')
     ? 'dm'
     : creator.role_type || creator.identity_roles?.[0] || '';
+  const rolePreferences = [...(creator.role_preferences || [])].sort((a, b) => {
+    const recDiff = Number(!!b.is_recommended) - Number(!!a.is_recommended);
+    if (recDiff !== 0) return recDiff;
+    return (a.sort_order || 0) - (b.sort_order || 0);
+  });
+  const recommendedRoles = rolePreferences.filter(item => item.is_recommended);
+  const roleGroups = rolePreferences.reduce<{ scriptName: string; roles: ProfileRolePreference[] }[]>((acc, item) => {
+    const scriptName = item.script_name || '未命名剧本';
+    const existing = acc.find(group => group.scriptName === scriptName);
+    if (existing) existing.roles.push(item);
+    else acc.push({ scriptName, roles: [item] });
+    return acc;
+  }, []);
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
@@ -320,6 +333,49 @@ export default function CreatorProfile() {
           {/* ── 右侧内容 ── */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+            {rolePreferences.length > 0 && (
+              <div style={card}>
+                <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 14, color: INK }}>可接本与角色</h3>
+                {recommendedRoles.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 14 }}>
+                    {recommendedRoles.slice(0, 6).map((item, index) => (
+                      <div key={`${item.script_name}-${item.role_name}-${index}`} style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(217,168,87,0.12)', border: '1px solid rgba(201,146,46,0.25)' }}>
+                        <span style={{ display: 'inline-flex', marginBottom: 6, padding: '2px 7px', borderRadius: 999, background: 'rgba(255,255,255,0.72)', color: '#925f18', fontSize: '0.68rem', fontWeight: 900 }}>推荐</span>
+                        <p style={{ color: INK, fontSize: '0.86rem', fontWeight: 850, lineHeight: 1.45 }}>{item.role_name}{item.role_gender ? `（${item.role_gender}）` : ''}</p>
+                        <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.74rem', marginTop: 4 }}>{item.script_name}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gap: 12 }}>
+                  {roleGroups.map(group => (
+                    <div key={group.scriptName} style={{ paddingTop: 12, borderTop: '1px solid rgba(201,146,46,0.12)' }}>
+                      <p style={{ color: '#925f18', fontSize: '0.82rem', fontWeight: 900, marginBottom: 8 }}>{group.scriptName}</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {group.roles.map((item, index) => (
+                          <span key={`${item.role_name}-${index}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%', padding: '6px 10px', borderRadius: 999, background: item.is_recommended ? 'rgba(217,168,87,0.13)' : 'rgba(255,255,255,0.76)', border: '1px solid rgba(201,146,46,0.18)', color: INK, fontSize: '0.78rem', fontWeight: 800 }}>
+                            {item.is_recommended && <span style={{ color: '#925f18', fontSize: '0.68rem' }}>推荐</span>}
+                            <span>{item.role_name}{item.role_gender ? `(${item.role_gender})` : ''}</span>
+                            {item.role_tags?.slice(0, 2).map(tag => <span key={tag} style={{ color: 'rgba(71,85,105,0.58)', fontWeight: 700 }}>#{tag}</span>)}
+                          </span>
+                        ))}
+                      </div>
+                      {group.roles.some(item => item.note) && (
+                        <div style={{ display: 'grid', gap: 4, marginTop: 8 }}>
+                          {group.roles.filter(item => item.note).map(item => (
+                            <p key={`${item.role_name}-${item.note}`} style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.74rem', lineHeight: 1.6 }}>
+                              {item.role_name}：{item.note}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 可接服务 */}
             {services.length > 0 && (
               <div style={card}>
@@ -409,7 +465,7 @@ export default function CreatorProfile() {
               </div>
             )}
 
-            {services.length === 0 && availDates.length === 0 && busySlots.length === 0 && portfolio.length === 0 && (
+            {rolePreferences.length === 0 && services.length === 0 && availDates.length === 0 && busySlots.length === 0 && portfolio.length === 0 && (
               <div style={{ ...card, textAlign: 'center', padding: '60px 24px' }}>
                 <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>🌙</div>
                 <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.9rem' }}>创作者还没有发布内容</p>
