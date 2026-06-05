@@ -1202,6 +1202,11 @@ function normalizeRoleKey(value: unknown) {
   return cleanText(value, 80).replace(/\s+/g, '').toLowerCase();
 }
 
+function uuidText(value: unknown) {
+  const text = cleanText(value, 80);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text) ? text : '';
+}
+
 function sanitizeCarpoolRoles(input: unknown, fallbackRoleName?: string, fallbackRoleNote?: string): CarpoolRoleDraft[] {
   const source = Array.isArray(input) ? input : [];
   const roles = source.map((raw) => {
@@ -1258,23 +1263,45 @@ function existingScriptRoles(script: Record<string, unknown> | null | undefined)
   })).filter(role => role.role_name);
 }
 
-function sanitizeProfileRolePreferences(input: unknown): ProfileRolePreferenceDraft[] {
+async function sanitizeProfileRolePreferences(input: unknown): Promise<ProfileRolePreferenceDraft[]> {
   const source = Array.isArray(input) ? input : [];
+  const scriptIds = Array.from(new Set(source
+    .map(raw => uuidText((raw as Record<string, unknown>).script_id ?? (raw as Record<string, unknown>).scriptId))
+    .filter(Boolean)));
+  if (scriptIds.length === 0) return [];
+
+  const { data: scripts, error: scriptsErr } = await supabase.from('scripts')
+    .select('id, name, script_player_roles(role_name, gender, tags)')
+    .eq('tenant_id', JUZHANGGUI_TENANT_ID)
+    .in('id', scriptIds);
+  if (scriptsErr && isMissingRelation(scriptsErr, 'scripts')) return [];
+  if (scriptsErr) throw scriptsErr;
+
+  const scriptMap = new Map((scripts || []).map(script => {
+    const row = script as Record<string, unknown>;
+    return [String(row.id), {
+      id: String(row.id),
+      name: cleanText(row.name, 120),
+      roles: existingScriptRoles(row),
+    }];
+  }));
   const seen = new Map<string, ProfileRolePreferenceDraft>();
 
   source.slice(0, 50).forEach((raw, index) => {
     const item = raw as Record<string, unknown>;
-    const scriptName = cleanText(item.script_name ?? item.scriptName, 120);
+    const scriptId = uuidText(item.script_id ?? item.scriptId);
+    const script = scriptMap.get(scriptId);
     const roleName = cleanText(item.role_name ?? item.roleName, 80);
-    if (!scriptName || !roleName) return;
-    const scriptId = cleanText(item.script_id ?? item.scriptId, 80);
-    const key = `${normalizeRoleKey(scriptName)}:${normalizeRoleKey(roleName)}`;
+    if (!script || !roleName) return;
+    const role = script.roles.find(candidate => normalizeRoleKey(candidate.role_name) === normalizeRoleKey(roleName));
+    if (!role) return;
+    const key = `${script.id}:${normalizeRoleKey(role.role_name)}`;
     const draft: ProfileRolePreferenceDraft = {
-      script_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(scriptId) ? scriptId : null,
-      script_name: scriptName,
-      role_name: roleName,
-      role_gender: cleanText(item.role_gender ?? item.gender ?? item.roleGender, 20) || null,
-      role_tags: cleanTextArray(item.role_tags ?? item.tags, 8, 18),
+      script_id: script.id,
+      script_name: script.name,
+      role_name: role.role_name,
+      role_gender: role.gender || null,
+      role_tags: role.tags || [],
       is_recommended: item.is_recommended === true || item.recommended === true,
       note: cleanText(item.note, 200),
       sort_order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index,
@@ -2666,7 +2693,7 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
       gender, sexual_orientation, preferred_story_lines, role_preferences,
     } = req.body;
     const socialSnapshots = makeSocialSnapshots(social_links);
-    const rolePreferences = sanitizeProfileRolePreferences(role_preferences);
+    const rolePreferences = await sanitizeProfileRolePreferences(role_preferences);
 
     const { error: profileErr } = await supabase.from('lc_profiles').update({
       display_name, avatar, bio, tags, city, social_links, wechat,

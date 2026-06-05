@@ -212,6 +212,7 @@ export default function Dashboard() {
 
   const selectedScript = scripts.find(script => script.id === roleDraft.script_id) || null;
   const selectedScriptRoles = selectedScript?.player_roles || [];
+  const selectedRole = selectedScriptRoles.find(role => role.role_name === roleDraft.role_name) || null;
 
   const selectRoleScript = (scriptId: string) => {
     const script = scripts.find(item => item.id === scriptId);
@@ -229,24 +230,26 @@ export default function Dashboard() {
     const role = selectedScriptRoles.find(item => item.role_name === roleName);
     setRoleDraft(prev => ({
       ...prev,
-      role_name: role?.role_name || roleName,
-      role_gender: role?.gender || prev.role_gender,
+      role_name: role?.role_name || '',
+      role_gender: role?.gender || '',
       role_tags: role?.tags || [],
     }));
   };
 
   const addRolePreference = () => {
-    const next = {
-      ...roleDraft,
-      script_name: roleDraft.script_name.trim(),
-      role_name: roleDraft.role_name.trim(),
-      role_gender: roleDraft.role_gender.trim(),
-      note: roleDraft.note.trim(),
-    };
-    if (!next.script_name || !next.role_name) {
-      setError('请先填写本名和角色名');
+    if (!selectedScript || !selectedRole) {
+      setError('请先从剧本库选择剧本和角色；库里没有就先维护剧本库。');
       return;
     }
+    const next = {
+      ...roleDraft,
+      script_id: selectedScript.id,
+      script_name: selectedScript.name,
+      role_name: selectedRole.role_name,
+      role_gender: selectedRole.gender || '',
+      role_tags: selectedRole.tags || [],
+      note: roleDraft.note.trim(),
+    };
     setError('');
     const key = rolePreferenceKey(next);
     setRolePreferences(prev => {
@@ -758,55 +761,53 @@ export default function Dashboard() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
                       <p style={{ fontWeight: 800, color: INK, fontSize: '0.92rem', marginBottom: 4 }}>可接本与角色</p>
-                      <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.65 }}>公开主页会展示你能接哪些本、哪些角色；推荐角色会排在前面。</p>
+                      <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.65 }}>只能从剧本库选择。库里没有的本或角色，先维护剧本库，审核通过后再添加到主页。</p>
                     </div>
-                    <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(217,168,87,0.12)', color: '#925f18', fontSize: '0.76rem', fontWeight: 800 }}>
-                      {rolePreferences.length} 个角色
-                    </span>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Link to="/scripts/contribute" style={{ padding: '6px 12px', borderRadius: 10, background: 'rgba(31,41,55,0.92)', color: '#fffaf2', textDecoration: 'none', fontSize: '0.76rem', fontWeight: 850 }}>
+                        维护剧本库
+                      </Link>
+                      <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(217,168,87,0.12)', color: '#925f18', fontSize: '0.76rem', fontWeight: 800 }}>
+                        {rolePreferences.length} 个角色
+                      </span>
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
                     <div>
                       <label style={labelStyle}>从剧本库选择</label>
                       <select value={roleDraft.script_id} onChange={e => selectRoleScript(e.target.value)} style={inputStyle}>
-                        <option value="">手动填写本名</option>
+                        <option value="">请选择剧本</option>
                         {scripts.map(script => (
                           <option key={script.id} value={script.id}>{script.name}</option>
                         ))}
                       </select>
                     </div>
                     <div>
-                      <label style={labelStyle}>本名</label>
-                      <input value={roleDraft.script_name} onChange={e => setRoleDraft(prev => ({ ...prev, script_name: e.target.value, script_id: '' }))} placeholder="如：流氓叙事" style={inputStyle} />
-                    </div>
-                    <div>
                       <label style={labelStyle}>从角色库选择</label>
                       <select value={roleDraft.role_name} onChange={e => selectRoleName(e.target.value)} disabled={selectedScriptRoles.length === 0} style={{ ...inputStyle, opacity: selectedScriptRoles.length === 0 ? 0.65 : 1 }}>
-                        <option value="">手动填写角色</option>
+                        <option value="">{selectedScript ? '请选择角色' : '先选择剧本'}</option>
                         {selectedScriptRoles.map(role => (
                           <option key={role.role_name} value={role.role_name}>{role.role_name}{role.gender ? `（${role.gender}）` : ''}</option>
                         ))}
                       </select>
                     </div>
                     <div>
-                      <label style={labelStyle}>角色名</label>
-                      <input value={roleDraft.role_name} onChange={e => setRoleDraft(prev => ({ ...prev, role_name: e.target.value }))} placeholder="如：程聿怀" style={inputStyle} />
-                    </div>
-                    <div>
                       <label style={labelStyle}>角色性别</label>
-                      <select value={roleDraft.role_gender} onChange={e => setRoleDraft(prev => ({ ...prev, role_gender: e.target.value }))} style={inputStyle}>
-                        <option value="">不填写</option>
-                        <option value="男">男</option>
-                        <option value="女">女</option>
-                        <option value="可男可女">可男可女</option>
-                        <option value="其他">其他</option>
-                      </select>
+                      <input value={roleDraft.role_gender || (selectedRole ? '剧本库未填' : '')} readOnly placeholder="从剧本库带出" style={{ ...inputStyle, backgroundColor: 'rgba(241,245,249,0.72)', color: 'rgba(71,85,105,0.72)' }} />
                     </div>
                     <div>
                       <label style={labelStyle}>备注</label>
                       <input value={roleDraft.note} onChange={e => setRoleDraft(prev => ({ ...prev, note: e.target.value }))} placeholder="如：最推荐 / 情绪线更稳" style={inputStyle} />
                     </div>
                   </div>
+
+                  {(scripts.length === 0 || (selectedScript && selectedScriptRoles.length === 0)) && (
+                    <div style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,247,237,0.88)', border: '1px solid rgba(217,168,87,0.2)', color: '#925f18', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 12 }}>
+                      {scripts.length === 0 ? '当前剧本库还没有可选剧本。' : '这个剧本还没有角色。'}
+                      <Link to="/scripts/contribute" style={{ color: '#925f18', fontWeight: 900, marginLeft: 6, textDecoration: 'underline' }}>去维护剧本库</Link>
+                    </div>
+                  )}
 
                   {roleDraft.role_tags.length > 0 && (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -823,8 +824,8 @@ export default function Dashboard() {
                       <input type="checkbox" checked={roleDraft.is_recommended} onChange={e => setRoleDraft(prev => ({ ...prev, is_recommended: e.target.checked }))} />
                       推荐角色
                     </label>
-                    <button type="button" onClick={addRolePreference}
-                      style={{ padding: '9px 16px', borderRadius: 10, border: 'none', background: 'rgba(31,41,55,0.92)', color: '#fffaf2', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer' }}>
+                    <button type="button" onClick={addRolePreference} disabled={!selectedScript || !selectedRole}
+                      style={{ padding: '9px 16px', borderRadius: 10, border: 'none', background: selectedScript && selectedRole ? 'rgba(31,41,55,0.92)' : 'rgba(148,163,184,0.38)', color: selectedScript && selectedRole ? '#fffaf2' : 'rgba(71,85,105,0.58)', fontWeight: 800, fontSize: '0.82rem', cursor: selectedScript && selectedRole ? 'pointer' : 'not-allowed' }}>
                       加入清单
                     </button>
                   </div>
