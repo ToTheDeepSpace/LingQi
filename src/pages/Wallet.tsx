@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import QRCode from 'qrcode';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -16,7 +17,15 @@ type Transaction = {
   description: string;
   status: 'pending' | 'approved' | 'rejected';
   gateway?: string | null;
+  external_order_no?: string | null;
   created_at: string;
+};
+
+type WechatPayOrder = {
+  codeUrl: string;
+  qrDataUrl: string;
+  outTradeNo: string;
+  amount: number;
 };
 
 function getAuth() {
@@ -39,8 +48,9 @@ export default function Wallet() {
   const [loading, setLoading] = useState(true);
 
   const [amountInput, setAmountInput] = useState('50');
-  const [paying, setPaying] = useState(false);
+  const [payingGateway, setPayingGateway] = useState<'alipay' | 'wechat_pay' | ''>('');
   const [payError, setPayError] = useState('');
+  const [wechatOrder, setWechatOrder] = useState<WechatPayOrder | null>(null);
   const [showReturnNotice, setShowReturnNotice] = useState(() => new URLSearchParams(window.location.search).get('alipay') === 'return');
   const rechargeAmount = Number(amountInput);
   const amountValid = Number.isInteger(rechargeAmount) && rechargeAmount >= 10 && rechargeAmount <= MAX_RECHARGE_AMOUNT;
@@ -48,9 +58,9 @@ export default function Wallet() {
     ? (rechargeAmount > MAX_RECHARGE_AMOUNT ? `单次最多 ${MAX_RECHARGE_AMOUNT} 契约币` : '最低 10 契约币，且只能输入整数')
     : '';
 
-  const fetchWallet = useCallback(() => {
+  const fetchWallet = useCallback((silent = false) => {
     if (!auth) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     fetch(`${API}/lc/wallet`, { headers: { Authorization: `Bearer ${auth.token}` } })
       .then(r => r.json())
       .then(d => {
@@ -59,7 +69,9 @@ export default function Wallet() {
           setTransactions(d.data.transactions || []);
         }
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   }, [auth]);
 
   useEffect(() => {
@@ -67,10 +79,16 @@ export default function Wallet() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchWallet();
     if (showReturnNotice) {
-      const timer = window.setTimeout(fetchWallet, 3000);
+      const timer = window.setTimeout(() => fetchWallet(true), 3000);
       return () => window.clearTimeout(timer);
     }
   }, [auth, navigate, fetchWallet, showReturnNotice]);
+
+  useEffect(() => {
+    if (!auth || !wechatOrder) return;
+    const timer = window.setInterval(() => fetchWallet(true), 5000);
+    return () => window.clearInterval(timer);
+  }, [auth, wechatOrder, fetchWallet]);
 
   const startAlipayRecharge = async () => {
     if (!auth) return;
@@ -78,8 +96,9 @@ export default function Wallet() {
       setPayError(amountError || '请输入有效充值金额');
       return;
     }
-    setPaying(true);
+    setPayingGateway('alipay');
     setPayError('');
+    setWechatOrder(null);
     try {
       const r = await fetch(`${API}/lc/wallet/alipay/create`, {
         method: 'POST',
@@ -93,13 +112,49 @@ export default function Wallet() {
         setPayError(d.error || '创建支付订单失败');
       }
     } catch { setPayError('网络错误'); }
-    finally { setPaying(false); }
+    finally { setPayingGateway(''); }
+  };
+
+  const startWechatRecharge = async () => {
+    if (!auth) return;
+    if (!amountValid) {
+      setPayError(amountError || '请输入有效充值金额');
+      return;
+    }
+    setPayingGateway('wechat_pay');
+    setPayError('');
+    setWechatOrder(null);
+    try {
+      const r = await fetch(`${API}/lc/wallet/wechat/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify({ amount: rechargeAmount }),
+      });
+      const d = await r.json();
+      if (d.success && d.data?.code_url) {
+        const qrDataUrl = await QRCode.toDataURL(d.data.code_url, {
+          width: 220,
+          margin: 1,
+          color: { dark: '#1f2937', light: '#ffffff' },
+        });
+        setWechatOrder({
+          codeUrl: d.data.code_url,
+          qrDataUrl,
+          outTradeNo: d.data.out_trade_no,
+          amount: rechargeAmount,
+        });
+        fetchWallet(true);
+      } else {
+        setPayError(d.error || '创建微信支付订单失败');
+      }
+    } catch { setPayError('网络错误'); }
+    finally { setPayingGateway(''); }
   };
 
   const getRechargeStatus = (tx: Transaction) => {
     if (tx.status === 'approved') return '已到账';
     if (tx.status === 'rejected') return '已拒绝';
-    if (tx.gateway === 'alipay') return '待支付/确认中';
+    if (tx.gateway === 'alipay' || tx.gateway === 'wechat_pay') return '待支付/确认中';
     return '审核中';
   };
 
@@ -138,7 +193,7 @@ export default function Wallet() {
         }}>
           <h2 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>充值</h2>
           <p style={{ fontSize: '0.82rem', color: MUTED, lineHeight: 1.7, marginBottom: 20 }}>
-            输入充值金额后跳转支付宝收银台，最低 10 契约币，单次最多 {MAX_RECHARGE_AMOUNT} 契约币。建议按实际需要小额充值。
+            输入充值金额后选择微信扫码或支付宝电脑支付，最低 10 契约币，单次最多 {MAX_RECHARGE_AMOUNT} 契约币。建议按实际需要小额充值。
           </p>
 
           {showReturnNotice && (
@@ -205,23 +260,69 @@ export default function Wallet() {
               fontSize: '0.8rem',
               lineHeight: 1.7,
             }}>
-              只有支付宝异步通知验签通过后才会入账。契约币是站内服务预付额度，充值入账后会产生支付通道、开票和账务处理成本，原则上不支持提现或无理由退款；如遇重复扣款、支付成功未到账、平台原因无法使用等异常，可联系平台核查处理。发票可按实际支付金额申请，企业用户可按公司开票规则提交专票信息。
+              只有支付平台异步通知验签通过后才会入账。契约币是站内服务预付额度，充值入账后会产生支付通道、开票和账务处理成本，原则上不支持提现或无理由退款；如遇重复扣款、支付成功未到账、平台原因无法使用等异常，可联系平台核查处理。发票可按实际支付金额申请，企业用户可按公司开票规则提交专票信息。
             </div>
+
+            {wechatOrder && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: 18,
+                alignItems: 'center',
+                padding: 16,
+                borderRadius: 12,
+                border: '1px solid rgba(21,128,61,0.22)',
+                background: 'rgba(240,253,244,0.92)',
+              }}>
+                <img
+                  src={wechatOrder.qrDataUrl}
+                  alt="微信支付二维码"
+                  style={{ width: '100%', maxWidth: 220, aspectRatio: '1 / 1', borderRadius: 8, background: '#fff', border: '1px solid rgba(21,128,61,0.16)' }}
+                />
+                <div>
+                  <p style={{ margin: '0 0 6px', fontWeight: 900, color: '#166534' }}>微信扫码支付 · {wechatOrder.amount} 契约币</p>
+                  <p style={{ margin: '0 0 12px', color: '#166534', fontSize: '0.8rem', lineHeight: 1.7 }}>
+                    使用微信扫码完成支付。支付成功后通常会自动到账；如果余额暂时没变，等一分钟再刷新。
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button onClick={() => fetchWallet()}
+                      style={{ border: '1px solid rgba(21,128,61,0.24)', background: '#fff', color: '#166534', borderRadius: 10, padding: '8px 12px', fontWeight: 800, cursor: 'pointer' }}>
+                      刷新余额
+                    </button>
+                    <button onClick={() => setWechatOrder(null)}
+                      style={{ border: 'none', background: 'transparent', color: 'rgba(22,101,52,0.72)', borderRadius: 10, padding: '8px 12px', fontWeight: 800, cursor: 'pointer' }}>
+                      关闭
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {payError && (
               <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(254,242,242,0.92)', border: '1px solid rgba(220,38,38,0.24)', color: RED, fontSize: '0.82rem' }}>
                 {payError}
               </div>
             )}
-            <button onClick={startAlipayRecharge} disabled={paying || !amountValid}
-              style={{
-                padding: '14px 0', borderRadius: 12, fontWeight: 700, fontSize: '0.95rem',
-                cursor: paying || !amountValid ? 'not-allowed' : 'pointer',
-                background: paying || !amountValid ? 'rgba(201,146,46,0.15)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                color: paying || !amountValid ? 'rgba(201,146,46,0.4)' : INK, border: 'none',
-              }}>
-              {paying ? '正在创建支付订单...' : `支付宝支付 · ${amountValid ? rechargeAmount : '--'} 契约币`}
-            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <button onClick={startWechatRecharge} disabled={Boolean(payingGateway) || !amountValid}
+                style={{
+                  padding: '14px 0', borderRadius: 12, fontWeight: 800, fontSize: '0.95rem',
+                  cursor: payingGateway || !amountValid ? 'not-allowed' : 'pointer',
+                  background: payingGateway || !amountValid ? 'rgba(21,128,61,0.12)' : '#16a34a',
+                  color: payingGateway || !amountValid ? 'rgba(22,101,52,0.38)' : '#fff', border: 'none',
+                }}>
+                {payingGateway === 'wechat_pay' ? '正在创建微信订单...' : `微信扫码支付 · ${amountValid ? rechargeAmount : '--'} 契约币`}
+              </button>
+              <button onClick={startAlipayRecharge} disabled={Boolean(payingGateway) || !amountValid}
+                style={{
+                  padding: '14px 0', borderRadius: 12, fontWeight: 800, fontSize: '0.95rem',
+                  cursor: payingGateway || !amountValid ? 'not-allowed' : 'pointer',
+                  background: payingGateway || !amountValid ? 'rgba(201,146,46,0.15)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                  color: payingGateway || !amountValid ? 'rgba(201,146,46,0.4)' : INK, border: 'none',
+                }}>
+                {payingGateway === 'alipay' ? '正在创建支付宝订单...' : `支付宝电脑支付 · ${amountValid ? rechargeAmount : '--'} 契约币`}
+              </button>
+            </div>
           </div>
         </div>
 

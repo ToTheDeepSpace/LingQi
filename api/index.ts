@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
-import { createHash, createSign, createVerify, randomInt } from 'node:crypto';
+import { createDecipheriv, createHash, createSign, createVerify, randomBytes, randomInt } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 function envValue(name: string) {
@@ -48,6 +48,15 @@ const ALIPAY_GATEWAY = process.env.ALIPAY_GATEWAY || 'https://openapi.alipay.com
 const ALIPAY_NOTIFY_URL = process.env.ALIPAY_NOTIFY_URL || `${LINGQI_SITE_URL}/api/lc/wallet/alipay/notify`;
 const ALIPAY_RETURN_URL = process.env.ALIPAY_RETURN_URL || `${LINGQI_SITE_URL}/wallet?alipay=return`;
 const ALIPAY_SELLER_ID = process.env.ALIPAY_SELLER_ID || '';
+const WECHAT_PAY_APP_ID = process.env.WECHAT_PAY_APP_ID || '';
+const WECHAT_PAY_MCH_ID = process.env.WECHAT_PAY_MCH_ID || '';
+const WECHAT_PAY_MCH_SERIAL_NO = process.env.WECHAT_PAY_MCH_SERIAL_NO || '';
+const WECHAT_PAY_API_V3_KEY = envValue('WECHAT_PAY_API_V3_KEY');
+const WECHAT_PAY_PRIVATE_KEY = envValue('WECHAT_PAY_PRIVATE_KEY');
+const WECHAT_PAY_PUBLIC_KEY_ID = process.env.WECHAT_PAY_PUBLIC_KEY_ID || '';
+const WECHAT_PAY_PUBLIC_KEY = envValue('WECHAT_PAY_PUBLIC_KEY');
+const WECHAT_PAY_GATEWAY = (process.env.WECHAT_PAY_GATEWAY || 'https://api.mch.weixin.qq.com').replace(/\/$/, '');
+const WECHAT_PAY_NOTIFY_URL = process.env.WECHAT_PAY_NOTIFY_URL || `${LINGQI_SITE_URL}/api/lc/wallet/wechat/notify`;
 
 type TencentSmsStatus = { Code?: string; Message?: string; SerialNo?: string };
 type TencentSmsClient = {
@@ -66,7 +75,12 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '25mb' }));
+app.use(express.json({
+  limit: '25mb',
+  verify: (req, _res, buf) => {
+    (req as Record<string, unknown>).rawBody = buf.toString('utf8');
+  },
+}));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // --- 工具函数 ---
@@ -830,6 +844,160 @@ function makeSafeAlipayPayload(params: Record<string, string>) {
     if (params[key]) acc[key] = params[key];
     return acc;
   }, {});
+}
+
+function isWechatPayConfigured() {
+  return Boolean(
+    WECHAT_PAY_APP_ID &&
+    WECHAT_PAY_MCH_ID &&
+    WECHAT_PAY_MCH_SERIAL_NO &&
+    WECHAT_PAY_API_V3_KEY &&
+    WECHAT_PAY_PRIVATE_KEY &&
+    WECHAT_PAY_PUBLIC_KEY_ID &&
+    WECHAT_PAY_PUBLIC_KEY,
+  );
+}
+
+function assertWechatPayConfigured() {
+  if (!isWechatPayConfigured()) throw new Error('微信支付尚未配置');
+  if (Buffer.byteLength(WECHAT_PAY_API_V3_KEY, 'utf8') !== 32) {
+    throw new Error('微信支付 APIv3 密钥长度必须为 32 字节');
+  }
+}
+
+function makeWechatPayOrderNo() {
+  return `LQWX${Date.now()}${randomInt(10000, 100000)}`;
+}
+
+function makeWechatPayNonce() {
+  return randomBytes(16).toString('hex');
+}
+
+function signWechatPayRequest(method: string, pathWithQuery: string, body: string) {
+  assertWechatPayConfigured();
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = makeWechatPayNonce();
+  const message = `${method.toUpperCase()}\n${pathWithQuery}\n${timestamp}\n${nonce}\n${body}\n`;
+  const signer = createSign('RSA-SHA256');
+  signer.update(message, 'utf8');
+  signer.end();
+  const signature = signer.sign(normalizePemBlock(WECHAT_PAY_PRIVATE_KEY, 'PRIVATE KEY'), 'base64');
+  return `WECHATPAY2-SHA256-RSA2048 mchid="${WECHAT_PAY_MCH_ID}",nonce_str="${nonce}",signature="${signature}",timestamp="${timestamp}",serial_no="${WECHAT_PAY_MCH_SERIAL_NO}"`;
+}
+
+function verifyWechatPaySignature(serial: string, signature: string, timestamp: string, nonce: string, body: string) {
+  if (!serial || !signature || !timestamp || !nonce) return false;
+  if (serial !== WECHAT_PAY_PUBLIC_KEY_ID) return false;
+  const signedAt = Number(timestamp);
+  if (!Number.isFinite(signedAt) || Math.abs(Date.now() / 1000 - signedAt) > 5 * 60) return false;
+  const message = `${timestamp}\n${nonce}\n${body}\n`;
+  const verifier = createVerify('RSA-SHA256');
+  verifier.update(message, 'utf8');
+  verifier.end();
+  return verifier.verify(normalizePemBlock(WECHAT_PAY_PUBLIC_KEY, 'PUBLIC KEY'), signature, 'base64');
+}
+
+function verifyWechatPayFetchResponse(headers: Headers, body: string) {
+  return verifyWechatPaySignature(
+    headers.get('wechatpay-serial') || '',
+    headers.get('wechatpay-signature') || '',
+    headers.get('wechatpay-timestamp') || '',
+    headers.get('wechatpay-nonce') || '',
+    body,
+  );
+}
+
+async function wechatPayRequest<T>(method: 'GET' | 'POST', pathWithQuery: string, bodyParams?: Record<string, unknown>) {
+  const body = bodyParams ? JSON.stringify(bodyParams) : '';
+  const resp = await fetch(`${WECHAT_PAY_GATEWAY}${pathWithQuery}`, {
+    method,
+    headers: {
+      Authorization: signWechatPayRequest(method, pathWithQuery, body),
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'LingQi/1.0',
+    },
+    body: body || undefined,
+  });
+  const text = await resp.text();
+  if (!resp.ok) {
+    let detail: string;
+    try {
+      const parsed = JSON.parse(text) as { message?: string; code?: string };
+      detail = parsed.message || parsed.code || text || resp.statusText;
+    } catch {
+      detail = text || resp.statusText;
+    }
+    throw new Error(`微信支付接口失败(${resp.status})：${detail || resp.statusText}`);
+  }
+  if (!verifyWechatPayFetchResponse(resp.headers, text)) {
+    throw new Error('微信支付应答验签失败');
+  }
+  return (text ? JSON.parse(text) : null) as T;
+}
+
+function makeWechatPayDescription(amount: number) {
+  return `灵契契约币充值 ${amount}`;
+}
+
+async function createWechatPayNativeOrder(outTradeNo: string, amount: number) {
+  const description = makeWechatPayDescription(amount);
+  const totalFee = amount * 100;
+  const data = await wechatPayRequest<{ code_url?: string }>('POST', '/v3/pay/transactions/native', {
+    appid: WECHAT_PAY_APP_ID,
+    mchid: WECHAT_PAY_MCH_ID,
+    description,
+    out_trade_no: outTradeNo,
+    notify_url: WECHAT_PAY_NOTIFY_URL,
+    attach: 'lingqi_wallet_recharge',
+    amount: {
+      total: totalFee,
+      currency: 'CNY',
+    },
+  });
+  if (!data?.code_url) throw new Error('微信支付未返回二维码链接');
+  return { codeUrl: data.code_url, description, totalFee };
+}
+
+function decryptWechatPayResource(resource: Record<string, unknown>) {
+  if (resource.algorithm !== 'AEAD_AES_256_GCM') throw new Error('微信支付回调加密算法不支持');
+  const ciphertext = String(resource.ciphertext || '');
+  const nonce = String(resource.nonce || '');
+  const associatedData = String(resource.associated_data || '');
+  if (!ciphertext || !nonce) throw new Error('微信支付回调密文缺失');
+  const encrypted = Buffer.from(ciphertext, 'base64');
+  if (encrypted.length <= 16) throw new Error('微信支付回调密文无效');
+  const decipher = createDecipheriv(
+    'aes-256-gcm',
+    Buffer.from(WECHAT_PAY_API_V3_KEY, 'utf8'),
+    Buffer.from(nonce, 'utf8'),
+  );
+  if (associatedData) decipher.setAAD(Buffer.from(associatedData, 'utf8'));
+  decipher.setAuthTag(encrypted.subarray(encrypted.length - 16));
+  const decrypted = Buffer.concat([
+    decipher.update(encrypted.subarray(0, encrypted.length - 16)),
+    decipher.final(),
+  ]).toString('utf8');
+  return JSON.parse(decrypted) as Record<string, unknown>;
+}
+
+function makeSafeWechatPayPayload(transaction: Record<string, unknown>, notification: Record<string, unknown>) {
+  return {
+    appid: transaction.appid || null,
+    mchid: transaction.mchid || null,
+    out_trade_no: transaction.out_trade_no || null,
+    transaction_id: transaction.transaction_id || null,
+    trade_type: transaction.trade_type || null,
+    trade_state: transaction.trade_state || null,
+    trade_state_desc: transaction.trade_state_desc || null,
+    bank_type: transaction.bank_type || null,
+    success_time: transaction.success_time || null,
+    payer: transaction.payer || null,
+    amount: transaction.amount || null,
+    notify_id: notification.id || null,
+    notify_time: notification.create_time || null,
+    event_type: notification.event_type || null,
+  };
 }
 
 async function logSecurityEvent(req: express.Request, args: {
@@ -3702,7 +3870,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_comments').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_claims').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_commissions').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
-      supabase.from('lc_transactions').select('*, lc_profiles(display_name, phone)').eq('type', 'recharge').eq('status', 'pending').or('gateway.is.null,gateway.neq.alipay').order('created_at', { ascending: false }),
+      supabase.from('lc_transactions').select('*, lc_profiles(display_name, phone)').eq('type', 'recharge').eq('status', 'pending').is('gateway', null).order('created_at', { ascending: false }),
       supabase.from('lc_certifications').select('*, lc_profiles!inner(display_name, phone)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_carpools').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_reports').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -4836,8 +5004,8 @@ app.put('/api/lc/admin/transactions/:id/approve', authMiddleware, adminMiddlewar
       .eq('id', req.params.id)
       .maybeSingle();
     if (txErr) throw txErr;
-    if (tx?.gateway === 'alipay') {
-      return res.status(400).json(err(new Error('支付宝自动支付流水不能人工到账，请等待支付宝异步通知')));
+    if (tx?.gateway) {
+      return res.status(400).json(err(new Error('自动支付流水不能人工到账，请等待支付平台异步通知')));
     }
     const { data, error } = await supabase.rpc('approve_lc_recharge', { p_transaction_id: req.params.id });
     if (error) throw error;
@@ -4859,8 +5027,8 @@ app.put('/api/lc/admin/transactions/:id/reject', authMiddleware, adminMiddleware
       .eq('id', req.params.id)
       .maybeSingle();
     if (txErr) throw txErr;
-    if (tx?.gateway === 'alipay') {
-      return res.status(400).json(err(new Error('支付宝自动支付流水不能人工拒绝，请按支付宝订单状态处理')));
+    if (tx?.gateway) {
+      return res.status(400).json(err(new Error('自动支付流水不能人工拒绝，请按支付平台订单状态处理')));
     }
     const rejectReason = req.body?.rejectReason || null;
     await supabase.from('lc_transactions')
@@ -4966,6 +5134,100 @@ app.post('/api/lc/wallet/alipay/create', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.post('/api/lc/wallet/wechat/create', authMiddleware, async (req, res) => {
+  let txId = '';
+  let orderId = '';
+  try {
+    if (!isWechatPayConfigured()) return res.status(503).json(err(new Error('微信支付尚未配置')));
+    assertWechatPayConfigured();
+    const amount = parseRechargeAmount(req.body?.amount);
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const outTradeNo = makeWechatPayOrderNo();
+    const description = makeWechatPayDescription(amount);
+    const totalFee = amount * 100;
+    const { data: tx, error: txErr } = await supabase.from('lc_transactions').insert({
+      profile_id: profile.id,
+      type: 'recharge',
+      amount,
+      description: `微信支付充值 · ${amount} 契约币`,
+      payment_proof: null,
+      status: 'pending',
+      gateway: 'wechat_pay',
+      external_order_no: outTradeNo,
+      ref_type: 'wechat_pay_order',
+      idempotency_key: `wechat_pay:${outTradeNo}`,
+      metadata: {
+        provider: 'wechat_pay_native',
+        notify_url: WECHAT_PAY_NOTIFY_URL,
+      },
+    }).select('id').single();
+    if (txErr) throw txErr;
+    txId = tx.id;
+
+    const { data: order, error: orderErr } = await supabase.from('lc_wechat_pay_orders').insert({
+      profile_id: profile.id,
+      transaction_id: tx.id,
+      out_trade_no: outTradeNo,
+      amount,
+      total_fee: totalFee,
+      description,
+      status: 'created',
+    }).select('id, out_trade_no').single();
+    if (orderErr) throw orderErr;
+    orderId = order.id;
+
+    await supabase.from('lc_transactions')
+      .update({ ref_id: order.id })
+      .eq('id', tx.id);
+
+    let codeUrl = '';
+    try {
+      const created = await createWechatPayNativeOrder(outTradeNo, amount);
+      codeUrl = created.codeUrl;
+    } catch (payErr) {
+      await supabase.from('lc_wechat_pay_orders')
+        .update({
+          status: 'failed',
+          notify_payload: { create_error: getErrorText(payErr) },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', order.id);
+      await supabase.from('lc_transactions')
+        .update({
+          status: 'rejected',
+          reject_reason: getErrorText(payErr),
+          metadata: { provider: 'wechat_pay_native', create_error: getErrorText(payErr) },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', tx.id);
+      throw payErr;
+    }
+
+    await supabase.from('lc_wechat_pay_orders')
+      .update({ code_url: codeUrl, updated_at: new Date().toISOString() })
+      .eq('id', order.id);
+
+    await logSecurityEvent(req, {
+      action: 'wallet_wechat_pay_order_created',
+      targetType: 'transaction',
+      targetId: tx.id,
+      metadata: { amount, out_trade_no: outTradeNo, order_id: order.id },
+    });
+
+    res.json(ok({ code_url: codeUrl, out_trade_no: outTradeNo, transaction_id: tx.id }));
+  } catch (e) {
+    await logSecurityEvent(req, {
+      action: 'wallet_wechat_pay_order_create_failed',
+      targetType: 'transaction',
+      targetId: txId || null,
+      metadata: { order_id: orderId || null, error: getErrorText(e) },
+    });
+    res.status(500).json(err(e));
+  }
+});
+
 app.post('/api/lc/wallet/alipay/notify', async (req, res) => {
   const reply = (text: 'success' | 'failure') => res.status(200).type('text/plain').send(text);
   try {
@@ -5019,6 +5281,78 @@ app.post('/api/lc/wallet/alipay/notify', async (req, res) => {
   } catch (e) {
     console.error('[alipay] notify failed', getErrorText(e));
     return reply('failure');
+  }
+});
+
+app.post('/api/lc/wallet/wechat/notify', async (req, res) => {
+  const fail = (status: number, message: string) => res.status(status).json({ code: 'FAIL', message });
+  try {
+    if (!isWechatPayConfigured()) return fail(500, '微信支付未配置');
+    assertWechatPayConfigured();
+    const rawBody = String((req as Record<string, unknown>).rawBody || JSON.stringify(req.body || {}));
+    const serial = req.get('Wechatpay-Serial') || '';
+    const signature = req.get('Wechatpay-Signature') || '';
+    const timestamp = req.get('Wechatpay-Timestamp') || '';
+    const nonce = req.get('Wechatpay-Nonce') || '';
+    if (!verifyWechatPaySignature(serial, signature, timestamp, nonce, rawBody)) {
+      console.error('[wechat-pay] notify signature invalid', { serial, sign_test: signature.startsWith('WECHATPAY/SIGNTEST/') });
+      return fail(401, '签名错误');
+    }
+
+    const notification = req.body && typeof req.body === 'object'
+      ? req.body as Record<string, unknown>
+      : JSON.parse(rawBody) as Record<string, unknown>;
+    if (notification.event_type !== 'TRANSACTION.SUCCESS') return res.status(204).send();
+    const resource = notification.resource && typeof notification.resource === 'object'
+      ? notification.resource as Record<string, unknown>
+      : null;
+    if (!resource) return fail(400, '通知资源缺失');
+    const transaction = decryptWechatPayResource(resource);
+    if (transaction.appid !== WECHAT_PAY_APP_ID || transaction.mchid !== WECHAT_PAY_MCH_ID) {
+      console.error('[wechat-pay] notify merchant mismatch', { appid: transaction.appid || null, mchid: transaction.mchid || null });
+      return fail(400, '商户信息不匹配');
+    }
+    if (transaction.trade_state !== 'SUCCESS') return res.status(204).send();
+
+    const amount = transaction.amount && typeof transaction.amount === 'object'
+      ? transaction.amount as Record<string, unknown>
+      : {};
+    const totalFee = Number(amount.total);
+    const outTradeNo = String(transaction.out_trade_no || '');
+    const transactionId = String(transaction.transaction_id || '');
+    if (!outTradeNo || !transactionId || !Number.isInteger(totalFee)) {
+      console.error('[wechat-pay] notify missing fields', { outTradeNo, transactionId, totalFee });
+      return fail(400, '通知字段缺失');
+    }
+
+    const payload = makeSafeWechatPayPayload(transaction, notification);
+    const { data, error: rpcErr } = await supabase.rpc('lc_confirm_wechat_pay_recharge', {
+      p_out_trade_no: outTradeNo,
+      p_transaction_id_wechat: transactionId,
+      p_total_fee: totalFee,
+      p_payload: payload,
+    });
+    if (rpcErr) throw rpcErr;
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result?.already_processed) {
+      await runReferralSideEffect('stage2-after-wechat-pay-recharge', () => maybeAwardReferralStage2(result?.profile_id, 'wallet_wechat_pay_paid'));
+    }
+    await logSecurityEvent(req, {
+      action: 'wallet_wechat_pay_notify_paid',
+      targetType: 'transaction',
+      targetId: result?.transaction_id || null,
+      actorRole: 'wechat_pay',
+      metadata: {
+        out_trade_no: outTradeNo,
+        transaction_id: transactionId,
+        trade_state: transaction.trade_state,
+        already_processed: Boolean(result?.already_processed),
+      },
+    });
+    return res.status(204).send();
+  } catch (e) {
+    console.error('[wechat-pay] notify failed', getErrorText(e));
+    return fail(500, '处理失败');
   }
 });
 
