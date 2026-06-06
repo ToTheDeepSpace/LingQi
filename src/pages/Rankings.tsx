@@ -212,15 +212,22 @@ function eventTitle(content: string) {
   return `${firstSentence.slice(0, 24)}...`;
 }
 
+function eventHeading(item: Pick<Ranking, 'content' | 'subject_type' | 'type'>) {
+  const normalized = item.content.replace(/\s+/g, ' ').trim();
+  const subjectLabel = SUBJECT_LABEL[item.subject_type] || item.subject_type;
+  const kind = eventKindCopy(item.type);
+  const fallback = `${subjectLabel}${kind.label}记录`;
+  if (!normalized) return fallback;
+  const firstSentence = normalized.split(/[。！？!?；;]/)[0]?.trim() || normalized;
+  if (normalized.length <= 32 && firstSentence === normalized) return fallback;
+  if (firstSentence.length <= 24) return firstSentence;
+  return `${firstSentence.slice(0, 24)}...`;
+}
+
 function eventSummary(content: string) {
   const normalized = content.replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
-  const sentenceMatch = normalized.match(/^(.+?[。！？!?；;])\s*(.*)$/);
-  const rest = sentenceMatch
-    ? sentenceMatch[2]?.trim()
-    : (normalized.length > 24 ? normalized.slice(24).trim() : '');
-  if (!rest) return '';
-  return rest.length > 110 ? `${rest.slice(0, 110)}...` : rest;
+  return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;
 }
 
 function eventKindCopy(type: Ranking['type']) {
@@ -1367,7 +1374,7 @@ export default function Rankings() {
               const boostStats = paidBoostBreakdown(item);
               const reputation = reputationSegments(item);
               const kind = eventKindCopy(item.type);
-              const heading = eventTitle(item.content);
+              const heading = eventHeading(item);
               const summary = eventSummary(item.content);
 
               return (
