@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
-import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal, { type ReportTargetType } from '../components/ReportModal';
@@ -140,11 +139,11 @@ type AuditData = {
 type AuditModal = { item: Ranking; loading: boolean; error: string; data?: AuditData } | null;
 
 const card: React.CSSProperties = {
-  backgroundColor: '#fffdf8',
+  background: 'linear-gradient(135deg, #fffdf8 0%, #fbf4e8 100%)',
   border: '1px solid rgba(166,106,31,0.18)',
-  borderRadius: 12,
-  padding: '14px 16px',
-  boxShadow: '0 10px 26px rgba(102,70,30,0.07)',
+  borderRadius: 18,
+  padding: '22px 24px',
+  boxShadow: '0 12px 34px rgba(138,106,58,0.10)',
 };
 
 const cityPanelScroll: React.CSSProperties = {
@@ -363,19 +362,19 @@ function formatAuditValue(field: string, value: unknown) {
 function paidBattleButtonStyle(direction: 'boost' | 'negative_boost', active: boolean): React.CSSProperties {
   const isNegative = direction === 'negative_boost';
   return {
-    minHeight: 66,
+    minHeight: 54,
     display: 'flex',
     alignItems: 'center',
     justifyContent: isNegative ? 'flex-end' : 'flex-start',
     gap: 10,
-    padding: '12px 16px',
+    padding: '10px 28px',
     border: 'none',
     background: active
       ? (isNegative
-        ? 'linear-gradient(135deg, #3f4753 0%, #242b35 58%, #171c24 100%)'
-        : 'linear-gradient(135deg, #fff9f6 0%, #f8e5df 54%, #efcbc3 100%)')
+        ? 'linear-gradient(90deg, #9aa2ad 0%, #3f4652 100%)'
+        : 'linear-gradient(90deg, #f4ddd6 0%, #c98b80 100%)')
       : 'linear-gradient(135deg, #f8fafc 0%, #f3f4f6 100%)',
-    color: active ? (isNegative ? '#fff9f4' : '#8f3732') : 'rgba(71,85,105,0.58)',
+    color: active ? (isNegative ? '#fffdf8' : '#8f3732') : 'rgba(71,85,105,0.58)',
     cursor: 'pointer',
     fontSize: '1.12rem',
     fontWeight: 950,
@@ -390,11 +389,6 @@ function paidBattleButtonStyle(direction: 'boost' | 'negative_boost', active: bo
 
 function freeActionButtonStyle(active: boolean, tone: 'agree' | 'oppose' | 'joy'): React.CSSProperties {
   const toneColor = tone === 'oppose' ? '#303846' : tone === 'agree' ? '#8f3732' : '#8a5a18';
-  const borderColor = tone === 'oppose'
-    ? 'rgba(17,24,39,0.18)'
-    : tone === 'agree'
-      ? 'rgba(185,28,28,0.20)'
-      : 'rgba(217,168,87,0.24)';
   return {
     display: 'inline-flex',
     alignItems: 'center',
@@ -402,17 +396,15 @@ function freeActionButtonStyle(active: boolean, tone: 'agree' | 'oppose' | 'joy'
     gap: 5,
     flex: '1 1 0',
     minWidth: 0,
-    minHeight: 38,
-    padding: '7px 10px',
-    borderRadius: 12,
-    border: active ? `1px solid ${toneColor}` : `1px solid ${borderColor}`,
-    background: active ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.66)',
+    minHeight: 28,
+    padding: '2px 0',
+    border: 'none',
+    background: 'transparent',
     color: active ? toneColor : 'rgba(71,85,105,0.72)',
     cursor: 'pointer',
     fontSize: '0.78rem',
-    fontWeight: active ? 900 : 750,
-    boxShadow: active ? '0 5px 12px rgba(71,85,105,0.08)' : 'none',
-    transition: 'transform 0.16s ease, border-color 0.16s ease, background 0.16s ease',
+    fontWeight: active ? 900 : 780,
+    transition: 'transform 0.16s ease, color 0.16s ease',
   };
 }
 
@@ -436,17 +428,6 @@ function reputationSegments(item: Ranking) {
     agree: (agree / total) * 100,
     absurd: (absurd / total) * 100,
     oppose: (oppose / total) * 100,
-  };
-}
-
-function paidSideBarHeights(item: Ranking) {
-  const boost = boostAmount(item);
-  const negative = negativeBoostAmount(item);
-  const maxValue = Math.max(boost, negative);
-  if (maxValue <= 0) return { boost: 8, negative: 8 };
-  return {
-    boost: boost > 0 ? Math.max(14, Math.round((boost / maxValue) * 100)) : 0,
-    negative: negative > 0 ? Math.max(14, Math.round((negative / maxValue) * 100)) : 0,
   };
 }
 
@@ -478,34 +459,6 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
       }}>
       {children}
     </button>
-  );
-}
-
-function AuthorAvatar({
-  name,
-  src,
-  seed,
-  size = 34,
-}: {
-  name: string;
-  src?: string | null;
-  seed?: string | null;
-  size?: number;
-}) {
-  return (
-    <img
-      src={src || generatedAvatarDataUrl(name, seed)}
-      alt=""
-      style={{
-        width: size,
-        height: size,
-        borderRadius: 10,
-        objectFit: 'cover',
-        flexShrink: 0,
-        border: '1px solid rgba(166,106,31,0.18)',
-        background: '#fffaf2',
-      }}
-    />
   );
 }
 
@@ -1257,9 +1210,9 @@ export default function Rankings() {
         <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ width: 44, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 12 }} />
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.5rem, 3.4vw, 2.18rem)', marginBottom: 7 }}>灵契红黑榜事件簿</h1>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.5rem, 3.4vw, 2.18rem)', marginBottom: 7 }}>红黑榜事件簿</h1>
             <p style={{ color: 'rgba(71,85,105,0.80)', fontSize: '0.92rem' }}>
-              排的是具体事件，不是给某个人、某家店或某位 DM 盖棺定论。
+              这里排的是“发生过的事”，不是给某个人盖棺定论。
             </p>
           </div>
           {auth && (
@@ -1292,8 +1245,8 @@ export default function Rankings() {
         }}>
           <div style={{ width: 'min(100%, 316px)', display: 'flex', gap: 4, padding: 4, backgroundColor: '#fffaf2', border: '1px solid rgba(166,106,31,0.12)', borderRadius: 12 }}>
             {tabBtn('red', '好事', '#8f4c43')}
-            {tabBtn('white', '中性', '#b8860b')}
             {tabBtn('black', '坏事', '#475569')}
+            {tabBtn('white', '中性', '#b8860b')}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 300px' }}>
             <FilterPill active={subjectTab === 'all'} onClick={() => setSubjectTab('all')}>全部</FilterPill>
@@ -1388,7 +1341,7 @@ export default function Rankings() {
         )}
 
         {!loading && !error && rankedItems.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 520px), 1fr))', gap: 24, alignItems: 'start' }}>
             {rankedItems.map((item, idx) => {
               const accentColor = item.type === 'red' ? '#b91c1c' : item.type === 'black' ? BLK : GOLD;
               const subtleAccentBg = item.type === 'red' ? 'rgba(185,28,28,0.08)' : item.type === 'black' ? 'rgba(148,163,184,0.10)' : 'rgba(166,106,31,0.10)';
@@ -1404,7 +1357,6 @@ export default function Rankings() {
               const showBoosts = openBoosts.has(item.id);
               const left = daysLeft(item);
               const myVote = item.my_vote || null;
-              const paidBars = paidSideBarHeights(item);
               const boostStats = paidBoostBreakdown(item);
               const reputation = reputationSegments(item);
               const kind = eventKindCopy(item.type);
@@ -1422,68 +1374,65 @@ export default function Rankings() {
                     paddingRight: 22,
                     borderColor: subtleAccentBorder,
                   }}>
-                  <div aria-hidden="true" style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 7,
-                    background: 'rgba(185,28,28,0.045)',
-                  }}>
-                    <div style={{
+                  {(item.type === 'red' || item.type === 'white') && (
+                    <div aria-hidden="true" style={{
                       position: 'absolute',
                       left: 0,
+                      top: 0,
                       bottom: 0,
-                      width: '100%',
-                      height: `${paidBars.boost}%`,
-                      background: 'linear-gradient(180deg, #f4d6d1 0%, #c97870 100%)',
+                      width: 8,
+                      background: item.type === 'red' ? '#d5a29a' : '#d9b56d',
                     }} />
-                  </div>
-                  <div aria-hidden="true" style={{
-                    position: 'absolute',
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 7,
-                    background: 'rgba(17,24,39,0.055)',
-                  }}>
-                    <div style={{
+                  )}
+                  {item.type === 'black' && (
+                    <div aria-hidden="true" style={{
                       position: 'absolute',
                       right: 0,
+                      top: 0,
                       bottom: 0,
-                      width: '100%',
-                      height: `${paidBars.negative}%`,
-                      background: 'linear-gradient(180deg, #a0a8b3 0%, #3b4350 100%)',
+                      width: 8,
+                      background: '#626b78',
                     }} />
-                  </div>
-                  <div style={{ marginBottom: 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 10 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                        <span style={{
-                          padding: '3px 9px',
-                          borderRadius: 999,
-                          background: kind.bg,
-                          border: `1px solid ${kind.border}`,
-                          color: kind.color,
-                          fontSize: '0.72rem',
-                          fontWeight: 950,
-                        }}>{kind.label}</span>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: 999,
-                          background: subtleAccentBg,
-                          border: `1px solid ${subtleAccentBorder}`,
-                          color: accentColor,
-                          fontSize: '0.68rem',
-                          fontWeight: 900,
-                        }}>#{idx + 1}</span>
-                      </div>
+                  )}
+                  <div style={{ marginBottom: 22 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 26 }}>
+                      <span style={{
+                        padding: '4px 12px',
+                        borderRadius: 999,
+                        background: kind.bg,
+                        border: `1px solid ${kind.border}`,
+                        color: kind.color,
+                        fontSize: '0.76rem',
+                        fontWeight: 950,
+                        whiteSpace: 'nowrap',
+                      }}>{kind.label}</span>
+                      <span style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.78rem', fontWeight: 760, lineHeight: 1.7 }}>
+                        涉及对象：
+                        <Link to={dossierUrl(item)}
+                          style={{ color: 'rgba(31,41,55,0.78)', fontWeight: 850, textDecoration: 'none' }}
+                          onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
+                          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(31,41,55,0.78)')}>
+                          {item.subject_name}
+                        </Link>
+                        {' · '}{SUBJECT_LABEL[item.subject_type] || item.subject_type}
+                        {item.subject_city ? ` · ${item.subject_city}` : ''}
+                      </span>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        background: subtleAccentBg,
+                        border: `1px solid ${subtleAccentBorder}`,
+                        color: accentColor,
+                        fontSize: '0.68rem',
+                        fontWeight: 900,
+                        marginLeft: 'auto',
+                      }}>#{idx + 1}</span>
                     </div>
                     <h2 style={{
-                      margin: '0 0 8px',
+                      margin: '0 0 14px',
                       color: 'rgba(17,24,39,0.95)',
-                      fontSize: '1.08rem',
-                      lineHeight: 1.45,
+                      fontSize: 'clamp(1.2rem, 2.4vw, 1.54rem)',
+                      lineHeight: 1.36,
                       fontWeight: 950,
                       letterSpacing: 0,
                     }}>
@@ -1493,32 +1442,16 @@ export default function Rankings() {
                       fontSize: '0.92rem',
                       color: 'rgba(31,41,55,0.88)',
                       lineHeight: 1.72,
-                      margin: '0 0 10px',
+                      margin: '0',
                       fontWeight: 560,
                       display: '-webkit-box',
-                      WebkitLineClamp: 4,
+                      WebkitLineClamp: 3,
                       WebkitBoxOrient: 'vertical',
                       overflow: 'hidden',
                     }}>
                       {renderContent(summary)}
                     </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 9 }}>
-                      <span style={{ color: 'rgba(71,85,105,0.55)', fontSize: '0.72rem', fontWeight: 800 }}>涉及对象</span>
-                      <span style={{
-                        padding: '2px 8px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 800,
-                        background: subtleAccentBg,
-                        color: accentColor,
-                        border: `1px solid ${subtleAccentBorder}`,
-                      }}>{SUBJECT_LABEL[item.subject_type] || item.subject_type}</span>
-                      <Link to={dossierUrl(item)}
-                        style={{ fontSize: '0.75rem', fontWeight: 850, color: 'rgba(31,41,55,0.82)', textDecoration: 'none' }}
-                        onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
-                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(31,41,55,0.82)')}>
-                        {item.subject_name}
-                      </Link>
-                      {item.subject_city && (
-                        <span style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.66)' }}>📍 {item.subject_city}</span>
-                      )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
                       {item.subject_url && (
                         <a href={normalizeUrl(item.subject_url)} target="_blank" rel="noreferrer"
                           style={{ fontSize: '0.72rem', color: GOLD, textDecoration: 'none' }}>社交主页 ↗</a>
@@ -1539,7 +1472,7 @@ export default function Rankings() {
                         </span>
                       )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
                       <span style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -1554,7 +1487,6 @@ export default function Rankings() {
                         }}>
                         发布人 {renderName(item.author_name, item.is_realname)}
                       </span>
-                      <AuthorAvatar name={item.author_name} src={item.lc_profiles?.avatar} seed={item.poster_id || item.id} size={24} />
                       {item.lc_profiles?.verified_shop && (
                         <span style={{ padding: '1px 5px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 900, background: '#3b82f6', color: '#fff' }} title="已认证店家">蓝V</span>
                       )}
@@ -1588,51 +1520,27 @@ export default function Rankings() {
                     );
                   })()}
 
-                  <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
-                    <div style={{
-                      display: 'grid',
-                      gap: 9,
-                      padding: 10,
-                      borderRadius: 14,
-                      border: '1px solid rgba(166,106,31,0.20)',
-                      background: 'linear-gradient(180deg, #fffaf2 0%, #fffdf8 100%)',
-                      boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.68)',
-                    }}>
-                      <div style={{ textAlign: 'center', color: 'rgba(17,24,39,0.88)', fontSize: '0.78rem', fontWeight: 950 }}>
-                        真金白银 · 一币一分
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end' }}>
-                        <div style={{ display: 'grid', gap: 2, minWidth: 0, textAlign: 'left' }}>
-                          <strong style={{ color: '#8f3732', fontSize: '1rem', lineHeight: 1 }}>打榜值 {boostStats.total}</strong>
-                          {boostStats.initial > 0 && (
-                            <span style={{ color: 'rgba(71,85,105,0.55)', fontSize: '0.68rem', fontWeight: 800 }}>
-                              打榜 {boostStats.paid} · 初始 {boostStats.initial}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ display: 'grid', gap: 2, minWidth: 0, textAlign: 'right' }}>
-                          <strong style={{ color: '#303846', fontSize: '1rem', lineHeight: 1 }}>踩榜值 {negativeBoostAmount(item)}</strong>
-                        </div>
-                      </div>
+                  <div style={{ display: 'grid', gap: 14, marginBottom: 14 }}>
+                    <div style={{ display: 'grid', gap: 7 }}>
                       <div style={{
                         display: 'grid',
                         gridTemplateColumns: 'minmax(0, 1fr) 1px minmax(0, 1fr)',
                         overflow: 'hidden',
                         borderRadius: 999,
-                        border: '1px solid rgba(166,106,31,0.18)',
-                        background: '#fffdf8',
+                        border: '1px solid #e6d6b7',
+                        background: '#fffaf2',
                         boxShadow: '0 10px 20px rgba(71,85,105,0.08)',
                       }}>
                         <button onClick={() => openPaidBoostModal(item.id, 'boost')}
                           aria-label={`给事件「${heading}」打榜`}
                           style={paidBattleButtonStyle('boost', boostStats.total > 0)}>
-                          打榜
+                          打榜 {boostStats.total}
                         </button>
                         <div style={{ background: 'linear-gradient(180deg, rgba(166,106,31,0.12), rgba(166,106,31,0.30), rgba(166,106,31,0.12))' }} />
                         <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
                           aria-label={`给事件「${heading}」踩榜`}
                           style={paidBattleButtonStyle('negative_boost', negativeBoostAmount(item) > 0)}>
-                          踩榜
+                          踩榜 {negativeBoostAmount(item)}
                         </button>
                       </div>
                       <button
@@ -1654,7 +1562,7 @@ export default function Rankings() {
                         {showBoosts ? '收起真金白银记录' : '谁打榜 / 踩榜'}
                       </button>
                       {showBoosts && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center', paddingBottom: 2 }}>
                           {boosts.length === 0 ? (
                             <span style={{ fontSize: '0.74rem', color: 'rgba(71,85,105,0.48)' }}>暂无真金白银记录</span>
                           ) : boosts.map(record => (
@@ -1679,28 +1587,18 @@ export default function Rankings() {
                         </div>
                       )}
                     </div>
-                    <div style={{
-                      display: 'grid',
-                      gap: 8,
-                      padding: 10,
-                      borderRadius: 14,
-                      border: '1px solid rgba(71,85,105,0.12)',
-                      background: 'rgba(248,250,252,0.72)',
-                    }}>
-                      <div style={{ textAlign: 'center', color: 'rgba(17,24,39,0.84)', fontSize: '0.78rem', fontWeight: 950 }}>
-                        真人口碑 · 一人一票
-                      </div>
+                    <div style={{ display: 'grid', gap: 9 }}>
                       <div aria-hidden="true" style={{
                         display: 'flex',
-                        height: 22,
+                        height: 24,
                         overflow: 'hidden',
                         borderRadius: 999,
-                        border: '1px solid rgba(71,85,105,0.10)',
-                        background: '#fffdf8',
+                        border: '1px solid #edf0f3',
+                        background: '#f8fafc',
                       }}>
                         <div style={{ width: `${reputation.agree}%`, background: 'linear-gradient(90deg, #f6ddd8 0%, #c97870 100%)' }} />
                         <div style={{ width: `${reputation.absurd}%`, background: 'linear-gradient(90deg, #fbf0cf 0%, #d7aa3f 100%)' }} />
-                        <div style={{ width: `${reputation.oppose}%`, background: 'linear-gradient(90deg, #8f99a7 0%, #3b4350 100%)' }} />
+                        <div style={{ width: `${reputation.oppose}%`, background: reputation.oppose > 0 ? 'linear-gradient(90deg, #9aa2ad 0%, #3f4652 100%)' : '#eef1f5' }} />
                       </div>
                       <div style={{ display: 'flex', gap: 7 }}>
                       <button onClick={() => openVoteModal(item.id, 'like')}
