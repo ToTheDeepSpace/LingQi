@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
-import { createDecipheriv, createHash, createSign, createVerify, randomBytes, randomInt } from 'node:crypto';
+import { createDecipheriv, createHash, createSign, createVerify, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 function envValue(name: string) {
@@ -41,6 +41,8 @@ const LINGQI_SITE_URL = (process.env.LINGQI_SITE_URL || process.env.PUBLIC_SITE_
 const WECHAT_OPEN_APP_ID = process.env.WECHAT_OPEN_APP_ID || '';
 const WECHAT_OPEN_APP_SECRET = process.env.WECHAT_OPEN_APP_SECRET || '';
 const WECHAT_REDIRECT_URI = process.env.WECHAT_REDIRECT_URI || `${LINGQI_SITE_URL}/api/lc/auth/wechat/callback`;
+const WECHAT_MP_TOKEN = process.env.WECHAT_MP_TOKEN || '';
+const WECHAT_MP_ENCODING_AES_KEY = process.env.WECHAT_MP_ENCODING_AES_KEY || '';
 const ALIPAY_APP_ID = process.env.ALIPAY_APP_ID || '';
 const ALIPAY_PRIVATE_KEY = envValue('ALIPAY_PRIVATE_KEY');
 const ALIPAY_PUBLIC_KEY = envValue('ALIPAY_PUBLIC_KEY');
@@ -96,6 +98,50 @@ function err(e: unknown) {
     return { success: false, error: String((e as Record<string,unknown>).message) };
   }
   return { success: false, error: '服务器错误' };
+}
+
+function singleQueryValue(value: unknown): string {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : '';
+  return typeof value === 'string' ? value : '';
+}
+
+function sha1Sorted(parts: string[]): string {
+  return createHash('sha1').update(parts.slice().sort().join('')).digest('hex');
+}
+
+function safeEqualText(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function extractWechatMpEncrypted(body: unknown, rawBody: string): string {
+  if (body && typeof body === 'object') {
+    const data = body as Record<string, unknown>;
+    const encrypted = data.Encrypt || data.encrypt;
+    if (typeof encrypted === 'string') return encrypted;
+  }
+  const match = rawBody.match(/<Encrypt><!\[CDATA\[([\s\S]*?)\]\]><\/Encrypt>|<Encrypt>([\s\S]*?)<\/Encrypt>/);
+  return (match?.[1] || match?.[2] || '').trim();
+}
+
+function verifyWechatMpRequest(req: express.Request, encrypted = ''): boolean {
+  if (!WECHAT_MP_TOKEN) return false;
+  const timestamp = singleQueryValue(req.query.timestamp);
+  const nonce = singleQueryValue(req.query.nonce);
+  const msgSignature = singleQueryValue(req.query.msg_signature);
+  const signature = msgSignature || singleQueryValue(req.query.signature);
+  if (!timestamp || !nonce || !signature) return false;
+  const expected = msgSignature && encrypted
+    ? sha1Sorted([WECHAT_MP_TOKEN, timestamp, nonce, encrypted])
+    : sha1Sorted([WECHAT_MP_TOKEN, timestamp, nonce]);
+  return safeEqualText(expected, signature);
+}
+
+function getWechatMpConfigError(): string {
+  if (!WECHAT_MP_TOKEN) return 'wechat mp token not configured';
+  if (WECHAT_MP_ENCODING_AES_KEY && WECHAT_MP_ENCODING_AES_KEY.length !== 43) return 'wechat mp aes key invalid';
+  return '';
 }
 
 // --- JWT 鉴权中间件 ---
@@ -2129,6 +2175,32 @@ function rankingVoteRpcStatus(message: string) {
 
 // --- 健康检查 ---
 app.get('/api/health', (_req, res) => res.json(ok({ status: '灵契 running' })));
+
+app.get('/api/wechat/mp/events', (req, res) => {
+  const configError = getWechatMpConfigError();
+  const echostr = singleQueryValue(req.query.echostr);
+  if (configError) return res.status(503).type('text/plain').send(configError);
+  if (!echostr) return res.status(400).type('text/plain').send('missing echostr');
+  if (!verifyWechatMpRequest(req)) return res.status(403).type('text/plain').send('invalid signature');
+  return res.status(200).type('text/plain').send(echostr);
+});
+
+app.post('/api/wechat/mp/events', express.text({ type: ['text/*', 'application/xml', 'text/xml'], limit: '2mb' }), (req, res) => {
+  const configError = getWechatMpConfigError();
+  if (configError) return res.status(503).type('text/plain').send(configError);
+  const rawBody = typeof req.body === 'string'
+    ? req.body
+    : String((req as Record<string, unknown>).rawBody || JSON.stringify(req.body || {}));
+  const encrypted = extractWechatMpEncrypted(req.body, rawBody);
+  if (!verifyWechatMpRequest(req, encrypted)) {
+    console.error('[wechat-mp] event signature invalid', {
+      has_msg_signature: Boolean(singleQueryValue(req.query.msg_signature)),
+      has_encrypt: Boolean(encrypted),
+    });
+    return res.status(403).type('text/plain').send('invalid signature');
+  }
+  return res.status(200).type('text/plain').send('success');
+});
 
 // ==================== 创作者认证 ====================
 
