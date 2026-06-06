@@ -200,7 +200,7 @@ function voteCopy(voteType: MyVote['vote_type'], rankingType?: Ranking['type']) 
   void rankingType;
   if (voteType === 'like') return { label: '同意', icon: '同' };
   if (voteType === 'dislike') return { label: '反对', icon: '反' };
-  return { label: '欢乐', icon: '乐' };
+  return { label: '离谱', icon: '😂' };
 }
 
 function paidBoostCopy(direction: 'boost' | 'negative_boost') {
@@ -250,25 +250,25 @@ function voteRecordText(vote: VoteRecord, itemType?: Ranking['type']) {
   void itemType;
   if (vote.vote_type === 'like') return '同意';
   if (vote.vote_type === 'dislike') return '反对';
-  return '欢乐';
+  return '离谱';
 }
 
 function voteRecordIcon(vote: VoteRecord, itemType?: Ranking['type']) {
   void itemType;
   if (vote.vote_type === 'like') return '同';
   if (vote.vote_type === 'dislike') return '反';
-  return '乐';
+  return '😂';
 }
 
 function votesToggleLabel(item: Ranking, showVotes: boolean) {
   void item;
   if (showVotes) return '收起记录';
-  return '谁同意/反对/欢乐';
+  return '谁同意/反对/离谱';
 }
 
 function emptyVoteRecordText(item: Ranking) {
   void item;
-  return '暂无同意、反对或欢乐记录';
+  return '暂无同意、反对或离谱记录';
 }
 
 function isVoteAllowed(item: Ranking | undefined, voteType: MyVote['vote_type']) {
@@ -329,6 +329,94 @@ function formatAuditValue(field: string, value: unknown) {
   }
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
   return JSON.stringify(value);
+}
+
+function paidBattleButtonStyle(direction: 'boost' | 'negative_boost'): React.CSSProperties {
+  const isNegative = direction === 'negative_boost';
+  return {
+    minHeight: 66,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: isNegative ? 'flex-end' : 'flex-start',
+    gap: 10,
+    padding: '12px 16px',
+    border: 'none',
+    background: isNegative
+      ? 'linear-gradient(135deg, #0f172a 0%, #111827 58%, #1f2937 100%)'
+      : 'linear-gradient(135deg, #fff7f7 0%, #fee2e2 52%, #fecaca 100%)',
+    color: isNegative ? '#fff7ed' : '#991b1b',
+    cursor: 'pointer',
+    fontSize: '1.12rem',
+    fontWeight: 950,
+    textAlign: isNegative ? 'right' : 'left',
+    letterSpacing: 0,
+    transition: 'transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease',
+    boxShadow: isNegative
+      ? 'inset 0 1px 0 rgba(255,255,255,0.12)'
+      : 'inset 0 1px 0 rgba(255,255,255,0.86)',
+  };
+}
+
+function freeActionButtonStyle(active: boolean, tone: 'agree' | 'oppose' | 'joy'): React.CSSProperties {
+  const toneColor = tone === 'oppose' ? '#111827' : tone === 'agree' ? '#991b1b' : '#8a5a18';
+  const borderColor = tone === 'oppose'
+    ? 'rgba(17,24,39,0.18)'
+    : tone === 'agree'
+      ? 'rgba(185,28,28,0.20)'
+      : 'rgba(217,168,87,0.24)';
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: tone === 'agree' ? 'flex-start' : tone === 'oppose' ? 'flex-end' : 'center',
+    gap: 5,
+    flex: '1 1 0',
+    minWidth: 0,
+    minHeight: 38,
+    padding: '7px 10px',
+    borderRadius: 12,
+    border: active ? `1px solid ${toneColor}` : `1px solid ${borderColor}`,
+    background: active ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.66)',
+    color: active ? toneColor : 'rgba(71,85,105,0.72)',
+    cursor: 'pointer',
+    fontSize: '0.78rem',
+    fontWeight: active ? 900 : 750,
+    boxShadow: active ? '0 5px 12px rgba(71,85,105,0.08)' : 'none',
+    transition: 'transform 0.16s ease, border-color 0.16s ease, background 0.16s ease',
+  };
+}
+
+function paidBoostBreakdown(item: Ranking) {
+  const total = boostAmount(item);
+  const initial = Math.max(0, Math.trunc(Number(item.initial_amount || 0)));
+  return {
+    total,
+    initial,
+    paid: Math.max(0, total - initial),
+  };
+}
+
+function reputationSegments(item: Ranking) {
+  const agree = agreeCount(item);
+  const absurd = item.joys || 0;
+  const oppose = opposeCount(item);
+  const total = agree + absurd + oppose;
+  if (total <= 0) return { agree: 33.34, absurd: 33.33, oppose: 33.33 };
+  return {
+    agree: (agree / total) * 100,
+    absurd: (absurd / total) * 100,
+    oppose: (oppose / total) * 100,
+  };
+}
+
+function paidSideBarHeights(item: Ranking) {
+  const boost = boostAmount(item);
+  const negative = negativeBoostAmount(item);
+  const maxValue = Math.max(boost, negative);
+  if (maxValue <= 0) return { boost: 8, negative: 8 };
+  return {
+    boost: boost > 0 ? Math.max(14, Math.round((boost / maxValue) * 100)) : 0,
+    negative: negative > 0 ? Math.max(14, Math.round((negative / maxValue) * 100)) : 0,
+  };
 }
 
 function formatAuditTime(value?: string) {
@@ -1263,21 +1351,59 @@ export default function Rankings() {
               const showVotes = openVotes.has(item.id);
               const left = daysLeft(item);
               const myVote = item.my_vote || null;
+              const paidBars = paidSideBarHeights(item);
+              const boostStats = paidBoostBreakdown(item);
+              const reputation = reputationSegments(item);
 
               return (
                 <div key={item.id}
                   className="content-card"
                   style={{
                     ...card,
-                    borderLeft: `3px solid ${accentColor}`,
+                    position: 'relative',
+                    overflow: 'hidden',
+                    paddingLeft: 22,
+                    paddingRight: 22,
                     borderColor: subtleAccentBorder,
-                    borderLeftColor: accentColor,
                   }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-                    <div style={{ width: 38, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                      <AuthorAvatar name={item.author_name} src={item.lc_profiles?.avatar} seed={item.poster_id || item.id} size={34} />
+                  <div aria-hidden="true" style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 7,
+                    background: 'rgba(185,28,28,0.08)',
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      left: 0,
+                      bottom: 0,
+                      width: '100%',
+                      height: `${paidBars.boost}%`,
+                      background: 'linear-gradient(180deg, #fecaca 0%, #dc2626 100%)',
+                    }} />
+                  </div>
+                  <div aria-hidden="true" style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 7,
+                    background: 'rgba(17,24,39,0.08)',
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      right: 0,
+                      bottom: 0,
+                      width: '100%',
+                      height: `${paidBars.negative}%`,
+                      background: 'linear-gradient(180deg, #64748b 0%, #111827 100%)',
+                    }} />
+                  </div>
+                  <div style={{ marginBottom: 12, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
                       <span style={{
-                        padding: '2px 7px',
+                        padding: '2px 8px',
                         borderRadius: 999,
                         background: subtleAccentBg,
                         border: `1px solid ${subtleAccentBorder}`,
@@ -1285,79 +1411,78 @@ export default function Rankings() {
                         fontSize: '0.68rem',
                         fontWeight: 900,
                       }}>#{idx + 1}</span>
+                      <AuthorAvatar name={item.author_name} src={item.lc_profiles?.avatar} seed={item.poster_id || item.id} size={32} />
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{
-                        fontSize: '0.95rem',
-                        color: 'rgba(17,24,39,0.92)',
-                        lineHeight: 1.72,
-                        margin: '0 0 10px',
-                        fontWeight: 560,
-                        display: '-webkit-box',
-                        WebkitLineClamp: 5,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                      }}>
-                        {renderContent(item.content)}
-                      </p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                        <Link to={dossierUrl(item)}
-                          style={{ fontWeight: 800, fontSize: '0.9rem', color: 'rgba(31,41,55,0.86)', textDecoration: 'none' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
-                          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(31,41,55,0.86)')}>
-                          {item.subject_name}
-                        </Link>
+                    <Link to={dossierUrl(item)}
+                      style={{ display: 'inline-flex', maxWidth: '100%', fontWeight: 950, fontSize: '1.03rem', color: 'rgba(17,24,39,0.94)', textDecoration: 'none', lineHeight: 1.35 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
+                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(17,24,39,0.94)')}>
+                      {item.subject_name}
+                    </Link>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, flexWrap: 'wrap', margin: '8px 0 10px' }}>
+                      <span style={{
+                        padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700,
+                        background: subtleAccentBg,
+                        color: accentColor,
+                        border: `1px solid ${subtleAccentBorder}`,
+                      }}>{SUBJECT_LABEL[item.subject_type] || item.subject_type}</span>
+                      {item.subject_city && (
+                        <span style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.70)' }}>📍 {item.subject_city}</span>
+                      )}
+                      {item.subject_url && (
+                        <a href={normalizeUrl(item.subject_url)} target="_blank" rel="noreferrer"
+                          style={{ fontSize: '0.75rem', color: GOLD, textDecoration: 'none' }}>社交主页 ↗</a>
+                      )}
+                      {left !== null && left !== undefined && (
                         <span style={{
-                          padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600,
-                          background: subtleAccentBg,
-                          color: accentColor,
-                          border: `1px solid ${subtleAccentBorder}`,
-                        }}>{SUBJECT_LABEL[item.subject_type] || item.subject_type}</span>
-                        {item.subject_city && (
-                          <span style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.70)' }}>📍 {item.subject_city}</span>
-                        )}
-                        {item.subject_url && (
-                          <a href={normalizeUrl(item.subject_url)} target="_blank" rel="noreferrer"
-                            style={{ fontSize: '0.75rem', color: GOLD, textDecoration: 'none' }}>社交主页 ↗</a>
-                        )}
-                        {left !== null && left !== undefined && (
-                          <span style={{
-                            padding: '2px 8px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 600,
-                            background: left <= 7 ? 'rgba(248,113,113,0.15)' : 'rgba(148,163,184,0.1)',
-                            color: left <= 7 ? '#fca5a5' : 'rgba(148,163,184,0.6)',
-                          }}>
-                            ⏳ {left <= 0 ? '已到期' : `剩余 ${left} 天`}
-                          </span>
-                        )}
-                        {item.expiry_override && (
-                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 600,
-                            background: 'rgba(201,146,46,0.12)', color: GOLD }}>
-                            {item.expiry_override === 'illegal' ? '⚠ 违规记录永久保留' : '🔥 高赞豁免'}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 5,
-                          padding: '3px 9px',
-                          borderRadius: 999,
-                          background: 'rgba(166,106,31,0.08)',
-                          border: '1px solid rgba(166,106,31,0.14)',
-                          color: 'rgba(71,85,105,0.86)',
-                          fontSize: '0.74rem',
-                          fontWeight: 800,
+                          padding: '2px 8px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700,
+                          background: left <= 7 ? 'rgba(248,113,113,0.15)' : 'rgba(148,163,184,0.1)',
+                          color: left <= 7 ? '#b91c1c' : 'rgba(71,85,105,0.62)',
                         }}>
-                          发布人 {renderName(item.author_name, item.is_realname)}
+                          ⏳ {left <= 0 ? '已到期' : `剩余 ${left} 天`}
                         </span>
-                        {item.lc_profiles?.verified_shop && (
-                          <span style={{ padding: '1px 5px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 900, background: '#3b82f6', color: '#fff' }} title="已认证店家">蓝V</span>
-                        )}
-                        {item.lc_profiles?.verified_dm && (
-                          <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
-                        )}
-                      </div>
+                      )}
+                      {item.expiry_override && (
+                        <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700,
+                          background: 'rgba(201,146,46,0.12)', color: GOLD }}>
+                          {item.expiry_override === 'illegal' ? '⚠ 违规记录永久保留' : '🔥 高赞豁免'}
+                        </span>
+                      )}
+                    </div>
+                    <p style={{
+                      fontSize: '0.96rem',
+                      color: 'rgba(17,24,39,0.92)',
+                      lineHeight: 1.74,
+                      margin: '0 0 10px',
+                      fontWeight: 560,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 5,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}>
+                      {renderContent(item.content)}
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '3px 9px',
+                        borderRadius: 999,
+                        background: 'rgba(166,106,31,0.08)',
+                        border: '1px solid rgba(166,106,31,0.14)',
+                        color: 'rgba(71,85,105,0.86)',
+                        fontSize: '0.74rem',
+                        fontWeight: 800,
+                      }}>
+                        发布人 {renderName(item.author_name, item.is_realname)}
+                      </span>
+                      {item.lc_profiles?.verified_shop && (
+                        <span style={{ padding: '1px 5px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 900, background: '#3b82f6', color: '#fff' }} title="已认证店家">蓝V</span>
+                      )}
+                      {item.lc_profiles?.verified_dm && (
+                        <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
+                      )}
                     </div>
                   </div>
 
@@ -1385,36 +1510,92 @@ export default function Rankings() {
                     );
                   })()}
 
-                  <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button onClick={() => openPaidBoostModal(item.id, 'boost')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 9, border: '1px solid rgba(22,163,74,0.26)', background: 'rgba(52,211,153,0.09)', color: '#15803d', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 900 }}>
-                        打榜 {boostAmount(item)}
-                        {item.initial_amount > 0 && <span style={{ fontSize: '0.68rem', color: 'rgba(71,85,105,0.56)' }}>含初始 {item.initial_amount}</span>}
-                        <span style={{ fontSize: '0.68rem', color: 'rgba(21,128,61,0.62)' }}>付费</span>
-                      </button>
-                      <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 9, border: '1px solid rgba(220,38,38,0.24)', background: 'rgba(248,113,113,0.09)', color: '#b91c1c', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 900 }}>
-                        踩榜 {negativeBoostAmount(item)}
-                        <span style={{ fontSize: '0.68rem', color: 'rgba(185,28,28,0.58)' }}>付费</span>
-                      </button>
+                  <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
+                    <div style={{
+                      display: 'grid',
+                      gap: 9,
+                      padding: 10,
+                      borderRadius: 14,
+                      border: '1px solid rgba(166,106,31,0.20)',
+                      background: 'linear-gradient(180deg, #fffaf2 0%, #fffdf8 100%)',
+                      boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.68)',
+                    }}>
+                      <div style={{ textAlign: 'center', color: 'rgba(17,24,39,0.88)', fontSize: '0.78rem', fontWeight: 950 }}>
+                        真金白银 · 一币一分
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end' }}>
+                        <div style={{ display: 'grid', gap: 2, minWidth: 0, textAlign: 'left' }}>
+                          <strong style={{ color: '#991b1b', fontSize: '1rem', lineHeight: 1 }}>打榜值 {boostStats.total}</strong>
+                          {boostStats.initial > 0 && (
+                            <span style={{ color: 'rgba(71,85,105,0.55)', fontSize: '0.68rem', fontWeight: 800 }}>
+                              打榜 {boostStats.paid} · 初始 {boostStats.initial}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: 'grid', gap: 2, minWidth: 0, textAlign: 'right' }}>
+                          <strong style={{ color: '#111827', fontSize: '1rem', lineHeight: 1 }}>踩榜值 {negativeBoostAmount(item)}</strong>
+                        </div>
+                      </div>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr) 1px minmax(0, 1fr)',
+                        overflow: 'hidden',
+                        borderRadius: 999,
+                        border: '1px solid rgba(166,106,31,0.18)',
+                        background: '#fffdf8',
+                        boxShadow: '0 10px 20px rgba(71,85,105,0.08)',
+                      }}>
+                        <button onClick={() => openPaidBoostModal(item.id, 'boost')}
+                          aria-label={`给 ${item.subject_name} 打榜`}
+                          style={paidBattleButtonStyle('boost')}>
+                          打榜
+                        </button>
+                        <div style={{ background: 'linear-gradient(180deg, rgba(166,106,31,0.12), rgba(166,106,31,0.30), rgba(166,106,31,0.12))' }} />
+                        <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
+                          aria-label={`给 ${item.subject_name} 踩榜`}
+                          style={paidBattleButtonStyle('negative_boost')}>
+                          踩榜
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <div style={{
+                      display: 'grid',
+                      gap: 8,
+                      padding: 10,
+                      borderRadius: 14,
+                      border: '1px solid rgba(71,85,105,0.12)',
+                      background: 'rgba(248,250,252,0.72)',
+                    }}>
+                      <div style={{ textAlign: 'center', color: 'rgba(17,24,39,0.84)', fontSize: '0.78rem', fontWeight: 950 }}>
+                        真人口碑 · 一人一票
+                      </div>
+                      <div aria-hidden="true" style={{
+                        display: 'flex',
+                        height: 22,
+                        overflow: 'hidden',
+                        borderRadius: 999,
+                        border: '1px solid rgba(71,85,105,0.10)',
+                        background: '#fffdf8',
+                      }}>
+                        <div style={{ width: `${reputation.agree}%`, background: 'linear-gradient(90deg, #fee2e2 0%, #ef4444 100%)' }} />
+                        <div style={{ width: `${reputation.absurd}%`, background: 'linear-gradient(90deg, #fef3c7 0%, #f59e0b 100%)' }} />
+                        <div style={{ width: `${reputation.oppose}%`, background: 'linear-gradient(90deg, #334155 0%, #111827 100%)' }} />
+                      </div>
+                      <div style={{ display: 'flex', gap: 7 }}>
                       <button onClick={() => openVoteModal(item.id, 'like')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.22)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#219669', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-                        {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}
-                        <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(33,150,105,0.58)' }}>免费</span>
-                      </button>
-                      <button onClick={() => openVoteModal(item.id, 'dislike')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'dislike' ? '1px solid rgba(220,38,38,0.32)' : '1px solid rgba(248,113,113,0.20)', background: myVote?.vote_type === 'dislike' ? 'rgba(254,226,226,0.72)' : 'rgba(248,113,113,0.08)', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : '#dc2626', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-                        {myVote?.vote_type === 'dislike' ? '已反对' : '反对'} {opposeCount(item)}
-                        <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(220,38,38,0.56)' }}>免费</span>
+                        style={freeActionButtonStyle(myVote?.vote_type === 'like', 'agree')}>
+                        <span>👍</span><span>{myVote?.vote_type === 'like' ? '已同意' : '同意'}</span><strong>{agreeCount(item)}</strong>
                       </button>
                       <button onClick={() => openVoteModal(item.id, 'joy')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'joy' ? '1px solid rgba(166,106,31,0.42)' : '1px solid rgba(217,168,87,0.25)', background: myVote?.vote_type === 'joy' ? 'rgba(217,168,87,0.16)' : 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-                        {myVote?.vote_type === 'joy' ? '已欢乐' : '欢乐'} {item.joys || 0}
-                        <span style={{ fontSize: '0.68rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
+                        style={freeActionButtonStyle(myVote?.vote_type === 'joy', 'joy')}>
+                        <span style={{ display: 'inline-flex', transform: 'rotate(-45deg)', transformOrigin: 'center' }}>😂</span>
+                        <span>{myVote?.vote_type === 'joy' ? '已离谱' : '离谱'}</span><strong>{item.joys || 0}</strong>
                       </button>
+                      <button onClick={() => openVoteModal(item.id, 'dislike')}
+                        style={freeActionButtonStyle(myVote?.vote_type === 'dislike', 'oppose')}>
+                        <span>{myVote?.vote_type === 'dislike' ? '已反对' : '反对'}</span><strong>{opposeCount(item)}</strong><span>👎</span>
+                      </button>
+                      </div>
                     </div>
                   </div>
 

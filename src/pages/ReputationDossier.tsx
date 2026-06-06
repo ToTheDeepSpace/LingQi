@@ -171,7 +171,7 @@ export default function ReputationDossier() {
                         <span>踩榜 {event.negative_boost_amount || 0}</span>
                         <span>同意 {event.agree_count ?? (event.type === 'black' ? event.likes || 0 : 0)}</span>
                         <span>反对 {event.oppose_count ?? event.dislikes ?? 0}</span>
-                        <span>欢乐 {event.joys || 0}</span>
+                        <span>离谱 {event.joys || 0}</span>
                         <Link to="/rankings" style={{ color: GOLD, textDecoration: 'none', fontWeight: 800 }}>去事件榜</Link>
                       </div>
                     </article>

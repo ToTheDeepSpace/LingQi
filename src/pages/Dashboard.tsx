@@ -1246,7 +1246,7 @@ export default function Dashboard() {
                   {myRankings.map(item => (
                     <MineRow key={item.id}
                       title={item.subject_name}
-                      meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · ${item.initial_amount === 0 ? '免费发布' : `初始 ${item.initial_amount} 契约币`} · 打榜${item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0)} 踩榜${item.negative_boost_amount || 0} 同意${item.agree_count ?? (item.type === 'black' ? item.likes || 0 : 0)} 反对${item.oppose_count ?? item.dislikes ?? 0} 欢乐${item.joys || 0}`}
+                      meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · ${item.initial_amount === 0 ? '免费发布' : `初始 ${item.initial_amount} 契约币`} · 打榜${item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0)} 踩榜${item.negative_boost_amount || 0} 同意${item.agree_count ?? (item.type === 'black' ? item.likes || 0 : 0)} 反对${item.oppose_count ?? item.dislikes ?? 0} 离谱${item.joys || 0}`}
                       status={item.status}
                       to="/rankings"
                       action={item.status === 'pending' && item.initial_amount === 0 ? (

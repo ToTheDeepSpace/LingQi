@@ -523,7 +523,7 @@ function RankingRulesNotice({ type, accepted, onAcceptedChange }: { type: Rankin
         <RuleLine text={typeTip} />
         <RuleLine text="红榜、黑榜必须上传证据；白榜可选，但涉及具体人或店时建议上传材料。" />
         <RuleLine text="聊天记录、订单、群聊、照片等第三方信息请先打码；未打码或泄露隐私的内容可能被驳回。" />
-        <RuleLine text="同一账号对同一帖子只保留一个免费态度；打榜和踩榜按契约币金额累计，禁止多号刷态度、刷欢乐或重复提交同一事件。" />
+        <RuleLine text="同一账号对同一帖子只保留一个免费态度；打榜和踩榜按契约币金额累计，禁止多号刷态度、刷离谱或重复提交同一事件。" />
         <RuleLine text="审核通过只代表符合展示规则，不代表平台确认所有陈述完全真实。" />
         <RuleLine text="相关方回应不是删帖入口：先发普通评论，通过后再提交关系材料申请置顶。" />
         <RuleLine text="黑榜默认公开展示 30 天后进入已过期记录；这不是删除记录，后续可去标识化沉淀为共性问题和礼仪建议。" />
