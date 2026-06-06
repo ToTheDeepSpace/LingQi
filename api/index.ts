@@ -5624,15 +5624,24 @@ app.get('/api/lc/rankings/:id/boosts', async (req, res) => {
     if (rankingErr) throw rankingErr;
     if (!ranking || ranking.status !== 'approved') return res.status(404).json(err(new Error('帖子不存在')));
 
-    const { data: transactions, error: txErr } = await supabase.from('lc_transactions')
-      .select('id, profile_id, amount, created_at, metadata, lc_profiles(display_name, is_realname)')
-      .eq('ref_id', req.params.id)
-      .eq('ref_type', 'ranking_paid_boost')
-      .eq('status', 'approved')
-      .lt('amount', 0)
-      .order('created_at', { ascending: false })
-      .limit(100);
+    const [{ data: transactions, error: txErr }, { data: legacyVotes, error: legacyErr }] = await Promise.all([
+      supabase.from('lc_transactions')
+        .select('id, profile_id, amount, created_at, metadata, lc_profiles(display_name, is_realname)')
+        .eq('ref_id', req.params.id)
+        .eq('ref_type', 'ranking_paid_boost')
+        .eq('status', 'approved')
+        .lt('amount', 0)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase.from('lc_votes')
+        .select('id, vote_type, voter_name, voter_is_realname, created_at')
+        .eq('ranking_id', req.params.id)
+        .eq('source', 'legacy_paid_boost')
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ]);
     if (txErr) throw txErr;
+    if (legacyErr) throw legacyErr;
 
     const records: Record<string, unknown>[] = [];
     const initialAmount = Math.max(0, Number(ranking.initial_amount || 0));
@@ -5664,6 +5673,19 @@ app.get('/api/lc/rankings/:id/boosts', async (req, res) => {
         contributor_is_realname: !!profile?.is_realname,
         amount,
         created_at: tx.created_at,
+        is_initial: false,
+      });
+    }
+
+    for (const raw of legacyVotes || []) {
+      const vote = raw as Record<string, unknown>;
+      records.push({
+        id: `legacy-${vote.id}`,
+        direction: vote.vote_type === 'dislike' ? 'negative_boost' : 'boost',
+        contributor_name: cleanText(vote.voter_name, 80) || '匿名用户',
+        contributor_is_realname: !!vote.voter_is_realname,
+        amount: 1,
+        created_at: vote.created_at,
         is_initial: false,
       });
     }
