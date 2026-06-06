@@ -1,0 +1,292 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import ImageUpload from '../components/ImageUpload';
+import { CITIES } from '../constants/cities';
+import { generatedAvatarDataUrl } from '../lib/avatar';
+
+const API = '/api';
+const BG = '#fffdf8';
+const GOLD = '#a66a1f';
+const INK = '#1f2937';
+const MUTED = 'rgba(71,85,105,0.76)';
+
+type AuthSession = { token: string; displayName: string; userId?: string };
+
+type DmDossier = {
+  id: string;
+  dm_name: string;
+  city?: string | null;
+  workplace?: string | null;
+  profile_url?: string | null;
+  photo_url?: string | null;
+  note?: string | null;
+  tags?: string[];
+  claim_status?: 'unclaimed' | 'pending' | 'approved' | 'rejected';
+  claimed_by?: string | null;
+  created_at?: string;
+};
+
+function getAuth(): AuthSession | null {
+  try {
+    const stored = localStorage.getItem('lc_creator');
+    if (!stored) return null;
+    const data = JSON.parse(stored);
+    if (!data?.token) return null;
+    const payload = JSON.parse(atob(data.token.split('.')[1]));
+    if (payload.exp * 1000 < Date.now()) return null;
+    return { token: data.token, displayName: data.display_name || '用户', userId: payload.creatorId };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeUrl(url: string) {
+  if (/^https?:\/\//i.test(url)) return url;
+  return `https://${url}`;
+}
+
+export default function DmWall() {
+  const navigate = useNavigate();
+  const auth = getAuth();
+  const [items, setItems] = useState<DmDossier[]>([]);
+  const [loadedKey, setLoadedKey] = useState('');
+  const [city, setCity] = useState('all');
+  const [query, setQuery] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [claimingId, setClaimingId] = useState('');
+
+  const cityOptions = useMemo(() => ['all', ...CITIES], []);
+  const requestKey = useMemo(() => `${city}|${query.trim()}`, [city, query]);
+  const loading = loadedKey !== requestKey;
+
+  const loadDossiers = useCallback((signal?: AbortSignal) => {
+    const nextKey = `${city}|${query.trim()}`;
+    const params = new URLSearchParams();
+    if (city !== 'all') params.set('city', city);
+    if (query.trim()) params.set('q', query.trim());
+    fetch(`${API}/lc/dm-dossiers?${params}`, { signal })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          setItems(d.data || []);
+        } else {
+          setItems([]);
+          setMessage({ text: d.error || '爱D墙加载失败', ok: false });
+        }
+      })
+      .catch(error => {
+        if (error?.name !== 'AbortError') {
+          setItems([]);
+          setMessage({ text: '网络错误，爱D墙暂时加载失败', ok: false });
+        }
+      })
+      .finally(() => {
+        if (!signal?.aborted) setLoadedKey(nextKey);
+      });
+  }, [city, query]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadDossiers(controller.signal);
+    return () => controller.abort();
+  }, [loadDossiers]);
+
+  const updateForm = (patch: Partial<typeof form>) => {
+    setForm(prev => ({ ...prev, ...patch }));
+    setMessage(null);
+  };
+
+  const submit = async () => {
+    const current = getAuth();
+    if (!current) {
+      navigate('/login');
+      return;
+    }
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      const r = await fetch(`${API}/lc/dm-dossiers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
+        body: JSON.stringify({
+          dmName: form.dmName.trim(),
+          city: form.city.trim(),
+          workplace: form.workplace.trim(),
+          profileUrl: form.profileUrl.trim(),
+          photoUrl: form.photoUrl.trim(),
+          note: form.note.trim(),
+          tags: form.tags.split(/[，,、/\n]/).map(tag => tag.trim()).filter(Boolean),
+          photoFiles: form.photoUrl ? [{ name: 'DM 照片', url: form.photoUrl, type: 'image/*' }] : [],
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok || !d.success) {
+        const errText = typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败');
+        setMessage({ text: errText, ok: false });
+        return;
+      }
+      setMessage({ text: '已提交，管理员审核通过后会公开到爱D墙。', ok: true });
+      setShowForm(false);
+      setForm({ dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
+      loadDossiers();
+    } catch {
+      setMessage({ text: '网络错误，请稍后再试', ok: false });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const claim = async (item: DmDossier) => {
+    const current = getAuth();
+    if (!current) {
+      navigate('/login');
+      return;
+    }
+    const claimNote = window.prompt(`认领「${item.dm_name}」档案，请简单写明你如何证明这是你的主页`, '我是该 DM 本人，主页/手机号/实名信息可供后台核验');
+    if (claimNote === null) return;
+    setClaimingId(item.id);
+    setMessage(null);
+    try {
+      const r = await fetch(`${API}/lc/dm-dossiers/${item.id}/claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
+        body: JSON.stringify({ claimNote }),
+      });
+      const d = await r.json();
+      if (!r.ok || !d.success) {
+        const errText = typeof d.error === 'string' ? d.error : (d.error?.message || '认领失败');
+        setMessage({ text: errText, ok: false });
+        return;
+      }
+      setMessage({ text: '认领申请已提交，后台审核通过后会绑定到你的灵契主页。', ok: true });
+      loadDossiers();
+    } catch {
+      setMessage({ text: '网络错误，请稍后再试', ok: false });
+    } finally {
+      setClaimingId('');
+    }
+  };
+
+  return (
+    <main style={{ minHeight: '100vh', background: BG, color: INK }}>
+      <section style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '44px 20px 30px' }}>
+        <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
+          <div style={{ maxWidth: 760 }}>
+            <p style={{ margin: '0 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>DM 档案墙</p>
+            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>爱D墙</h1>
+            <p style={{ margin: '14px 0 0', color: MUTED, lineHeight: 1.8 }}>
+              玩家可以先为还没入驻灵契的 DM 建档，补充主页、工作地点和照片；DM 入驻后可认领自己的档案，逐步沉淀成城市新人入门时能看懂的口碑百科。
+            </p>
+          </div>
+          <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={primaryButton}>
+            {showForm ? '收起建档' : '+ 创建 DM 档案'}
+          </button>
+        </div>
+      </section>
+
+      <section style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 20px 82px' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+          <select value={city} onChange={e => setCity(e.target.value)} style={inputStyle}>
+            {cityOptions.map(option => (
+              <option key={option} value={option}>{option === 'all' ? '全部城市' : option}</option>
+            ))}
+          </select>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索 DM 名" style={{ ...inputStyle, minWidth: 180, flex: '1 1 220px' }} />
+          <Link to="/reputation/city" style={ghostButton}>看城市口碑榜</Link>
+          <Link to="/boundary-votes" style={ghostButton}>社交边界投票</Link>
+        </div>
+
+        {message && (
+          <div style={{ marginBottom: 16, borderRadius: 12, padding: '12px 14px', border: `1px solid ${message.ok ? 'rgba(22,163,74,0.24)' : 'rgba(220,38,38,0.22)'}`, background: message.ok ? 'rgba(220,252,231,0.72)' : 'rgba(254,226,226,0.62)', color: message.ok ? '#15803d' : '#b91c1c', fontSize: 14, fontWeight: 700 }}>
+            {message.text}
+          </div>
+        )}
+
+        {showForm && (
+          <section style={formCard}>
+            <h2 style={{ margin: '0 0 12px', fontFamily: 'var(--font-serif)', fontSize: '1.35rem' }}>创建未认领 DM 档案</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
+              <Field label="DM 名称 *" value={form.dmName} onChange={value => updateForm({ dmName: value })} />
+              <Field label="城市 *" value={form.city} onChange={value => updateForm({ city: value })} placeholder="例：上海" />
+              <Field label="工作地点 / 常驻店家 *" value={form.workplace} onChange={value => updateForm({ workplace: value })} />
+              <Field label="个人主页链接 *" value={form.profileUrl} onChange={value => updateForm({ profileUrl: value })} placeholder="抖音 / 小红书 / 微博主页" />
+            </div>
+            <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'end' }}>
+              <Field label="DM 照片 *" value={form.photoUrl} onChange={value => updateForm({ photoUrl: value })} placeholder="上传后自动填入，也可粘贴图片链接" />
+              {auth && <ImageUpload token={auth.token} scope="dm-dossier" label="上传照片" onUploaded={url => updateForm({ photoUrl: url })} />}
+            </div>
+            <label style={{ display: 'block', marginTop: 12 }}>
+              <span style={labelStyle}>补充说明</span>
+              <textarea value={form.note} onChange={e => updateForm({ note: e.target.value })} rows={4} placeholder="例如擅长本、开本风格、常驻店家补充。不要写隐私手机号。" style={{ ...inputStyle, width: '100%', resize: 'vertical' }} />
+            </label>
+            <Field label="玩家标签" value={form.tags} onChange={value => updateForm({ tags: value })} placeholder="例：控场稳 / 陪伴感强 / 会加亡夫戏" />
+            <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+              <button onClick={submit} disabled={submitting} style={{ ...primaryButton, opacity: submitting ? 0.55 : 1 }}>{submitting ? '提交中...' : '提交审核'}</button>
+              <button onClick={() => setShowForm(false)} style={ghostButton}>取消</button>
+            </div>
+          </section>
+        )}
+
+        {loading ? (
+          <p style={{ color: MUTED, padding: '36px 0' }}>加载中...</p>
+        ) : items.length === 0 ? (
+          <div style={emptyStyle}>当前筛选下暂无公开 DM 档案。你可以先创建一个，审核后会出现在爱D墙。</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+            {items.map(item => (
+              <article key={item.id} style={cardStyle}>
+                <img src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 10, background: '#fffaf2', marginBottom: 12 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
+                  <h2 style={{ margin: 0, fontSize: 18 }}>{item.dm_name}</h2>
+                  <span style={{ ...badgeStyle, color: item.claim_status === 'approved' ? '#15803d' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : 'rgba(166,106,31,0.10)' }}>
+                    {item.claim_status === 'approved' ? '已认领' : item.claim_status === 'pending' ? '认领审核中' : '未认领'}
+                  </span>
+                </div>
+                <p style={{ margin: '0 0 8px', color: MUTED, lineHeight: 1.7, fontSize: 14 }}>
+                  {item.city || '未知城市'} · {item.workplace || '工作地点待补充'}
+                </p>
+                {item.note && <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.78)', lineHeight: 1.7, fontSize: 14 }}>{item.note}</p>}
+                {item.tags && item.tags.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                    {item.tags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto' }}>
+                  {item.profile_url && <a href={normalizeUrl(item.profile_url)} target="_blank" rel="noreferrer" style={ghostButton}>个人主页</a>}
+                  {item.claim_status === 'approved' && item.claimed_by
+                    ? <Link to={`/explore/${item.claimed_by}`} style={ghostButton}>灵契主页</Link>
+                    : <button onClick={() => claim(item)} disabled={claimingId === item.id || item.claim_status === 'pending'} style={ghostButton}>
+                        {claimingId === item.id ? '提交中...' : item.claim_status === 'pending' ? '认领审核中' : '我是本人，认领'}
+                      </button>}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function Field({ label, value, onChange, placeholder = '' }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+  return (
+    <label style={{ display: 'block' }}>
+      <span style={labelStyle}>{label}</span>
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ ...inputStyle, width: '100%' }} />
+    </label>
+  );
+}
+
+const labelStyle: React.CSSProperties = { display: 'block', color: 'rgba(71,85,105,0.72)', fontSize: 13, fontWeight: 800, marginBottom: 6 };
+const inputStyle: React.CSSProperties = { boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: '1px solid rgba(166,106,31,0.20)', background: '#fff', color: INK, outline: 'none', fontSize: 14 };
+const primaryButton: React.CSSProperties = { border: 'none', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: '#fffdf8', padding: '11px 18px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+const ghostButton: React.CSSProperties = { border: '1px solid rgba(166,106,31,0.22)', borderRadius: 10, background: '#fffaf2', color: GOLD, padding: '9px 13px', fontWeight: 800, cursor: 'pointer', textDecoration: 'none', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+const formCard: React.CSSProperties = { marginBottom: 18, padding: 18, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)' };
+const cardStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', padding: 14, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)', minHeight: 0 };
+const badgeStyle: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.14)', fontSize: 12, fontWeight: 900 };
+const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.88)', color: '#275389', fontSize: 12, fontWeight: 800 };
+const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 14, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };

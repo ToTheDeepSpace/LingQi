@@ -13,6 +13,10 @@ const Login = lazy(pageLoaders.login);
 const Dashboard = lazy(pageLoaders.dashboard);
 const Admin = lazy(pageLoaders.admin);
 const Rankings = lazy(pageLoaders.rankings);
+const CityReputation = lazy(pageLoaders.cityReputation);
+const ReputationDossier = lazy(pageLoaders.reputationDossier);
+const DmWall = lazy(pageLoaders.dmWall);
+const BoundaryVotes = lazy(pageLoaders.boundaryVotes);
 const CreateRanking = lazy(pageLoaders.createRanking);
 const Commissions = lazy(pageLoaders.commissions);
 const CreateCommission = lazy(pageLoaders.createCommission);
@@ -50,6 +54,10 @@ function AppLayout() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/rankings" element={<Rankings />} />
+          <Route path="/reputation/city" element={<CityReputation />} />
+          <Route path="/reputation/dossier" element={<ReputationDossier />} />
+          <Route path="/dm-wall" element={<DmWall />} />
+          <Route path="/boundary-votes" element={<BoundaryVotes />} />
           <Route path="/rankings/new" element={<CreateRanking />} />
           <Route path="/commissions" element={<Commissions />} />
           <Route path="/commissions/new" element={<CreateCommission />} />
@@ -114,6 +122,8 @@ function SiteFooter() {
             <FooterLink to="/commissions">委托需求墙</FooterLink>
             <FooterLink to="/carpools">拼车区</FooterLink>
             <FooterLink to="/rankings">红黑白榜</FooterLink>
+            <FooterLink to="/reputation/city">城市口碑榜</FooterLink>
+            <FooterLink to="/dm-wall">爱D墙</FooterLink>
             <FooterLink to="/wallet">我的契约币</FooterLink>
             <FooterLink to="/referrals">我的邀请</FooterLink>
           </FooterColumn>
@@ -129,6 +139,7 @@ function SiteFooter() {
             <FooterExternal href="https://jusichen.com">剧司辰</FooterExternal>
             <FooterLink to="/shop/dashboard">店家后台</FooterLink>
             <FooterLink to="/roadmap">AI 口碑路线图</FooterLink>
+            <FooterLink to="/boundary-votes">社交边界投票</FooterLink>
             <FooterExternal href="/ai/lingqi-overview.html">AI 可读说明</FooterExternal>
             <FooterLink to="/contact">投资洽谈 / 共建合作</FooterLink>
             <FooterText>摄影师 / 妆造师</FooterText>

@@ -99,7 +99,8 @@ export default function Navbar() {
           + (data.commissions || []).length
           + (data.transactions || []).length
           + (data.certifications || []).length;
-        setPendingCount(total);
+        const dmDossierCount = (data.dmDossiers || []).length;
+        setPendingCount(total + dmDossierCount);
       } catch {
         if (alive) setPendingCount(0);
       }

@@ -1783,6 +1783,11 @@ const RANKING_EDIT_LABELS: Record<string, string> = {
 };
 
 const RANKING_SUBJECT_TYPES = ['creator', 'dm', 'store', 'takeaway', 'player'];
+const REPUTATION_TAGS = [
+  '加戏', '陪伴', '控场', '刀法', '亡夫', 'CP', '边界', '沟通',
+  '迟到', '失约', '车头', '补贴', '环境', '隔音', '空调', '服务',
+  '妆造', '细节', '价格', '新本', '角色', '停车',
+];
 
 function normalizeActivityCities(value: unknown, fallback?: unknown) {
   const raw = [
@@ -1798,6 +1803,114 @@ function normalizeActivityCities(value: unknown, fallback?: unknown) {
     cities.push(city);
   });
   return cities.slice(0, 8);
+}
+
+function isPublicRankingVisible(row: Record<string, unknown>, now = Date.now()) {
+  if (row.type !== 'black') return true;
+  if (row.expiry_override) return true;
+  const expiresAt = row.expires_at
+    ? new Date(String(row.expires_at)).getTime()
+    : new Date(String(row.created_at)).getTime() + 30 * 24 * 60 * 60 * 1000;
+  return Number.isFinite(expiresAt) && expiresAt > now;
+}
+
+function reputationSubjectKey(row: Record<string, unknown>) {
+  return [
+    cleanText(row.subject_type, 40) || 'unknown',
+    cleanText(row.subject_name, 120) || '未命名对象',
+    cleanText(row.subject_city, 80) || '',
+  ].join('::');
+}
+
+function reputationPraiseValue(row: Record<string, unknown>) {
+  const likes = Number(row.likes || 0);
+  const initial = Number(row.initial_amount || 0);
+  if (row.type === 'red') return Math.max(0, likes + initial);
+  if (row.type === 'white') return Math.max(0, likes);
+  return 0;
+}
+
+function reputationTags(rows: Record<string, unknown>[]) {
+  const text = rows.map(row => `${row.subject_name || ''} ${row.content || ''}`).join(' ');
+  return REPUTATION_TAGS.filter(tag => text.includes(tag)).slice(0, 6);
+}
+
+function buildReputationSummary(
+  rows: Record<string, unknown>[],
+  votes: Record<string, unknown>[] = [],
+  comments: Record<string, unknown>[] = [],
+) {
+  const rankingIds = new Set(rows.map(row => String(row.id)));
+  const relatedVotes = votes.filter(vote => rankingIds.has(String(vote.ranking_id)));
+  const relatedComments = comments.filter(comment => rankingIds.has(String(comment.ranking_id)));
+  const praiseVoters = new Set<string>();
+  relatedVotes.forEach(vote => {
+    if (vote.vote_type !== 'like') return;
+    const voterKey = cleanText(vote.voter_id, 80) || cleanText(vote.voter_name, 80);
+    if (voterKey) praiseVoters.add(voterKey);
+  });
+  rows.forEach(row => {
+    if (row.type !== 'red') return;
+    const authorKey = cleanText(row.poster_id, 80) || cleanText(row.author_name, 80);
+    if (authorKey) praiseVoters.add(authorKey);
+  });
+
+  const redCount = rows.filter(row => row.type === 'red').length;
+  const whiteCount = rows.filter(row => row.type === 'white').length;
+  const blackCount = rows.filter(row => row.type === 'black').length;
+  const praiseValue = rows.reduce((sum, row) => sum + reputationPraiseValue(row), 0);
+  const praisePeople = praiseVoters.size;
+  const commentCount = relatedComments.length;
+  const latestAt = rows.reduce((latest, row) => {
+    const time = new Date(String(row.created_at || '')).getTime();
+    return Number.isFinite(time) ? Math.max(latest, time) : latest;
+  }, 0);
+  const recentDays = latestAt > 0 ? Math.max(0, Math.min(30, Math.ceil((Date.now() - latestAt) / (24 * 60 * 60 * 1000)))) : 30;
+  const recentScore = Math.max(0, 30 - recentDays);
+  const reputationValue = Math.max(0, Math.round(
+    praisePeople * 6
+    + redCount * 10
+    + whiteCount * 3
+    + commentCount * 2
+    + Math.min(praiseValue, 200) * 0.45
+    + recentScore * 0.8
+    - blackCount * 8
+  ));
+
+  return {
+    praise_value: praiseValue,
+    reputation_value: reputationValue,
+    praise_people: praisePeople,
+    comment_count: commentCount,
+    event_count: rows.length,
+    red_count: redCount,
+    white_count: whiteCount,
+    black_count: blackCount,
+    latest_at: latestAt > 0 ? new Date(latestAt).toISOString() : null,
+    tags: reputationTags(rows),
+  };
+}
+
+function publicRankingPayload(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    type: row.type,
+    subject_name: row.subject_name,
+    subject_type: row.subject_type,
+    subject_city: row.subject_city,
+    subject_url: row.subject_url,
+    content: row.content,
+    author_name: row.author_name,
+    is_realname: !!row.is_realname,
+    initial_amount: row.initial_amount || 0,
+    likes: row.likes || 0,
+    dislikes: row.dislikes || 0,
+    joys: row.joys || 0,
+    created_at: row.created_at,
+    expires_at: row.expires_at,
+    expiry_override: row.expiry_override,
+    files: row.files || [],
+  };
 }
 
 function auditComparable(value: unknown) {
@@ -4093,7 +4206,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -4111,7 +4224,9 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
         .select('id, actor_id, actor_role, action, target_type, target_id, ip_address, user_agent, request_path, metadata, created_at')
         .order('created_at', { ascending: false })
         .limit(150),
+      supabase.from('lc_dm_dossiers').select('*').or('status.eq.pending,claim_status.eq.pending').order('created_at', { ascending: false }).limit(100),
     ]);
+    if (dmDossiersResult.error && !isMissingRelation(dmDossiersResult.error, 'lc_dm_dossiers')) throw dmDossiersResult.error;
     res.json(ok({
       profiles: (profiles || []).map(profile => sanitizeProfile(profile, true)),
       contactRequests: requests || [],
@@ -4127,7 +4242,77 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       siteMessages: siteMessages || [],
       scriptContributions: scriptContributions || [],
       securityEvents: securityEvents || [],
+      dmDossiers: dmDossiersResult.error ? [] : (dmDossiersResult.data || []),
     }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/dm-dossiers/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
+    const { data: dossier, error: findErr } = await supabase.from('lc_dm_dossiers').select('*').eq('id', req.params.id).single();
+    if (findErr && isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('爱D墙数据表尚未初始化')));
+    if (findErr) throw findErr;
+    if (!dossier) return res.status(404).json(err(new Error('档案不存在')));
+
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (dossier.status === 'pending') {
+      patch.status = 'approved';
+      patch.approved_by = reviewerId;
+      patch.approved_at = new Date().toISOString();
+      patch.reject_reason = null;
+    }
+    if (dossier.claim_status === 'pending') {
+      patch.claim_status = 'approved';
+    }
+
+    const { data: updated, error: updErr } = await supabase.from('lc_dm_dossiers')
+      .update(patch)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'admin_dm_dossier_approved',
+      targetType: 'dm_dossier',
+      targetId: req.params.id,
+      metadata: { approved_status: patch.status || dossier.status, approved_claim: patch.claim_status || dossier.claim_status },
+    });
+    res.json(ok(updated));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/dm-dossiers/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const rejectReason = cleanText(req.body?.rejectReason, 500) || '不符合爱D墙公开规则';
+    const { data: dossier, error: findErr } = await supabase.from('lc_dm_dossiers').select('*').eq('id', req.params.id).single();
+    if (findErr && isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('爱D墙数据表尚未初始化')));
+    if (findErr) throw findErr;
+    if (!dossier) return res.status(404).json(err(new Error('档案不存在')));
+
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+      reject_reason: rejectReason,
+    };
+    if (dossier.status === 'pending') patch.status = 'rejected';
+    else if (dossier.claim_status === 'pending') {
+      patch.claim_status = 'rejected';
+      patch.claim_note = rejectReason;
+    }
+
+    const { data: updated, error: updErr } = await supabase.from('lc_dm_dossiers')
+      .update(patch)
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'admin_dm_dossier_rejected',
+      targetType: 'dm_dossier',
+      targetId: req.params.id,
+      metadata: { reason: rejectReason },
+    });
+    res.json(ok(updated));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -4380,6 +4565,271 @@ app.post('/api/lc/admin/audit/backfill', authMiddleware, adminMiddleware, async 
 });
 
 // ==================== 红黑榜 ====================
+
+app.get('/api/lc/reputation/city', async (req, res) => {
+  try {
+    const city = cleanText(req.query.city, 80);
+    const subjectType = cleanText(req.query.subjectType, 40);
+    const sort = cleanText(req.query.sort, 40) || 'composite';
+
+    let query = supabase
+      .from('lc_rankings')
+      .select('id, type, subject_name, subject_type, subject_city, subject_url, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, status, expires_at, expiry_override, created_at')
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (city && city !== 'all') query = query.eq('subject_city', city);
+    if (subjectType && subjectType !== 'all') query = query.eq('subject_type', subjectType);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const rows = (data || []).filter(row => isPublicRankingVisible(row as Record<string, unknown>)) as Record<string, unknown>[];
+    const rankingIds = rows.map(row => String(row.id)).filter(Boolean);
+    const [{ data: votes }, { data: comments }] = rankingIds.length > 0
+      ? await Promise.all([
+          supabase.from('lc_votes').select('ranking_id, vote_type, voter_id, voter_name, created_at').in('ranking_id', rankingIds).limit(2000),
+          supabase.from('lc_comments').select('ranking_id, id, likes, created_at').in('ranking_id', rankingIds).eq('status', 'approved').limit(2000),
+        ])
+      : [{ data: [] }, { data: [] }];
+
+    const grouped = new Map<string, Record<string, unknown>[]>();
+    rows.forEach(row => {
+      const key = reputationSubjectKey(row);
+      grouped.set(key, [...(grouped.get(key) || []), row]);
+    });
+
+    const items = [...grouped.entries()].map(([key, subjectRows]) => {
+      const first = subjectRows[0] || {};
+      const summary = buildReputationSummary(subjectRows, votes || [], comments || []);
+      const latestEvents = [...subjectRows]
+        .sort((a, b) => new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime())
+        .slice(0, 3)
+        .map(publicRankingPayload);
+      return {
+        key,
+        subject_name: first.subject_name,
+        subject_type: first.subject_type,
+        subject_city: first.subject_city,
+        subject_url: first.subject_url,
+        ...summary,
+        latest_events: latestEvents,
+      };
+    }).sort((a, b) => {
+      if (sort === 'praise') return (b.praise_value || 0) - (a.praise_value || 0) || (b.praise_people || 0) - (a.praise_people || 0);
+      if (sort === 'people') return (b.praise_people || 0) - (a.praise_people || 0) || (b.reputation_value || 0) - (a.reputation_value || 0);
+      if (sort === 'new') return new Date(String(b.latest_at || 0)).getTime() - new Date(String(a.latest_at || 0)).getTime();
+      return (b.reputation_value || 0) - (a.reputation_value || 0) || (b.praise_value || 0) - (a.praise_value || 0);
+    }).slice(0, 100);
+
+    res.json(ok({ city: city || 'all', subject_type: subjectType || 'all', sort, items }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/reputation/dossier', async (req, res) => {
+  try {
+    const subjectName = cleanText(req.query.subjectName, 120);
+    const subjectType = cleanText(req.query.subjectType, 40);
+    const city = cleanText(req.query.city, 80);
+    if (!subjectName || !subjectType) return res.status(400).json(err(new Error('缺少口碑对象')));
+
+    let query = supabase
+      .from('lc_rankings')
+      .select('id, type, subject_name, subject_type, subject_city, subject_url, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, status, expires_at, expiry_override, created_at, files')
+      .eq('status', 'approved')
+      .eq('subject_name', subjectName)
+      .eq('subject_type', subjectType)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (city) query = query.eq('subject_city', city);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    const rows = (data || []).filter(row => isPublicRankingVisible(row as Record<string, unknown>)) as Record<string, unknown>[];
+    const rankingIds = rows.map(row => String(row.id)).filter(Boolean);
+    const [{ data: votes }, { data: comments }] = rankingIds.length > 0
+      ? await Promise.all([
+          supabase.from('lc_votes').select('ranking_id, vote_type, voter_id, voter_name, created_at').in('ranking_id', rankingIds).limit(2000),
+          supabase.from('lc_comments').select('ranking_id, id, content, author_name, is_realname, is_pinned, pin_label, likes, created_at').in('ranking_id', rankingIds).eq('status', 'approved').limit(2000),
+        ])
+      : [{ data: [] }, { data: [] }];
+
+    let profilePayload: Record<string, unknown> | null = null;
+    let availability: Record<string, unknown>[] = [];
+    let rolePreferences: Record<string, unknown>[] = [];
+    if (['dm', 'creator', 'player'].includes(subjectType)) {
+      const { data: profile } = await supabase.from('lc_profiles')
+        .select('*')
+        .eq('display_name', subjectName)
+        .eq('is_visible', true)
+        .order('verified_dm', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (profile?.id) {
+        profilePayload = sanitizeProfile(profile);
+        const [{ data: slots }, prefs] = await Promise.all([
+          supabase.from('lc_availability').select('*')
+            .eq('creator_id', profile.id)
+            .gte('date', todayChinaDateString())
+            .order('date')
+            .limit(12),
+          loadProfileRolePreferences(profile.id),
+        ]);
+        availability = (slots || []) as Record<string, unknown>[];
+        rolePreferences = (prefs || []) as Record<string, unknown>[];
+      }
+    }
+
+    const summary = buildReputationSummary(rows, votes || [], comments || []);
+    const events = rows.map(publicRankingPayload);
+    const commentsByRanking = (comments || []).reduce((map: Record<string, unknown[]>, comment: Record<string, unknown>) => {
+      const key = String(comment.ranking_id || '');
+      map[key] = [...(map[key] || []), comment];
+      return map;
+    }, {});
+
+    res.json(ok({
+      subject_name: subjectName,
+      subject_type: subjectType,
+      subject_city: city || rows[0]?.subject_city || null,
+      subject_url: rows.find(row => row.subject_url)?.subject_url || null,
+      metrics: summary,
+      profile: profilePayload,
+      availability,
+      role_preferences: rolePreferences,
+      events,
+      comments_by_ranking: commentsByRanking,
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/dm-dossiers', async (req, res) => {
+  try {
+    const city = cleanText(req.query.city, 80);
+    const q = cleanText(req.query.q, 80);
+    let query = supabase
+      .from('lc_dm_dossiers')
+      .select('*')
+      .eq('status', 'approved')
+      .order('approved_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .limit(120);
+    if (city && city !== 'all') query = query.eq('city', city);
+    if (q) query = query.ilike('dm_name', `%${q}%`);
+    const { data, error } = await query;
+    if (error) {
+      if (isMissingRelation(error, 'lc_dm_dossiers')) return res.json(ok([]));
+      throw error;
+    }
+    res.json(ok((data || []).map((row: Record<string, unknown>) => ({
+      id: row.id,
+      dm_name: row.dm_name,
+      city: row.city,
+      workplace: row.workplace,
+      profile_url: row.profile_url,
+      photo_url: row.photo_url,
+      note: row.note,
+      tags: row.tags || [],
+      claim_status: row.claim_status,
+      claimed_by: row.claim_status === 'approved' ? row.claimed_by : null,
+      created_at: row.created_at,
+    }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+
+    const dmName = cleanText(req.body?.dmName ?? req.body?.dm_name, 80);
+    const city = cleanText(req.body?.city, 80);
+    const workplace = cleanText(req.body?.workplace, 160);
+    const profileUrl = cleanText(req.body?.profileUrl ?? req.body?.profile_url, 600);
+    const note = cleanText(req.body?.note, 600);
+    const tags = cleanTextArray(req.body?.tags, 10, 18);
+    const rawFiles = Array.isArray(req.body?.photoFiles ?? req.body?.photo_files) ? (req.body?.photoFiles ?? req.body?.photo_files) : [];
+    const photoFiles = rawFiles.slice(0, 4).map((file: Record<string, unknown>) => ({
+      name: cleanText(file.name, 120) || 'DM 照片',
+      url: cleanText(file.url, 800),
+      type: cleanText(file.type, 80) || null,
+    })).filter((file: { url: string }) => file.url);
+    const photoUrl = cleanText(req.body?.photoUrl ?? req.body?.photo_url, 800) || photoFiles[0]?.url || '';
+
+    if (!dmName) return res.status(400).json(err(new Error('请填写 DM 名称')));
+    if (!city) return res.status(400).json(err(new Error('请选择城市')));
+    if (!workplace) return res.status(400).json(err(new Error('请填写工作地点或常驻店家')));
+    if (!profileUrl) return res.status(400).json(err(new Error('请填写 DM 个人主页链接')));
+    if (!photoUrl) return res.status(400).json(err(new Error('请上传一张 DM 照片')));
+
+    const { data, error: insErr } = await supabase.from('lc_dm_dossiers').insert({
+      dm_name: dmName,
+      city,
+      workplace,
+      profile_url: profileUrl,
+      photo_url: photoUrl,
+      photo_files: photoFiles,
+      note,
+      tags,
+      submitted_by: profile.id,
+      submitted_by_name: profile.display_name,
+      status: 'pending',
+      claim_status: 'unclaimed',
+    }).select('id').single();
+    if (insErr) {
+      if (isMissingRelation(insErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('爱D墙数据表尚未初始化')));
+      throw insErr;
+    }
+
+    await logSecurityEvent(req, {
+      action: 'dm_dossier_submitted',
+      targetType: 'dm_dossier',
+      targetId: data?.id,
+      metadata: { dm_name: dmName, city },
+    });
+    res.json(ok({ id: data?.id, status: 'pending' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const claimNote = cleanText(req.body?.claimNote ?? req.body?.claim_note, 600);
+    const { data: dossier, error: findErr } = await supabase.from('lc_dm_dossiers')
+      .select('id, status, dm_name, claim_status')
+      .eq('id', req.params.id)
+      .single();
+    if (findErr) {
+      if (isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('爱D墙数据表尚未初始化')));
+      throw findErr;
+    }
+    if (!dossier || dossier.status !== 'approved') return res.status(404).json(err(new Error('档案不存在或尚未公开')));
+    if (dossier.claim_status === 'approved') return res.status(400).json(err(new Error('这个档案已经被认领')));
+
+    const { error: updErr } = await supabase.from('lc_dm_dossiers').update({
+      claimed_by: profile.id,
+      claim_status: 'pending',
+      claim_note: claimNote,
+      updated_at: new Date().toISOString(),
+    }).eq('id', req.params.id);
+    if (updErr) throw updErr;
+
+    await logSecurityEvent(req, {
+      action: 'dm_dossier_claim_submitted',
+      targetType: 'dm_dossier',
+      targetId: req.params.id,
+      metadata: { dm_name: dossier.dm_name },
+    });
+    res.json(ok({ id: req.params.id, claim_status: 'pending' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
 
 app.get('/api/lc/rankings', async (req, res) => {
   try {

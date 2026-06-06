@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import type React from 'react';
 
 const classes = [
   { icon: '🌙', role: '灵契师',   sub: 'LINGQI-SHI',    desc: '与虚拟人签订契约，让其借由自身短暂降临现实。展示作品与口碑，让委托人一眼找到你。', accent: '#a78bfa' },
@@ -33,6 +34,32 @@ const WARM_BG = '#f7efe3';
 const WARM_CARD = '#fffaf2';
 const WARM_TEXT = '#1f2937';
 const WARM_SUB = 'rgba(71,85,105,0.72)';
+const homeReputationPrimaryLink: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '12px 28px',
+  borderRadius: 10,
+  background: 'linear-gradient(135deg, #c0392b 0%, #a93226 100%)',
+  color: '#fff',
+  textDecoration: 'none',
+  fontWeight: 800,
+  fontSize: '0.94rem',
+  boxShadow: '0 4px 20px rgba(192,57,43,0.26)',
+};
+const homeReputationGhostLink: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '11px 18px',
+  borderRadius: 10,
+  border: '1px solid rgba(192,57,43,0.22)',
+  background: '#fffdf8',
+  color: '#a93226',
+  textDecoration: 'none',
+  fontWeight: 800,
+  fontSize: '0.9rem',
+};
 
 export default function Home() {
   return (
@@ -160,22 +187,22 @@ export default function Home() {
       <section style={{ backgroundColor: C, padding: '5rem 1.25rem' }}>
         <div style={{ maxWidth: 800, margin: '0 auto', textAlign: 'center' }}>
 
-          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: '#c0392b', marginBottom: 12 }}>一人一票 · 真实口碑</p>
-          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>红黑榜</h2>
+          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: '#c0392b', marginBottom: 12 }}>事件记录 · 口碑沉淀</p>
+          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>红黑榜事件榜</h2>
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <p style={{ fontSize: '1rem', color: MUTED, lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
-            店、灵契师、卡司、玩家、外卖——五类红黑榜，用真金白银投票。<br />
-            每条评价都经过人工审核，实名发布带星标。黑榜公开期结束后，也可以去标识化沉淀为共性问题和社交礼仪。
+            先记录玩家遇到的具体事件，再沉淀成爱D墙、城市口碑榜和对象档案。<br />
+            每条公开记录都经过人工审核，黑榜公开期结束后，也可以去标识化沉淀为共性问题和社交礼仪。
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 36 }}>
             {[              
-              { icon: '🏪', label: '店家榜', desc: '店面环境、服务质量、管理水平' },
+              { icon: '🏪', label: '店家事件', desc: '店面环境、服务质量、管理水平' },
               { icon: '🥡', label: '外卖榜', desc: '出餐速度、包装份量、踩雷记录' },
-              { icon: '🎭', label: '玩家榜', desc: '素质、迟到率、历史评价' },
-              { icon: '🎬', label: '卡司榜', desc: '带本水平、演绎能力、控场能力' },
-              { icon: '🌙', label: '委托师榜', desc: '还原度、陪伴体验、专业程度' },
+              { icon: '🎭', label: '玩家事件', desc: '素质、迟到率、历史评价' },
+              { icon: '🎬', label: '爱D墙', desc: 'DM 主页、工作地点、开本记录' },
+              { icon: '🌙', label: '城市榜单', desc: '赞扬值、口碑值、赞扬人数' },
             ].map(({ icon, label, desc }) => (
               <div key={label} style={{ padding: '22px 16px', borderRadius: 14, border: '1px solid rgba(192,57,43,0.18)', background: 'linear-gradient(180deg, rgba(254,242,242,0.9), rgba(255,255,255,0.92))', textAlign: 'center', boxShadow: '0 10px 28px rgba(31,41,55,0.05)' }}>
                 <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>
@@ -185,18 +212,13 @@ export default function Home() {
             ))}
           </div>
 
-          <Link to="/rankings" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: '12px 32px', borderRadius: 10,
-            background: 'linear-gradient(135deg, #c0392b 0%, #a93226 100%)',
-            color: '#fff', textDecoration: 'none', fontWeight: 700, fontSize: '0.95rem',
-            boxShadow: '0 4px 20px rgba(192,57,43,0.3)',
-            transition: 'all 0.3s',
-          }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(192,57,43,0.45)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(192,57,43,0.3)'; }}>
-            进入红黑榜
-          </Link>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <Link to="/rankings" style={homeReputationPrimaryLink}>
+              进入事件榜
+            </Link>
+            <Link to="/dm-wall" style={homeReputationGhostLink}>爱D墙</Link>
+            <Link to="/reputation/city" style={homeReputationGhostLink}>城市口碑榜</Link>
+          </div>
         </div>
       </section>
 

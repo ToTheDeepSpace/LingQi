@@ -23,9 +23,9 @@ const SUBJECT_LABEL: Record<string, string> = {
 const SUBJECT_TYPES = ['creator', 'dm', 'store', 'takeaway', 'player'] as const;
 const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
 const TAB_HINT: Record<'red' | 'white' | 'black', string> = {
-  red: '红榜：表扬值得推荐的人、店和服务，记录靠谱体验与正向口碑。',
+  red: '红榜：表扬值得推荐的人、店和服务，记录具体事件，并沉淀到对象档案。',
   white: '白榜：免费发帖，适合记录中性事实、补充线索、普通提醒，先留下公开记录。',
-  black: '黑榜：记录违约、失联、骚扰、欺诈、严重服务不符等负面体验，公开期 30 天。',
+  black: '黑榜：记录违约、失联、骚扰、欺诈、严重服务不符等负面事件，公开期 30 天，不做砸币攻击榜。',
 };
 const RANKINGS_RETENTION_NOTE = '黑榜 30 天公开期不是删除记录，而是把“持续公开挂人”和“长期行业学习”分开：公开期结束后，必要记录仍可用于争议处理和安全审计，后续也会优先做去标识化的共性问题总结。欢迎投资机构、沉浸式娱乐从业者、店家、DM、委托师和技术合作者提供样本、规则建议与共建资源。';
 
@@ -169,6 +169,15 @@ function normalizeUrl(url: string): string {
   return `https://${url}`;
 }
 
+function dossierUrl(item: Pick<Ranking, 'subject_name' | 'subject_type' | 'subject_city'>) {
+  const params = new URLSearchParams({
+    subjectName: item.subject_name,
+    subjectType: item.subject_type,
+  });
+  if (item.subject_city) params.set('city', item.subject_city);
+  return `/reputation/dossier?${params}`;
+}
+
 function parseMentions(text: string): { text: string; mention: boolean; name: string }[] {
   const parts: { text: string; mention: boolean; name: string }[] = [];
   const re = /@([\u4e00-\u9fa5\w]+)/g;
@@ -184,9 +193,9 @@ function parseMentions(text: string): { text: string; mention: boolean; name: st
 }
 
 function voteCopy(voteType: MyVote['vote_type']) {
-  if (voteType === 'like') return { label: '点赞', icon: '👍', paid: true };
-  if (voteType === 'dislike') return { label: '点踩', icon: '👎', paid: true };
-  return { label: '欢乐', icon: '😂', paid: false };
+  if (voteType === 'like') return { label: '赞扬', icon: '赞', paid: true };
+  if (voteType === 'dislike') return { label: '关注风险', icon: '险', paid: true };
+  return { label: '共鸣', icon: '共', paid: false };
 }
 
 function voteCost(voteType: MyVote['vote_type']) {
@@ -927,9 +936,9 @@ export default function Rankings() {
         <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 14 }} />
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 8 }}>灵契红黑榜</h1>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 8 }}>灵契红黑榜事件榜</h1>
             <p style={{ color: 'rgba(71,85,105,0.80)', fontSize: '0.95rem' }}>
-              委托师、卡司、店家、外卖、玩家都可以被评价 · 点赞越高越靠前 · 欢乐免费
+              玩家遇到的具体事件在这里公开记录，再沉淀到爱D墙、城市口碑榜和对象档案。
             </p>
           </div>
           {auth && (
@@ -966,6 +975,14 @@ export default function Rankings() {
             style={{ padding: '12px 24px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none', flexShrink: 0 }}>
             + 发布
           </Link>
+          <Link to="/reputation/city"
+            style={{ padding: '11px 16px', borderRadius: 12, border: '1px solid rgba(166,106,31,0.22)', color: GOLD, background: '#fffdf8', fontWeight: 800, fontSize: '0.86rem', textDecoration: 'none', flexShrink: 0 }}>
+            城市口碑榜
+          </Link>
+          <Link to="/dm-wall"
+            style={{ padding: '11px 16px', borderRadius: 12, border: '1px solid rgba(166,106,31,0.22)', color: GOLD, background: '#fffdf8', fontWeight: 800, fontSize: '0.86rem', textDecoration: 'none', flexShrink: 0 }}>
+            爱D墙
+          </Link>
         </div>
         <p style={{ margin: '-2px 0 16px', color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.7 }}>
           {TAB_HINT[tab]}
@@ -973,7 +990,7 @@ export default function Rankings() {
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
           <p style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.78rem' }}>
-            当前排序：点赞数优先 · 同赞按发布时间
+            当前排序：赞扬值优先 · 同赞扬按发布时间；黑榜只作公共风险记录。
           </p>
           <CityFilter
             city={city}
@@ -1090,7 +1107,12 @@ export default function Rankings() {
                         {renderContent(item.content)}
                       </p>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                        <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'rgba(31,41,55,0.82)' }}>{item.subject_name}</span>
+                        <Link to={dossierUrl(item)}
+                          style={{ fontWeight: 800, fontSize: '0.9rem', color: 'rgba(31,41,55,0.86)', textDecoration: 'none' }}
+                          onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
+                          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(31,41,55,0.86)')}>
+                          {item.subject_name}
+                        </Link>
                         <span style={{
                           padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600,
                           background: subtleAccentBg,
@@ -1172,17 +1194,17 @@ export default function Rankings() {
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                     <button onClick={() => openVoteModal(item.id, 'like')}
                       style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.22)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#219669', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-                      {myVote?.vote_type === 'like' ? '已赞' : '👍'} {item.likes}
+                      {myVote?.vote_type === 'like' ? '已赞扬' : '赞扬'} {item.likes}
                       {item.initial_amount > 0 && <span style={{ fontSize: '0.68rem', color: 'rgba(71,85,105,0.56)' }}>含初始 {item.initial_amount}</span>}
                       <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(33,150,105,0.58)' }}>1币</span>
                     </button>
                     <button onClick={() => openVoteModal(item.id, 'joy')}
                       style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'joy' ? '1px solid rgba(166,106,31,0.42)' : '1px solid rgba(217,168,87,0.25)', background: myVote?.vote_type === 'joy' ? 'rgba(217,168,87,0.16)' : 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-                      {myVote?.vote_type === 'joy' ? '已欢乐' : '😂'} {item.joys || 0} <span style={{ fontSize: '0.68rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
+                      {myVote?.vote_type === 'joy' ? '已共鸣' : '共鸣'} {item.joys || 0} <span style={{ fontSize: '0.68rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
                     </button>
                     <button onClick={() => openVoteModal(item.id, 'dislike')}
                       style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'dislike' ? '1px solid rgba(220,38,38,0.38)' : '1px solid rgba(248,113,113,0.2)', background: myVote?.vote_type === 'dislike' ? 'rgba(254,226,226,0.72)' : 'rgba(248,113,113,0.07)', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : RED, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-                      {myVote?.vote_type === 'dislike' ? '已踩' : '👎'} {item.dislikes} <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(248,113,113,0.5)' }}>1币</span>
+                      {myVote?.vote_type === 'dislike' ? '已关注风险' : '关注风险'} {item.dislikes} <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(248,113,113,0.5)' }}>1币</span>
                     </button>
                   </div>
 
@@ -1237,7 +1259,7 @@ export default function Rankings() {
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
                       onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>
-                        {showVotes ? '收起投票人' : '谁投了票'}
+                        {showVotes ? '收起记录' : '谁赞扬/共鸣'}
                     </button>
                     <button
                       onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: item.subject_name })}
@@ -1275,7 +1297,7 @@ export default function Rankings() {
                   {showVotes && (
                     <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {votes.length === 0 ? (
-                        <span style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.48)' }}>暂无投票记录</span>
+                        <span style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.48)' }}>暂无赞扬记录</span>
                       ) : votes.map(v => (
                         <span key={v.id} style={{
                           display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -1357,12 +1379,12 @@ export default function Rankings() {
                 }}>
                   {isChangingVote
                     ? voteBalanceDelta > 0
-                      ? <>改为欢乐会退回 {voteBalanceDelta} 契约币；公开记录会从{existingVoteCopy.label}直接变成{requestedVoteCopy?.label}。</>
+                      ? <>改为共鸣会退回 {voteBalanceDelta} 契约币；公开记录会从{existingVoteCopy.label}直接变成{requestedVoteCopy?.label}。</>
                       : voteBalanceDelta < 0
-                        ? <>欢乐免费，改为{requestedVoteCopy?.label}需要扣 {Math.abs(voteBalanceDelta)} 契约币。</>
+                        ? <>共鸣免费，改为{requestedVoteCopy?.label}需要扣 {Math.abs(voteBalanceDelta)} 契约币。</>
                         : <>{existingVoteCopy.label}和{requestedVoteCopy?.label}互改不再扣币，也不退款，只调整公开口碑方向。</>
                     : canCancelExistingVote
-                      ? <>24 小时内可以撤销。{existingMyVote.refund_amount > 0 ? `撤销后退回 ${existingMyVote.refund_amount} 契约币。` : '欢乐免费，撤销不涉及退币。'}截止：{voteDeadlineText(existingMyVote)}</>
+                      ? <>24 小时内可以撤销。{existingMyVote.refund_amount > 0 ? `撤销后退回 ${existingMyVote.refund_amount} 契约币。` : '共鸣免费，撤销不涉及退币。'}截止：{voteDeadlineText(existingMyVote)}</>
                       : <>这票已经超过 24 小时撤销期，只保留公开口碑记录。</>}
                 </div>
                 {isChangingVote && voteBalanceDelta < 0 && (
@@ -1403,7 +1425,7 @@ export default function Rankings() {
                   {requestedVoteCopy?.icon} {requestedVoteCopy?.label} · {requestedVoteCopy?.paid ? '1 契约币' : '免费'}
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投票。{voteModal.voteType === 'joy' ? '欢乐不扣契约币，但同样占用一人一票名额。' : '点赞/点踩扣 1 契约币，24 小时内撤销可退回。'}
+                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份互动。{voteModal.voteType === 'joy' ? '共鸣不扣契约币，但同样占用一人一票名额。' : '赞扬/关注风险扣 1 契约币，24 小时内撤销可退回。'}
                 </p>
                 {voteModal.voteType !== 'joy' && (
                   <p style={{ fontSize: '0.85rem', color: balance && balance >= 1 ? '#34d399' : RED, lineHeight: 1.7, marginBottom: 20 }}>

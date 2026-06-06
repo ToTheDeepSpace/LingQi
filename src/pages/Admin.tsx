@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type React from 'react';
 import { Link } from 'react-router-dom';
 
 const API = '/api';
@@ -267,8 +268,25 @@ type SiteMessage = {
   updated_at?: string;
 };
 
-type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert';
-type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'reports' | 'wallet' | 'certs' | 'security';
+type DmDossierReview = {
+  id: string;
+  dm_name: string;
+  city?: string | null;
+  workplace?: string | null;
+  profile_url?: string | null;
+  photo_url?: string | null;
+  note?: string | null;
+  tags?: string[];
+  status: 'pending' | 'approved' | 'rejected' | 'hidden';
+  submitted_by_name?: string | null;
+  claim_status: 'unclaimed' | 'pending' | 'approved' | 'rejected';
+  claim_note?: string | null;
+  claimed_by?: string | null;
+  created_at: string;
+};
+
+type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier';
+type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'reports' | 'wallet' | 'certs' | 'security';
 
 function certificationTypeLabel(type: string) {
   if (type === 'realname') return '⭐ 实名认证';
@@ -321,6 +339,7 @@ export default function Admin() {
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
   const [carpools, setCarpools] = useState<CarpoolReview[]>([]);
   const [scriptContributions, setScriptContributions] = useState<ScriptContributionReview[]>([]);
+  const [dmDossiers, setDmDossiers] = useState<DmDossierReview[]>([]);
   const [reports, setReports] = useState<ReportReview[]>([]);
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
@@ -356,6 +375,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setCommissions((d.data as { commissions: CommissionReview[] }).commissions || []);
         setCarpools((d.data as { carpools: CarpoolReview[] }).carpools || []);
         setScriptContributions((d.data as { scriptContributions: ScriptContributionReview[] }).scriptContributions || []);
+        setDmDossiers((d.data as { dmDossiers: DmDossierReview[] }).dmDossiers || []);
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
         setReports((d.data as { reports: ReportReview[] }).reports || []);
@@ -547,6 +567,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
+  const approveDmDossier = async (id: string) => {
+    await fetch(`${API}/lc/admin/dm-dossiers/${id}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    setDmDossiers(prev => prev.filter(item => item.id !== id));
+    void loadData();
+  };
+
   const resolveReport = async (id: string, action: 'resolved' | 'dismissed', hideTarget = false) => {
     await fetch(`${API}/lc/admin/reports/${id}/resolve`, {
       method: 'PUT',
@@ -636,6 +666,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     } else if (type === 'cert') {
       await fetch(`${API}/lc/admin/certifications/${id}/reject`, { method: 'PUT', headers, body });
       setCerts(prev => prev.filter(c => c.id !== id));
+    } else if (type === 'dmDossier') {
+      await fetch(`${API}/lc/admin/dm-dossiers/${id}/reject`, { method: 'PUT', headers, body });
+      setDmDossiers(prev => prev.filter(item => item.id !== id));
     }
   };
 
@@ -728,6 +761,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             { label: '委托需求', value: commissions.length, color: '#fbbf24' },
             { label: '拼车', value: carpools.length, color: '#14b8a6' },
             { label: '剧本库', value: scriptContributions.length, color: '#f59e0b' },
+            { label: '爱D墙', value: dmDossiers.length, color: '#f472b6' },
             { label: '举报', value: reports.length, color: '#f87171' },
             { label: '站内信', value: siteMessages.length, color: '#38bdf8' },
             { label: '安全日志', value: securityEvents.length, color: '#fb923c' },
@@ -752,6 +786,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
           <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
           <button style={tabStyle(tab === 'scriptContributions')} onClick={() => setTab('scriptContributions')}>剧本库 {scriptContributions.length > 0 && `(${scriptContributions.length})`}</button>
+          <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>爱D墙 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
           <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
           <button style={tabStyle(tab === 'messages')} onClick={() => setTab('messages')}>站内信 {siteMessages.length > 0 && `(${siteMessages.length})`}</button>
           <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
@@ -1035,6 +1070,45 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     </Row>
                   );
                 })}
+              </ListEmpty>
+            )}
+
+            {tab === 'dmDossiers' && (
+              <ListEmpty empty={dmDossiers.length === 0} text="暂无待审核爱D墙档案">
+                {dmDossiers.map(item => (
+                  <Row key={item.id} accent="#f472b6">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={item.dm_name} pill={item.status === 'pending' ? '爱D墙建档' : 'DM 认领'} />
+                      <Meta>
+                        {item.city || '未知城市'}
+                        {item.workplace ? ` · ${item.workplace}` : ''}
+                        {item.submitted_by_name ? ` · 提交人：${item.submitted_by_name}` : ''}
+                        {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      {item.profile_url && <Meta>主页：{item.profile_url}</Meta>}
+                      {item.claim_status === 'pending' && (
+                        <Proof>
+                          认领申请：{item.claimed_by || '未知账号'}
+                          {item.claim_note ? ` · ${item.claim_note}` : ''}
+                        </Proof>
+                      )}
+                      {item.note && <ContentBox>{item.note}</ContentBox>}
+                      {item.tags && item.tags.length > 0 && <Meta>标签：{item.tags.join(' / ')}</Meta>}
+                      {item.photo_url && (
+                        <a href={item.photo_url} target="_blank" rel="noreferrer"
+                          style={{ display: 'inline-flex', marginTop: 10, color: GOLD, fontSize: '0.78rem', fontWeight: 800, textDecoration: 'none' }}>
+                          查看照片
+                        </a>
+                      )}
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveDmDossier(item.id)}>
+                        {item.claim_status === 'pending' && item.status !== 'pending' ? '通过认领' : '通过公开'}
+                      </ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'dmDossier')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
               </ListEmpty>
             )}
 
