@@ -212,22 +212,10 @@ function eventTitle(content: string) {
   return `${firstSentence.slice(0, 24)}...`;
 }
 
-function eventHeading(item: Pick<Ranking, 'content' | 'subject_type' | 'type'>) {
-  const normalized = item.content.replace(/\s+/g, ' ').trim();
-  const subjectLabel = SUBJECT_LABEL[item.subject_type] || item.subject_type;
-  const kind = eventKindCopy(item.type);
-  const fallback = `${subjectLabel}${kind.label}记录`;
-  if (!normalized) return fallback;
-  const firstSentence = normalized.split(/[。！？!?；;]/)[0]?.trim() || normalized;
-  if (normalized.length <= 32 && firstSentence === normalized) return fallback;
-  if (firstSentence.length <= 24) return firstSentence;
-  return `${firstSentence.slice(0, 24)}...`;
-}
-
 function eventSummary(content: string) {
   const normalized = content.replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
-  return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;
+  return normalized;
 }
 
 function eventKindCopy(type: Ranking['type']) {
@@ -1374,7 +1362,7 @@ export default function Rankings() {
               const boostStats = paidBoostBreakdown(item);
               const reputation = reputationSegments(item);
               const kind = eventKindCopy(item.type);
-              const heading = eventHeading(item);
+              const heading = eventTitle(item.content);
               const summary = eventSummary(item.content);
 
               return (
@@ -1442,27 +1430,14 @@ export default function Rankings() {
                         marginLeft: 'auto',
                       }}>#{idx + 1}</span>
                     </div>
-                    <h2 style={{
-                      margin: '0 0 14px',
-                      color: 'rgba(17,24,39,0.95)',
-                      fontSize: 'clamp(1.2rem, 2.4vw, 1.54rem)',
-                      lineHeight: 1.36,
-                      fontWeight: 950,
-                      letterSpacing: 0,
-                    }}>
-                      {heading}
-                    </h2>
                     {summary && (
                       <p style={{
-                        fontSize: '0.92rem',
-                        color: 'rgba(31,41,55,0.88)',
-                        lineHeight: 1.72,
+                        fontSize: 'clamp(1rem, 2vw, 1.2rem)',
+                        color: 'rgba(31,41,55,0.92)',
+                        lineHeight: 1.78,
                         margin: '0',
-                        fontWeight: 560,
-                        display: '-webkit-box',
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
+                        fontWeight: 650,
+                        whiteSpace: 'pre-wrap',
                       }}>
                         {renderContent(summary)}
                       </p>
