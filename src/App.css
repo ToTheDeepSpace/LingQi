@@ -326,3 +326,28 @@ body {
   background-image: radial-gradient(circle, #d9a857 1px, transparent 1px);
   background-size: 32px 32px;
 }
+
+/* ============ 点击反馈 ============ */
+.home-return-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(146, 95, 24, 0.14) !important;
+}
+
+.home-return-link:active,
+.segment-switch-button:active {
+  transform: scale(0.98);
+}
+
+.segment-switch-button:focus-visible,
+.home-return-link:focus-visible {
+  outline: 2px solid rgba(39, 83, 137, 0.55);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-return-link,
+  .segment-switch-button,
+  .segment-switch-indicator {
+    transition: none !important;
+  }
+}

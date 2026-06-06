@@ -133,6 +133,7 @@ export default function Navbar() {
 
         {/* 返回首页 — 左 */}
         <Link
+          className="home-return-link"
           to="/"
           aria-label={isHome ? '灵契首页' : '返回灵契首页'}
           style={homeLinkStyle(isHome)}
@@ -279,6 +280,8 @@ const homeLinkStyle = (isHome: boolean): React.CSSProperties => ({
   background: isHome ? 'rgba(255,250,242,0.72)' : 'linear-gradient(135deg, rgba(255,250,242,0.98), rgba(238,246,255,0.92))',
   boxShadow: isHome ? 'none' : '0 10px 24px rgba(146,95,24,0.12)',
   color: INK,
+  transition: 'transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease',
+  willChange: 'transform',
 });
 
 const homeArrowStyle = (isHome: boolean): React.CSSProperties => ({

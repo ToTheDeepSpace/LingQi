@@ -348,11 +348,14 @@ export default function DmWall() {
 }
 
 function EntityFilterSwitch({ value, onChange }: { value: EntityFilter; onChange: (value: EntityFilter) => void }) {
+  const activeIndex = Math.max(0, ENTITY_FILTERS.findIndex(option => option.value === value));
   return (
-    <div aria-label="档案类型筛选" style={{ ...segmentShell, flex: '2 1 360px' }}>
+    <div aria-label="档案类型筛选" style={{ ...segmentShell(ENTITY_FILTERS.length), flex: '2 1 360px' }}>
+      <span className="segment-switch-indicator" aria-hidden="true" style={segmentIndicator(activeIndex, ENTITY_FILTERS.length)} />
       {ENTITY_FILTERS.map(option => (
         <button
           key={option.value}
+          className="segment-switch-button"
           type="button"
           onClick={() => onChange(option.value)}
           aria-pressed={value === option.value}
@@ -367,13 +370,16 @@ function EntityFilterSwitch({ value, onChange }: { value: EntityFilter; onChange
 }
 
 function EntityFormSwitch({ value, onChange }: { value: DossierEntityType; onChange: (value: DossierEntityType) => void }) {
+  const activeIndex = Math.max(0, ENTITY_FORM_TYPES.findIndex(option => option.value === value));
   return (
     <div style={{ marginBottom: 14 }}>
       <span style={labelStyle}>档案类型 *</span>
-      <div aria-label="建档类型" style={segmentShell}>
+      <div aria-label="建档类型" style={segmentShell(ENTITY_FORM_TYPES.length)}>
+        <span className="segment-switch-indicator" aria-hidden="true" style={segmentIndicator(activeIndex, ENTITY_FORM_TYPES.length)} />
         {ENTITY_FORM_TYPES.map(option => (
           <button
             key={option.value}
+            className="segment-switch-button"
             type="button"
             onClick={() => onChange(option.value)}
             aria-pressed={value === option.value}
@@ -399,24 +405,39 @@ function Field({ label, value, onChange, placeholder = '' }: { label: string; va
 
 const labelStyle: React.CSSProperties = { display: 'block', color: 'rgba(71,85,105,0.72)', fontSize: 13, fontWeight: 800, marginBottom: 6 };
 const inputStyle: React.CSSProperties = { boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: '1px solid rgba(166,106,31,0.20)', background: '#fff', color: INK, outline: 'none', fontSize: 14 };
-const segmentShell: React.CSSProperties = {
+const segmentShell = (count: number): React.CSSProperties => ({
   boxSizing: 'border-box',
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+  gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))`,
   gap: 6,
   padding: 5,
   borderRadius: 12,
   border: '1px solid rgba(166,106,31,0.24)',
   background: 'rgba(255,250,242,0.92)',
   minWidth: 0,
-};
+  position: 'relative',
+  overflow: 'hidden',
+});
 const segmentLabel: React.CSSProperties = { fontSize: 14, fontWeight: 900, lineHeight: 1.2 };
 const segmentHelper: React.CSSProperties = { fontSize: 11, fontWeight: 800, lineHeight: 1.2, opacity: 0.82 };
+const segmentIndicator = (index: number, count: number): React.CSSProperties => ({
+  position: 'absolute',
+  zIndex: 0,
+  left: 5,
+  top: 5,
+  bottom: 5,
+  width: `calc((100% - 10px - ${6 * (count - 1)}px) / ${count})`,
+  borderRadius: 9,
+  background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+  boxShadow: '0 10px 20px rgba(166,106,31,0.22)',
+  transform: `translateX(calc(${index} * (100% + 6px)))`,
+  transition: 'transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease',
+});
 const segmentButton = (active: boolean): React.CSSProperties => ({
   minHeight: 52,
-  border: active ? '1px solid rgba(166,106,31,0.42)' : '1px solid transparent',
+  border: '1px solid transparent',
   borderRadius: 9,
-  background: active ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : '#fff',
+  background: active ? 'transparent' : 'rgba(255,255,255,0.82)',
   color: active ? '#fffdf8' : 'rgba(31,41,55,0.82)',
   cursor: 'pointer',
   display: 'flex',
@@ -425,8 +446,11 @@ const segmentButton = (active: boolean): React.CSSProperties => ({
   justifyContent: 'center',
   gap: 4,
   padding: '8px 10px',
-  boxShadow: active ? '0 10px 20px rgba(166,106,31,0.22)' : 'none',
+  boxShadow: active ? 'none' : 'inset 0 0 0 1px rgba(166,106,31,0.06)',
   textAlign: 'center',
+  position: 'relative',
+  zIndex: 1,
+  transition: 'color 180ms ease, background 180ms ease, transform 140ms ease, box-shadow 180ms ease',
 });
 const primaryButton: React.CSSProperties = { border: 'none', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: '#fffdf8', padding: '11px 18px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
 const ghostButton: React.CSSProperties = { border: '1px solid rgba(166,106,31,0.22)', borderRadius: 10, background: '#fffaf2', color: GOLD, padding: '9px 13px', fontWeight: 800, cursor: 'pointer', textDecoration: 'none', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
