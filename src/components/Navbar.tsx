@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { preloadRoute } from '../lib/routePreload';
 
 const BG = 'rgba(255,253,248,0.94)';
@@ -59,6 +59,7 @@ function readAuthSnapshot() {
 }
 
 export default function Navbar() {
+  const { pathname } = useLocation();
   const [authSnapshot, setAuthSnapshot] = useState(readAuthSnapshot);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -66,6 +67,7 @@ export default function Navbar() {
   const isLoggedIn = !!creatorAuth;
   const isAdmin = !!adminToken;
   const isShop = creatorAuth?.role === 'shop';
+  const isHome = pathname === '/';
 
   useEffect(() => {
     const syncAuth = () => setAuthSnapshot(readAuthSnapshot());
@@ -129,13 +131,23 @@ export default function Navbar() {
         gap: 16,
       }}>
 
-        {/* Logo — 左 */}
-        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
-          <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.3rem' }}>
-            灵契
-          </span>
-          <span style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(146,95,24,0.58)', fontFamily: 'var(--font-sans)' }}>
-            Lingqi
+        {/* 返回首页 — 左 */}
+        <Link
+          to="/"
+          aria-label={isHome ? '灵契首页' : '返回灵契首页'}
+          style={homeLinkStyle(isHome)}
+          onMouseEnter={() => preloadRoute('/')}
+          onFocus={() => preloadRoute('/')}
+        >
+          <span aria-hidden="true" style={homeArrowStyle(isHome)}>←</span>
+          <span style={{ display: 'grid', gap: 1, minWidth: 0 }}>
+            <span style={homeReturnTextStyle}>{isHome ? '灵契首页' : '返回首页'}</span>
+            <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.1rem', lineHeight: 1.05 }}>
+              灵契
+              <span style={{ marginLeft: 5, fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(146,95,24,0.58)', fontFamily: 'var(--font-sans)', WebkitTextFillColor: 'rgba(146,95,24,0.58)' }}>
+                Lingqi
+              </span>
+            </span>
           </span>
         </Link>
 
@@ -253,6 +265,44 @@ export default function Navbar() {
     </nav>
   );
 }
+
+const homeLinkStyle = (isHome: boolean): React.CSSProperties => ({
+  textDecoration: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 9,
+  flex: '0 0 auto',
+  minWidth: 0,
+  padding: '7px 12px 7px 8px',
+  borderRadius: 14,
+  border: isHome ? '1px solid rgba(201,146,46,0.22)' : '1px solid rgba(201,146,46,0.42)',
+  background: isHome ? 'rgba(255,250,242,0.72)' : 'linear-gradient(135deg, rgba(255,250,242,0.98), rgba(238,246,255,0.92))',
+  boxShadow: isHome ? 'none' : '0 10px 24px rgba(146,95,24,0.12)',
+  color: INK,
+});
+
+const homeArrowStyle = (isHome: boolean): React.CSSProperties => ({
+  width: 32,
+  height: 32,
+  borderRadius: 10,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flex: '0 0 auto',
+  background: isHome ? 'rgba(217,168,87,0.14)' : 'linear-gradient(135deg, #d9a857 0%, #c9922e 100%)',
+  color: isHome ? '#925f18' : '#fffdf8',
+  border: isHome ? '1px solid rgba(201,146,46,0.18)' : '1px solid rgba(146,95,24,0.22)',
+  fontSize: 18,
+  fontWeight: 900,
+  lineHeight: 1,
+});
+
+const homeReturnTextStyle: React.CSSProperties = {
+  color: 'rgba(39,83,137,0.82)',
+  fontSize: 11,
+  fontWeight: 900,
+  lineHeight: 1.05,
+};
 
 function IdentityChip({ children, tone }: { children: React.ReactNode; tone: 'user' | 'admin' }) {
   const admin = tone === 'admin';
