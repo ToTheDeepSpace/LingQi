@@ -77,7 +77,12 @@ export default function CreateRanking() {
   const [error, setError] = useState('');
   const [balance, setBalance] = useState<number | null>(null);
   const [rulesAccepted, setRulesAccepted] = useState(false);
-  const effectiveAmount = type === 'white' ? 0 : initialAmount;
+  const effectiveAmount = type === 'red' ? initialAmount : 0;
+  const publishCostText = type === 'red'
+    ? `契约币 ${effectiveAmount} 起发`
+    : type === 'black'
+      ? '黑榜免费提交'
+      : '白榜免费发布';
 
   const draftValue = useMemo<RankingDraft>(() => ({
     type,
@@ -104,7 +109,7 @@ export default function CreateRanking() {
       setSelectedProvince(data.selectedProvince || PROVINCES[0] || '');
       setSubjectUrl(data.subjectUrl || '');
       setContent(data.content || '');
-      setInitialAmount(data.type === 'white' ? 0 : Math.max(10, data.initialAmount || 10));
+      setInitialAmount(data.type === 'red' ? Math.max(10, data.initialAmount || 10) : 10);
     },
   });
 
@@ -217,7 +222,7 @@ export default function CreateRanking() {
             <Link to="/rankings" style={backLinkStyle}>← 返回红黑榜</Link>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>发布红黑榜</h1>
             <p style={{ fontSize: '0.82rem', color: MUTED }}>
-              一人一票 · 真实口碑 · {type === 'white' ? '白榜免费发布' : `契约币 ${effectiveAmount} 起发`}
+              一人一票 · 真实口碑 · {publishCostText}
             </p>
           </div>
           <Link to="/wallet" style={{
@@ -246,7 +251,7 @@ export default function CreateRanking() {
             <div style={{ fontSize: 64, marginBottom: 20 }}>✅</div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.6rem', marginBottom: 12 }}>发布成功</h2>
             <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 32 }}>
-              你的{type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}已提交审核。审核通过后将上线展示，{effectiveAmount > 0 ? `${effectiveAmount} 契约币已扣除。` : '白榜本次免费发布。'}
+              你的{type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}已提交审核。审核通过后将上线展示，{effectiveAmount > 0 ? `${effectiveAmount} 契约币已扣除。` : `${type === 'black' ? '黑榜' : '白榜'}本次免费发布。`}
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <Link to="/rankings" style={{ padding: '12px 32px', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: INK, fontWeight: 700, textDecoration: 'none' }}>
@@ -267,7 +272,7 @@ export default function CreateRanking() {
                 {(['red', 'white', 'black'] as const).map(t => (
                   <button key={t} onClick={() => {
                     setType(t);
-                    setInitialAmount(prev => t === 'white' ? 0 : Math.max(10, prev || 10));
+                    setInitialAmount(prev => t === 'red' ? Math.max(10, prev || 10) : 10);
                   }}
                     style={{
                       flex: 1, padding: '12px 0', borderRadius: 12, cursor: 'pointer', fontWeight: 700, fontSize: '0.95rem',
@@ -307,9 +312,11 @@ export default function CreateRanking() {
             </div>
 
             {/* 金额 */}
-            {type === 'white' ? (
+            {type !== 'red' ? (
               <div style={{ padding: '14px 16px', borderRadius: 12, border: '1px solid rgba(217,168,87,0.22)', background: 'rgba(217,168,87,0.08)', color: '#925f18', lineHeight: 1.7, fontSize: '0.84rem' }}>
-                ✨ 白榜免费发布。它适合记录非夸非踩的趣闻、笑话、怪事和中性观察；如果涉及具体人或店，上传材料会更容易通过审核。
+                {type === 'black'
+                  ? '👎 黑榜免费提交，但必须上传证据并进入人工审核；它只做公共风险记录，不开放砸币攻击。'
+                  : '✨ 白榜免费发布。它适合记录非夸非踩的趣闻、笑话、怪事和中性观察；如果涉及具体人或店，上传材料会更容易通过审核。'}
               </div>
             ) : (
               <div>
@@ -466,7 +473,7 @@ export default function CreateRanking() {
                 color: submitting || !rulesAccepted ? 'rgba(201,146,46,0.48)' : INK,
                 border: 'none', opacity: submitting || !rulesAccepted ? 0.82 : 1,
               }}>
-              {submitting ? '提交中...' : !rulesAccepted ? '请先确认发布规则' : (effectiveAmount > 0 ? `发布 · 扣 ${effectiveAmount} 契约币` : '免费发布白榜')}
+              {submitting ? '提交中...' : !rulesAccepted ? '请先确认发布规则' : (effectiveAmount > 0 ? `发布 · 扣 ${effectiveAmount} 契约币` : `免费发布${type === 'black' ? '黑榜' : '白榜'}`)}
             </button>
           </div>
         )}
@@ -516,10 +523,10 @@ function RankingRulesNotice({ type, accepted, onAcceptedChange }: { type: Rankin
         <RuleLine text={typeTip} />
         <RuleLine text="红榜、黑榜必须上传证据；白榜可选，但涉及具体人或店时建议上传材料。" />
         <RuleLine text="聊天记录、订单、群聊、照片等第三方信息请先打码；未打码或泄露隐私的内容可能被驳回。" />
-        <RuleLine text="同一账号对同一帖子只保留一票；禁止多号刷赞、刷踩、刷欢乐或重复提交同一事件。" />
+        <RuleLine text="同一账号对同一帖子只保留一票；禁止多号刷赞、刷欢乐或重复提交同一事件。" />
         <RuleLine text="审核通过只代表符合展示规则，不代表平台确认所有陈述完全真实。" />
         <RuleLine text="相关方回应不是删帖入口：先发普通评论，通过后再提交关系材料申请置顶。" />
-        <RuleLine text="黑榜默认公开展示 30 天后过期隐藏；这不是删除记录，后续可去标识化沉淀为共性问题和礼仪建议。" />
+        <RuleLine text="黑榜默认公开展示 30 天后进入已过期记录；这不是删除记录，后续可去标识化沉淀为共性问题和礼仪建议。" />
       </div>
 
       <label style={{

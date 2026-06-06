@@ -1242,7 +1242,7 @@ export default function Dashboard() {
                   {myRankings.map(item => (
                     <MineRow key={item.id}
                       title={item.subject_name}
-                      meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · ${item.initial_amount === 0 ? '免费' : `${item.initial_amount} 契约币`} · 赞${item.likes || 0} 踩${item.dislikes || 0} 欢乐${item.joys || 0}`}
+                      meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · ${item.initial_amount === 0 ? '免费' : `${item.initial_amount} 契约币`} · 赞${item.likes || 0} 旧负面票${item.dislikes || 0} 欢乐${item.joys || 0}`}
                       status={item.status}
                       to="/rankings"
                       action={item.status === 'pending' && item.initial_amount === 0 ? (

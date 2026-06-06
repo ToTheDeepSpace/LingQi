@@ -193,12 +193,47 @@ function parseMentions(text: string): { text: string; mention: boolean; name: st
 
 function voteCopy(voteType: MyVote['vote_type']) {
   if (voteType === 'like') return { label: '赞扬', icon: '赞', paid: true };
-  if (voteType === 'dislike') return { label: '关注风险', icon: '险', paid: true };
-  return { label: '共鸣', icon: '共', paid: false };
+  if (voteType === 'dislike') return { label: '旧版负面票', icon: '旧', paid: true };
+  return { label: '欢乐', icon: '乐', paid: false };
 }
 
 function voteCost(voteType: MyVote['vote_type']) {
   return voteType === 'joy' ? 0 : 1;
+}
+
+function rankingSortScore(item: Ranking) {
+  if (item.type === 'red') return item.likes || 0;
+  if (item.type === 'black') return (item.joys || 0) + (item.dislikes || 0);
+  return (item.likes || 0) + (item.joys || 0);
+}
+
+function voteRecordText(vote: VoteRecord) {
+  if (vote.vote_type === 'like') return '赞扬';
+  if (vote.vote_type === 'dislike') return '旧版负面票';
+  return '欢乐';
+}
+
+function voteRecordIcon(vote: VoteRecord) {
+  if (vote.vote_type === 'like') return '赞';
+  if (vote.vote_type === 'dislike') return '旧';
+  return '乐';
+}
+
+function votesToggleLabel(item: Ranking, showVotes: boolean) {
+  if (showVotes) return '收起记录';
+  if (item.type === 'black') return '谁点了欢乐';
+  return '谁赞扬/欢乐';
+}
+
+function emptyVoteRecordText(item: Ranking) {
+  return item.type === 'black' ? '暂无欢乐记录' : '暂无赞扬或欢乐记录';
+}
+
+function isVoteAllowed(item: Ranking | undefined, voteType: MyVote['vote_type']) {
+  if (!item) return false;
+  if (voteType === 'dislike') return false;
+  if (item.type === 'black') return voteType === 'joy';
+  return voteType === 'like' || voteType === 'joy';
 }
 
 function voteCanCancel(myVote: MyVote | null | undefined) {
@@ -427,6 +462,7 @@ export default function Rankings() {
   const navigate = useNavigate();
   const initialPreferredCities = getAuth()?.availableCities || [];
   const [tab, setTab] = useState<'red' | 'black' | 'white'>('red');
+  const [blackView, setBlackView] = useState<'active' | 'expired'>('active');
   const [subjectTab, setSubjectTab] = useState<string>('all');
   const [city, setCity] = useState(initialPreferredCities.length > 0 ? 'preferred' : 'all');
   const [preferredCities, setPreferredCities] = useState<string[]>(initialPreferredCities);
@@ -564,6 +600,7 @@ export default function Rankings() {
         if (subjectTab !== 'all') params.set('subjectType', subjectTab);
         if (city === 'preferred' && preferredCityParam) params.set('cities', preferredCityParam);
         else if (city !== 'all' && city !== 'preferred') params.set('city', city);
+        if (tab === 'black' && blackView === 'expired') params.set('expired', 'true');
         const current = getAuth();
         const r = await fetch(`${API}/lc/rankings?${params}`, {
           headers: current ? { Authorization: `Bearer ${current.token}` } : undefined,
@@ -585,7 +622,7 @@ export default function Rankings() {
     };
     void loadRankings();
     return () => { alive = false; };
-  }, [tab, subjectTab, city, preferredCityParam, fetchWallet]);
+  }, [tab, blackView, subjectTab, city, preferredCityParam, fetchWallet]);
 
   const setCityAndClose = (nextCity: string) => {
     setCityTouched(true);
@@ -602,8 +639,8 @@ export default function Rankings() {
 
   const rankedItems = useMemo(() => {
     return [...items].sort((a, b) => {
-      const byLikes = (b.likes || 0) - (a.likes || 0);
-      if (byLikes !== 0) return byLikes;
+      const byScore = rankingSortScore(b) - rankingSortScore(a);
+      if (byScore !== 0) return byScore;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [items]);
@@ -887,6 +924,11 @@ export default function Rankings() {
   const openVoteModal = (id: string, voteType: 'like' | 'dislike' | 'joy') => {
     const current = requireAuth();
     if (!current) return;
+    const item = items.find(ranking => ranking.id === id);
+    if (!isVoteAllowed(item, voteType) && item?.my_vote?.vote_type !== voteType) {
+      window.alert('这个互动不符合当前红黑榜规则：黑榜不开放付费负面打榜，负面补充请走评论、举报或相关方回应。');
+      return;
+    }
     setVoteModal({ id, voteType });
     setVoteError('');
   };
@@ -1008,10 +1050,16 @@ export default function Rankings() {
         <p style={{ margin: '-2px 0 16px', color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.7 }}>
           {TAB_HINT[tab]}
         </p>
+        {tab === 'black' && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '-4px 0 16px' }}>
+            <FilterPill active={blackView === 'active'} onClick={() => setBlackView('active')}>公开中</FilterPill>
+            <FilterPill active={blackView === 'expired'} onClick={() => setBlackView('expired')}>已过期</FilterPill>
+          </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
           <p style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.78rem' }}>
-            当前排序：赞扬值优先 · 同赞扬按发布时间；黑榜只作公共风险记录。
+            当前排序：红榜看赞扬值，白榜看赞扬和欢乐，黑榜看免费互动信号与发布时间。
           </p>
           <CityFilter
             city={city}
@@ -1067,7 +1115,9 @@ export default function Rankings() {
           <div style={{ textAlign: 'center', padding: '80px 0' }}>
             <div style={{ fontSize: 52, marginBottom: 16, opacity: 0.3 }}>{tab === 'red' ? '🏅' : tab === 'black' ? '👎' : '✨'}</div>
             <p style={{ color: 'rgba(71,85,105,0.68)', marginBottom: 20 }}>
-              {subjectTab !== 'all' ? `${SUBJECT_LABEL[subjectTab] || subjectTab}暂无内容` : (tab === 'red' ? '红榜暂无内容' : tab === 'black' ? '黑榜暂无内容' : '白榜暂无内容')}
+              {subjectTab !== 'all'
+                ? `${SUBJECT_LABEL[subjectTab] || subjectTab}暂无内容`
+                : (tab === 'red' ? '红榜暂无内容' : tab === 'black' ? (blackView === 'expired' ? '暂无已过期黑榜' : '黑榜暂无内容') : '白榜暂无内容')}
             </p>
             <Link to="/rankings/new" style={{ color: GOLD, fontSize: '0.875rem', textDecoration: 'underline' }}>
               成为第一个发布的人
@@ -1213,20 +1263,30 @@ export default function Rankings() {
                   })()}
 
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                    <button onClick={() => openVoteModal(item.id, 'like')}
-                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.22)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#219669', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-                      {myVote?.vote_type === 'like' ? '已赞扬' : '赞扬'} {item.likes}
-                      {item.initial_amount > 0 && <span style={{ fontSize: '0.68rem', color: 'rgba(71,85,105,0.56)' }}>含初始 {item.initial_amount}</span>}
-                      <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(33,150,105,0.58)' }}>1币</span>
-                    </button>
+                    {item.type !== 'black' && (
+                      <button onClick={() => openVoteModal(item.id, 'like')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.22)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#219669', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
+                        {myVote?.vote_type === 'like' ? '已赞扬' : '赞扬'} {item.likes}
+                        {item.initial_amount > 0 && <span style={{ fontSize: '0.68rem', color: 'rgba(71,85,105,0.56)' }}>含初始 {item.initial_amount}</span>}
+                        <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(33,150,105,0.58)' }}>1币</span>
+                      </button>
+                    )}
                     <button onClick={() => openVoteModal(item.id, 'joy')}
                       style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'joy' ? '1px solid rgba(166,106,31,0.42)' : '1px solid rgba(217,168,87,0.25)', background: myVote?.vote_type === 'joy' ? 'rgba(217,168,87,0.16)' : 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-                      {myVote?.vote_type === 'joy' ? '已共鸣' : '共鸣'} {item.joys || 0} <span style={{ fontSize: '0.68rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
+                      {myVote?.vote_type === 'joy' ? '已欢乐' : '欢乐'} {item.joys || 0} <span style={{ fontSize: '0.68rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
                     </button>
-                    <button onClick={() => openVoteModal(item.id, 'dislike')}
-                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'dislike' ? '1px solid rgba(220,38,38,0.38)' : '1px solid rgba(248,113,113,0.2)', background: myVote?.vote_type === 'dislike' ? 'rgba(254,226,226,0.72)' : 'rgba(248,113,113,0.07)', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : RED, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-                      {myVote?.vote_type === 'dislike' ? '已关注风险' : '关注风险'} {item.dislikes} <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(248,113,113,0.5)' }}>1币</span>
-                    </button>
+                    {item.type === 'black' && myVote?.vote_type === 'like' && (
+                      <button onClick={() => openVoteModal(item.id, 'like')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: '1px solid rgba(22,163,74,0.30)', background: 'rgba(220,252,231,0.62)', color: '#15803d', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
+                        已旧版赞扬 {item.likes}
+                      </button>
+                    )}
+                    {myVote?.vote_type === 'dislike' && (
+                      <button onClick={() => openVoteModal(item.id, 'dislike')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: '1px solid rgba(220,38,38,0.26)', background: 'rgba(254,226,226,0.62)', color: '#b91c1c', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
+                        已旧版负面票 {item.dislikes}
+                      </button>
+                    )}
                   </div>
 
                   {pinnedComments.length > 0 && (
@@ -1280,7 +1340,7 @@ export default function Rankings() {
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
                       onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>
-                        {showVotes ? '收起记录' : '谁赞扬/共鸣'}
+                        {votesToggleLabel(item, showVotes)}
                     </button>
                     <button
                       onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: item.subject_name })}
@@ -1318,7 +1378,7 @@ export default function Rankings() {
                   {showVotes && (
                     <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {votes.length === 0 ? (
-                        <span style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.48)' }}>暂无赞扬记录</span>
+                        <span style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.48)' }}>{emptyVoteRecordText(item)}</span>
                       ) : votes.map(v => (
                         <span key={v.id} style={{
                           display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -1326,7 +1386,7 @@ export default function Rankings() {
                           color: v.vote_type === 'like' ? '#34d399' : v.vote_type === 'dislike' ? RED : GOLD,
                           background: v.vote_type === 'like' ? 'rgba(52,211,153,0.08)' : v.vote_type === 'dislike' ? 'rgba(248,113,113,0.08)' : 'rgba(217,168,87,0.10)',
                           border: `1px solid ${v.vote_type === 'like' ? 'rgba(52,211,153,0.18)' : v.vote_type === 'dislike' ? 'rgba(248,113,113,0.18)' : 'rgba(166,106,31,0.18)'}`,
-                        }}>{v.vote_type === 'like' ? '👍' : v.vote_type === 'dislike' ? '👎' : '😂'} {v.voter_is_realname ? `⭐ ${v.voter_name}` : v.voter_name}</span>
+                        }}>{voteRecordIcon(v)} {voteRecordText(v)} · {v.voter_is_realname ? `⭐ ${v.voter_name}` : v.voter_name}</span>
                       ))}
                     </div>
                   )}
@@ -1400,12 +1460,12 @@ export default function Rankings() {
                 }}>
                   {isChangingVote
                     ? voteBalanceDelta > 0
-                      ? <>改为共鸣会退回 {voteBalanceDelta} 契约币；公开记录会从{existingVoteCopy.label}直接变成{requestedVoteCopy?.label}。</>
+                      ? <>改为欢乐会退回 {voteBalanceDelta} 契约币；公开记录会从{existingVoteCopy.label}直接变成{requestedVoteCopy?.label}。</>
                       : voteBalanceDelta < 0
-                        ? <>共鸣免费，改为{requestedVoteCopy?.label}需要扣 {Math.abs(voteBalanceDelta)} 契约币。</>
+                        ? <>欢乐免费，改为{requestedVoteCopy?.label}需要扣 {Math.abs(voteBalanceDelta)} 契约币。</>
                         : <>{existingVoteCopy.label}和{requestedVoteCopy?.label}互改不再扣币，也不退款，只调整公开口碑方向。</>
                     : canCancelExistingVote
-                      ? <>24 小时内可以撤销。{existingMyVote.refund_amount > 0 ? `撤销后退回 ${existingMyVote.refund_amount} 契约币。` : '共鸣免费，撤销不涉及退币。'}截止：{voteDeadlineText(existingMyVote)}</>
+                      ? <>24 小时内可以撤销。{existingMyVote.refund_amount > 0 ? `撤销后退回 ${existingMyVote.refund_amount} 契约币。` : '欢乐免费，撤销不涉及退币。'}截止：{voteDeadlineText(existingMyVote)}</>
                       : <>这票已经超过 24 小时撤销期，只保留公开口碑记录。</>}
                 </div>
                 {isChangingVote && voteBalanceDelta < 0 && (
@@ -1446,7 +1506,7 @@ export default function Rankings() {
                   {requestedVoteCopy?.icon} {requestedVoteCopy?.label} · {requestedVoteCopy?.paid ? '1 契约币' : '免费'}
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份互动。{voteModal.voteType === 'joy' ? '共鸣不扣契约币，但同样占用一人一票名额。' : '赞扬/关注风险扣 1 契约币，24 小时内撤销可退回。'}
+                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份互动。{voteModal.voteType === 'joy' ? '欢乐不扣契约币，但同样占用一人一票名额。' : '赞扬扣 1 契约币，24 小时内撤销可退回。'}
                 </p>
                 {voteModal.voteType !== 'joy' && (
                   <p style={{ fontSize: '0.85rem', color: balance && balance >= 1 ? '#34d399' : RED, lineHeight: 1.7, marginBottom: 20 }}>

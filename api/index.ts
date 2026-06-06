@@ -5211,17 +5211,18 @@ app.get('/api/lc/rankings', async (req, res) => {
     const city = req.query.city as string;
     const cities = normalizeActivityCities(req.query.cities);
     const subjectType = req.query.subjectType as string;
+    const expiredOnly = type === 'black' && req.query.expired === 'true';
     const viewerId = getOptionalCreatorId(req);
     let query = supabase
       .from('lc_rankings')
       .select('*, lc_profiles!poster_id(display_name, avatar, verified_dm, verified_shop, role)')
-      .eq('status', 'approved')
-      .order('likes', { ascending: false })
-      .order('created_at', { ascending: false });
+      .eq('status', 'approved');
     if (type && type !== 'all') query = query.eq('type', type);
     if (subjectType && subjectType !== 'all') query = query.eq('subject_type', subjectType);
     if (cities.length > 0) query = query.in('subject_city', cities);
     else if (city && city !== 'all') query = query.eq('subject_city', city);
+    if (type === 'black') query = query.order('joys', { ascending: false }).order('created_at', { ascending: false });
+    else query = query.order('likes', { ascending: false }).order('created_at', { ascending: false });
 
     const { data, error } = await query;
     if (error) throw error;
@@ -5229,11 +5230,12 @@ app.get('/api/lc/rankings', async (req, res) => {
     const now = Date.now();
     const visible = (data || []).filter((row: Record<string, unknown>) => {
       if (row.type !== 'black') return true;
-      if (row.expiry_override) return true;
+      if (row.expiry_override) return !expiredOnly;
       const expiresAt = row.expires_at
         ? new Date(row.expires_at as string).getTime()
         : new Date(row.created_at as string).getTime() + 30 * 24 * 60 * 60 * 1000;
-      return Number.isFinite(expiresAt) && expiresAt > now;
+      const isExpired = Number.isFinite(expiresAt) && expiresAt <= now;
+      return expiredOnly ? isExpired : !isExpired;
     });
 
     const visibleWithAudit = await attachAuditProof('ranking', visible);
@@ -5301,8 +5303,8 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
     if (!['red', 'black', 'white'].includes(type)) return res.status(400).json(err(new Error('无效榜单类型')));
     if (!RANKING_SUBJECT_TYPES.includes(subjectType)) return res.status(400).json(err(new Error('无效对象分类')));
     if (type !== 'white' && (!Array.isArray(files) || files.length === 0)) return res.status(400).json(err(new Error('请至少上传一份证据文件')));
-    const amount = type === 'white' ? 0 : parseInt(initialAmount);
-    if (type !== 'white' && (amount < 10 || amount > 100)) return res.status(400).json(err(new Error('契约币须在10~100之间')));
+    const amount = type === 'red' ? parseInt(initialAmount) : 0;
+    if (type === 'red' && (!Number.isFinite(amount) || amount < 10 || amount > 100)) return res.status(400).json(err(new Error('红榜初始投入须在10~100契约币之间')));
 
     // 契约币支付
     const profile = await getAuthedProfile(req);
@@ -5400,6 +5402,18 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     if (!['like', 'dislike', 'joy'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
+    if (voteType === 'dislike') return res.status(400).json(err(new Error('负面投票入口已关闭；负面经历请发布黑榜、补充评论或提交举报复核')));
+
+    const { data: targetRanking, error: targetErr } = await supabase.from('lc_rankings')
+      .select('id, type, status')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (targetErr) throw targetErr;
+    if (!targetRanking) return res.status(404).json(err(new Error('帖子不存在')));
+    if (targetRanking.status !== 'approved') return res.status(400).json(err(new Error('只有已公开内容可以互动')));
+    if (targetRanking.type === 'black' && voteType !== 'joy') {
+      return res.status(400).json(err(new Error('黑榜不开放付费打榜，只保留免费欢乐、评论、举报和相关方回应')));
+    }
 
     const { data, error: voteErr } = await supabase.rpc('lc_apply_ranking_vote', {
       p_ranking_id: req.params.id,
@@ -5711,7 +5725,7 @@ app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, a
     const patch: Record<string, unknown> = {
       status: 'approved',
       type: nextType,
-      likes: r.type === 'white' && targetType ? 0 : r.initial_amount,
+      likes: nextType === 'red' ? r.initial_amount : 0,
     };
     if (nextType === 'black') {
       patch.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
