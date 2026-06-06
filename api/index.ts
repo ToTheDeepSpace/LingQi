@@ -317,10 +317,9 @@ async function getAuthedProfile(req: express.Request) {
   return data;
 }
 
-function getSpeakBlockReason(profile: { avatar?: string | null; phone_verified_at?: string | null } | null) {
+function getSpeakBlockReason(profile: { phone_verified_at?: string | null } | null) {
   if (!profile) return '用户不存在';
   if (!profile.phone_verified_at) return '发言前请先用手机号验证码完成认证';
-  if (!profile.avatar) return '发言前请先到个人后台上传头像';
   return '';
 }
 
@@ -537,15 +536,15 @@ async function maybeAwardReferralStage1(inviteeId: string) {
   if (!referral || referral.stage1_awarded_at) return null;
 
   const { data: invitee } = await supabase.from('lc_profiles')
-    .select('id, display_name, avatar, phone_verified_at')
+    .select('id, display_name, phone_verified_at')
     .eq('id', inviteeId)
     .maybeSingle();
-  if (!invitee?.phone_verified_at || !invitee.avatar) return null;
+  if (!invitee?.phone_verified_at) return null;
 
   const credit = await applyWalletCredit({
     profileId: referral.referrer_id,
     amount: 10,
-    description: '邀请好友完成手机号验证和头像奖励 10 契约币',
+    description: '邀请好友完成手机号验证奖励 10 契约币',
     refType: 'referral_stage1',
     refId: referral.id,
     idempotencyKey: `referral:stage1:${referral.id}`,

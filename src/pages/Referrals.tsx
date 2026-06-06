@@ -78,7 +78,7 @@ function roleLabel(role?: ReferralData['community_role']) {
 
 function referralStatus(item: ReferralItem) {
   if (item.stage2_awarded_at) return '已完成有效互动';
-  if (item.stage1_awarded_at) return '已完成手机号和头像';
+  if (item.stage1_awarded_at) return '已完成手机号验证';
   if (item.invitee_bonus_awarded_at) return '已注册';
   return item.status === 'rejected' ? '已驳回' : '等待完成';
 }
@@ -276,7 +276,7 @@ export default function Referrals() {
                 <div style={{ display: 'grid', gap: 10 }}>
                   <RuleRow title="新用户注册" value={`+${data.rules.new_user_base_bonus}`} note="普通新户赠送" />
                   <RuleRow title="通过邀请注册" value={`+${data.rules.invitee_extra_bonus}`} note="被邀请人额外获得" />
-                  <RuleRow title="手机号 + 头像" value={`+${data.rules.referrer_stage1_bonus}`} note="邀请人获得" />
+                  <RuleRow title="手机号验证" value={`+${data.rules.referrer_stage1_bonus}`} note="邀请人获得" />
                   <RuleRow title="认证或有效互动" value={`+${data.rules.referrer_stage2_bonus}`} note="邀请人获得" />
                 </div>
               </div>

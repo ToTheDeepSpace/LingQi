@@ -805,7 +805,7 @@ export default function Dashboard() {
                     <p style={{ color: INK, fontWeight: 800, fontSize: '0.92rem', marginBottom: 8 }}>主页头像</p>
                     <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="上传头像" />
                     <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', marginTop: 8 }}>
-                      未上传时会显示系统生成头像；发布、评论、投票和接单前必须上传本人头像。
+                      未上传时会显示系统生成头像；手机号验证通过后即可发布、评论、投票和接单。
                     </p>
                   </div>
                 </div>
@@ -832,7 +832,7 @@ export default function Dashboard() {
                     lineHeight: 1.65,
                     fontWeight: 700,
                   }}>
-                    {hasUploadedAvatar ? '头像已上传，可以参与公开发言。' : '头像未上传：当前只是默认头像，上传后才能公开发言。'}
+                    {hasUploadedAvatar ? '头像已上传，会展示在你的主页和互动记录里。' : '头像未上传：当前使用系统生成头像，不影响公开发言。'}
                   </div>
                 </div>
                 <div style={{
