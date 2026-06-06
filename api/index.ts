@@ -5615,6 +5615,69 @@ app.post('/api/lc/rankings/:id/paid-boost', authMiddleware, async (req, res) => 
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.get('/api/lc/rankings/:id/boosts', async (req, res) => {
+  try {
+    const { data: ranking, error: rankingErr } = await supabase.from('lc_rankings')
+      .select('id, type, status, initial_amount, author_name, is_realname, created_at')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (rankingErr) throw rankingErr;
+    if (!ranking || ranking.status !== 'approved') return res.status(404).json(err(new Error('帖子不存在')));
+
+    const { data: transactions, error: txErr } = await supabase.from('lc_transactions')
+      .select('id, profile_id, amount, created_at, metadata, lc_profiles(display_name, is_realname)')
+      .eq('ref_id', req.params.id)
+      .eq('ref_type', 'ranking_paid_boost')
+      .eq('status', 'approved')
+      .lt('amount', 0)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (txErr) throw txErr;
+
+    const records: Record<string, unknown>[] = [];
+    const initialAmount = Math.max(0, Number(ranking.initial_amount || 0));
+    if (initialAmount > 0) {
+      records.push({
+        id: `initial-${ranking.id}`,
+        direction: 'boost',
+        contributor_name: ranking.author_name || '发布人',
+        contributor_is_realname: !!ranking.is_realname,
+        amount: initialAmount,
+        created_at: ranking.created_at,
+        is_initial: true,
+      });
+    }
+
+    for (const raw of transactions || []) {
+      const tx = raw as Record<string, unknown>;
+      const metadata = tx.metadata && typeof tx.metadata === 'object' ? tx.metadata as Record<string, unknown> : {};
+      const profileValue = tx.lc_profiles;
+      const profile = Array.isArray(profileValue)
+        ? profileValue[0] as Record<string, unknown> | undefined
+        : profileValue as Record<string, unknown> | undefined;
+      const amount = Math.abs(Number(tx.amount || 0));
+      if (amount <= 0) continue;
+      records.push({
+        id: tx.id,
+        direction: metadata.direction === 'negative_boost' ? 'negative_boost' : 'boost',
+        contributor_name: cleanText(metadata.actor_name, 80) || cleanText(profile?.display_name, 80) || '匿名用户',
+        contributor_is_realname: !!profile?.is_realname,
+        amount,
+        created_at: tx.created_at,
+        is_initial: false,
+      });
+    }
+
+    records.sort((a, b) => {
+      const amountDiff = Number(b.amount || 0) - Number(a.amount || 0);
+      if (amountDiff !== 0) return amountDiff;
+      return new Date(String(b.created_at || '')).getTime() - new Date(String(a.created_at || '')).getTime();
+    });
+
+    res.json(ok(records));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
   try {
     const voteType = req.body.voteType as RankingVoteType;

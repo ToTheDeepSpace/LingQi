@@ -98,6 +98,16 @@ type VoteRecord = {
   created_at: string;
 };
 
+type BoostRecord = {
+  id: string;
+  direction: 'boost' | 'negative_boost';
+  contributor_name: string;
+  contributor_is_realname: boolean;
+  amount: number;
+  created_at: string;
+  is_initial?: boolean;
+};
+
 type VoteModal = { id: string; voteType: 'like' | 'dislike' | 'joy' } | null;
 type PaidBoostModal = { id: string; direction: 'boost' | 'negative_boost' } | null;
 type CommentModal = { rankingId: string } | null;
@@ -331,7 +341,7 @@ function formatAuditValue(field: string, value: unknown) {
   return JSON.stringify(value);
 }
 
-function paidBattleButtonStyle(direction: 'boost' | 'negative_boost'): React.CSSProperties {
+function paidBattleButtonStyle(direction: 'boost' | 'negative_boost', active: boolean): React.CSSProperties {
   const isNegative = direction === 'negative_boost';
   return {
     minHeight: 66,
@@ -341,10 +351,12 @@ function paidBattleButtonStyle(direction: 'boost' | 'negative_boost'): React.CSS
     gap: 10,
     padding: '12px 16px',
     border: 'none',
-    background: isNegative
-      ? 'linear-gradient(135deg, #0f172a 0%, #111827 58%, #1f2937 100%)'
-      : 'linear-gradient(135deg, #fff7f7 0%, #fee2e2 52%, #fecaca 100%)',
-    color: isNegative ? '#fff7ed' : '#991b1b',
+    background: active
+      ? (isNegative
+        ? 'linear-gradient(135deg, #3f4753 0%, #242b35 58%, #171c24 100%)'
+        : 'linear-gradient(135deg, #fff9f6 0%, #f8e5df 54%, #efcbc3 100%)')
+      : 'linear-gradient(135deg, #f8fafc 0%, #f3f4f6 100%)',
+    color: active ? (isNegative ? '#fff9f4' : '#8f3732') : 'rgba(71,85,105,0.58)',
     cursor: 'pointer',
     fontSize: '1.12rem',
     fontWeight: 950,
@@ -358,7 +370,7 @@ function paidBattleButtonStyle(direction: 'boost' | 'negative_boost'): React.CSS
 }
 
 function freeActionButtonStyle(active: boolean, tone: 'agree' | 'oppose' | 'joy'): React.CSSProperties {
-  const toneColor = tone === 'oppose' ? '#111827' : tone === 'agree' ? '#991b1b' : '#8a5a18';
+  const toneColor = tone === 'oppose' ? '#303846' : tone === 'agree' ? '#8f3732' : '#8a5a18';
   const borderColor = tone === 'oppose'
     ? 'rgba(17,24,39,0.18)'
     : tone === 'agree'
@@ -635,6 +647,8 @@ export default function Rankings() {
 
   const [openVotes, setOpenVotes] = useState<Set<string>>(new Set());
   const [votesMap, setVotesMap] = useState<Record<string, VoteRecord[]>>({});
+  const [openBoosts, setOpenBoosts] = useState<Set<string>>(new Set());
+  const [boostsMap, setBoostsMap] = useState<Record<string, BoostRecord[]>>({});
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [auditModal, setAuditModal] = useState<AuditModal>(null);
   const commentDraftKey = commentModal ? `lc:draft:ranking-comment:${commentModal.rankingId}` : 'lc:draft:ranking-comment:none';
@@ -809,6 +823,12 @@ export default function Rankings() {
       .then(d => { if (d.success) setVotesMap(prev => ({ ...prev, [rankingId]: d.data || [] })); });
   };
 
+  const fetchBoosts = (rankingId: string) => {
+    fetch(`${API}/lc/rankings/${rankingId}/boosts`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setBoostsMap(prev => ({ ...prev, [rankingId]: d.data || [] })); });
+  };
+
   const toggleComments = (id: string) => {
     const next = new Set(openComments);
     if (next.has(id)) next.delete(id);
@@ -821,6 +841,13 @@ export default function Rankings() {
     if (next.has(id)) next.delete(id);
     else { next.add(id); fetchVotes(id); }
     setOpenVotes(next);
+  };
+
+  const toggleBoosts = (id: string) => {
+    const next = new Set(openBoosts);
+    if (next.has(id)) next.delete(id);
+    else { next.add(id); fetchBoosts(id); }
+    setOpenBoosts(next);
   };
 
 	  const submitVote = async () => {
@@ -1107,6 +1134,7 @@ export default function Rankings() {
       const d = await r.json();
       if (d.success) {
         setItems(prev => prev.map(i => i.id === paidBoostModal.id ? applyMetricPatch(i, d.data) : i));
+        if (openBoosts.has(paidBoostModal.id)) fetchBoosts(paidBoostModal.id);
         if (paidBoostComment.trim()) fetchComments(paidBoostModal.id);
         fetchWallet();
         closePaidBoostModal();
@@ -1347,8 +1375,10 @@ export default function Rankings() {
               const pinnedComments = (loadedComments || item.pinned_comments || []).filter(c => c.is_pinned);
               const normalComments = (loadedComments || []).filter(c => !c.is_pinned);
               const votes = votesMap[item.id] || [];
+              const boosts = boostsMap[item.id] || [];
               const showComments = openComments.has(item.id);
               const showVotes = openVotes.has(item.id);
+              const showBoosts = openBoosts.has(item.id);
               const left = daysLeft(item);
               const myVote = item.my_vote || null;
               const paidBars = paidSideBarHeights(item);
@@ -1372,7 +1402,7 @@ export default function Rankings() {
                     top: 0,
                     bottom: 0,
                     width: 7,
-                    background: 'rgba(185,28,28,0.08)',
+                    background: 'rgba(185,28,28,0.045)',
                   }}>
                     <div style={{
                       position: 'absolute',
@@ -1380,7 +1410,7 @@ export default function Rankings() {
                       bottom: 0,
                       width: '100%',
                       height: `${paidBars.boost}%`,
-                      background: 'linear-gradient(180deg, #fecaca 0%, #dc2626 100%)',
+                      background: 'linear-gradient(180deg, #f4d6d1 0%, #c97870 100%)',
                     }} />
                   </div>
                   <div aria-hidden="true" style={{
@@ -1389,7 +1419,7 @@ export default function Rankings() {
                     top: 0,
                     bottom: 0,
                     width: 7,
-                    background: 'rgba(17,24,39,0.08)',
+                    background: 'rgba(17,24,39,0.055)',
                   }}>
                     <div style={{
                       position: 'absolute',
@@ -1397,7 +1427,7 @@ export default function Rankings() {
                       bottom: 0,
                       width: '100%',
                       height: `${paidBars.negative}%`,
-                      background: 'linear-gradient(180deg, #64748b 0%, #111827 100%)',
+                      background: 'linear-gradient(180deg, #a0a8b3 0%, #3b4350 100%)',
                     }} />
                   </div>
                   <div style={{ marginBottom: 12, textAlign: 'center' }}>
@@ -1525,7 +1555,7 @@ export default function Rankings() {
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-end' }}>
                         <div style={{ display: 'grid', gap: 2, minWidth: 0, textAlign: 'left' }}>
-                          <strong style={{ color: '#991b1b', fontSize: '1rem', lineHeight: 1 }}>打榜值 {boostStats.total}</strong>
+                          <strong style={{ color: '#8f3732', fontSize: '1rem', lineHeight: 1 }}>打榜值 {boostStats.total}</strong>
                           {boostStats.initial > 0 && (
                             <span style={{ color: 'rgba(71,85,105,0.55)', fontSize: '0.68rem', fontWeight: 800 }}>
                               打榜 {boostStats.paid} · 初始 {boostStats.initial}
@@ -1533,7 +1563,7 @@ export default function Rankings() {
                           )}
                         </div>
                         <div style={{ display: 'grid', gap: 2, minWidth: 0, textAlign: 'right' }}>
-                          <strong style={{ color: '#111827', fontSize: '1rem', lineHeight: 1 }}>踩榜值 {negativeBoostAmount(item)}</strong>
+                          <strong style={{ color: '#303846', fontSize: '1rem', lineHeight: 1 }}>踩榜值 {negativeBoostAmount(item)}</strong>
                         </div>
                       </div>
                       <div style={{
@@ -1547,16 +1577,59 @@ export default function Rankings() {
                       }}>
                         <button onClick={() => openPaidBoostModal(item.id, 'boost')}
                           aria-label={`给 ${item.subject_name} 打榜`}
-                          style={paidBattleButtonStyle('boost')}>
+                          style={paidBattleButtonStyle('boost', boostStats.total > 0)}>
                           打榜
                         </button>
                         <div style={{ background: 'linear-gradient(180deg, rgba(166,106,31,0.12), rgba(166,106,31,0.30), rgba(166,106,31,0.12))' }} />
                         <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
                           aria-label={`给 ${item.subject_name} 踩榜`}
-                          style={paidBattleButtonStyle('negative_boost')}>
+                          style={paidBattleButtonStyle('negative_boost', negativeBoostAmount(item) > 0)}>
                           踩榜
                         </button>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleBoosts(item.id)}
+                        style={{
+                          justifySelf: 'center',
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'rgba(71,85,105,0.58)',
+                          cursor: 'pointer',
+                          fontSize: '0.72rem',
+                          fontWeight: 850,
+                          padding: '2px 8px',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.58)')}
+                      >
+                        {showBoosts ? '收起真金白银记录' : '谁打榜 / 踩榜'}
+                      </button>
+                      {showBoosts && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center' }}>
+                          {boosts.length === 0 ? (
+                            <span style={{ fontSize: '0.74rem', color: 'rgba(71,85,105,0.48)' }}>暂无真金白银记录</span>
+                          ) : boosts.map(record => (
+                            <span key={record.id} style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '4px 9px',
+                              borderRadius: 999,
+                              border: record.direction === 'negative_boost' ? '1px solid rgba(48,56,70,0.18)' : '1px solid rgba(143,55,50,0.18)',
+                              background: record.direction === 'negative_boost' ? 'rgba(71,85,105,0.07)' : 'rgba(201,120,112,0.10)',
+                              color: record.direction === 'negative_boost' ? '#303846' : '#8f3732',
+                              fontSize: '0.72rem',
+                              fontWeight: 850,
+                            }}>
+                              {record.direction === 'negative_boost' ? '踩榜' : (record.is_initial ? '初始' : '打榜')} {record.amount}
+                              <span style={{ color: 'rgba(71,85,105,0.58)', fontWeight: 750 }}>
+                                · {record.contributor_is_realname ? `⭐ ${record.contributor_name}` : record.contributor_name}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div style={{
                       display: 'grid',
@@ -1577,9 +1650,9 @@ export default function Rankings() {
                         border: '1px solid rgba(71,85,105,0.10)',
                         background: '#fffdf8',
                       }}>
-                        <div style={{ width: `${reputation.agree}%`, background: 'linear-gradient(90deg, #fee2e2 0%, #ef4444 100%)' }} />
-                        <div style={{ width: `${reputation.absurd}%`, background: 'linear-gradient(90deg, #fef3c7 0%, #f59e0b 100%)' }} />
-                        <div style={{ width: `${reputation.oppose}%`, background: 'linear-gradient(90deg, #334155 0%, #111827 100%)' }} />
+                        <div style={{ width: `${reputation.agree}%`, background: 'linear-gradient(90deg, #f6ddd8 0%, #c97870 100%)' }} />
+                        <div style={{ width: `${reputation.absurd}%`, background: 'linear-gradient(90deg, #fbf0cf 0%, #d7aa3f 100%)' }} />
+                        <div style={{ width: `${reputation.oppose}%`, background: 'linear-gradient(90deg, #8f99a7 0%, #3b4350 100%)' }} />
                       </div>
                       <div style={{ display: 'flex', gap: 7 }}>
                       <button onClick={() => openVoteModal(item.id, 'like')}
