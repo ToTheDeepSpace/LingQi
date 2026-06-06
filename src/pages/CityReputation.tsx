@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
-import { CITIES } from '../constants/cities';
+import CitySearchSelect from '../components/CitySearchSelect';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -53,7 +53,6 @@ export default function CityReputation() {
   const [loadedKey, setLoadedKey] = useState('');
   const [error, setError] = useState('');
 
-  const cityOptions = useMemo(() => ['all', ...CITIES], []);
   const requestKey = useMemo(() => `${city}|${subjectType}|${sort}`, [city, subjectType, sort]);
   const loading = loadedKey !== requestKey;
 
@@ -110,9 +109,13 @@ export default function CityReputation() {
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-          <select value={city} onChange={e => setCity(e.target.value)} style={inputStyle}>
-            {cityOptions.map(option => <option key={option} value={option}>{option === 'all' ? '全部城市' : option}</option>)}
-          </select>
+          <CitySearchSelect
+            value={city}
+            onChange={setCity}
+            allowAll
+            allowCustom
+            style={{ minWidth: 190, flex: '1 1 190px' }}
+          />
           <select value={subjectType} onChange={e => setSubjectType(e.target.value)} style={inputStyle}>
             <option value="all">全部对象</option>
             {Object.entries(SUBJECT_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import CitySearchSelect from '../components/CitySearchSelect';
 import ImageUpload from '../components/ImageUpload';
-import { CITIES } from '../constants/cities';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 
 const API = '/api';
@@ -102,8 +102,6 @@ export default function DmWall() {
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [claimingId, setClaimingId] = useState('');
 
-  const cityOptions = useMemo(() => ['all', ...CITIES], []);
-  const formCityOptions = useMemo(() => ['', ...CITIES], []);
   const requestKey = useMemo(() => `${city}|${entityType}|${query.trim()}`, [city, entityType, query]);
   const loading = loadedKey !== requestKey;
   const activeFormCopy = ENTITY_COPY[form.entityType];
@@ -241,11 +239,13 @@ export default function DmWall() {
 
       <section style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 20px 82px' }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-          <select value={city} onChange={e => setCity(e.target.value)} style={inputStyle}>
-            {cityOptions.map(option => (
-              <option key={option} value={option}>{option === 'all' ? '全部城市' : option}</option>
-            ))}
-          </select>
+          <CitySearchSelect
+            value={city}
+            onChange={setCity}
+            allowAll
+            allowCustom
+            style={{ minWidth: 190, flex: '1 1 190px' }}
+          />
           <select value={entityType} onChange={e => setEntityType(e.target.value as EntityFilter)} style={inputStyle}>
             <option value="all">全部档案</option>
             <option value="dm">DM 档案</option>
@@ -270,7 +270,13 @@ export default function DmWall() {
                 { value: 'dm', label: 'DM 档案' },
                 { value: 'store', label: '店家档案' },
               ]} />
-              <SelectField label="城市 *" value={form.city} onChange={value => updateForm({ city: value })} options={formCityOptions.map(option => ({ value: option, label: option || '请选择城市' }))} />
+              <CitySearchSelect
+                label="城市 *"
+                value={form.city}
+                onChange={value => updateForm({ city: value })}
+                allowCustom
+                placeholder="搜索城市，例如：保定、上海"
+              />
               <Field label={activeFormCopy.nameLabel} value={form.dmName} onChange={value => updateForm({ dmName: value })} />
               <Field label={activeFormCopy.workplaceLabel} value={form.workplace} onChange={value => updateForm({ workplace: value })} />
               <Field label={activeFormCopy.profileLabel} value={form.profileUrl} onChange={value => updateForm({ profileUrl: value })} placeholder={form.entityType === 'store' ? '大众点评 / 小红书 / 抖音店铺主页，可后补' : '抖音 / 小红书 / 微博主页'} />
