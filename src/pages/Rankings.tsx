@@ -215,7 +215,12 @@ function eventTitle(content: string) {
 function eventSummary(content: string) {
   const normalized = content.replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
-  return normalized.length > 110 ? `${normalized.slice(0, 110)}...` : normalized;
+  const sentenceMatch = normalized.match(/^(.+?[。！？!?；;])\s*(.*)$/);
+  const rest = sentenceMatch
+    ? sentenceMatch[2]?.trim()
+    : (normalized.length > 24 ? normalized.slice(24).trim() : '');
+  if (!rest) return '';
+  return rest.length > 110 ? `${rest.slice(0, 110)}...` : rest;
 }
 
 function eventKindCopy(type: Ranking['type']) {
@@ -369,11 +374,13 @@ function paidBattleButtonStyle(direction: 'boost' | 'negative_boost', active: bo
     gap: 10,
     padding: '10px 28px',
     border: 'none',
-    background: active
-      ? (isNegative
+    background: isNegative
+      ? (active
         ? 'linear-gradient(90deg, #9aa2ad 0%, #3f4652 100%)'
-        : 'linear-gradient(90deg, #f4ddd6 0%, #c98b80 100%)')
-      : 'linear-gradient(135deg, #f8fafc 0%, #f3f4f6 100%)',
+        : 'linear-gradient(90deg, #eef1f5 0%, #d8dde5 100%)')
+      : (active
+        ? 'linear-gradient(90deg, #f4ddd6 0%, #c98b80 100%)'
+        : 'linear-gradient(90deg, #fff8f5 0%, #f3e3de 100%)'),
     color: active ? (isNegative ? '#fffdf8' : '#8f3732') : 'rgba(71,85,105,0.58)',
     cursor: 'pointer',
     fontSize: '1.12rem',
@@ -1438,19 +1445,21 @@ export default function Rankings() {
                     }}>
                       {heading}
                     </h2>
-                    <p style={{
-                      fontSize: '0.92rem',
-                      color: 'rgba(31,41,55,0.88)',
-                      lineHeight: 1.72,
-                      margin: '0',
-                      fontWeight: 560,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}>
-                      {renderContent(summary)}
-                    </p>
+                    {summary && (
+                      <p style={{
+                        fontSize: '0.92rem',
+                        color: 'rgba(31,41,55,0.88)',
+                        lineHeight: 1.72,
+                        margin: '0',
+                        fontWeight: 560,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}>
+                        {renderContent(summary)}
+                      </p>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
                       {item.subject_url && (
                         <a href={normalizeUrl(item.subject_url)} target="_blank" rel="noreferrer"
