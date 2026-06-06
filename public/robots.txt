@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /wallet
+Disallow: /login
+Disallow: /shop/dashboard
+Disallow: /certification
+Disallow: /rankings/new
+Disallow: /commissions/new
+Disallow: /carpools/new
+
+Sitemap: https://lingqi.jusichen.com/sitemap.xml
