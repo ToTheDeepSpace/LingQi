@@ -5,7 +5,6 @@ import { getJsonCached } from '../lib/apiCache';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
-import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import ReportModal, { type ReportTargetType } from '../components/ReportModal';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
@@ -26,9 +25,9 @@ const SUBJECT_LABEL: Record<string, string> = {
 const SUBJECT_TYPES = ['creator', 'dm', 'store', 'takeaway', 'player'] as const;
 const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
 const TAB_HINT: Record<'red' | 'white' | 'black', string> = {
-  red: '红榜：表扬值得推荐的人、店和服务，记录具体事件，并沉淀到对象档案。',
+  red: '好事：记录让人觉得值得推荐、值得记住的具体事件。',
   white: '白榜：免费发帖，适合记录中性事实、补充线索、普通提醒，先留下公开记录。',
-  black: '黑榜：记录违约、失联、骚扰、欺诈、严重服务不符等负面事件，公开期 30 天，不做砸币攻击榜。',
+  black: '坏事：记录违约、失联、骚扰、欺诈、严重服务不符等负面事件，公开期 30 天。',
 };
 const RANKINGS_RETENTION_NOTE = '黑榜 30 天公开期不是删除记录，而是把“持续公开挂人”和“长期行业学习”分开：公开期结束后，必要记录仍可用于争议处理和安全审计，后续也会优先做去标识化的共性问题总结。欢迎投资机构、沉浸式娱乐从业者、店家、DM、委托师和技术合作者提供样本、规则建议与共建资源。';
 
@@ -204,6 +203,26 @@ function parseMentions(text: string): { text: string; mention: boolean; name: st
   }
   if (last < text.length) parts.push({ text: text.slice(last), mention: false, name: '' });
   return parts;
+}
+
+function eventTitle(content: string) {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '未命名事件';
+  const firstSentence = normalized.split(/[。！？!?；;]/)[0]?.trim() || normalized;
+  if (firstSentence.length <= 24) return firstSentence;
+  return `${firstSentence.slice(0, 24)}...`;
+}
+
+function eventSummary(content: string) {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length > 110 ? `${normalized.slice(0, 110)}...` : normalized;
+}
+
+function eventKindCopy(type: Ranking['type']) {
+  if (type === 'red') return { label: '好事', color: '#8f4c43', bg: '#f8eee7', border: '#e6c7bd' };
+  if (type === 'black') return { label: '坏事', color: '#404a58', bg: '#f2f4f7', border: '#d7dce4' };
+  return { label: '中性', color: '#9b6a1e', bg: '#fffaf2', border: '#e4d4b3' };
 }
 
 function voteCopy(voteType: MyVote['vote_type'], rankingType?: Ranking['type']) {
@@ -1231,16 +1250,16 @@ export default function Rankings() {
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#1f2937' }}>
       <div style={{
-        background: 'linear-gradient(135deg, #fffaf2 0%, #fffdf8 58%, #f7dfc0 100%)',
-        borderBottom: '1px solid rgba(166,106,31,0.14)',
-        padding: '34px 20px 28px',
+        background: 'linear-gradient(135deg, #fffaf2 0%, #fffdf8 64%, #f7ead7 100%)',
+        borderBottom: '1px solid rgba(166,106,31,0.12)',
+        padding: '26px 20px 18px',
       }}>
         <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
-            <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 14 }} />
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 8 }}>灵契红黑榜事件榜</h1>
-            <p style={{ color: 'rgba(71,85,105,0.80)', fontSize: '0.95rem' }}>
-              玩家遇到的具体事件在这里公开记录，再沉淀到爱D墙、店家档案、城市口碑榜和对象档案。
+            <div style={{ width: 44, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 12 }} />
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.5rem, 3.4vw, 2.18rem)', marginBottom: 7 }}>灵契红黑榜事件簿</h1>
+            <p style={{ color: 'rgba(71,85,105,0.80)', fontSize: '0.92rem' }}>
+              排的是具体事件，不是给某个人、某家店或某位 DM 盖棺定论。
             </p>
           </div>
           {auth && (
@@ -1258,14 +1277,25 @@ export default function Rankings() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '24px 20px 80px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-          <div style={{ width: 'min(100%, 420px)', display: 'flex', gap: 4, padding: 4, backgroundColor: '#fffdf8', border: '1px solid rgba(166,106,31,0.16)', borderRadius: 14, boxShadow: '0 8px 20px rgba(102,70,30,0.06)' }}>
-            {tabBtn('red', '🏅 红榜', '#b91c1c')}
-            {tabBtn('white', '✨ 白榜', '#b8860b')}
-            {tabBtn('black', '👎 黑榜', '#475569')}
+      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '16px 20px 80px' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 10,
+          flexWrap: 'wrap',
+          padding: 10,
+          borderRadius: 16,
+          background: '#fffdf8',
+          border: '1px solid rgba(166,106,31,0.16)',
+          boxShadow: '0 8px 20px rgba(102,70,30,0.05)',
+        }}>
+          <div style={{ width: 'min(100%, 316px)', display: 'flex', gap: 4, padding: 4, backgroundColor: '#fffaf2', border: '1px solid rgba(166,106,31,0.12)', borderRadius: 12 }}>
+            {tabBtn('red', '好事', '#8f4c43')}
+            {tabBtn('white', '中性', '#b8860b')}
+            {tabBtn('black', '坏事', '#475569')}
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 320px' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 300px' }}>
             <FilterPill active={subjectTab === 'all'} onClick={() => setSubjectTab('all')}>全部</FilterPill>
             {SUBJECT_TYPES.map(st => (
               <FilterPill key={st} active={subjectTab === st} onClick={() => setSubjectTab(st)}>
@@ -1273,33 +1303,6 @@ export default function Rankings() {
               </FilterPill>
             ))}
           </div>
-          <Link to="/rankings/new"
-            style={{ padding: '12px 24px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none', flexShrink: 0 }}>
-            + 发布
-          </Link>
-          <Link to="/reputation/city"
-            style={{ padding: '11px 16px', borderRadius: 12, border: '1px solid rgba(166,106,31,0.22)', color: GOLD, background: '#fffdf8', fontWeight: 800, fontSize: '0.86rem', textDecoration: 'none', flexShrink: 0 }}>
-            城市口碑榜
-          </Link>
-          <Link to="/dm-wall"
-            style={{ padding: '11px 16px', borderRadius: 12, border: '1px solid rgba(166,106,31,0.22)', color: GOLD, background: '#fffdf8', fontWeight: 800, fontSize: '0.86rem', textDecoration: 'none', flexShrink: 0 }}>
-            爱D墙 / 店家
-          </Link>
-        </div>
-        <p style={{ margin: '-2px 0 16px', color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.7 }}>
-          {TAB_HINT[tab]}
-        </p>
-        {tab === 'black' && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '-4px 0 16px' }}>
-            <FilterPill active={blackView === 'active'} onClick={() => setBlackView('active')}>公开中</FilterPill>
-            <FilterPill active={blackView === 'expired'} onClick={() => setBlackView('expired')}>已过期</FilterPill>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-          <p style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.78rem' }}>
-            当前排序：优先看打榜、踩榜和免费态度形成的总热度，热度相同再看发布时间。
-          </p>
           <CityFilter
             city={city}
             preferredCities={preferredCities}
@@ -1311,24 +1314,44 @@ export default function Rankings() {
             onSelect={setCityAndClose}
             onClose={() => setCityOpen(false)}
           />
+          <Link to="/rankings/new"
+            style={{ padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 800, fontSize: '0.86rem', textDecoration: 'none', flexShrink: 0 }}>
+            + 发布
+          </Link>
+          <Link to="/reputation/city"
+            style={{ padding: '9px 12px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.18)', color: 'rgba(71,85,105,0.72)', background: '#fffaf2', fontWeight: 800, fontSize: '0.78rem', textDecoration: 'none', flexShrink: 0 }}>
+            城市口碑榜
+          </Link>
+          <Link to="/dm-wall"
+            style={{ padding: '9px 12px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.18)', color: 'rgba(71,85,105,0.72)', background: '#fffaf2', fontWeight: 800, fontSize: '0.78rem', textDecoration: 'none', flexShrink: 0 }}>
+            爱D墙 / 店家
+          </Link>
         </div>
-
-        <div style={{
-          marginBottom: 18,
-          padding: '13px 16px',
-          borderRadius: 12,
-          background: '#fffdf8',
-          border: '1px solid rgba(166,106,31,0.16)',
-          boxShadow: '0 8px 20px rgba(102,70,30,0.05)',
-          color: 'rgba(31,41,55,0.78)',
-          fontSize: '0.82rem',
-          lineHeight: 1.7,
-        }}>
-          <strong style={{ color: GOLD }}>审核规则：</strong>
-          审核员尽量保持中立客观；主帖必须附带证据；涉及第三方隐私的信息请先打码；免费态度一人一票，打榜和踩榜按实际契约币金额累计。相关方可先发表普通评论，评论通过后再认证为置顶回应。
-        </div>
-        <div style={{ marginBottom: 18 }}>
-          <ResponsibilityNotice compact />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+          <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.7 }}>
+            {TAB_HINT[tab]} 排序按打榜、踩榜和免费态度形成的总热度。
+          </span>
+          {tab === 'black' && (
+            <span style={{ display: 'inline-flex', gap: 6 }}>
+              <FilterPill active={blackView === 'active'} onClick={() => setBlackView('active')}>公开中</FilterPill>
+              <FilterPill active={blackView === 'expired'} onClick={() => setBlackView('expired')}>已过期</FilterPill>
+            </span>
+          )}
+          <details style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 800, color: GOLD }}>规则与发布责任</summary>
+            <div style={{
+              marginTop: 8,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: '#fffdf8',
+              border: '1px solid rgba(166,106,31,0.14)',
+              color: 'rgba(31,41,55,0.78)',
+              lineHeight: 1.7,
+              maxWidth: 860,
+            }}>
+              主帖必须附带证据；涉及第三方隐私的信息请先打码；免费态度一人一票，打榜和踩榜按实际契约币金额累计。发布者对事实、证据、隐私打码和言论后果负责。
+            </div>
+          </details>
         </div>
 
         {loading && (
@@ -1356,7 +1379,7 @@ export default function Rankings() {
             <p style={{ color: 'rgba(71,85,105,0.68)', marginBottom: 20 }}>
               {subjectTab !== 'all'
                 ? `${SUBJECT_LABEL[subjectTab] || subjectTab}暂无内容`
-                : (tab === 'red' ? '红榜暂无内容' : tab === 'black' ? (blackView === 'expired' ? '暂无已过期黑榜' : '黑榜暂无内容') : '白榜暂无内容')}
+                : (tab === 'red' ? '暂无好事记录' : tab === 'black' ? (blackView === 'expired' ? '暂无已过期坏事记录' : '暂无坏事记录') : '暂无中性记录')}
             </p>
             <Link to="/rankings/new" style={{ color: GOLD, fontSize: '0.875rem', textDecoration: 'underline' }}>
               成为第一个发布的人
@@ -1384,6 +1407,9 @@ export default function Rankings() {
               const paidBars = paidSideBarHeights(item);
               const boostStats = paidBoostBreakdown(item);
               const reputation = reputationSegments(item);
+              const kind = eventKindCopy(item.type);
+              const heading = eventTitle(item.content);
+              const summary = eventSummary(item.content);
 
               return (
                 <div key={item.id}
@@ -1430,69 +1456,90 @@ export default function Rankings() {
                       background: 'linear-gradient(180deg, #a0a8b3 0%, #3b4350 100%)',
                     }} />
                   </div>
-                  <div style={{ marginBottom: 12, textAlign: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: 999,
-                        background: subtleAccentBg,
-                        border: `1px solid ${subtleAccentBorder}`,
-                        color: accentColor,
-                        fontSize: '0.68rem',
-                        fontWeight: 900,
-                      }}>#{idx + 1}</span>
-                      <AuthorAvatar name={item.author_name} src={item.lc_profiles?.avatar} seed={item.poster_id || item.id} size={32} />
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                        <span style={{
+                          padding: '3px 9px',
+                          borderRadius: 999,
+                          background: kind.bg,
+                          border: `1px solid ${kind.border}`,
+                          color: kind.color,
+                          fontSize: '0.72rem',
+                          fontWeight: 950,
+                        }}>{kind.label}</span>
+                        <span style={{
+                          padding: '2px 8px',
+                          borderRadius: 999,
+                          background: subtleAccentBg,
+                          border: `1px solid ${subtleAccentBorder}`,
+                          color: accentColor,
+                          fontSize: '0.68rem',
+                          fontWeight: 900,
+                        }}>#{idx + 1}</span>
+                      </div>
                     </div>
-                    <Link to={dossierUrl(item)}
-                      style={{ display: 'inline-flex', maxWidth: '100%', fontWeight: 950, fontSize: '1.03rem', color: 'rgba(17,24,39,0.94)', textDecoration: 'none', lineHeight: 1.35 }}
-                      onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
-                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(17,24,39,0.94)')}>
-                      {item.subject_name}
-                    </Link>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, flexWrap: 'wrap', margin: '8px 0 10px' }}>
+                    <h2 style={{
+                      margin: '0 0 8px',
+                      color: 'rgba(17,24,39,0.95)',
+                      fontSize: '1.08rem',
+                      lineHeight: 1.45,
+                      fontWeight: 950,
+                      letterSpacing: 0,
+                    }}>
+                      {heading}
+                    </h2>
+                    <p style={{
+                      fontSize: '0.92rem',
+                      color: 'rgba(31,41,55,0.88)',
+                      lineHeight: 1.72,
+                      margin: '0 0 10px',
+                      fontWeight: 560,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 4,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}>
+                      {renderContent(summary)}
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 9 }}>
+                      <span style={{ color: 'rgba(71,85,105,0.55)', fontSize: '0.72rem', fontWeight: 800 }}>涉及对象</span>
                       <span style={{
-                        padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700,
+                        padding: '2px 8px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 800,
                         background: subtleAccentBg,
                         color: accentColor,
                         border: `1px solid ${subtleAccentBorder}`,
                       }}>{SUBJECT_LABEL[item.subject_type] || item.subject_type}</span>
+                      <Link to={dossierUrl(item)}
+                        style={{ fontSize: '0.75rem', fontWeight: 850, color: 'rgba(31,41,55,0.82)', textDecoration: 'none' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(31,41,55,0.82)')}>
+                        {item.subject_name}
+                      </Link>
                       {item.subject_city && (
-                        <span style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.70)' }}>📍 {item.subject_city}</span>
+                        <span style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.66)' }}>📍 {item.subject_city}</span>
                       )}
                       {item.subject_url && (
                         <a href={normalizeUrl(item.subject_url)} target="_blank" rel="noreferrer"
-                          style={{ fontSize: '0.75rem', color: GOLD, textDecoration: 'none' }}>社交主页 ↗</a>
+                          style={{ fontSize: '0.72rem', color: GOLD, textDecoration: 'none' }}>社交主页 ↗</a>
                       )}
                       {left !== null && left !== undefined && (
                         <span style={{
-                          padding: '2px 8px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700,
-                          background: left <= 7 ? 'rgba(248,113,113,0.15)' : 'rgba(148,163,184,0.1)',
-                          color: left <= 7 ? '#b91c1c' : 'rgba(71,85,105,0.62)',
+                          padding: '2px 8px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 750,
+                          background: left <= 7 ? 'rgba(248,113,113,0.12)' : 'rgba(148,163,184,0.1)',
+                          color: left <= 7 ? '#8f3732' : 'rgba(71,85,105,0.62)',
                         }}>
                           ⏳ {left <= 0 ? '已到期' : `剩余 ${left} 天`}
                         </span>
                       )}
                       {item.expiry_override && (
-                        <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700,
+                        <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 750,
                           background: 'rgba(201,146,46,0.12)', color: GOLD }}>
                           {item.expiry_override === 'illegal' ? '⚠ 违规记录永久保留' : '🔥 高赞豁免'}
                         </span>
                       )}
                     </div>
-                    <p style={{
-                      fontSize: '0.96rem',
-                      color: 'rgba(17,24,39,0.92)',
-                      lineHeight: 1.74,
-                      margin: '0 0 10px',
-                      fontWeight: 560,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 5,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}>
-                      {renderContent(item.content)}
-                    </p>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -1504,9 +1551,10 @@ export default function Rankings() {
                         color: 'rgba(71,85,105,0.86)',
                         fontSize: '0.74rem',
                         fontWeight: 800,
-                      }}>
+                        }}>
                         发布人 {renderName(item.author_name, item.is_realname)}
                       </span>
+                      <AuthorAvatar name={item.author_name} src={item.lc_profiles?.avatar} seed={item.poster_id || item.id} size={24} />
                       {item.lc_profiles?.verified_shop && (
                         <span style={{ padding: '1px 5px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 900, background: '#3b82f6', color: '#fff' }} title="已认证店家">蓝V</span>
                       )}
@@ -1576,13 +1624,13 @@ export default function Rankings() {
                         boxShadow: '0 10px 20px rgba(71,85,105,0.08)',
                       }}>
                         <button onClick={() => openPaidBoostModal(item.id, 'boost')}
-                          aria-label={`给 ${item.subject_name} 打榜`}
+                          aria-label={`给事件「${heading}」打榜`}
                           style={paidBattleButtonStyle('boost', boostStats.total > 0)}>
                           打榜
                         </button>
                         <div style={{ background: 'linear-gradient(180deg, rgba(166,106,31,0.12), rgba(166,106,31,0.30), rgba(166,106,31,0.12))' }} />
                         <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
-                          aria-label={`给 ${item.subject_name} 踩榜`}
+                          aria-label={`给事件「${heading}」踩榜`}
                           style={paidBattleButtonStyle('negative_boost', negativeBoostAmount(item) > 0)}>
                           踩榜
                         </button>
@@ -1695,7 +1743,7 @@ export default function Rankings() {
                               </button>
                             )}
                             <button
-                              onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${item.subject_name} 的置顶回应` })}
+                              onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${heading} 的置顶回应` })}
                               style={{ marginLeft: auth?.userId && c.author_id === auth.userId ? 0 : 'auto', border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.40)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
                               举报
                             </button>
@@ -1726,7 +1774,7 @@ export default function Rankings() {
                         {votesToggleLabel(item, showVotes)}
                     </button>
                     <button
-                      onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: item.subject_name })}
+                      onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: heading })}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.42)', fontSize: '0.78rem', padding: '4px 0', fontWeight: 600 }}
                       onMouseEnter={e => (e.currentTarget.style.color = 'rgba(185,28,28,0.78)')}
                       onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.42)')}>
@@ -1798,7 +1846,7 @@ export default function Rankings() {
                               </button>
                             )}
                             <button
-                              onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${item.subject_name} 的评论` })}
+                              onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${heading} 的评论` })}
                               style={{ border: 'none', background: 'none', color: 'rgba(71,85,105,0.42)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>
                               举报
                             </button>
@@ -1890,7 +1938,7 @@ export default function Rankings() {
               {paidBoostRequestCopy.icon} {paidBoostRequestCopy.label}
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 14 }}>
-              {paidBoostItem?.subject_name ? `给「${paidBoostItem.subject_name}」` : '给这条内容'}投入契约币。金额按实际输入累计，没有单次 1 币限制。
+              {paidBoostItem?.content ? `给事件「${eventTitle(paidBoostItem.content)}」` : '给这条事件'}投入契约币。金额按实际输入累计，没有单次 1 币限制。
             </p>
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>契约币数量</label>
