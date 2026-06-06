@@ -20,6 +20,8 @@ type Transaction = {
   gateway?: string | null;
   external_order_no?: string | null;
   reject_reason?: string | null;
+  balance_before?: number | null;
+  balance_after?: number | null;
   created_at: string;
 };
 
@@ -160,6 +162,13 @@ export default function Wallet() {
     if (tx.status === 'rejected') return '已拒绝';
     if (tx.gateway === 'alipay' || tx.gateway === 'wechat_pay') return '待支付/确认中';
     return '审核中';
+  };
+
+  const getBalanceSnapshot = (tx: Transaction) => {
+    const before = typeof tx.balance_before === 'number' ? tx.balance_before : null;
+    const after = typeof tx.balance_after === 'number' ? tx.balance_after : null;
+    if (before === null || after === null) return '';
+    return `余额 ${before} -> ${after}`;
   };
 
   const isFailedRecharge = (tx: Transaction) => tx.type === 'recharge' && tx.status === 'rejected';
@@ -383,6 +392,9 @@ export default function Wallet() {
                 <div>
                   <p style={{ fontSize: '0.85rem', fontWeight: 600 }}>{tx.description}</p>
                   <p style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.5)' }}>{tx.created_at?.slice(0, 10)}</p>
+                  {getBalanceSnapshot(tx) && (
+                    <p style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.68)', marginTop: 2 }}>{getBalanceSnapshot(tx)}</p>
+                  )}
                   {tx.type === 'recharge' && tx.status === 'rejected' && tx.reject_reason && (
                     <p style={{ fontSize: '0.72rem', color: 'rgba(185,28,28,0.72)', marginTop: 2 }}>{tx.reject_reason}</p>
                   )}

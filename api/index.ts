@@ -5276,9 +5276,13 @@ app.get('/api/lc/wallet', authMiddleware, async (req, res) => {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     await expireStalePaymentRecharges(profile.id);
+    const { data: walletProfile } = await supabase.from('lc_profiles')
+      .select('balance')
+      .eq('id', profile.id)
+      .single();
     const { data: txs } = await supabase.from('lc_transactions')
       .select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100);
-    res.json(ok({ balance: profile.balance || 0, transactions: txs || [] }));
+    res.json(ok({ balance: walletProfile?.balance || 0, transactions: txs || [] }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
