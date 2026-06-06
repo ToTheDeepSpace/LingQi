@@ -119,13 +119,14 @@ export default function Navbar() {
       boxShadow: '0 10px 32px rgba(31,41,55,0.06)',
     }}>
       <div style={{
-        maxWidth: 1000, margin: '0 auto',
+        maxWidth: 1160, margin: '0 auto',
         padding: '0 20px', height: 64,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 16,
       }}>
 
         {/* Logo — 左 */}
-        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
           <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.3rem' }}>
             灵契
           </span>
@@ -135,13 +136,20 @@ export default function Navbar() {
         </Link>
 
         {/* 桌面导航 — 右 */}
-        <div className="hidden sm:flex" style={{ alignItems: 'center', gap: 8 }}>
+        <div className="hidden lg:flex" style={{
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 6,
+          minWidth: 0,
+          flex: '1 1 auto',
+          flexWrap: 'nowrap',
+          whiteSpace: 'nowrap',
+        }}>
           <NavLink to="/explore">浏览灵契师</NavLink>
           <NavLink to="/commissions">委托需求</NavLink>
           <NavLink to="/carpools">拼车区</NavLink>
           <NavLink to="/rankings">红黑榜</NavLink>
           {creatorAuth && <IdentityChip tone="user">用户：{creatorAuth.display_name || creatorAuth.phone || '已登录'}</IdentityChip>}
-          {isAdmin && <IdentityChip tone="admin">管理员{pendingCount > 0 ? ` · 待审 ${pendingCount}` : ' · 已登录'}</IdentityChip>}
           {isLoggedIn
             ? <>
               <NavLink to="/dashboard">我的主页</NavLink>
@@ -159,7 +167,7 @@ export default function Navbar() {
                 退出
               </button>
             </>
-            : (
+            : !isAdmin && (
               <Link to="/login" className="btn-gold" style={{ marginLeft: 8, padding: '8px 20px', fontSize: '0.875rem', display: 'inline-block' }}>
                 入驻灵契
               </Link>
@@ -178,12 +186,22 @@ export default function Navbar() {
             onMouseLeave={e => { if (!isAdmin) { (e.currentTarget as HTMLElement).style.color = 'rgba(146,95,24,0.68)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.15)'; } }}>
             管理{pendingCount > 0 ? `(${pendingCount})` : ''}
           </Link>
+          {isAdmin && !isLoggedIn && (
+            <button onClick={handleLogout}
+              style={{
+                padding: '7px 12px', borderRadius: 8, fontSize: '0.78rem',
+                background: 'rgba(254,242,242,0.78)', border: '1px solid rgba(220,38,38,0.22)', color: '#b91c1c',
+                cursor: 'pointer', fontWeight: 650, transition: 'all 0.2s',
+              }}>
+              退出
+            </button>
+          )}
         </div>
 
         {/* 移动端汉堡 — 右 */}
         <button
           onClick={() => setMenuOpen(!menuOpen)}
-          className="sm:hidden"
+          className="lg:hidden"
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8, color: MUTED }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             {menuOpen
