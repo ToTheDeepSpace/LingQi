@@ -30,6 +30,10 @@ type DossierEvent = {
   likes: number;
   dislikes: number;
   joys: number;
+  boost_amount?: number;
+  negative_boost_amount?: number;
+  agree_count?: number;
+  oppose_count?: number;
   created_at: string;
 };
 
@@ -163,9 +167,11 @@ export default function ReputationDossier() {
                       </div>
                       <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.86)', lineHeight: 1.75 }}>{event.content}</p>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: 'rgba(71,85,105,0.68)', fontSize: 13 }}>
-                        <span>打榜 {event.likes || 0}</span>
+                        <span>打榜 {event.boost_amount ?? (event.type === 'black' ? 0 : event.likes || 0)}</span>
+                        <span>踩榜 {event.negative_boost_amount || 0}</span>
+                        <span>同意 {event.agree_count ?? (event.type === 'black' ? event.likes || 0 : 0)}</span>
+                        <span>反对 {event.oppose_count ?? event.dislikes ?? 0}</span>
                         <span>欢乐 {event.joys || 0}</span>
-                        {event.dislikes > 0 && <span>争议 {event.dislikes}</span>}
                         <Link to="/rankings" style={{ color: GOLD, textDecoration: 'none', fontWeight: 800 }}>去事件榜</Link>
                       </div>
                     </article>

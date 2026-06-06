@@ -58,6 +58,10 @@ type Ranking = {
   likes: number;
   dislikes: number;
   joys?: number;
+  boost_amount?: number;
+  negative_boost_amount?: number;
+  agree_count?: number;
+  oppose_count?: number;
   created_at: string;
   expires_at?: string;
   expiry_override?: string;
@@ -95,6 +99,7 @@ type VoteRecord = {
 };
 
 type VoteModal = { id: string; voteType: 'like' | 'dislike' | 'joy' } | null;
+type PaidBoostModal = { id: string; direction: 'boost' | 'negative_boost' } | null;
 type CommentModal = { rankingId: string } | null;
 type RelatedFile = { name: string; url: string; type?: string };
 type RelatedCertModal = { rankingId: string; commentId: string } | null;
@@ -192,53 +197,82 @@ function parseMentions(text: string): { text: string; mention: boolean; name: st
 }
 
 function voteCopy(voteType: MyVote['vote_type'], rankingType?: Ranking['type']) {
-  if (rankingType === 'black' && voteType === 'like') return { label: '同意', icon: '同', paid: false };
-  if (voteType === 'dislike') return { label: '反对', icon: '反', paid: false };
-  if (rankingType === 'black' && voteType === 'joy') return { label: '旧版欢乐', icon: '旧', paid: false };
-  if (voteType === 'like') return { label: '打榜', icon: '榜', paid: true };
-  return { label: '欢乐', icon: '乐', paid: false };
+  void rankingType;
+  if (voteType === 'like') return { label: '同意', icon: '同' };
+  if (voteType === 'dislike') return { label: '反对', icon: '反' };
+  return { label: '欢乐', icon: '乐' };
 }
 
-function voteCost(voteType: MyVote['vote_type'], rankingType?: Ranking['type']) {
-  if (rankingType === 'black') return 0;
-  return voteType === 'like' ? 1 : 0;
+function paidBoostCopy(direction: 'boost' | 'negative_boost') {
+  return direction === 'negative_boost'
+    ? { label: '踩榜', icon: '踩' }
+    : { label: '打榜', icon: '榜' };
+}
+
+function boostAmount(item: Ranking) {
+  return item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0);
+}
+
+function negativeBoostAmount(item: Ranking) {
+  return item.negative_boost_amount ?? 0;
+}
+
+function agreeCount(item: Ranking) {
+  return item.agree_count ?? (item.type === 'black' ? item.likes || 0 : 0);
+}
+
+function opposeCount(item: Ranking) {
+  return item.oppose_count ?? item.dislikes ?? 0;
+}
+
+function applyMetricPatch(item: Ranking, data: Partial<Ranking>) {
+  return {
+    ...item,
+    likes: data.likes ?? item.likes,
+    dislikes: data.dislikes ?? item.dislikes,
+    joys: data.joys ?? item.joys,
+    boost_amount: data.boost_amount ?? item.boost_amount,
+    negative_boost_amount: data.negative_boost_amount ?? item.negative_boost_amount,
+    agree_count: data.agree_count ?? item.agree_count,
+    oppose_count: data.oppose_count ?? item.oppose_count,
+  };
 }
 
 function rankingSortScore(item: Ranking) {
-  if (item.type === 'red') return item.likes || 0;
-  if (item.type === 'black') return (item.likes || 0) + (item.dislikes || 0);
-  return (item.likes || 0) + (item.joys || 0);
+  return boostAmount(item)
+    + negativeBoostAmount(item)
+    + agreeCount(item)
+    + opposeCount(item)
+    + (item.joys || 0);
 }
 
 function voteRecordText(vote: VoteRecord, itemType?: Ranking['type']) {
-  if (itemType === 'black' && vote.vote_type === 'like') return '同意';
+  void itemType;
+  if (vote.vote_type === 'like') return '同意';
   if (vote.vote_type === 'dislike') return '反对';
-  if (itemType === 'black' && vote.vote_type === 'joy') return '旧版欢乐';
-  if (vote.vote_type === 'like') return '打榜';
   return '欢乐';
 }
 
 function voteRecordIcon(vote: VoteRecord, itemType?: Ranking['type']) {
-  if (itemType === 'black' && vote.vote_type === 'like') return '同';
-  if (itemType === 'black' && vote.vote_type === 'dislike') return '反';
-  if (vote.vote_type === 'like') return '榜';
+  void itemType;
+  if (vote.vote_type === 'like') return '同';
   if (vote.vote_type === 'dislike') return '反';
   return '乐';
 }
 
 function votesToggleLabel(item: Ranking, showVotes: boolean) {
+  void item;
   if (showVotes) return '收起记录';
-  if (item.type === 'black') return '谁同意/反对';
-  return '谁打榜/反对/欢乐';
+  return '谁同意/反对/欢乐';
 }
 
 function emptyVoteRecordText(item: Ranking) {
-  return item.type === 'black' ? '暂无同意或反对记录' : '暂无打榜、反对或欢乐记录';
+  void item;
+  return '暂无同意、反对或欢乐记录';
 }
 
 function isVoteAllowed(item: Ranking | undefined, voteType: MyVote['vote_type']) {
   if (!item) return false;
-  if (item.type === 'black') return voteType === 'like' || voteType === 'dislike';
   return voteType === 'like' || voteType === 'dislike' || voteType === 'joy';
 }
 
@@ -487,6 +521,11 @@ export default function Rankings() {
   const [voteCommentText, setVoteCommentText] = useState('');
   const [voting, setVoting] = useState(false);
   const [voteError, setVoteError] = useState('');
+  const [paidBoostModal, setPaidBoostModal] = useState<PaidBoostModal>(null);
+  const [paidBoostAmount, setPaidBoostAmount] = useState('10');
+  const [paidBoostComment, setPaidBoostComment] = useState('');
+  const [paidBoosting, setPaidBoosting] = useState(false);
+  const [paidBoostError, setPaidBoostError] = useState('');
 
   const [certifyingComment, setCertifyingComment] = useState('');
   const [relatedModal, setRelatedModal] = useState<RelatedCertModal>(null);
@@ -714,10 +753,7 @@ export default function Rankings() {
       const d = await r.json();
       if (d.success) {
         setItems(prev => prev.map(i => i.id === voteModal.id ? {
-          ...i,
-          likes: d.data.likes,
-          dislikes: d.data.dislikes,
-          joys: d.data.joys,
+          ...applyMetricPatch(i, d.data),
           my_vote: d.data.myVote || null,
         } : i));
 	        fetchVotes(voteModal.id);
@@ -749,10 +785,7 @@ export default function Rankings() {
       const d = await r.json();
       if (d.success) {
         setItems(prev => prev.map(i => i.id === voteModal.id ? {
-          ...i,
-          likes: d.data.likes,
-          dislikes: d.data.dislikes,
-          joys: d.data.joys,
+          ...applyMetricPatch(i, d.data),
           my_vote: null,
         } : i));
 	        fetchVotes(voteModal.id);
@@ -935,15 +968,69 @@ export default function Rankings() {
 	  const openVoteModal = (id: string, voteType: 'like' | 'dislike' | 'joy') => {
     const current = requireAuth();
     if (!current) return;
-    const item = items.find(ranking => ranking.id === id);
-	    if (!isVoteAllowed(item, voteType) && item?.my_vote?.vote_type !== voteType) {
-	      window.alert('这个互动不符合当前红黑榜规则：黑榜只开放免费同意/反对，红榜和白榜保留打榜/反对/欢乐。');
-	      return;
-	    }
-	    setVoteModal({ id, voteType });
+	    const item = items.find(ranking => ranking.id === id);
+		    if (!isVoteAllowed(item, voteType) && item?.my_vote?.vote_type !== voteType) {
+		      window.alert('这个互动不符合当前红黑榜规则。');
+		      return;
+		    }
+		    setVoteModal({ id, voteType });
 	    setVoteCommentText('');
-	    setVoteError('');
-	  };
+		    setVoteError('');
+		  };
+
+  const openPaidBoostModal = (id: string, direction: 'boost' | 'negative_boost') => {
+    const current = requireAuth();
+    if (!current) return;
+    setPaidBoostModal({ id, direction });
+    setPaidBoostAmount('10');
+    setPaidBoostComment('');
+    setPaidBoostError('');
+    fetchWallet();
+  };
+
+  const closePaidBoostModal = () => {
+    setPaidBoostModal(null);
+    setPaidBoostAmount('10');
+    setPaidBoostComment('');
+    setPaidBoostError('');
+  };
+
+  const submitPaidBoost = async () => {
+    if (!paidBoostModal) return;
+    const current = requireAuth();
+    if (!current) return;
+    const amount = Number.parseInt(paidBoostAmount, 10);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaidBoostError('请输入大于 0 的整数金额');
+      return;
+    }
+    setPaidBoosting(true);
+    setPaidBoostError('');
+    try {
+      const r = await fetch(`${API}/lc/rankings/${paidBoostModal.id}/paid-boost`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
+        body: JSON.stringify({
+          direction: paidBoostModal.direction,
+          amount,
+          comment: paidBoostComment.trim() || undefined,
+        }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        setItems(prev => prev.map(i => i.id === paidBoostModal.id ? applyMetricPatch(i, d.data) : i));
+        if (paidBoostComment.trim()) fetchComments(paidBoostModal.id);
+        fetchWallet();
+        closePaidBoostModal();
+      } else {
+        setPaidBoostError(d.error || '操作失败');
+      }
+    } catch {
+      setPaidBoostError('网络错误');
+    } finally {
+      setPaidBoosting(false);
+    }
+  };
 
 	  const closeVoteModal = () => {
 	    setVoteModal(null);
@@ -1003,11 +1090,11 @@ export default function Rankings() {
 	  const requestedVoteCopy = voteModal ? voteCopy(voteModal.voteType, voteModalItem?.type) : null;
 	  const canCancelExistingVote = voteCanCancel(existingMyVote);
 	  const isChangingVote = !!existingMyVote && !!voteModal && existingMyVote.vote_type !== voteModal.voteType;
-	  const voteBalanceDelta = existingMyVote && voteModal ? voteCost(existingMyVote.vote_type, voteModalItem?.type) - voteCost(voteModal.voteType, voteModalItem?.type) : 0;
-	  const changingVoteNeedsBalance = isChangingVote && voteBalanceDelta < 0;
-	  const changingVoteBalanceNotEnough = changingVoteNeedsBalance && balance !== null && balance < Math.abs(voteBalanceDelta);
-	  const requestedVoteNeedsBalance = !!voteModal && voteCost(voteModal.voteType, voteModalItem?.type) > 0;
-	  const requestedVoteBalanceNotEnough = requestedVoteNeedsBalance && balance !== null && balance < 1;
+  const paidBoostItem = paidBoostModal ? items.find(item => item.id === paidBoostModal.id) : undefined;
+  const paidBoostRequestCopy = paidBoostModal ? paidBoostCopy(paidBoostModal.direction) : null;
+  const paidBoostAmountNumber = Number.parseInt(paidBoostAmount, 10);
+  const paidBoostAmountValid = Number.isFinite(paidBoostAmountNumber) && paidBoostAmountNumber > 0;
+  const paidBoostBalanceNotEnough = paidBoostAmountValid && balance !== null && balance < paidBoostAmountNumber;
 	  const showVoteCommentBox = !!voteModal;
 	  const voteCommentField = showVoteCommentBox ? (
 	    <div style={{ marginBottom: 14 }}>
@@ -1095,7 +1182,7 @@ export default function Rankings() {
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
           <p style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.78rem' }}>
-            当前排序：红榜看打榜值，白榜看打榜、反对和欢乐，黑榜看免费互动信号与发布时间。
+            当前排序：优先看打榜、踩榜和免费态度形成的总热度，热度相同再看发布时间。
           </p>
           <CityFilter
             city={city}
@@ -1122,7 +1209,7 @@ export default function Rankings() {
           lineHeight: 1.7,
         }}>
           <strong style={{ color: GOLD }}>审核规则：</strong>
-          审核员尽量保持中立客观；主帖必须附带证据；涉及第三方隐私的信息请先打码；微信认证后一人一票，不可多投。相关方可先发表普通评论，评论通过后再认证为置顶回应。
+          审核员尽量保持中立客观；主帖必须附带证据；涉及第三方隐私的信息请先打码；免费态度一人一票，打榜和踩榜按实际契约币金额累计。相关方可先发表普通评论，评论通过后再认证为置顶回应。
         </div>
         <div style={{ marginBottom: 18 }}>
           <ResponsibilityNotice compact />
@@ -1298,46 +1385,38 @@ export default function Rankings() {
                     );
                   })()}
 
-	                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-	                    {item.type === 'black' ? (
-	                      <>
-	                        <button onClick={() => openVoteModal(item.id, 'like')}
-	                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.22)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#219669', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-	                          {myVote?.vote_type === 'like' ? '已同意' : '同意'} {item.likes || 0}
-	                          <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(33,150,105,0.58)' }}>免费</span>
-	                        </button>
-	                        <button onClick={() => openVoteModal(item.id, 'dislike')}
-	                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'dislike' ? '1px solid rgba(220,38,38,0.32)' : '1px solid rgba(248,113,113,0.20)', background: myVote?.vote_type === 'dislike' ? 'rgba(254,226,226,0.72)' : 'rgba(248,113,113,0.08)', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : '#dc2626', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-	                          {myVote?.vote_type === 'dislike' ? '已反对' : '反对'} {item.dislikes || 0}
-	                          <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(220,38,38,0.56)' }}>免费</span>
-	                        </button>
-	                        {myVote?.vote_type === 'joy' && (
-	                          <button onClick={() => openVoteModal(item.id, 'joy')}
-	                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: '1px solid rgba(217,168,87,0.25)', background: 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-	                            已旧版欢乐 {item.joys || 0}
-	                          </button>
-	                        )}
-	                      </>
-	                    ) : (
-	                      <>
-	                        <button onClick={() => openVoteModal(item.id, 'like')}
-	                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.22)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#219669', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-	                          {myVote?.vote_type === 'like' ? '已打榜' : '打榜'} {item.likes}
-	                          {item.initial_amount > 0 && <span style={{ fontSize: '0.68rem', color: 'rgba(71,85,105,0.56)' }}>含初始 {item.initial_amount}</span>}
-	                          <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(33,150,105,0.58)' }}>1币</span>
-	                        </button>
-	                        <button onClick={() => openVoteModal(item.id, 'joy')}
-	                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'joy' ? '1px solid rgba(166,106,31,0.42)' : '1px solid rgba(217,168,87,0.25)', background: myVote?.vote_type === 'joy' ? 'rgba(217,168,87,0.16)' : 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-	                          {myVote?.vote_type === 'joy' ? '已欢乐' : '欢乐'} {item.joys || 0} <span style={{ fontSize: '0.68rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
-	                        </button>
-	                        <button onClick={() => openVoteModal(item.id, 'dislike')}
-	                          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'dislike' ? '1px solid rgba(220,38,38,0.32)' : '1px solid rgba(248,113,113,0.20)', background: myVote?.vote_type === 'dislike' ? 'rgba(254,226,226,0.72)' : 'rgba(248,113,113,0.08)', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : '#dc2626', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
-	                          {myVote?.vote_type === 'dislike' ? '已反对' : '反对'} {item.dislikes || 0}
-	                          <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(220,38,38,0.56)' }}>免费</span>
-	                        </button>
-	                      </>
-	                    )}
-	                  </div>
+                  <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button onClick={() => openPaidBoostModal(item.id, 'boost')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 9, border: '1px solid rgba(22,163,74,0.26)', background: 'rgba(52,211,153,0.09)', color: '#15803d', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 900 }}>
+                        打榜 {boostAmount(item)}
+                        {item.initial_amount > 0 && <span style={{ fontSize: '0.68rem', color: 'rgba(71,85,105,0.56)' }}>含初始 {item.initial_amount}</span>}
+                        <span style={{ fontSize: '0.68rem', color: 'rgba(21,128,61,0.62)' }}>付费</span>
+                      </button>
+                      <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 9, border: '1px solid rgba(220,38,38,0.24)', background: 'rgba(248,113,113,0.09)', color: '#b91c1c', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 900 }}>
+                        踩榜 {negativeBoostAmount(item)}
+                        <span style={{ fontSize: '0.68rem', color: 'rgba(185,28,28,0.58)' }}>付费</span>
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button onClick={() => openVoteModal(item.id, 'like')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'like' ? '1px solid rgba(22,163,74,0.45)' : '1px solid rgba(52,211,153,0.22)', background: myVote?.vote_type === 'like' ? 'rgba(220,252,231,0.72)' : 'rgba(52,211,153,0.08)', color: myVote?.vote_type === 'like' ? '#15803d' : '#219669', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
+                        {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}
+                        <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'like' ? '#15803d' : 'rgba(33,150,105,0.58)' }}>免费</span>
+                      </button>
+                      <button onClick={() => openVoteModal(item.id, 'dislike')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'dislike' ? '1px solid rgba(220,38,38,0.32)' : '1px solid rgba(248,113,113,0.20)', background: myVote?.vote_type === 'dislike' ? 'rgba(254,226,226,0.72)' : 'rgba(248,113,113,0.08)', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : '#dc2626', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
+                        {myVote?.vote_type === 'dislike' ? '已反对' : '反对'} {opposeCount(item)}
+                        <span style={{ fontSize: '0.68rem', color: myVote?.vote_type === 'dislike' ? '#b91c1c' : 'rgba(220,38,38,0.56)' }}>免费</span>
+                      </button>
+                      <button onClick={() => openVoteModal(item.id, 'joy')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 9, border: myVote?.vote_type === 'joy' ? '1px solid rgba(166,106,31,0.42)' : '1px solid rgba(217,168,87,0.25)', background: myVote?.vote_type === 'joy' ? 'rgba(217,168,87,0.16)' : 'rgba(217,168,87,0.10)', color: GOLD, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 800 }}>
+                        {myVote?.vote_type === 'joy' ? '已欢乐' : '欢乐'} {item.joys || 0}
+                        <span style={{ fontSize: '0.68rem', color: 'rgba(166,106,31,0.55)' }}>免费</span>
+                      </button>
+                    </div>
+                  </div>
 
                   {pinnedComments.length > 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
@@ -1484,7 +1563,7 @@ export default function Rankings() {
         </p>
       </div>
 
-      {/* Vote Modal */}
+      {/* Free Vote Modal */}
       {voteModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 32, maxWidth: 420, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
@@ -1496,57 +1575,31 @@ export default function Rankings() {
                     : <>已投过：{existingVoteCopy.icon} {existingVoteCopy.label}</>}
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-                  每个账号对同一条内容只能保留一票。你已经以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投过票。
+                  每个账号对同一条内容只能保留一个免费态度。当前账号：<strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong>。
                 </p>
-                <div style={{
-                  border: '1px solid rgba(166,106,31,0.16)',
-                  background: '#fffaf2',
-                  borderRadius: 12,
-                  padding: '12px 14px',
-                  marginBottom: 14,
-                  color: 'rgba(71,85,105,0.78)',
-                  fontSize: '0.82rem',
-                  lineHeight: 1.7,
-                }}>
-	                  {isChangingVote
-	                    ? voteBalanceDelta > 0
-	                      ? <>改为{requestedVoteCopy?.label}会退回 {voteBalanceDelta} 契约币；公开记录会从{existingVoteCopy.label}直接变成{requestedVoteCopy?.label}。</>
-	                      : voteBalanceDelta < 0
-	                        ? <>改为{requestedVoteCopy?.label}需要扣 {Math.abs(voteBalanceDelta)} 契约币。</>
-	                        : <>{existingVoteCopy.label}和{requestedVoteCopy?.label}互改不再扣币，也不退款，只调整公开口碑方向。</>
-	                    : canCancelExistingVote
-	                      ? <>24 小时内可以撤销。{existingMyVote.refund_amount > 0 ? `撤销后退回 ${existingMyVote.refund_amount} 契约币。` : '免费互动撤销不涉及退币。'}截止：{voteDeadlineText(existingMyVote)}</>
-	                      : <>这票已经超过 24 小时撤销期，只保留公开口碑记录。</>}
-	                </div>
-	                {isChangingVote && voteCommentField}
-	                {isChangingVote && voteBalanceDelta < 0 && (
-                  <p style={{ fontSize: '0.85rem', color: changingVoteBalanceNotEnough ? RED : '#34d399', lineHeight: 1.7, marginBottom: 12 }}>
-                    当前契约币：{balance ?? '...'} {changingVoteBalanceNotEnough && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
-                  </p>
-                )}
+                <div style={{ border: '1px solid rgba(166,106,31,0.16)', background: '#fffaf2', borderRadius: 12, padding: '12px 14px', marginBottom: 14, color: 'rgba(71,85,105,0.78)', fontSize: '0.82rem', lineHeight: 1.7 }}>
+                  {isChangingVote
+                    ? <>{existingVoteCopy.label}和{requestedVoteCopy?.label}互改免费，只调整公开态度方向。</>
+                    : canCancelExistingVote
+                      ? <>24 小时内可以撤销。免费态度撤销不涉及退币。截止：{voteDeadlineText(existingMyVote)}</>
+                      : <>这票已经超过 24 小时撤销期，只保留公开态度记录。</>}
+                </div>
+                {isChangingVote && voteCommentField}
                 {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
                 <div style={{ display: 'flex', gap: 10 }}>
-	                  <button onClick={closeVoteModal}
+                  <button onClick={closeVoteModal}
                     style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>
                     关闭
                   </button>
                   {isChangingVote ? (
-                    <button onClick={submitVote} disabled={voting || changingVoteBalanceNotEnough}
-                      style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
-                        cursor: voting || changingVoteBalanceNotEnough ? 'not-allowed' : 'pointer',
-                        background: voting || changingVoteBalanceNotEnough ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                        color: voting || changingVoteBalanceNotEnough ? 'rgba(71,85,105,0.52)' : C,
-                        fontWeight: 800, fontSize: '0.875rem', opacity: voting ? 0.6 : 1 }}>
+                    <button onClick={submitVote} disabled={voting}
+                      style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none', cursor: voting ? 'not-allowed' : 'pointer', background: voting ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: voting ? 'rgba(71,85,105,0.52)' : C, fontWeight: 800, fontSize: '0.875rem', opacity: voting ? 0.6 : 1 }}>
                       {voting ? '改票中...' : `改为${requestedVoteCopy?.label || '此票'}`}
                     </button>
                   ) : (
                     <button onClick={cancelVote} disabled={voting || !canCancelExistingVote}
-                    style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
-                      cursor: voting || !canCancelExistingVote ? 'not-allowed' : 'pointer',
-                      background: voting || !canCancelExistingVote ? 'rgba(71,85,105,0.08)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
-                      color: voting || !canCancelExistingVote ? 'rgba(71,85,105,0.52)' : '#fff',
-                      fontWeight: 800, fontSize: '0.875rem', opacity: voting ? 0.6 : 1 }}>
-                    {voting ? '撤销中...' : canCancelExistingVote ? '撤销投票' : '不可撤销'}
+                    style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none', cursor: voting || !canCancelExistingVote ? 'not-allowed' : 'pointer', background: voting || !canCancelExistingVote ? 'rgba(71,85,105,0.08)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)', color: voting || !canCancelExistingVote ? 'rgba(71,85,105,0.52)' : '#fff', fontWeight: 800, fontSize: '0.875rem', opacity: voting ? 0.6 : 1 }}>
+                    {voting ? '撤销中...' : canCancelExistingVote ? '撤销态度' : '不可撤销'}
                     </button>
                   )}
                 </div>
@@ -1554,37 +1607,80 @@ export default function Rankings() {
             ) : (
               <>
                 <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>
-	                  {requestedVoteCopy?.icon} {requestedVoteCopy?.label} · {requestedVoteCopy?.paid ? '1 契约币' : '免费'}
-	                </h3>
-	                <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-	                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份互动。
-	                  {requestedVoteCopy?.paid
-	                    ? '打榜扣 1 契约币，24 小时内撤销可退回。'
-	                    : voteModalItem?.type === 'black'
-	                      ? '黑榜同意和反对都免费，但同样占用一人一票名额。'
-	                      : `${requestedVoteCopy?.label || '这个互动'}不扣契约币，但同样占用一人一票名额。`}
-	                </p>
-	                {voteCommentField}
-	                {requestedVoteNeedsBalance && (
-	                  <p style={{ fontSize: '0.85rem', color: balance && balance >= 1 ? '#34d399' : RED, lineHeight: 1.7, marginBottom: 20 }}>
-	                    当前契约币：{balance ?? '...'} {balance !== null && balance < 1 && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
-	                  </p>
-	                )}
-	                {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
-	                <div style={{ display: 'flex', gap: 10 }}>
-	                  <button onClick={closeVoteModal}
-	                    style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
-	                  <button onClick={submitVote} disabled={voting || requestedVoteBalanceNotEnough}
-	                    style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none',
-	                      cursor: voting || requestedVoteBalanceNotEnough ? 'not-allowed' : 'pointer',
-	                      background: voting || requestedVoteBalanceNotEnough ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-	                      color: voting || requestedVoteBalanceNotEnough ? 'rgba(71,85,105,0.52)' : C, fontWeight: 700, fontSize: '0.875rem',
-                      opacity: voting ? 0.6 : 1 }}>
-                    {voting ? '提交中...' : '确认投票'}
+                  {requestedVoteCopy?.icon} {requestedVoteCopy?.label} · 免费
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
+                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份表达态度。免费态度一人一票，可以顺带写一条免费评论。
+                </p>
+                {voteCommentField}
+                {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={closeVoteModal}
+                    style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
+                  <button onClick={submitVote} disabled={voting}
+                    style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none', cursor: voting ? 'not-allowed' : 'pointer', background: voting ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: voting ? 'rgba(71,85,105,0.52)' : C, fontWeight: 700, fontSize: '0.875rem', opacity: voting ? 0.6 : 1 }}>
+                    {voting ? '提交中...' : '确认态度'}
                   </button>
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Paid Boost Modal */}
+      {paidBoostModal && paidBoostRequestCopy && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
+          <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 32, maxWidth: 440, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
+            <h3 style={{ fontWeight: 900, fontSize: '1.16rem', marginBottom: 8 }}>
+              {paidBoostRequestCopy.icon} {paidBoostRequestCopy.label}
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 14 }}>
+              {paidBoostItem?.subject_name ? `给「${paidBoostItem.subject_name}」` : '给这条内容'}投入契约币。金额按实际输入累计，没有单次 1 币限制。
+            </p>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>契约币数量</label>
+              <input
+                value={paidBoostAmount}
+                onChange={e => setPaidBoostAmount(e.target.value.replace(/[^\d]/g, ''))}
+                inputMode="numeric"
+                placeholder="输入金额"
+                style={inputStyle}
+              />
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                {[10, 50, 100, 500].map(amount => (
+                  <button key={amount} type="button" onClick={() => setPaidBoostAmount(String(amount))}
+                    style={{ padding: '5px 10px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.18)', background: '#fffaf2', color: GOLD, cursor: 'pointer', fontSize: '0.76rem', fontWeight: 800 }}>
+                    {amount}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>
+                顺带评论 <span style={{ color: 'rgba(71,85,105,0.50)', fontWeight: 600 }}>免费，可选</span>
+              </label>
+              <textarea
+                value={paidBoostComment}
+                onChange={e => setPaidBoostComment(e.target.value)}
+                rows={3}
+                maxLength={600}
+                placeholder="可以补一句为什么打榜或踩榜。评论会进入审核队列。"
+                style={{ ...inputStyle, resize: 'none' }}
+              />
+            </div>
+            <p style={{ fontSize: '0.85rem', color: paidBoostBalanceNotEnough ? RED : '#219669', lineHeight: 1.7, marginBottom: 12 }}>
+              当前契约币：{walletLoading ? '...' : balance ?? 0} {paidBoostBalanceNotEnough && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
+            </p>
+            {paidBoostError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{paidBoostError}</p>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={closePaidBoostModal}
+                style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
+              <button onClick={submitPaidBoost} disabled={paidBoosting || !paidBoostAmountValid || paidBoostBalanceNotEnough}
+                style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none', cursor: paidBoosting || !paidBoostAmountValid || paidBoostBalanceNotEnough ? 'not-allowed' : 'pointer', background: paidBoosting || !paidBoostAmountValid || paidBoostBalanceNotEnough ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: paidBoosting || !paidBoostAmountValid || paidBoostBalanceNotEnough ? 'rgba(71,85,105,0.52)' : C, fontWeight: 850, fontSize: '0.875rem', opacity: paidBoosting ? 0.6 : 1 }}>
+                {paidBoosting ? '提交中...' : `确认${paidBoostRequestCopy.label}`}
+              </button>
+            </div>
           </div>
         </div>
       )}
