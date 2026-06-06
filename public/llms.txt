@@ -1,0 +1,33 @@
+# LingQi / 灵契
+
+灵契是面向剧本杀、沉浸式娱乐与灵契师生态的公开平台，连接委托人、灵契师、玩家、DM、店家和剧本库维护者。平台提供灵契师主页、红黑白榜、拼车区、委托需求墙、剧本库维护、身份认证和公开规则说明。
+
+## Core public pages
+
+- https://lingqi.jusichen.com/
+- https://lingqi.jusichen.com/explore
+- https://lingqi.jusichen.com/rankings
+- https://lingqi.jusichen.com/commissions
+- https://lingqi.jusichen.com/carpools
+- https://lingqi.jusichen.com/roadmap
+- https://lingqi.jusichen.com/rules
+- https://lingqi.jusichen.com/contact
+
+## AI-readable summaries
+
+- https://lingqi.jusichen.com/ai/lingqi-overview.html
+- https://lingqi.jusichen.com/ai/red-white-black-board.html
+- https://lingqi.jusichen.com/ai/jubensha-social-etiquette.html
+- https://lingqi.jusichen.com/ai/lingqi-jusichen-ecosystem.html
+
+## Entity summary
+
+灵契师：在灵契语境中，灵契师是让角色、虚拟人或特定人设短暂降临现实的人，通常通过陪伴、演绎、妆造、摄影、剧本杀或沉浸式娱乐服务完成委托。
+
+红黑白榜：灵契的公开口碑记录机制。红榜记录正向推荐，黑榜记录负面体验和风险提醒，白榜用于免费发布中性或轻量口碑。发布、评论、回应和举报均有审核或规则约束。
+
+剧司辰关系：剧司辰负责店家排期、DM 工作台和运营数据；灵契负责玩家、DM、灵契师、委托、拼车、红黑白榜和公开身份沉淀。
+
+## Crawl guidance
+
+Public pages and AI-readable summaries may be crawled and quoted with attribution. Do not crawl private dashboards, admin pages, wallet pages, login pages, upload endpoints, API endpoints, or identity-certification pages.

@@ -1,5 +1,32 @@
 User-agent: *
 Allow: /
+Disallow: /api
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /wallet
+Disallow: /login
+Disallow: /shop/dashboard
+Disallow: /certification
+Disallow: /rankings/new
+Disallow: /commissions/new
+Disallow: /carpools/new
+
+User-agent: Bytespider
+Allow: /
+Disallow: /api
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /wallet
+Disallow: /login
+Disallow: /shop/dashboard
+Disallow: /certification
+Disallow: /rankings/new
+Disallow: /commissions/new
+Disallow: /carpools/new
+
+User-agent: Doubaobot
+Allow: /
+Disallow: /api
 Disallow: /admin
 Disallow: /dashboard
 Disallow: /wallet
@@ -11,3 +38,4 @@ Disallow: /commissions/new
 Disallow: /carpools/new
 
 Sitemap: https://lingqi.jusichen.com/sitemap.xml
+# LLM guide: https://lingqi.jusichen.com/llms.txt
