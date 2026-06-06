@@ -283,6 +283,8 @@ export function ReviewRules() {
       </Section>
 
       <Section title="八、申诉与调整">
+        <p style={pStyle}>用户举报不会直接等于判定违规。高风险举报或多名用户有效举报可能触发临时折叠，复核期间暂不公开展示；管理员会结合原始内容、证据、举报理由、相关方回应和历史记录决定恢复展示、要求补充材料或正式下架。</p>
+        <p style={pStyle}>平台可以引入社区观察员众审，但众审只提交建议，不直接决定下架、恢复、封号或改判。最终处理仍由平台审核员负责，并记录必要日志。</p>
         <p style={pStyle}>审核规则会随着产品和社区风险继续调整。用户可以通过相关方回应、补充材料或联系管理员提出申诉，也可以发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。平台保留对明显风险内容进行隐藏、下架、限制传播或重新审核的权利。</p>
       </Section>
     </LegalLayout>

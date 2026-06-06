@@ -12,6 +12,7 @@ const CreatorProfile = lazy(pageLoaders.creatorProfile);
 const Login = lazy(pageLoaders.login);
 const Dashboard = lazy(pageLoaders.dashboard);
 const Admin = lazy(pageLoaders.admin);
+const CommunityModeration = lazy(pageLoaders.moderation);
 const Rankings = lazy(pageLoaders.rankings);
 const CityReputation = lazy(pageLoaders.cityReputation);
 const ReputationDossier = lazy(pageLoaders.reputationDossier);
@@ -53,6 +54,7 @@ function AppLayout() {
           <Route path="/login" element={<Login />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/moderation" element={<CommunityModeration />} />
           <Route path="/rankings" element={<Rankings />} />
           <Route path="/reputation/city" element={<CityReputation />} />
           <Route path="/reputation/dossier" element={<ReputationDossier />} />
@@ -148,6 +150,7 @@ function SiteFooter() {
           </FooterColumn>
           <FooterColumn title="规则与合规">
             <FooterLink to="/rules">审核规则</FooterLink>
+            <FooterLink to="/moderation">社区观察员审核台</FooterLink>
             <FooterLink to="/terms">用户协议</FooterLink>
             <FooterLink to="/privacy">隐私政策</FooterLink>
             <FooterLink to="/security-assessment">安全评估说明</FooterLink>

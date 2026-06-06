@@ -22,6 +22,12 @@ type ReportDraft = {
   description: string;
 };
 
+type ReportModerationResult = {
+  auto_action?: 'none' | 'temporary_hidden' | 'queued_priority';
+  auto_action_reason?: string | null;
+  report_group_count?: number;
+};
+
 export default function ReportModal({
   targetType,
   targetId,
@@ -40,6 +46,7 @@ export default function ReportModal({
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [moderation, setModeration] = useState<ReportModerationResult | null>(null);
   const draftValue = useMemo<ReportDraft>(() => ({ reason, description }), [description, reason]);
   const reportDraft = useDraftAutosave<ReportDraft>({
     key: `lc:draft:report:${targetType}:${targetId}`,
@@ -70,6 +77,7 @@ export default function ReportModal({
       });
       const d = await r.json();
       if (d.success) {
+        setModeration(d.data?.moderation || null);
         reportDraft.clearDraft();
         setDone(true);
       }
@@ -88,7 +96,19 @@ export default function ReportModal({
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 42, marginBottom: 12 }}>✓</div>
             <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.2rem', marginBottom: 8, color: INK }}>举报已提交</h3>
-            <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 20 }}>管理员会按后置治理规则处理。恶意举报也会留下记录。</p>
+            <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 14 }}>
+              管理员会按后置治理规则处理。恶意举报也会留下记录。
+            </p>
+            {moderation?.auto_action === 'temporary_hidden' && (
+              <p style={{ color: '#7c2d12', lineHeight: 1.75, margin: '0 0 18px', background: 'rgba(255,247,237,0.92)', border: '1px solid rgba(217,119,6,0.2)', borderRadius: 12, padding: '10px 12px', fontSize: '0.82rem' }}>
+                这条内容已因举报进入临时折叠复核。复核期间暂不公开展示，管理员确认后会恢复展示或正式处理。
+              </p>
+            )}
+            {moderation?.auto_action === 'queued_priority' && (
+              <p style={{ color: '#854d0e', lineHeight: 1.75, margin: '0 0 18px', background: 'rgba(254,252,232,0.9)', border: '1px solid rgba(202,138,4,0.18)', borderRadius: 12, padding: '10px 12px', fontSize: '0.82rem' }}>
+                这条内容已进入优先复核队列，管理员会结合举报理由、证据和历史记录判断。
+              </p>
+            )}
             <button onClick={onClose} className="btn-gold" style={{ padding: '10px 24px' }}>关闭</button>
           </div>
         ) : (

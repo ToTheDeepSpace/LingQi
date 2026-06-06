@@ -232,6 +232,16 @@ type ReportReview = {
   reason: string;
   description?: string | null;
   target_snapshot?: Record<string, unknown> | null;
+  risk_level?: 'normal' | 'high' | 'urgent';
+  auto_action?: 'none' | 'temporary_hidden' | 'queued_priority';
+  auto_action_reason?: string | null;
+  report_group_count?: number;
+  reviewer_summary?: {
+    total?: number;
+    hide_votes?: number;
+    safe_votes?: number;
+    decisions?: Record<string, number>;
+  } | null;
   created_at: string;
 };
 
@@ -572,19 +582,21 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
-  const resolveReport = async (id: string, action: 'resolved' | 'dismissed', hideTarget = false) => {
+  const resolveReport = async (id: string, action: 'resolved' | 'dismissed', hideTarget = false, restoreTarget = false) => {
     await fetch(`${API}/lc/admin/reports/${id}/resolve`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action,
         hideTarget,
+        restoreTarget,
         rejectReason: hideTarget ? '举报处理后下架' : undefined,
-        handlerNote: action === 'dismissed' ? '已看，暂不处理' : '已处理',
+        handlerNote: restoreTarget ? '复核后恢复展示' : action === 'dismissed' ? '已看，暂不处理' : '已处理',
       }),
     });
-    setReports(prev => prev.filter(item => item.id !== id));
-    if (hideTarget) setCarpools(prev => prev.filter(item => item.id !== id));
+    const target = reports.find(item => item.id === id);
+    setReports(prev => target ? prev.filter(item => !(item.target_type === target.target_type && item.target_id === target.target_id)) : prev.filter(item => item.id !== id));
+    if (hideTarget && target?.target_type === 'carpool') setCarpools(prev => prev.filter(item => item.id !== target.target_id));
     void loadData();
   };
 
@@ -1120,8 +1132,23 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <Meta>
                         举报人：{r.reporter_name}
                         {` · 原因：${r.reason}`}
+                        {r.report_group_count && r.report_group_count > 1 ? ` · 同对象有效举报 ${r.report_group_count}` : ''}
                         {r.created_at ? ` · ${r.created_at.slice(0, 10)}` : ''}
                       </Meta>
+                      {(r.auto_action === 'temporary_hidden' || r.auto_action === 'queued_priority') && (
+                        <Proof>
+                          {r.auto_action === 'temporary_hidden' ? '已临时折叠，等待复核' : '已进入优先复核'}
+                          {r.risk_level ? ` · 风险级别：${r.risk_level}` : ''}
+                          {r.auto_action_reason ? <div style={{ marginTop: 6, lineHeight: 1.7 }}>{r.auto_action_reason}</div> : null}
+                        </Proof>
+                      )}
+                      {r.reviewer_summary && Number(r.reviewer_summary.total || 0) > 0 && (
+                        <Meta>
+                          社区观察员建议：共 {r.reviewer_summary.total} 条
+                          {typeof r.reviewer_summary.hide_votes === 'number' ? ` · 建议隐藏 ${r.reviewer_summary.hide_votes}` : ''}
+                          {typeof r.reviewer_summary.safe_votes === 'number' ? ` · 建议保留 ${r.reviewer_summary.safe_votes}` : ''}
+                        </Meta>
+                      )}
                       {r.description && <ContentBox>{r.description}</ContentBox>}
                       {r.target_snapshot && (
                         <Proof>
@@ -1136,6 +1163,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       )}
                     </div>
                     <Actions vertical>
+                      {r.auto_action === 'temporary_hidden' && (
+                        <ActionButton kind="ok" onClick={() => resolveReport(r.id, 'resolved', false, true)}>复核恢复展示</ActionButton>
+                      )}
                       <ActionButton kind="bad" onClick={() => resolveReport(r.id, 'resolved', true)}>下架并处理</ActionButton>
                       <ActionButton kind="ok" onClick={() => resolveReport(r.id, 'resolved')}>标记已处理</ActionButton>
                       <ActionButton onClick={() => resolveReport(r.id, 'dismissed')}>暂不处理</ActionButton>

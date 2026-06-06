@@ -77,7 +77,10 @@ export default function Navbar() {
           + (data.claims || []).length
           + (data.commissions || []).length
           + (data.transactions || []).length
-          + (data.certifications || []).length;
+          + (data.certifications || []).length
+          + (data.reports || []).length
+          + (data.siteMessages || []).length
+          + (data.scriptContributions || []).length;
         const dmDossierCount = (data.dmDossiers || []).length;
         setPendingCount(total + dmDossierCount);
       } catch {

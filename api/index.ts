@@ -598,6 +598,9 @@ type CarpoolSubsidyType = 'none' | 'half_price' | 'free_ticket' | 'discount' | '
 const CARPOOL_SUBSIDY_TYPES: CarpoolSubsidyType[] = ['none', 'half_price', 'free_ticket', 'discount', 'a_subsidy', 'fixed_deduct', 'custom'];
 type ReportTargetType = 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile';
 const REPORT_TARGET_TYPES: ReportTargetType[] = ['carpool', 'ranking', 'comment', 'commission', 'profile'];
+type ModerationDecision = 'safe' | 'hide' | 'needs_more_evidence' | 'privacy_risk' | 'legal_risk' | 'duplicate' | 'unclear';
+const MODERATION_DECISIONS: ModerationDecision[] = ['safe', 'hide', 'needs_more_evidence', 'privacy_risk', 'legal_risk', 'duplicate', 'unclear'];
+const TEMPORARY_HIDE_REASON = '收到有效举报后临时折叠，等待管理员复核';
 
 function sanitizeRelatedFiles(input: unknown): RelatedProofFile[] {
   if (!Array.isArray(input)) return [];
@@ -1910,6 +1913,278 @@ function publicRankingPayload(row: Record<string, unknown>) {
     expiry_override: row.expiry_override,
     files: row.files || [],
   };
+}
+
+function reportRiskLevel(reason: string, description = ''): 'normal' | 'high' | 'urgent' {
+  const text = `${reason} ${description}`;
+  if (/泄露|隐私|未打码|身份证|住址|手机号|微信号|未成年|人肉/i.test(text)) return 'urgent';
+  if (/诈骗|违法|犯罪|威胁|恐吓|色情|性交易|冒用|造谣|诽谤/i.test(text)) return 'high';
+  return 'normal';
+}
+
+function moderationReviewerRole(profile: Record<string, unknown> | null | undefined) {
+  if (!profile) return '';
+  if (cleanText(profile.role, 40).toLowerCase() === 'admin') return 'admin';
+  const communityRole = cleanText(profile.community_role, 60);
+  const expiresAt = cleanText(profile.community_role_expires_at, 80);
+  const expired = expiresAt ? new Date(expiresAt).getTime() < Date.now() : false;
+  if (communityRole === 'founding_referrer') return 'founding_referrer';
+  if (communityRole === 'community_observer' && !expired) return 'community_observer';
+  return '';
+}
+
+function reportThreshold(targetType: ReportTargetType) {
+  if (targetType === 'ranking') return 4;
+  if (targetType === 'profile') return 2;
+  return 3;
+}
+
+async function moderationEngagement(targetType: ReportTargetType, targetId: string) {
+  try {
+    if (targetType === 'ranking') {
+      const { data } = await supabase.from('lc_rankings')
+        .select('initial_amount, likes, dislikes, joys')
+        .eq('id', targetId)
+        .maybeSingle();
+      return Math.max(0, Number(data?.likes || 0) + Number(data?.dislikes || 0) + Number(data?.joys || 0) + Math.min(Number(data?.initial_amount || 0), 20));
+    }
+    if (targetType === 'comment') {
+      const { data } = await supabase.from('lc_comments')
+        .select('likes')
+        .eq('id', targetId)
+        .maybeSingle();
+      return Math.max(0, Number(data?.likes || 0));
+    }
+    if (targetType === 'carpool') {
+      const { data } = await supabase.from('lc_carpools')
+        .select('joined_count, boost_amount')
+        .eq('id', targetId)
+        .maybeSingle();
+      return Math.max(0, Number(data?.joined_count || 0) + Math.min(Number(data?.boost_amount || 0), 20));
+    }
+  } catch (e) {
+    console.error('[moderation] engagement failed', getErrorText(e));
+  }
+  return 0;
+}
+
+async function currentTargetStatus(targetType: ReportTargetType, targetId: string) {
+  if (targetType === 'ranking') {
+    const { data } = await supabase.from('lc_rankings').select('status').eq('id', targetId).maybeSingle();
+    return cleanText(data?.status, 40) || null;
+  }
+  if (targetType === 'comment') {
+    const { data } = await supabase.from('lc_comments').select('status').eq('id', targetId).maybeSingle();
+    return cleanText(data?.status, 40) || null;
+  }
+  if (targetType === 'commission') {
+    const { data } = await supabase.from('lc_commissions').select('status').eq('id', targetId).maybeSingle();
+    return cleanText(data?.status, 40) || null;
+  }
+  if (targetType === 'carpool') {
+    const { data } = await supabase.from('lc_carpools').select('status').eq('id', targetId).maybeSingle();
+    return cleanText(data?.status, 40) || null;
+  }
+  const { data } = await supabase.from('lc_profiles').select('is_visible').eq('id', targetId).maybeSingle();
+  return data?.is_visible ? 'visible' : 'hidden';
+}
+
+async function setTargetTemporaryHidden(targetType: ReportTargetType, targetId: string, reason = TEMPORARY_HIDE_REASON) {
+  const before = await currentTargetStatus(targetType, targetId);
+  const now = new Date().toISOString();
+  if (targetType === 'ranking' && before === 'approved') {
+    await supabase.from('lc_rankings').update({ status: 'rejected' }).eq('id', targetId);
+  } else if (targetType === 'comment' && before === 'approved') {
+    await supabase.from('lc_comments').update({ status: 'rejected' }).eq('id', targetId);
+  } else if (targetType === 'commission' && before === 'approved') {
+    await supabase.from('lc_commissions').update({ status: 'rejected', reject_reason: reason, updated_at: now }).eq('id', targetId);
+  } else if (targetType === 'carpool' && before === 'approved') {
+    await supabase.from('lc_carpools').update({ status: 'rejected', reject_reason: reason, updated_at: now }).eq('id', targetId);
+  } else if (targetType === 'profile' && before === 'visible') {
+    await supabase.from('lc_profiles').update({ is_visible: false, reject_reason: reason, updated_at: now }).eq('id', targetId);
+  }
+  const after = await currentTargetStatus(targetType, targetId);
+  return { before, after };
+}
+
+async function restoreTargetAfterReport(targetType: ReportTargetType, targetId: string) {
+  const before = await currentTargetStatus(targetType, targetId);
+  const now = new Date().toISOString();
+  if (targetType === 'ranking') {
+    await supabase.from('lc_rankings').update({ status: 'approved' }).eq('id', targetId);
+  } else if (targetType === 'comment') {
+    await supabase.from('lc_comments').update({ status: 'approved' }).eq('id', targetId);
+  } else if (targetType === 'commission') {
+    await supabase.from('lc_commissions').update({ status: 'approved', reject_reason: null, updated_at: now }).eq('id', targetId);
+  } else if (targetType === 'carpool') {
+    await supabase.from('lc_carpools').update({ status: 'approved', reject_reason: null, updated_at: now }).eq('id', targetId);
+  } else {
+    await supabase.from('lc_profiles').update({ is_visible: true, reject_reason: null, updated_at: now }).eq('id', targetId);
+  }
+  const after = await currentTargetStatus(targetType, targetId);
+  return { before, after };
+}
+
+function buildReviewerSummary(reviews: Array<{ decision?: string; risk_labels?: string[] | null }>) {
+  const decisions: Record<string, number> = {};
+  const labels: Record<string, number> = {};
+  reviews.forEach(review => {
+    const decision = cleanText(review.decision, 60) || 'unclear';
+    decisions[decision] = (decisions[decision] || 0) + 1;
+    (Array.isArray(review.risk_labels) ? review.risk_labels : []).forEach(labelRaw => {
+      const label = cleanText(labelRaw, 40);
+      if (label) labels[label] = (labels[label] || 0) + 1;
+    });
+  });
+  const hideVotes = (decisions.hide || 0) + (decisions.privacy_risk || 0) + (decisions.legal_risk || 0);
+  const safeVotes = decisions.safe || 0;
+  return {
+    total: reviews.length,
+    decisions,
+    labels,
+    hide_votes: hideVotes,
+    safe_votes: safeVotes,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function refreshReportReviewerSummary(targetType: ReportTargetType, targetId: string) {
+  const { data, error } = await supabase.from('lc_moderation_reviews')
+    .select('decision, risk_labels')
+    .eq('target_type', targetType)
+    .eq('target_id', targetId)
+    .eq('status', 'active');
+  if (error) {
+    if (isMissingRelation(error, 'lc_moderation_reviews')) return {};
+    throw error;
+  }
+  const summary = buildReviewerSummary((data || []) as Array<{ decision?: string; risk_labels?: string[] | null }>);
+  const { error: updErr } = await supabase.from('lc_reports')
+    .update({ reviewer_summary: summary, updated_at: new Date().toISOString() })
+    .eq('target_type', targetType)
+    .eq('target_id', targetId)
+    .eq('status', 'pending');
+  if (updErr && !isMissingRelation(updErr, 'reviewer_summary')) throw updErr;
+  return summary;
+}
+
+async function evaluateReportModeration(req: express.Request, args: {
+  targetType: ReportTargetType;
+  targetId: string;
+  reason: string;
+  description: string;
+}) {
+  const { data: reports, error: reportErr } = await supabase.from('lc_reports')
+    .select('id, reporter_id, reason, reporter_trust_score')
+    .eq('target_type', args.targetType)
+    .eq('target_id', args.targetId)
+    .eq('status', 'pending');
+  if (reportErr) throw reportErr;
+
+  const rows = reports || [];
+  const effectiveReporters = new Set(rows.map(row => String(row.reporter_id || '')).filter(Boolean));
+  const effectiveCount = effectiveReporters.size || rows.length;
+  const riskLevels = rows.map(row => reportRiskLevel(cleanText(row.reason, 120)));
+  const ownRisk = reportRiskLevel(args.reason, args.description);
+  const riskLevel = riskLevels.includes('urgent') || ownRisk === 'urgent'
+    ? 'urgent'
+    : (riskLevels.includes('high') || ownRisk === 'high' ? 'high' : 'normal');
+  const engagement = await moderationEngagement(args.targetType, args.targetId);
+  const reportRatio = effectiveCount / Math.max(1, effectiveCount + engagement);
+  const threshold = reportThreshold(args.targetType);
+
+  const shouldTemporaryHide =
+    riskLevel === 'urgent'
+    || (riskLevel === 'high' && effectiveCount >= 2)
+    || (effectiveCount >= threshold && reportRatio >= 0.25);
+  const shouldQueuePriority = !shouldTemporaryHide && (riskLevel === 'high' || effectiveCount >= 2);
+
+  let action: 'none' | 'temporary_hidden' | 'queued_priority' = 'none';
+  let statusChange: { before: string | null; after: string | null } = { before: null, after: null };
+  let reason = '';
+  if (shouldTemporaryHide) {
+    action = 'temporary_hidden';
+    reason = riskLevel === 'urgent'
+      ? '命中隐私、未打码、违法或人身安全等高风险举报，先临时折叠等待管理员复核'
+      : `收到 ${effectiveCount} 个有效举报，先临时折叠等待管理员复核`;
+    statusChange = await setTargetTemporaryHidden(args.targetType, args.targetId, reason);
+    await logSecurityEvent(req, {
+      action: 'report_auto_temporary_hidden',
+      targetType: args.targetType,
+      targetId: args.targetId,
+      metadata: { report_count: effectiveCount, report_ratio: reportRatio, risk_level: riskLevel, before: statusChange.before, after: statusChange.after },
+    });
+  } else if (shouldQueuePriority) {
+    action = 'queued_priority';
+    reason = riskLevel === 'high' ? '高风险举报，进入优先复核队列' : '多名用户举报，进入优先复核队列';
+  }
+
+  const patch = {
+    risk_level: riskLevel,
+    auto_action: action,
+    auto_action_reason: reason || null,
+    auto_action_at: action === 'none' ? null : new Date().toISOString(),
+    target_status_before: statusChange.before,
+    target_status_after: statusChange.after,
+    report_group_count: effectiveCount,
+    updated_at: new Date().toISOString(),
+  };
+  const { error: updErr } = await supabase.from('lc_reports')
+    .update(patch)
+    .eq('target_type', args.targetType)
+    .eq('target_id', args.targetId)
+    .eq('status', 'pending');
+  if (updErr && !isMissingRelation(updErr, 'risk_level')) throw updErr;
+
+  return {
+    risk_level: riskLevel,
+    auto_action: action,
+    auto_action_reason: reason || null,
+    report_group_count: effectiveCount,
+    report_ratio: reportRatio,
+    target_status_before: statusChange.before,
+    target_status_after: statusChange.after,
+  };
+}
+
+function groupReportsForModerationQueue(reports: Record<string, unknown>[], ownReviews: Record<string, unknown>[] = []) {
+  const ownReviewByTarget = new Map(ownReviews.map(review => [`${review.target_type}:${review.target_id}`, review]));
+  const map = new Map<string, Record<string, unknown> & { reasons: string[]; report_ids: string[]; report_count: number }>();
+  reports.forEach(report => {
+    const key = `${report.target_type}:${report.target_id}`;
+    const current = map.get(key) || {
+      target_type: report.target_type,
+      target_id: report.target_id,
+      target_title: report.target_title,
+      target_snapshot: report.target_snapshot || {},
+      risk_level: report.risk_level || 'normal',
+      auto_action: report.auto_action || 'none',
+      auto_action_reason: report.auto_action_reason || null,
+      reviewer_summary: report.reviewer_summary || {},
+      created_at: report.created_at,
+      updated_at: report.updated_at,
+      reasons: [],
+      report_ids: [],
+      report_count: 0,
+      my_review: null,
+    };
+    const reason = cleanText(report.reason, 80);
+    if (reason && !current.reasons.includes(reason)) current.reasons.push(reason);
+    current.report_ids.push(String(report.id));
+    current.report_count = Math.max(Number(current.report_count || 0), Number(report.report_group_count || 0), current.report_ids.length);
+    if (report.auto_action === 'temporary_hidden') current.auto_action = 'temporary_hidden';
+    else if (current.auto_action !== 'temporary_hidden' && report.auto_action === 'queued_priority') current.auto_action = 'queued_priority';
+    if (report.risk_level === 'urgent') current.risk_level = 'urgent';
+    else if (current.risk_level !== 'urgent' && report.risk_level === 'high') current.risk_level = 'high';
+    current.my_review = ownReviewByTarget.get(key) || null;
+    map.set(key, current);
+  });
+  return Array.from(map.values()).sort((a, b) => {
+    const actionScore = (value: unknown) => value === 'temporary_hidden' ? 2 : value === 'queued_priority' ? 1 : 0;
+    const byAction = actionScore(b.auto_action) - actionScore(a.auto_action);
+    if (byAction !== 0) return byAction;
+    return new Date(String(b.updated_at || b.created_at || 0)).getTime() - new Date(String(a.updated_at || a.created_at || 0)).getTime();
+  });
 }
 
 function auditComparable(value: unknown) {
@@ -3784,13 +4059,107 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       if (isMissingRelation(insErr, 'lc_reports')) return res.status(503).json(err(new Error('举报表尚未初始化，请先执行 Supabase migration')));
       throw insErr;
     }
+    const moderation = await evaluateReportModeration(req, {
+      targetType,
+      targetId,
+      reason,
+      description,
+    });
     await logSecurityEvent(req, {
       action: 'report_submitted',
       targetType,
       targetId,
-      metadata: { report_id: data?.id, reason, target_title: targetTitle },
+      metadata: { report_id: data?.id, reason, target_title: targetTitle, moderation },
     });
-    res.json(ok({ id: data?.id }));
+    res.json(ok({ id: data?.id, moderation }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/moderation/queue', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const reviewerRole = moderationReviewerRole(profile);
+    if (!reviewerRole) return res.status(403).json(err(new Error('当前账号不是社区观察员，暂不能参与众审')));
+
+    const { data: reports, error: qErr } = await supabase.from('lc_reports')
+      .select('id, target_type, target_id, target_title, reason, target_snapshot, risk_level, auto_action, auto_action_reason, report_group_count, reviewer_summary, created_at, updated_at')
+      .eq('status', 'pending')
+      .in('auto_action', ['temporary_hidden', 'queued_priority'])
+      .order('updated_at', { ascending: false })
+      .limit(120);
+    if (qErr) throw qErr;
+    const targetPairs = (reports || []).map(report => ({
+      target_type: String(report.target_type || ''),
+      target_id: String(report.target_id || ''),
+    }));
+    let ownReviews: Record<string, unknown>[] = [];
+    if (targetPairs.length > 0) {
+      const { data: reviews, error: reviewErr } = await supabase.from('lc_moderation_reviews')
+        .select('id, target_type, target_id, decision, risk_labels, note, created_at, updated_at')
+        .eq('reviewer_id', profile.id)
+        .eq('status', 'active');
+      if (reviewErr && !isMissingRelation(reviewErr, 'lc_moderation_reviews')) throw reviewErr;
+      ownReviews = (reviews || []).filter(review => targetPairs.some(pair => pair.target_type === review.target_type && pair.target_id === review.target_id));
+    }
+
+    res.json(ok({
+      reviewer_role: reviewerRole,
+      items: groupReportsForModerationQueue((reports || []) as Record<string, unknown>[], ownReviews),
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/moderation/reviews', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const reviewerRole = moderationReviewerRole(profile);
+    if (!reviewerRole) return res.status(403).json(err(new Error('当前账号不是社区观察员，暂不能参与众审')));
+
+    const targetType = REPORT_TARGET_TYPES.includes(req.body.targetType) ? req.body.targetType as ReportTargetType : null;
+    const targetId = cleanText(req.body.targetId, 80);
+    const decision = MODERATION_DECISIONS.includes(req.body.decision) ? req.body.decision as ModerationDecision : null;
+    const note = cleanText(req.body.note, 800);
+    const riskLabels = cleanTextArray(req.body.riskLabels, 8, 24);
+    if (!targetType || !targetId || !decision) return res.status(400).json(err(new Error('请选择众审对象和建议结论')));
+
+    const { data: report, error: reportErr } = await supabase.from('lc_reports')
+      .select('target_title, target_snapshot, status')
+      .eq('target_type', targetType)
+      .eq('target_id', targetId)
+      .eq('status', 'pending')
+      .limit(1)
+      .maybeSingle();
+    if (reportErr) throw reportErr;
+    if (!report) return res.status(404).json(err(new Error('这个内容当前没有待处理举报')));
+
+    const { data, error: upsertErr } = await supabase.from('lc_moderation_reviews').upsert({
+      target_type: targetType,
+      target_id: targetId,
+      reviewer_id: profile.id,
+      reviewer_name: profile.display_name,
+      reviewer_role: reviewerRole,
+      decision,
+      risk_labels: riskLabels,
+      note: note || null,
+      target_snapshot: report.target_snapshot || {},
+      status: 'active',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'target_type,target_id,reviewer_id' }).select('id, decision, risk_labels, note, updated_at').single();
+    if (upsertErr) {
+      if (isMissingRelation(upsertErr, 'lc_moderation_reviews')) return res.status(503).json(err(new Error('众审表尚未初始化，请先执行 Supabase migration')));
+      throw upsertErr;
+    }
+
+    const summary = await refreshReportReviewerSummary(targetType, targetId);
+    await logSecurityEvent(req, {
+      action: 'community_moderation_review_submitted',
+      targetType,
+      targetId,
+      metadata: { review_id: data?.id, decision, risk_labels: riskLabels, reviewer_role: reviewerRole, summary },
+    });
+    res.json(ok({ review: data, summary }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -5633,6 +6002,7 @@ app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, as
     const action = req.body?.action === 'dismissed' ? 'dismissed' : 'resolved';
     const handlerNote = cleanText(req.body?.handlerNote, 500);
     const hideTarget = !!req.body?.hideTarget;
+    const restoreTarget = !!req.body?.restoreTarget;
     const rejectReason = cleanText(req.body?.rejectReason, 300) || '举报处理后下架';
     const { data: report, error: rErr } = await supabase.from('lc_reports')
       .select('*')
@@ -5641,7 +6011,10 @@ app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, as
     if (rErr) throw rErr;
     if (!report) return res.status(404).json(err(new Error('举报不存在')));
 
-    if (hideTarget) {
+    let statusChange: { before: string | null; after: string | null } = { before: null, after: null };
+    if (restoreTarget) {
+      statusChange = await restoreTargetAfterReport(report.target_type, report.target_id);
+    } else if (hideTarget) {
       if (report.target_type === 'carpool') {
         await supabase.from('lc_carpools')
           .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
@@ -5663,23 +6036,37 @@ app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, as
           .update({ is_visible: false, reject_reason: rejectReason, updated_at: new Date().toISOString() })
           .eq('id', report.target_id);
       }
+      statusChange = {
+        before: report.target_status_before || null,
+        after: await currentTargetStatus(report.target_type, report.target_id),
+      };
     }
 
     await supabase.from('lc_reports')
       .update({
         status: action,
         handler_id: getReq(req, 'creatorId'),
-        handler_note: handlerNote || (hideTarget ? rejectReason : null),
+        handler_note: handlerNote || (restoreTarget ? '复核后恢复展示' : hideTarget ? rejectReason : null),
+        target_status_after: statusChange.after || report.target_status_after || null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', req.params.id);
+      .eq('target_type', report.target_type)
+      .eq('target_id', report.target_id)
+      .eq('status', 'pending');
     await logSecurityEvent(req, {
-      action: hideTarget ? 'admin_report_resolved_and_target_hidden' : `admin_report_${action}`,
+      action: restoreTarget ? 'admin_report_resolved_and_target_restored' : hideTarget ? 'admin_report_resolved_and_target_hidden' : `admin_report_${action}`,
       targetType: report.target_type,
       targetId: report.target_id,
-      metadata: { report_id: req.params.id, hide_target: hideTarget, handler_note: handlerNote || null },
+      metadata: {
+        report_id: req.params.id,
+        hide_target: hideTarget,
+        restore_target: restoreTarget,
+        handler_note: handlerNote || null,
+        before: statusChange.before,
+        after: statusChange.after,
+      },
     });
-    res.json(ok({ status: action, hidden: hideTarget }));
+    res.json(ok({ status: action, hidden: hideTarget, restored: restoreTarget, statusChange }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
