@@ -65,6 +65,17 @@ const ENTITY_COPY: Record<DossierEntityType, {
   },
 };
 
+const ENTITY_FILTERS: { value: EntityFilter; label: string; helper: string }[] = [
+  { value: 'all', label: '全部档案', helper: '爱D和店家一起看' },
+  { value: 'dm', label: '爱D档案', helper: 'DM / 卡司' },
+  { value: 'store', label: '店家档案', helper: '城市店铺' },
+];
+
+const ENTITY_FORM_TYPES: { value: DossierEntityType; label: string; helper: string }[] = [
+  { value: 'dm', label: '爱D档案', helper: '给 DM / 卡司建档' },
+  { value: 'store', label: '店家档案', helper: '给城市店家建档' },
+];
+
 function getAuth(): AuthSession | null {
   try {
     const stored = localStorage.getItem('lc_creator');
@@ -246,11 +257,7 @@ export default function DmWall() {
             allowCustom
             style={{ minWidth: 190, flex: '1 1 190px' }}
           />
-          <select value={entityType} onChange={e => setEntityType(e.target.value as EntityFilter)} style={inputStyle}>
-            <option value="all">全部档案</option>
-            <option value="dm">DM 档案</option>
-            <option value="store">店家档案</option>
-          </select>
+          <EntityFilterSwitch value={entityType} onChange={setEntityType} />
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索 DM / 店家名称" style={{ ...inputStyle, minWidth: 180, flex: '1 1 220px' }} />
           <Link to="/reputation/city" style={ghostButton}>看城市口碑榜</Link>
           <Link to="/boundary-votes" style={ghostButton}>社交边界投票</Link>
@@ -265,11 +272,8 @@ export default function DmWall() {
         {showForm && (
           <section style={formCard}>
             <h2 style={{ margin: '0 0 12px', fontFamily: 'var(--font-serif)', fontSize: '1.35rem' }}>创建未认证档案</h2>
+            <EntityFormSwitch value={form.entityType} onChange={value => updateForm({ entityType: value })} />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
-              <SelectField label="档案类型 *" value={form.entityType} onChange={value => updateForm({ entityType: value as DossierEntityType })} options={[
-                { value: 'dm', label: 'DM 档案' },
-                { value: 'store', label: '店家档案' },
-              ]} />
               <CitySearchSelect
                 label="城市 *"
                 value={form.city}
@@ -343,14 +347,44 @@ export default function DmWall() {
   );
 }
 
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
+function EntityFilterSwitch({ value, onChange }: { value: EntityFilter; onChange: (value: EntityFilter) => void }) {
   return (
-    <label style={{ display: 'block' }}>
-      <span style={labelStyle}>{label}</span>
-      <select value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, width: '100%' }}>
-        {options.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
-      </select>
-    </label>
+    <div aria-label="档案类型筛选" style={{ ...segmentShell, flex: '2 1 360px' }}>
+      {ENTITY_FILTERS.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          aria-pressed={value === option.value}
+          style={segmentButton(value === option.value)}
+        >
+          <span style={segmentLabel}>{option.label}</span>
+          <span style={segmentHelper}>{option.helper}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function EntityFormSwitch({ value, onChange }: { value: DossierEntityType; onChange: (value: DossierEntityType) => void }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <span style={labelStyle}>档案类型 *</span>
+      <div aria-label="建档类型" style={segmentShell}>
+        {ENTITY_FORM_TYPES.map(option => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            aria-pressed={value === option.value}
+            style={segmentButton(value === option.value)}
+          >
+            <span style={segmentLabel}>{option.label}</span>
+            <span style={segmentHelper}>{option.helper}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -365,6 +399,35 @@ function Field({ label, value, onChange, placeholder = '' }: { label: string; va
 
 const labelStyle: React.CSSProperties = { display: 'block', color: 'rgba(71,85,105,0.72)', fontSize: 13, fontWeight: 800, marginBottom: 6 };
 const inputStyle: React.CSSProperties = { boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: '1px solid rgba(166,106,31,0.20)', background: '#fff', color: INK, outline: 'none', fontSize: 14 };
+const segmentShell: React.CSSProperties = {
+  boxSizing: 'border-box',
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+  gap: 6,
+  padding: 5,
+  borderRadius: 12,
+  border: '1px solid rgba(166,106,31,0.24)',
+  background: 'rgba(255,250,242,0.92)',
+  minWidth: 0,
+};
+const segmentLabel: React.CSSProperties = { fontSize: 14, fontWeight: 900, lineHeight: 1.2 };
+const segmentHelper: React.CSSProperties = { fontSize: 11, fontWeight: 800, lineHeight: 1.2, opacity: 0.82 };
+const segmentButton = (active: boolean): React.CSSProperties => ({
+  minHeight: 52,
+  border: active ? '1px solid rgba(166,106,31,0.42)' : '1px solid transparent',
+  borderRadius: 9,
+  background: active ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : '#fff',
+  color: active ? '#fffdf8' : 'rgba(31,41,55,0.82)',
+  cursor: 'pointer',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 4,
+  padding: '8px 10px',
+  boxShadow: active ? '0 10px 20px rgba(166,106,31,0.22)' : 'none',
+  textAlign: 'center',
+});
 const primaryButton: React.CSSProperties = { border: 'none', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: '#fffdf8', padding: '11px 18px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
 const ghostButton: React.CSSProperties = { border: '1px solid rgba(166,106,31,0.22)', borderRadius: 10, background: '#fffaf2', color: GOLD, padding: '9px 13px', fontWeight: 800, cursor: 'pointer', textDecoration: 'none', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
 const ghostStatic: React.CSSProperties = { ...ghostButton, cursor: 'default' };
