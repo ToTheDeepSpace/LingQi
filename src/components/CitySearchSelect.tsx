@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import type React from 'react';
-import { CITIES } from '../constants/cities';
+import { CITIES, CITY_OPTIONS } from '../constants/cities';
 
 const GOLD = '#a66a1f';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.72)';
-const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津', '保定'];
 
 type CitySearchSelectProps = {
   value: string;
@@ -44,13 +43,19 @@ export default function CitySearchSelect({
   const term = normalizeCity(draft);
 
   const options = useMemo(() => {
-    const base = term
-      ? CITIES.filter(city => {
-        const normalized = normalizeCity(city);
-        return city.includes(draft.trim()) || normalized.includes(term) || term.includes(normalized);
-      })
-      : POPULAR_CITIES.filter(city => CITIES.includes(city));
-    return Array.from(new Set(base)).slice(0, 18);
+    const q = draft.trim();
+    if (!term) return CITY_OPTIONS;
+    return CITY_OPTIONS.filter(option => {
+      const normalizedCity = normalizeCity(option.city);
+      const normalizedGroup = normalizeCity(option.group);
+      return (
+        option.city.includes(q) ||
+        option.group.includes(q) ||
+        normalizedCity.includes(term) ||
+        normalizedGroup.includes(term) ||
+        term.includes(normalizedCity)
+      );
+    });
   }, [draft, term]);
 
   const exactCity = findExactCity(draft);
@@ -99,9 +104,22 @@ export default function CitySearchSelect({
               全部城市
             </button>
           )}
-          {options.map(city => (
-            <button key={city} type="button" onMouseDown={event => { event.preventDefault(); choose(city); }} style={optionStyle(value === city)}>
-              {city}
+          {options.length > 0 && (
+            <div style={sectionLabelStyle}>
+              {term ? `匹配城市 · ${options.length} 个` : `完整城市库 · ${options.length} 个`}
+            </div>
+          )}
+          {options.map(option => (
+            <button
+              key={`${option.group}-${option.city}`}
+              type="button"
+              onMouseDown={event => { event.preventDefault(); choose(option.city); }}
+              style={optionStyle(value === option.city)}
+            >
+              <span style={optionContentStyle}>
+                <span>{option.city}</span>
+                <span style={optionMetaStyle}>{option.group}</span>
+              </span>
             </button>
           ))}
           {canUseCustom && (
@@ -145,7 +163,7 @@ const menuStyle: React.CSSProperties = {
   left: 0,
   right: 0,
   top: 'calc(100% + 6px)',
-  maxHeight: 260,
+  maxHeight: 320,
   overflowY: 'auto',
   display: 'grid',
   gap: 4,
@@ -154,6 +172,27 @@ const menuStyle: React.CSSProperties = {
   border: '1px solid rgba(166,106,31,0.18)',
   background: '#fff',
   boxShadow: '0 16px 34px rgba(31,41,55,0.14)',
+};
+const sectionLabelStyle: React.CSSProperties = {
+  padding: '4px 10px 6px',
+  color: MUTED,
+  fontSize: 12,
+  fontWeight: 800,
+};
+const optionContentStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 10,
+  minWidth: 0,
+};
+const optionMetaStyle: React.CSSProperties = {
+  color: MUTED,
+  fontSize: 12,
+  fontWeight: 700,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
 };
 const optionStyle = (active: boolean): React.CSSProperties => ({
   width: '100%',
