@@ -49,9 +49,12 @@ function readAdminToken() {
 }
 
 function readAuthSnapshot() {
+  const creatorAuth = readCreatorAuth();
+  const storedAdminToken = readAdminToken();
+  const creatorAdminToken = creatorAuth?.role === 'admin' ? creatorAuth.token || '' : '';
   return {
-    creatorAuth: readCreatorAuth(),
-    adminToken: readAdminToken(),
+    creatorAuth,
+    adminToken: storedAdminToken || creatorAdminToken,
   };
 }
 

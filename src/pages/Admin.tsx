@@ -6,7 +6,17 @@ const C = '#0F1117';
 const C2 = '#1A1D27';
 const GOLD = '#d9a857';
 
-function getToken() { return localStorage.getItem('lc_admin_token') || ''; }
+function getToken() {
+  const adminToken = localStorage.getItem('lc_admin_token') || '';
+  if (adminToken && !isTokenExpired(adminToken)) return adminToken;
+  try {
+    const creator = JSON.parse(localStorage.getItem('lc_creator') || '{}');
+    if (creator?.role === 'admin' && creator?.token && !isTokenExpired(creator.token)) return creator.token;
+  } catch {
+    return '';
+  }
+  return '';
+}
 
 function isTokenExpired(token: string): boolean {
   try {
@@ -630,6 +640,12 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   };
 
   const logout = () => {
+    try {
+      const creator = JSON.parse(localStorage.getItem('lc_creator') || '{}');
+      if (creator?.role === 'admin') localStorage.removeItem('lc_creator');
+    } catch {
+      // Ignore malformed local auth state and continue clearing admin state.
+    }
     localStorage.removeItem('lc_admin_token');
     window.dispatchEvent(new Event('lc-auth-changed'));
     setAuthed(false);

@@ -256,6 +256,14 @@ function profileIdentityPatch(profile: Record<string, unknown> | null | undefine
   };
 }
 
+function profileAuthRole(profile: Record<string, unknown> | null | undefined) {
+  return cleanText(profile?.role, 40).toLowerCase() === 'admin' ? 'admin' : 'creator';
+}
+
+function signProfileAuthToken(profile: Record<string, unknown>) {
+  return jwt.sign({ creatorId: String(profile.id), role: profileAuthRole(profile) }, JWT_SECRET, { expiresIn: '7d' });
+}
+
 function adminMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
   if ((req as Record<string, unknown>).role !== 'admin') {
     return res.status(403).json(err(new Error('无管理员权限')));
@@ -2248,7 +2256,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       }
       await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
       await runReferralSideEffect('stage1-after-phone-login', () => maybeAwardReferralStage1(existing.id));
-      const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+      const token = signProfileAuthToken(existing);
       await logSecurityEvent(req, {
         action: 'auth_phone_login_success',
         targetType: 'profile',
@@ -2294,7 +2302,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       status: 'approved',
     });
     const referralResult = await runReferralSideEffect('phone-signup', () => registerReferralForNewProfile(profile, referralCode));
-    const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signProfileAuthToken(profile);
     await logSecurityEvent(req, {
       action: 'auth_phone_register_success',
       targetType: 'profile',
@@ -2427,7 +2435,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
       await runReferralSideEffect('wechat-signup', () => registerReferralForNewProfile(profile, statePayload.referralCode));
     }
 
-    const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signProfileAuthToken(profile);
     await logSecurityEvent(req, {
       action: 'auth_wechat_login_success',
       targetType: 'profile',
@@ -2512,7 +2520,7 @@ app.post('/api/lc/auth', async (req, res) => {
         await supabase.from('lc_profiles').update(profilePatch).eq('id', existing.id);
       }
 
-      const token = jwt.sign({ creatorId: existing.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+      const token = signProfileAuthToken(existing);
       const isShop = existing.role === 'shop';
       await logSecurityEvent(req, {
         action: 'auth_login_success',
@@ -2557,7 +2565,7 @@ app.post('/api/lc/auth', async (req, res) => {
     });
     const referralResult = await runReferralSideEffect('password-signup', () => registerReferralForNewProfile(profile, referralCode));
 
-    const token = jwt.sign({ creatorId: profile.id, role: 'creator' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signProfileAuthToken(profile);
     await logSecurityEvent(req, {
       action: 'auth_register_success',
       targetType: 'profile',

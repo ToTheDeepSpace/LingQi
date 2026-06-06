@@ -28,6 +28,12 @@ type LoginMode = 'sms' | 'password';
 
 function storeLogin(data: Record<string, unknown>) {
   localStorage.setItem('lc_creator', JSON.stringify(data));
+  if (data.role === 'admin' && typeof data.token === 'string') {
+    localStorage.setItem('lc_admin_token', data.token);
+    localStorage.setItem('lc_admin_last_login_at', new Date().toISOString());
+  } else {
+    localStorage.removeItem('lc_admin_token');
+  }
   window.dispatchEvent(new Event('lc-auth-changed'));
 }
 
