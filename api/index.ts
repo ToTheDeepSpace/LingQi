@@ -204,6 +204,8 @@ function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
     delete safe.phone;
     delete safe.wechat;
     delete safe.balance;
+    delete safe.paid_balance;
+    delete safe.bonus_balance;
     delete safe.contact_phone;
     delete safe.contact_wechat;
     delete safe.phone_verified_at;
@@ -311,7 +313,7 @@ function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefi
 async function getAuthedProfile(req: express.Request) {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, is_banned, ban_reason, avatar, phone, phone_verified_at, gender, role, role_type, identity_roles, referral_code, community_role, community_role_expires_at')
+    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, gender, role, role_type, identity_roles, referral_code, community_role, community_role_expires_at')
     .eq('id', creatorId)
     .single();
   return data;
@@ -352,6 +354,16 @@ type WalletCreditResult = {
   applied: boolean;
 };
 
+type WalletSpendResult = {
+  transaction_id: string;
+  balance: number;
+  paid_balance: number;
+  bonus_balance: number;
+  paid_spent: number;
+  bonus_spent: number;
+  applied: boolean;
+};
+
 function normalizeReferralCode(input: unknown) {
   return cleanText(input, 40).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
 }
@@ -384,6 +396,28 @@ async function applyWalletCredit(args: {
   });
   if (error) throw error;
   return firstRpcRow(data as WalletCreditResult | WalletCreditResult[] | null);
+}
+
+async function spendWalletBalance(args: {
+  profileId: string;
+  amount: number;
+  description: string;
+  refType?: string | null;
+  refId?: string | null;
+  idempotencyKey?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  const { data, error } = await supabase.rpc('lc_spend_wallet_balance', {
+    p_profile_id: args.profileId,
+    p_amount: args.amount,
+    p_description: args.description,
+    p_ref_type: args.refType || null,
+    p_ref_id: args.refId || null,
+    p_idempotency_key: args.idempotencyKey || null,
+    p_metadata: args.metadata || {},
+  });
+  if (error) throw error;
+  return firstRpcRow(data as WalletSpendResult | WalletSpendResult[] | null);
 }
 
 async function ensureReferralCodeForProfile(profileOrId: ReferralProfile | string) {
@@ -2538,11 +2572,12 @@ type RankingVoteRpcResult = {
 
 const VOTE_CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-function voteRefundAmount(voteType: RankingVoteType) {
+function voteRefundAmount(voteType: RankingVoteType, rankingType?: string | null) {
+  if (rankingType === 'black') return 0;
   return voteType === 'joy' ? 0 : 1;
 }
 
-function serializeMyVote(vote: RankingVoteRow) {
+function serializeMyVote(vote: RankingVoteRow, rankingType?: string | null) {
   const createdAt = new Date(vote.created_at).getTime();
   const cancelDeadlineMs = createdAt + VOTE_CANCEL_WINDOW_MS;
   const canCancel = Number.isFinite(createdAt) && Date.now() <= cancelDeadlineMs;
@@ -2552,7 +2587,7 @@ function serializeMyVote(vote: RankingVoteRow) {
     created_at: vote.created_at,
     cancel_deadline: new Date(cancelDeadlineMs).toISOString(),
     can_cancel: canCancel,
-    refund_amount: canCancel ? voteRefundAmount(vote.vote_type) : 0,
+    refund_amount: canCancel ? voteRefundAmount(vote.vote_type, rankingType) : 0,
   };
 }
 
@@ -2674,6 +2709,8 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       password_hash: null,
       is_visible: true,
       balance: 30,
+      paid_balance: 0,
+      bonus_balance: 30,
       phone_verified_at: nowIso,
       auth_provider: 'phone',
       city: primaryCity,
@@ -2685,8 +2722,16 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       profile_id: profile.id,
       type: 'recharge',
       amount: 30,
+      paid_amount: 0,
+      bonus_amount: 30,
       description: '新用户注册赠送 30 契约币',
       status: 'approved',
+      balance_before: 0,
+      balance_after: 30,
+      paid_balance_before: 0,
+      paid_balance_after: 0,
+      bonus_balance_before: 0,
+      bonus_balance_after: 30,
     });
     const referralResult = await runReferralSideEffect('phone-signup', () => registerReferralForNewProfile(profile, referralCode));
     const token = signProfileAuthToken(profile);
@@ -2803,6 +2848,8 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
         password_hash: null,
         is_visible: true,
         balance: 30,
+        paid_balance: 0,
+        bonus_balance: 30,
         auth_provider: 'wechat',
         wechat_openid: openid,
         wechat_unionid: unionid,
@@ -2816,8 +2863,16 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
         profile_id: profile.id,
         type: 'recharge',
         amount: 30,
+        paid_amount: 0,
+        bonus_amount: 30,
         description: '新用户注册赠送 30 契约币',
         status: 'approved',
+        balance_before: 0,
+        balance_after: 30,
+        paid_balance_before: 0,
+        paid_balance_after: 0,
+        bonus_balance_before: 0,
+        bonus_balance_after: 30,
       });
       await runReferralSideEffect('wechat-signup', () => registerReferralForNewProfile(profile, statePayload.referralCode));
     }
@@ -2933,7 +2988,7 @@ app.post('/api/lc/auth', async (req, res) => {
     const insertData: Record<string, unknown> = {
       phone, display_name: displayName || '用户', role: profileRole,
       role_type: profileRole, identity_roles: [profileRole],
-      password_hash: passwordHash, is_visible: true, balance: 30,
+      password_hash: passwordHash, is_visible: true, balance: 30, paid_balance: 0, bonus_balance: 30,
       city: primaryCity,
       available_cities: activityCityList,
     };
@@ -2947,8 +3002,16 @@ app.post('/api/lc/auth', async (req, res) => {
       profile_id: profile.id,
       type: 'recharge',
       amount: 30,
+      paid_amount: 0,
+      bonus_amount: 30,
       description: '新用户注册赠送 30 契约币',
       status: 'approved',
+      balance_before: 0,
+      balance_after: 30,
+      paid_balance_before: 0,
+      paid_balance_after: 0,
+      bonus_balance_before: 0,
+      bonus_balance_after: 30,
     });
     const referralResult = await runReferralSideEffect('password-signup', () => registerReferralForNewProfile(profile, referralCode));
 
@@ -3813,14 +3876,14 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
     const finalStoreAddress = linkedStore ? cleanText(linkedStore.address, 160) : storeAddress;
     const finalStoreSuggestionStatus = linkedStore ? 'linked' : (finalStoreName ? 'pending' : 'none');
 
+    let walletSpend: WalletSpendResult | null = null;
     if (boostAmount > 0) {
-      await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - boostAmount }).eq('id', profile.id);
-      await supabase.from('lc_transactions').insert({
-        profile_id: profile.id,
-        type: 'spend',
-        amount: -boostAmount,
+      walletSpend = await spendWalletBalance({
+        profileId: profile.id,
+        amount: boostAmount,
         description: `拼车区加权展示：${scriptName}`,
-        status: 'approved',
+        refType: 'carpool_boost',
+        metadata: { script_name: scriptName, city, event_date: eventDate },
       });
     }
 
@@ -3908,7 +3971,7 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       targetId: data?.id,
       metadata: { city, event_date: eventDate, script_name: scriptName, boost_amount: boostAmount, sync: syncResult },
     });
-    res.json(ok({ id: data?.id, status: 'approved', balance: (profile.balance || 0) - boostAmount, sync: syncResult }));
+    res.json(ok({ id: data?.id, status: 'approved', balance: walletSpend?.balance ?? (profile.balance || 0), sync: syncResult }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -5270,12 +5333,12 @@ app.get('/api/lc/rankings', async (req, res) => {
       .eq('voter_id', viewerId);
     if (myVoteErr) throw myVoteErr;
 
-    const voteByRanking = new Map(
-      (myVotes || []).map((vote: RankingVoteRow) => [vote.ranking_id, serializeMyVote(vote)])
-    );
+    const voteByRanking = new Map((myVotes || []).map((vote: RankingVoteRow) => [vote.ranking_id, vote]));
     const withMyVotes = withPinnedComments.map((row: Record<string, unknown>) => ({
       ...row,
-      my_vote: voteByRanking.get(String(row.id)) || null,
+      my_vote: voteByRanking.get(String(row.id))
+        ? serializeMyVote(voteByRanking.get(String(row.id)) as RankingVoteRow, String(row.type || ''))
+        : null,
     }));
 
     res.json(ok(withMyVotes));
@@ -5316,14 +5379,12 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
     const posterId = getReq(req, 'creatorId');
 
     if (amount > 0) {
-      await supabase.from('lc_profiles')
-        .update({ balance: (profile.balance || 0) - amount })
-        .eq('id', profile.id);
-
-      await supabase.from('lc_transactions').insert({
-        profile_id: profile.id, type: 'spend', amount: -amount,
-        description: `发布${type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}：${subjectName}`,
-        status: 'approved',
+      await spendWalletBalance({
+        profileId: profile.id,
+        amount,
+        description: `发布红榜：${subjectName}`,
+        refType: 'ranking_submit',
+        metadata: { ranking_type: type, subject_type: subjectType, subject_city: subjectCity || null, subject_name: subjectName },
       });
     }
 
@@ -5397,22 +5458,25 @@ app.put('/api/lc/rankings/:id/withdraw', authMiddleware, async (req, res) => {
 app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
   try {
     const voteType = req.body.voteType as RankingVoteType;
+    const attachedComment = cleanText(req.body?.comment, 600);
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     if (!['like', 'dislike', 'joy'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
-    if (voteType === 'dislike') return res.status(400).json(err(new Error('负面投票入口已关闭；负面经历请发布黑榜、补充评论或提交举报复核')));
 
     const { data: targetRanking, error: targetErr } = await supabase.from('lc_rankings')
-      .select('id, type, status')
+      .select('id, type, status, subject_name')
       .eq('id', req.params.id)
       .maybeSingle();
     if (targetErr) throw targetErr;
     if (!targetRanking) return res.status(404).json(err(new Error('帖子不存在')));
     if (targetRanking.status !== 'approved') return res.status(400).json(err(new Error('只有已公开内容可以互动')));
-    if (targetRanking.type === 'black' && voteType !== 'joy') {
-      return res.status(400).json(err(new Error('黑榜不开放付费打榜，只保留免费欢乐、评论、举报和相关方回应')));
+    if (targetRanking.type === 'black' && !['like', 'dislike'].includes(voteType)) {
+      return res.status(400).json(err(new Error('黑榜只开放免费赞同和反对；补充事实可以顺带写评论')));
+    }
+    if (targetRanking.type !== 'black' && voteType === 'dislike') {
+      return res.status(400).json(err(new Error('红榜和白榜不开放反对票；负面经历请发布黑榜、补充评论或提交举报复核')));
     }
 
     const { data, error: voteErr } = await supabase.rpc('lc_apply_ranking_vote', {
@@ -5427,7 +5491,7 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
 
     const row = firstRpcRow<RankingVoteRpcResult>(data);
     if (!row || !row.vote_id || !row.vote_type || !row.vote_created_at) throw new Error('投票结果为空');
-    const myVote = serializeMyVote({ id: row.vote_id, vote_type: row.vote_type, created_at: row.vote_created_at });
+    const myVote = serializeMyVote({ id: row.vote_id, vote_type: row.vote_type, created_at: row.vote_created_at }, targetRanking.type);
 
     if (row.is_duplicate) {
       await logSecurityEvent(req, {
@@ -5442,11 +5506,26 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       });
     }
 
+    let attachedCommentId: string | null = null;
+    let attachedCommentError = '';
+    if (attachedComment) {
+      const { data: comment, error: commentErr } = await supabase.from('lc_comments').insert({
+        ranking_id: req.params.id,
+        content: attachedComment,
+        author_id: profile.id,
+        author_name: profile.display_name,
+        is_realname: !!profile.is_realname,
+        real_name: null,
+      }).select('id').single();
+      if (commentErr) attachedCommentError = getErrorText(commentErr);
+      else attachedCommentId = comment?.id || null;
+    }
+
     await logSecurityEvent(req, {
       action: 'ranking_vote_applied',
       targetType: 'ranking',
       targetId: req.params.id,
-      metadata: { vote_type: voteType, balance_delta: row.balance_delta || 0 },
+      metadata: { vote_type: voteType, balance_delta: row.balance_delta || 0, attached_comment_id: attachedCommentId, attached_comment_error: attachedCommentError || null },
     });
     res.json(ok({
       likes: row.likes,
@@ -5455,6 +5534,8 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       myVote,
       balance: row.balance,
       balanceDelta: row.balance_delta || 0,
+      comment: attachedCommentId ? { id: attachedCommentId, status: 'pending' } : null,
+      commentError: attachedCommentError || null,
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -5523,15 +5604,6 @@ app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
-    if ((profile.balance || 0) < 1) return res.status(402).json(err(new Error('契约币不足，请先充值')));
-
-    // 扣 1 契约币
-    await supabase.from('lc_profiles').update({ balance: (profile.balance || 0) - 1 }).eq('id', profile.id);
-    await supabase.from('lc_transactions').insert({
-      profile_id: profile.id, type: 'spend', amount: -1,
-      description: '发表红黑榜评论 · 1 契约币',
-      status: 'approved',
-    });
 
     const { data, error: insErr } = await supabase.from('lc_comments').insert({
       ranking_id: req.params.id, content, author_id: profile.id, author_name: profile.display_name,
@@ -5646,9 +5718,7 @@ app.delete('/api/lc/rankings/:id/comments/:cid', authMiddleware, async (req, res
     if (comment.author_id !== profile.id) return res.status(403).json(err(new Error('只能删除自己的评论')));
     if (String(comment.status || '').startsWith('deleted')) return res.status(400).json(err(new Error('评论已经删除')));
 
-    const createdAt = new Date(comment.created_at).getTime();
-    const withinRefundWindow = Number.isFinite(createdAt) && Date.now() - createdAt <= 24 * 60 * 60 * 1000;
-    const nextStatus = withinRefundWindow ? 'deleted_by_author_refunded' : 'deleted_by_author';
+    const nextStatus = 'deleted_by_author';
 
     const { data: deleted, error: updErr } = await supabase.from('lc_comments')
       .update({ status: nextStatus, is_pinned: false })
@@ -5658,22 +5728,6 @@ app.delete('/api/lc/rankings/:id/comments/:cid', authMiddleware, async (req, res
       .single();
     if (updErr) throw updErr;
 
-    if (withinRefundWindow) {
-      await supabase.from('lc_profiles')
-        .update({ balance: (profile.balance || 0) + 1 })
-        .eq('id', profile.id);
-      await supabase.from('lc_transactions').insert({
-        profile_id: profile.id,
-        type: 'refund',
-        amount: 1,
-        description: '24小时内删除红黑榜评论退回 · 1 契约币',
-        status: 'approved',
-        ref_type: 'comment_delete_refund',
-        ref_id: req.params.cid,
-        idempotency_key: `comment-delete-refund:${req.params.cid}`,
-      });
-    }
-
     const audit = await appendAuditEntry({
       targetType: 'comment',
       targetId: req.params.cid,
@@ -5681,15 +5735,15 @@ app.delete('/api/lc/rankings/:id/comments/:cid', authMiddleware, async (req, res
       payload: auditPayload('comment', deleted),
       actorId: profile.id,
       actorRole: 'creator',
-      metadata: { refund_amount: withinRefundWindow ? 1 : 0, refund_window_hours: 24 },
+      metadata: { refund_amount: 0, reason: 'comments_are_free' },
     });
     await logSecurityEvent(req, {
       action: 'ranking_comment_deleted_by_author',
       targetType: 'comment',
       targetId: req.params.cid,
-      metadata: { ranking_id: req.params.id, refunded: withinRefundWindow ? 1 : 0 },
+      metadata: { ranking_id: req.params.id, refunded: 0, reason: 'comments_are_free' },
     });
-    res.json(ok({ id: req.params.cid, refunded: withinRefundWindow, audit }));
+    res.json(ok({ id: req.params.cid, refunded: false, audit }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -6141,12 +6195,17 @@ app.get('/api/lc/wallet', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     await expireStalePaymentRecharges(profile.id);
     const { data: walletProfile } = await supabase.from('lc_profiles')
-      .select('balance')
+      .select('balance, paid_balance, bonus_balance')
       .eq('id', profile.id)
       .single();
     const { data: txs } = await supabase.from('lc_transactions')
       .select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100);
-    res.json(ok({ balance: walletProfile?.balance || 0, transactions: txs || [] }));
+    res.json(ok({
+      balance: walletProfile?.balance || 0,
+      paid_balance: walletProfile?.paid_balance || 0,
+      bonus_balance: walletProfile?.bonus_balance || 0,
+      transactions: txs || [],
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
