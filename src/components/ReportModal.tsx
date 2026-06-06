@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import DraftAutosaveNotice from './DraftAutosaveNotice';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 export type ReportTargetType = 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile';
 
@@ -14,6 +16,11 @@ const REPORT_REASONS = [
   '垃圾广告',
   '其他',
 ];
+
+type ReportDraft = {
+  reason: string;
+  description: string;
+};
 
 export default function ReportModal({
   targetType,
@@ -33,6 +40,18 @@ export default function ReportModal({
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const draftValue = useMemo<ReportDraft>(() => ({ reason, description }), [description, reason]);
+  const reportDraft = useDraftAutosave<ReportDraft>({
+    key: `lc:draft:report:${targetType}:${targetId}`,
+    version: 1,
+    enabled: !done,
+    value: draftValue,
+    shouldSave: data => data.reason !== REPORT_REASONS[0] || !!data.description.trim(),
+    onRestore: data => {
+      if (REPORT_REASONS.includes(data.reason)) setReason(data.reason);
+      setDescription(data.description || '');
+    },
+  });
 
   const submit = async () => {
     if (!reason.trim()) return setError('请选择举报原因');
@@ -50,7 +69,10 @@ export default function ReportModal({
         }),
       });
       const d = await r.json();
-      if (d.success) setDone(true);
+      if (d.success) {
+        reportDraft.clearDraft();
+        setDone(true);
+      }
       else setError(d.error || '举报提交失败');
     } catch {
       setError('网络错误，请重试');
@@ -73,6 +95,14 @@ export default function ReportModal({
           <>
             <p style={{ color: '#b91c1c', fontSize: '0.78rem', fontWeight: 900, letterSpacing: '0.04em', marginBottom: 8 }}>举报内容</p>
             <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.18rem', marginBottom: 12, color: INK }}>{targetTitle}</h3>
+            <div style={{ marginBottom: 12 }}>
+              <DraftAutosaveNotice
+                savedAt={reportDraft.savedAt}
+                restoredAt={reportDraft.restoredAt}
+                error={reportDraft.error}
+                note="未提交的举报说明会自动保存到当前浏览器。"
+              />
+            </div>
             <Label>举报原因 *</Label>
             <select value={reason} onChange={e => setReason(e.target.value)} style={inputStyle}>
               {REPORT_REASONS.map(item => <option key={item}>{item}</option>)}

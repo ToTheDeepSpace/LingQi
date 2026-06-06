@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toDataURL } from 'qrcode';
 import type React from 'react';
+import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -59,17 +60,8 @@ type ReferralData = {
 };
 
 function getAuth(): AuthData | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored) as AuthData;
-    if (!data?.token) return null;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return data;
-  } catch {
-    return null;
-  }
+  const data = readStoredCreatorAuth();
+  return data?.token ? data : null;
 }
 
 function formatDate(value?: string | null) {

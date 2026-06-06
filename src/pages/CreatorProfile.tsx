@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { Availability, Creator, Service, Portfolio, ProfileRolePreference, SocialSnapshot } from '../types';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal from '../components/ReportModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API  = '/api';
 const C    = '#fffdf8';
@@ -25,16 +28,15 @@ const card: React.CSSProperties = {
 };
 
 function getAuth(): { token: string } | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored);
-    if (!data?.token) return null;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return { token: data.token };
-  } catch { return null; }
+  const data = readStoredCreatorAuth();
+  return data?.token ? { token: data.token } : null;
 }
+
+type ContactRequestDraft = {
+  name: string;
+  wechat: string;
+  message: string;
+};
 
 export default function CreatorProfile() {
   const { id } = useParams();
@@ -53,6 +55,24 @@ export default function CreatorProfile() {
   const [paymentProof, setPaymentProof] = useState('');
   const [contactSent, setContactSent]   = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const contactDraftValue = useMemo<ContactRequestDraft>(() => ({
+    name: formName,
+    wechat: formWechat,
+    message: formMsg,
+  }), [formMsg, formName, formWechat]);
+  const contactDraft = useDraftAutosave<ContactRequestDraft>({
+    key: `lc:draft:creator-contact:${id || 'unknown'}`,
+    version: 1,
+    enabled: !!id && !contactSent,
+    value: contactDraftValue,
+    shouldSave: data => !!(data.name.trim() || data.wechat.trim() || data.message.trim()),
+    onRestore: data => {
+      setContactShown(true);
+      setFormName(data.name || '');
+      setFormWechat(data.wechat || '');
+      setFormMsg(data.message || '');
+    },
+  });
 
   useEffect(() => {
     if (!id) return;
@@ -88,6 +108,7 @@ export default function CreatorProfile() {
         paymentProof,
       }),
     });
+    contactDraft.clearDraft();
     setContactSent(true);
   };
 
@@ -295,6 +316,12 @@ export default function CreatorProfile() {
               )}
               {contactShown ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <DraftAutosaveNotice
+                    savedAt={contactDraft.savedAt}
+                    restoredAt={contactDraft.restoredAt}
+                    error={contactDraft.error}
+                    note="未提交的预约意向会自动保存到当前浏览器；支付凭证/备注不会保存。"
+                  />
                   <input value={formName} onChange={e => setFormName(e.target.value)} placeholder="你的称呼" style={inputStyle} />
                   <input value={formWechat} onChange={e => setFormWechat(e.target.value)} placeholder="你的微信号" style={inputStyle} />
                   <textarea value={formMsg} onChange={e => setFormMsg(e.target.value)} placeholder="想预约什么？（可选）" rows={3}

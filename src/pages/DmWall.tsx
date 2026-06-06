@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import CitySearchSelect from '../components/CitySearchSelect';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -14,6 +17,16 @@ const MUTED = 'rgba(71,85,105,0.76)';
 type AuthSession = { token: string; displayName: string; userId?: string };
 type DossierEntityType = 'dm' | 'store';
 type EntityFilter = 'all' | DossierEntityType;
+type DossierDraft = {
+  entityType: DossierEntityType;
+  dmName: string;
+  city: string;
+  workplace: string;
+  profileUrl: string;
+  photoUrl: string;
+  note: string;
+  tags: string;
+};
 
 type DmDossier = {
   id: string;
@@ -77,17 +90,9 @@ const ENTITY_FORM_TYPES: { value: DossierEntityType; label: string; helper: stri
 ];
 
 function getAuth(): AuthSession | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored);
-    if (!data?.token) return null;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return { token: data.token, displayName: data.display_name || '用户', userId: payload.creatorId };
-  } catch {
-    return null;
-  }
+  const data = readStoredCreatorAuth();
+  if (!data?.token) return null;
+  return { token: data.token, displayName: data.display_name || '用户', userId: data.id };
 }
 
 function normalizeUrl(url: string) {
@@ -99,6 +104,18 @@ function normalizeEntityType(value?: string | null): DossierEntityType {
   return value === 'store' ? 'store' : 'dm';
 }
 
+function shouldSaveDossierDraft(data: DossierDraft) {
+  return [
+    data.dmName,
+    data.city,
+    data.workplace,
+    data.profileUrl,
+    data.photoUrl,
+    data.note,
+    data.tags,
+  ].some(item => item.trim()) || data.entityType !== 'dm';
+}
+
 export default function DmWall() {
   const navigate = useNavigate();
   const auth = getAuth();
@@ -108,7 +125,7 @@ export default function DmWall() {
   const [entityType, setEntityType] = useState<EntityFilter>('all');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ entityType: 'dm' as DossierEntityType, dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
+  const [form, setForm] = useState<DossierDraft>({ entityType: 'dm', dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [claimingId, setClaimingId] = useState('');
@@ -116,6 +133,27 @@ export default function DmWall() {
   const requestKey = useMemo(() => `${city}|${entityType}|${query.trim()}`, [city, entityType, query]);
   const loading = loadedKey !== requestKey;
   const activeFormCopy = ENTITY_COPY[form.entityType];
+
+  const dossierDraft = useDraftAutosave<DossierDraft>({
+    key: 'lc:draft:dm-wall:dossier-form',
+    version: 1,
+    enabled: !!auth,
+    value: form,
+    shouldSave: shouldSaveDossierDraft,
+    onRestore: data => {
+      setForm({
+        entityType: normalizeEntityType(data.entityType),
+        dmName: data.dmName || '',
+        city: data.city || '',
+        workplace: data.workplace || '',
+        profileUrl: data.profileUrl || '',
+        photoUrl: data.photoUrl || '',
+        note: data.note || '',
+        tags: data.tags || '',
+      });
+      setShowForm(true);
+    },
+  });
 
   const loadDossiers = useCallback((signal?: AbortSignal) => {
     const nextKey = `${city}|${entityType}|${query.trim()}`;
@@ -186,6 +224,7 @@ export default function DmWall() {
         return;
       }
       setMessage({ text: '已提交，管理员审核通过后会公开到档案墙。', ok: true });
+      dossierDraft.clearDraft();
       setShowForm(false);
       setForm({ entityType: form.entityType, dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
       loadDossiers();
@@ -272,6 +311,14 @@ export default function DmWall() {
         {showForm && (
           <section style={formCard}>
             <h2 style={{ margin: '0 0 12px', fontFamily: 'var(--font-serif)', fontSize: '1.35rem' }}>创建未认证档案</h2>
+            <div style={{ marginBottom: 12 }}>
+              <DraftAutosaveNotice
+                savedAt={dossierDraft.savedAt}
+                restoredAt={dossierDraft.restoredAt}
+                error={dossierDraft.error}
+                note="未提交的建档内容会自动保存到当前浏览器。"
+              />
+            </div>
             <EntityFormSwitch value={form.entityType} onChange={value => updateForm({ entityType: value })} />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
               <CitySearchSelect

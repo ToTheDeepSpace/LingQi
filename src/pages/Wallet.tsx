@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
+import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -33,15 +34,7 @@ type WechatPayOrder = {
 };
 
 function getAuth() {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored);
-    if (!data?.token) return null;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return data;
-  } catch { return null; }
+  return readStoredCreatorAuth();
 }
 
 export default function Wallet() {

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type React from 'react';
+import { creatorEntryPath } from '../lib/authSession';
 
 const classes = [
   { icon: '🌙', role: '灵契师',   sub: 'LINGQI-SHI',    desc: '与虚拟人签订契约，让其借由自身短暂降临现实。展示作品与口碑，让委托人一眼找到你。', accent: '#a78bfa' },
@@ -62,6 +63,8 @@ const homeReputationGhostLink: React.CSSProperties = {
 };
 
 export default function Home() {
+  const entryPath = creatorEntryPath();
+
   return (
     <div style={{ backgroundColor: C, color: INK }}>
 
@@ -96,7 +99,7 @@ export default function Home() {
             <Link to="/explore" className="btn-gold home-entry-link">
               浏览灵契师
             </Link>
-            <Link to="/login" className="btn-glass home-entry-link">
+            <Link to={entryPath} className="btn-glass home-entry-link">
               灵契师入驻
             </Link>
             <Link to="/rankings" className="home-entry-link home-entry-red">
@@ -263,7 +266,7 @@ export default function Home() {
             <Link to="/explore" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>浏览灵契师</Link>
             <Link to="/commissions" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>委托需求</Link>
             <Link to="/rankings" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>红黑榜</Link>
-            <Link to="/login" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>入驻</Link>
+            <Link to={entryPath} style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>入驻</Link>
           </div>
         </div>
       </footer>

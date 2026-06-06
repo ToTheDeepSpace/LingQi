@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PROVINCE_CITIES } from '../constants/cities';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -25,28 +28,7 @@ const ALL_CITY_OPTIONS = Object.entries(PROVINCE_CITIES).flatMap(([province, cit
   cities.map(city => ({ province, city }))
 );
 
-const DRAFT_KEY = 'lc_ranking_draft';
-
-function loadDraft() {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY);
-    if (!raw) return null;
-    const d = JSON.parse(raw);
-    if (d._v === 1) return d as DraftData;
-    return null;
-  } catch { return null; }
-}
-
-function saveDraft(data: DraftData) {
-  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)); } catch { /* quota exceeded */ }
-}
-
-function clearDraft() {
-  try { localStorage.removeItem(DRAFT_KEY); } catch { /* */ }
-}
-
-interface DraftData {
-  _v: number;
+type RankingDraft = {
   type: 'red' | 'black' | 'white';
   subjectType: string;
   subjectName: string;
@@ -55,7 +37,7 @@ interface DraftData {
   subjectUrl: string;
   content: string;
   initialAmount: number;
-}
+};
 
 const scrollPanelStyle: React.CSSProperties = {
   overflowY: 'auto',
@@ -71,61 +53,60 @@ const backLinkStyle: React.CSSProperties = {
 };
 
 function getAuth() {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored);
-    if (!data?.token) return null;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return data;
-  } catch { return null; }
+  return readStoredCreatorAuth();
 }
 
 export default function CreateRanking() {
   const navigate = useNavigate();
   const [auth] = useState(() => getAuth());
 
-  const draft = useMemo(() => loadDraft(), []);
-  const hasDraft = !!draft;
-
-  const [type, setType] = useState<RankingType>(draft?.type || 'red');
-  const [subjectType, setSubjectType] = useState<string>(draft?.subjectType || 'store');
-  const [subjectName, setSubjectName] = useState(draft?.subjectName || '');
-  const [subjectCity, setSubjectCity] = useState(draft?.subjectCity || '');
-  const [selectedProvince, setSelectedProvince] = useState(draft?.selectedProvince || PROVINCES[0] || '');
+  const [type, setType] = useState<RankingType>('red');
+  const [subjectType, setSubjectType] = useState<string>('store');
+  const [subjectName, setSubjectName] = useState('');
+  const [subjectCity, setSubjectCity] = useState('');
+  const [selectedProvince, setSelectedProvince] = useState(PROVINCES[0] || '');
   const [cityOpen, setCityOpen] = useState(false);
   const [cityQuery, setCityQuery] = useState('');
-  const [subjectUrl, setSubjectUrl] = useState(draft?.subjectUrl || '');
-  const [content, setContent] = useState(draft?.content || '');
-  const [initialAmount, setInitialAmount] = useState(draft?.type === 'white' ? 0 : Math.max(10, draft?.initialAmount || 10));
+  const [subjectUrl, setSubjectUrl] = useState('');
+  const [content, setContent] = useState('');
+  const [initialAmount, setInitialAmount] = useState(10);
   const [files, setFiles] = useState<EvidenceFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [balance, setBalance] = useState<number | null>(null);
-  const [draftRestored, setDraftRestored] = useState(hasDraft);
-  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const [rulesAccepted, setRulesAccepted] = useState(false);
   const effectiveAmount = type === 'white' ? 0 : initialAmount;
 
-  // Auto-save draft every 3 seconds
-  useEffect(() => {
-    if (done) return;
-    const timer = setInterval(() => {
-      if (subjectName.trim() || content.trim()) {
-        saveDraft({ _v: 1, type, subjectType, subjectName, subjectCity, selectedProvince, subjectUrl, content, initialAmount });
-        setDraftSavedAt(Date.now());
-      }
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [done, type, subjectType, subjectName, subjectCity, selectedProvince, subjectUrl, content, initialAmount]);
+  const draftValue = useMemo<RankingDraft>(() => ({
+    type,
+    subjectType,
+    subjectName,
+    subjectCity,
+    selectedProvince,
+    subjectUrl,
+    content,
+    initialAmount,
+  }), [content, initialAmount, selectedProvince, subjectCity, subjectName, subjectType, subjectUrl, type]);
 
-  const dismissDraftNotice = () => {
-    setDraftRestored(false);
-    clearDraft();
-  };
+  const rankingDraft = useDraftAutosave<RankingDraft>({
+    key: 'lc:draft:ranking:new',
+    version: 2,
+    enabled: !done,
+    value: draftValue,
+    shouldSave: data => !!(data.subjectName.trim() || data.subjectCity.trim() || data.subjectUrl.trim() || data.content.trim()),
+    onRestore: data => {
+      setType(data.type || 'red');
+      setSubjectType(data.subjectType || 'store');
+      setSubjectName(data.subjectName || '');
+      setSubjectCity(data.subjectCity || '');
+      setSelectedProvince(data.selectedProvince || PROVINCES[0] || '');
+      setSubjectUrl(data.subjectUrl || '');
+      setContent(data.content || '');
+      setInitialAmount(data.type === 'white' ? 0 : Math.max(10, data.initialAmount || 10));
+    },
+  });
 
   useEffect(() => {
     if (!auth) { navigate('/login'); return; }
@@ -216,7 +197,7 @@ export default function CreateRanking() {
       const d = await r.json();
       if (d.success) {
         setDone(true);
-        clearDraft();
+        rankingDraft.clearDraft();
         setBalance(prev => (prev || 0) - effectiveAmount);
       } else {
         const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败');
@@ -250,26 +231,14 @@ export default function CreateRanking() {
       </div>
 
       <div style={{ maxWidth: 640, margin: '0 auto', padding: '36px 20px 80px' }}>
-        {/* 草稿恢复提示 */}
-        {draftRestored && hasDraft && (
-          <div style={{
-            padding: '12px 16px', borderRadius: 10, marginBottom: 20,
-            background: 'rgba(239,246,255,0.9)', border: '1px solid rgba(96,165,250,0.24)',
-            color: '#275389', fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          }}>
-            <span>📝 已恢复上次未完成的草稿（文件需重新上传）</span>
-            <button onClick={dismissDraftNotice} style={{ border: 'none', background: 'none', color: '#275389', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700 }}>清除</button>
-          </div>
-        )}
-
-        {/* 草稿已保存指示 */}
-        {draftSavedAt && !done && (
-          <div style={{
-            padding: '6px 14px', borderRadius: 8, marginBottom: 8,
-            background: 'rgba(201,146,46,0.08)', color: '#925f18',
-            fontSize: '0.73rem', textAlign: 'right',
-          }}>
-            💾 草稿已保存 {new Date(draftSavedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        {!done && (
+          <div style={{ marginBottom: 14 }}>
+            <DraftAutosaveNotice
+              savedAt={rankingDraft.savedAt}
+              restoredAt={rankingDraft.restoredAt}
+              error={rankingDraft.error}
+              note="未提交的红黑榜内容会自动保存到当前浏览器；证据文件不会保存，刷新后需要重新上传。"
+            />
           </div>
         )}
         {done ? (

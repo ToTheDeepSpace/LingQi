@@ -4,6 +4,7 @@ import type { Creator, PaginatedResponse } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { generatedAvatarDataUrl } from '../lib/avatar';
+import { creatorEntryPath } from '../lib/authSession';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -46,6 +47,7 @@ const cityScrollStyle: React.CSSProperties = {
 };
 
 export default function Explore() {
+  const entryPath = creatorEntryPath();
   const [creators, setCreators] = useState<Creator[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -132,7 +134,7 @@ export default function Explore() {
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <Link to="/commissions" style={secondaryAction}>委托需求墙</Link>
-              <Link to="/login" className="btn-gold" style={{ padding: '10px 20px', textDecoration: 'none', fontSize: '0.9rem' }}>
+              <Link to={entryPath} className="btn-gold" style={{ padding: '10px 20px', textDecoration: 'none', fontSize: '0.9rem' }}>
                 入驻灵契
               </Link>
             </div>
@@ -217,7 +219,7 @@ export default function Explore() {
               </p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                 <Link to="/commissions/new" className="btn-gold" style={{ padding: '10px 20px', textDecoration: 'none' }}>发布委托需求</Link>
-                <Link to="/login" style={secondaryAction}>我要入驻</Link>
+                <Link to={entryPath} style={secondaryAction}>我要入驻</Link>
               </div>
             </div>
           </div>

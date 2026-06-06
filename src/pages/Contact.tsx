@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
 const GOLD = '#d9a857';
@@ -9,15 +12,8 @@ const TEXT = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 function getAuth(): { token: string; displayName: string } | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored);
-    if (!data?.token) return null;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return { token: data.token, displayName: data.display_name || '用户' };
-  } catch { return null; }
+  const data = readStoredCreatorAuth();
+  return data?.token ? { token: data.token, displayName: data.display_name || '用户' } : null;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -32,6 +28,16 @@ const inputStyle: React.CSSProperties = {
   fontSize: '0.92rem',
 };
 
+type ContactDraft = {
+  subject: string;
+  content: string;
+  contact: string;
+};
+
+function shouldSaveContactDraft(data: ContactDraft) {
+  return !!(data.subject.trim() || data.content.trim() || data.contact.trim());
+}
+
 export default function Contact() {
   const navigate = useNavigate();
   const auth = getAuth();
@@ -41,6 +47,19 @@ export default function Contact() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
+
+  const draftValue = useMemo<ContactDraft>(() => ({ subject, content, contact }), [contact, content, subject]);
+  const contactDraft = useDraftAutosave<ContactDraft>({
+    key: 'lc:draft:contact-message',
+    version: 1,
+    value: draftValue,
+    shouldSave: shouldSaveContactDraft,
+    onRestore: data => {
+      setSubject(data.subject || '');
+      setContent(data.content || '');
+      setContact(data.contact || '');
+    },
+  });
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +85,7 @@ export default function Contact() {
         setError(d.error || '发送失败');
         return;
       }
+      contactDraft.clearDraft();
       setSubject('');
       setContent('');
       setContact('');
@@ -97,6 +117,14 @@ export default function Contact() {
               站内信需要登录账号。未登录时也可以直接发送邮件到 basara-twenty@foxmail.com。
             </div>
           )}
+          <div style={{ marginBottom: 14 }}>
+            <DraftAutosaveNotice
+              savedAt={contactDraft.savedAt}
+              restoredAt={contactDraft.restoredAt}
+              error={contactDraft.error}
+              note="未发送的站内信会自动保存到当前浏览器。"
+            />
+          </div>
           <div style={{ display: 'grid', gap: 14 }}>
             <div>
               <label style={{ display: 'block', color: MUTED, fontSize: '0.78rem', fontWeight: 800, marginBottom: 7 }}>标题</label>

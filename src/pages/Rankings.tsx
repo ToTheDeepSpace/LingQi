@@ -3,8 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { generatedAvatarDataUrl } from '../lib/avatar';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import ReportModal, { type ReportTargetType } from '../components/ReportModal';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
 const C = '#f6efe4';
@@ -96,6 +99,8 @@ type CommentModal = { rankingId: string } | null;
 type RelatedFile = { name: string; url: string; type?: string };
 type RelatedCertModal = { rankingId: string; commentId: string } | null;
 type ReportTarget = { targetType: ReportTargetType; targetId: string; targetTitle: string };
+type RankingCommentDraft = { content: string };
+type RelatedCertDraft = { note: string };
 type AuditChange = { field: string; label?: string; before?: unknown; after?: unknown };
 type AuditEntry = {
   id: string;
@@ -143,25 +148,19 @@ const inputStyle: React.CSSProperties = {
 };
 
 function getAuth(): AuthSession | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored);
-    if (!data?.token) return null;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    const availableCities = Array.isArray(data.available_cities)
-      ? data.available_cities.map((item: unknown) => String(item || '').trim()).filter(Boolean)
-      : [];
-    const fallbackCity = String(data.city || '').trim();
-    return {
-      token: data.token,
-      displayName: data.display_name || '用户',
-      userId: payload.creatorId,
-      city: fallbackCity || null,
-      availableCities: availableCities.length > 0 ? availableCities : (fallbackCity ? [fallbackCity] : []),
-    };
-  } catch { return null; }
+  const data = readStoredCreatorAuth();
+  if (!data?.token) return null;
+  const availableCities = Array.isArray(data.available_cities)
+    ? data.available_cities.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+    : [];
+  const fallbackCity = String(data.city || '').trim();
+  return {
+    token: data.token,
+    displayName: data.display_name || '用户',
+    userId: data.id,
+    city: fallbackCity || null,
+    availableCities: availableCities.length > 0 ? availableCities : (fallbackCity ? [fallbackCity] : []),
+  };
 }
 
 function normalizeUrl(url: string): string {
@@ -468,6 +467,26 @@ export default function Rankings() {
   const [votesMap, setVotesMap] = useState<Record<string, VoteRecord[]>>({});
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [auditModal, setAuditModal] = useState<AuditModal>(null);
+  const commentDraftKey = commentModal ? `lc:draft:ranking-comment:${commentModal.rankingId}` : 'lc:draft:ranking-comment:none';
+  const commentDraftValue = useMemo<RankingCommentDraft>(() => ({ content: commentText }), [commentText]);
+  const commentDraft = useDraftAutosave<RankingCommentDraft>({
+    key: commentDraftKey,
+    version: 1,
+    enabled: !!commentModal && !commentDone,
+    value: commentDraftValue,
+    shouldSave: data => !!data.content.trim(),
+    onRestore: data => setCommentText(data.content || ''),
+  });
+  const relatedDraftKey = relatedModal ? `lc:draft:related-cert:${relatedModal.rankingId}:${relatedModal.commentId}` : 'lc:draft:related-cert:none';
+  const relatedDraftValue = useMemo<RelatedCertDraft>(() => ({ note: relatedNote }), [relatedNote]);
+  const relatedDraft = useDraftAutosave<RelatedCertDraft>({
+    key: relatedDraftKey,
+    version: 1,
+    enabled: !!relatedModal && !relatedDone,
+    value: relatedDraftValue,
+    shouldSave: data => !!data.note.trim(),
+    onRestore: data => setRelatedNote(data.note || ''),
+  });
 
   const auth = getAuth();
   const preferredCityParam = preferredCities.join(',');
@@ -780,6 +799,7 @@ export default function Rankings() {
       });
       const d = await r.json();
       if (d.success) {
+        relatedDraft.clearDraft();
         setRelatedDone(true);
         fetchComments(relatedModal.rankingId);
       }
@@ -802,6 +822,7 @@ export default function Rankings() {
       });
       const d = await r.json();
       if (d.success) {
+        commentDraft.clearDraft();
         setCommentDone(true);
         fetchComments(commentModal.rankingId);
         fetchWallet();
@@ -1473,6 +1494,14 @@ export default function Rankings() {
                 </p>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>评论内容 <span style={{ color: RED }}>*</span></label>
+                  <div style={{ marginBottom: 10 }}>
+                    <DraftAutosaveNotice
+                      savedAt={commentDraft.savedAt}
+                      restoredAt={commentDraft.restoredAt}
+                      error={commentDraft.error}
+                      note="这条评论会自动保存到当前浏览器。"
+                    />
+                  </div>
                   <textarea value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="写下你的看法..." rows={4} style={{ ...inputStyle, resize: 'none' }} />
                 </div>
                 {commentError && <p style={{ color: RED, fontSize: '0.8rem', marginTop: 12 }}>{commentError}</p>}
@@ -1514,6 +1543,14 @@ export default function Rankings() {
                 </p>
                 <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>相关关系说明</label>
+                  <div style={{ marginBottom: 10 }}>
+                    <DraftAutosaveNotice
+                      savedAt={relatedDraft.savedAt}
+                      restoredAt={relatedDraft.restoredAt}
+                      error={relatedDraft.error}
+                      note="相关关系说明会自动保存到当前浏览器；图片材料不会保存，刷新后需要重新上传。"
+                    />
+                  </div>
                   <textarea value={relatedNote} onChange={e => setRelatedNote(e.target.value)} rows={4}
                     placeholder="例：我是被评价本人 / 店家负责人 / 当局玩家 / 当日同行人员。请说明关系和能核验的线索。"
                     style={{ ...inputStyle, resize: 'none' }} />

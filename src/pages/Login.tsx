@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
+import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -71,6 +72,15 @@ export default function Login() {
   const [error, setError] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [referralOwner, setReferralOwner] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('wechat_login') || params.get('auth_error')) return;
+    const current = readStoredCreatorAuth();
+    if (!current) return;
+    const redirect = params.get('redirect') || '/dashboard';
+    navigate(redirect.startsWith('/') ? redirect : '/dashboard', { replace: true });
+  }, [location.search, navigate]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);

@@ -5,8 +5,11 @@ import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { formatDetailedSubsidy } from '../lib/carpoolMessage';
 import { generatedAvatarDataUrl } from '../lib/avatar';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import ReportModal from '../components/ReportModal';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -16,14 +19,8 @@ const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 function getAuth(): AuthData | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored) as AuthData;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return data;
-  } catch { return null; }
+  const data = readStoredCreatorAuth();
+  return data?.token ? data as AuthData : null;
 }
 
 function roleKey(value?: string | null) {
@@ -57,6 +54,11 @@ function applicationForRole(item: Carpool, roleName: string, used: Set<string>) 
   return next || null;
 }
 
+type CarpoolApplicationDraft = {
+  role: string;
+  message: string;
+};
+
 export default function Carpools() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -80,6 +82,19 @@ export default function Carpools() {
   const [contactModal, setContactModal] = useState<{ item: Carpool; loading: boolean; error: string; contact?: { leader_contact: string; contact_note: string | null } } | null>(null);
   const [reportModal, setReportModal] = useState<Carpool | null>(null);
   const published = searchParams.get('published') === '1' || searchParams.get('submitted') === '1';
+  const applyDraftKey = applyModal ? `lc:draft:carpool-application:${applyModal.id}` : 'lc:draft:carpool-application:none';
+  const applyDraftValue = useMemo<CarpoolApplicationDraft>(() => ({ role: applyRole, message: applyMessage }), [applyMessage, applyRole]);
+  const applyDraft = useDraftAutosave<CarpoolApplicationDraft>({
+    key: applyDraftKey,
+    version: 1,
+    enabled: !!applyModal && !applyDone,
+    value: applyDraftValue,
+    shouldSave: data => !!(data.role.trim() || data.message.trim()),
+    onRestore: data => {
+      if (data.role) setApplyRole(data.role);
+      setApplyMessage(data.message || '');
+    },
+  });
 
   const loadPublic = useMemo(() => async () => {
     setLoading(true);
@@ -172,6 +187,7 @@ export default function Carpools() {
       });
       const d = await r.json();
       if (d.success) {
+        applyDraft.clearDraft();
         setSentApplications(prev => [{ id: d.data.id, carpool_id: applyModal.id, status: 'submitted' }, ...prev]);
         setApplyDone(true);
       } else {
@@ -412,6 +428,14 @@ export default function Carpools() {
                 ) : (
                   <Input label="想接/想玩的角色" value={applyRole} onChange={setApplyRole} placeholder="可选，例如：姐姐 / NPC / 男A" />
                 )}
+                <div style={{ marginTop: 12 }}>
+                  <DraftAutosaveNotice
+                    savedAt={applyDraft.savedAt}
+                    restoredAt={applyDraft.restoredAt}
+                    error={applyDraft.error}
+                    note="这条上车申请会自动保存到当前浏览器。"
+                  />
+                </div>
                 <div style={{ marginTop: 12 }}>
                   <Label>申请说明 *</Label>
                   <textarea value={applyMessage} onChange={e => setApplyMessage(e.target.value)} rows={6}

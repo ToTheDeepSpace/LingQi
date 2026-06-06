@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
 import type { AuthData, ScriptCatalogItem } from '../types';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -12,14 +15,8 @@ const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 function getAuth(): AuthData | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored) as AuthData;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return data;
-  } catch { return null; }
+  const data = readStoredCreatorAuth();
+  return data?.token ? data as AuthData : null;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -41,6 +38,34 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 8,
 };
 
+type CommissionDraft = {
+  title: string;
+  content: string;
+  scriptId: string;
+  scriptName: string;
+  desiredRole: string;
+  targetType: string;
+  neededDate: string;
+  city: string;
+  location: string;
+  budget: string;
+  contactNote: string;
+};
+
+function shouldSaveCommissionDraft(data: CommissionDraft) {
+  return [
+    data.title,
+    data.content,
+    data.scriptName,
+    data.desiredRole,
+    data.neededDate,
+    data.city,
+    data.location,
+    data.budget,
+    data.contactNote,
+  ].some(item => item.trim()) || data.targetType !== 'creator';
+}
+
 export default function CreateCommission() {
   const navigate = useNavigate();
   const auth = useMemo(() => getAuth(), []);
@@ -58,6 +83,41 @@ export default function CreateCommission() {
   const [contactNote, setContactNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const draftValue = useMemo<CommissionDraft>(() => ({
+    title,
+    content,
+    scriptId,
+    scriptName,
+    desiredRole,
+    targetType,
+    neededDate,
+    city,
+    location,
+    budget,
+    contactNote,
+  }), [budget, city, contactNote, content, desiredRole, location, neededDate, scriptId, scriptName, targetType, title]);
+
+  const commissionDraft = useDraftAutosave<CommissionDraft>({
+    key: 'lc:draft:commission:new',
+    version: 1,
+    enabled: !!auth,
+    value: draftValue,
+    shouldSave: shouldSaveCommissionDraft,
+    onRestore: data => {
+      setTitle(data.title || '');
+      setContent(data.content || '');
+      setScriptId(data.scriptId || '');
+      setScriptName(data.scriptName || '');
+      setDesiredRole(data.desiredRole || '');
+      setTargetType(data.targetType || 'creator');
+      setNeededDate(data.neededDate || '');
+      setCity(data.city || '');
+      setLocation(data.location || '');
+      setBudget(data.budget || '');
+      setContactNote(data.contactNote || '');
+    },
+  });
 
   useEffect(() => {
     let alive = true;
@@ -113,7 +173,10 @@ export default function CreateCommission() {
         }),
       });
       const d = await r.json();
-      if (d.success) navigate('/commissions?submitted=1');
+      if (d.success) {
+        commissionDraft.clearDraft();
+        navigate('/commissions?submitted=1');
+      }
       else setError(d.error || '提交失败');
     } catch {
       setError('网络错误，请重试');
@@ -135,6 +198,15 @@ export default function CreateCommission() {
 
           <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(217,168,87,0.1)', border: '1px solid rgba(217,168,87,0.24)', color: '#65401c', fontSize: '0.84rem', marginBottom: 22 }}>
             以 <strong style={{ color: '#925f18' }}>{auth.display_name}</strong> 的身份发布。AI 填表助手接口已预留，当前先由你手动填写。
+          </div>
+
+          <div style={{ marginBottom: 18 }}>
+            <DraftAutosaveNotice
+              savedAt={commissionDraft.savedAt}
+              restoredAt={commissionDraft.restoredAt}
+              error={commissionDraft.error}
+              note="未提交的委托需求会自动保存到当前浏览器。"
+            />
           </div>
 
           <div style={{ marginBottom: 22 }}>

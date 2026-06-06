@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import type { AuthData } from '../types';
 
 const API  = '/api';
@@ -9,17 +12,8 @@ const GOLD = '#d9a857';
 const GOLD2 = '#c9922e';
 
 function getAuth(): AuthData | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored) as AuthData & { role?: string };
-    if (!data.token) return null;
-    try {
-      const payload = JSON.parse(atob(data.token.split('.')[1]));
-      if (payload.exp * 1000 < Date.now()) return null;
-    } catch { return null; }
-    return data;
-  } catch { return null; }
+  const data = readStoredCreatorAuth();
+  return data?.token ? data as AuthData : null;
 }
 
 const card: React.CSSProperties = {
@@ -77,6 +71,46 @@ interface Comment {
   created_at: string;
 }
 
+type ShopForm = {
+  shop_name: string;
+  shop_description: string;
+  contact_phone: string;
+  contact_wechat: string;
+  address: string;
+  juzhanggui_link: string;
+};
+
+type ShopProfileDraft = {
+  form: ShopForm;
+  base: ShopForm;
+};
+
+type ShopTextDraft = {
+  text: string;
+};
+
+const shopFormKeys: Array<keyof ShopForm> = ['shop_name', 'shop_description', 'contact_phone', 'contact_wechat', 'address', 'juzhanggui_link'];
+
+function blankShopForm(): ShopForm {
+  return { shop_name: '', shop_description: '', contact_phone: '', contact_wechat: '', address: '', juzhanggui_link: '' };
+}
+
+function profileToForm(profile: ShopProfile | null): ShopForm {
+  if (!profile) return blankShopForm();
+  return {
+    shop_name: profile.shop_name || '',
+    shop_description: profile.shop_description || '',
+    contact_phone: profile.contact_phone || '',
+    contact_wechat: profile.contact_wechat || '',
+    address: profile.address || '',
+    juzhanggui_link: profile.juzhanggui_link || '',
+  };
+}
+
+function shouldSaveShopProfileDraft(data: ShopProfileDraft) {
+  return shopFormKeys.some(key => data.form[key].trim() !== data.base[key].trim());
+}
+
 export default function ShopDashboard() {
   const navigate = useNavigate();
   const [shop, setShop] = useState<ShopProfile | null>(null);
@@ -85,9 +119,7 @@ export default function ShopDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [form, setForm] = useState({
-    shop_name: '', shop_description: '', contact_phone: '', contact_wechat: '', address: '', juzhanggui_link: '',
-  });
+  const [form, setForm] = useState<ShopForm>(() => blankShopForm());
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
 
@@ -101,6 +133,38 @@ export default function ShopDashboard() {
 
   const auth = useMemo(() => getAuth(), []);
   const token = auth?.token || '';
+  const profileDraftValue = useMemo<ShopProfileDraft>(() => ({
+    form,
+    base: profileToForm(shop),
+  }), [form, shop]);
+  const profileDraft = useDraftAutosave<ShopProfileDraft>({
+    key: 'lc:draft:shop-dashboard:profile',
+    version: 1,
+    enabled: !!shop,
+    value: profileDraftValue,
+    shouldSave: shouldSaveShopProfileDraft,
+    onRestore: data => setForm(data.form || blankShopForm()),
+  });
+  const replyDraftKey = replyOpenId ? `lc:draft:shop-dashboard:reply:${replyOpenId}` : 'lc:draft:shop-dashboard:reply:none';
+  const replyDraftValue = useMemo<ShopTextDraft>(() => ({ text: replyText }), [replyText]);
+  const replyDraft = useDraftAutosave<ShopTextDraft>({
+    key: replyDraftKey,
+    version: 1,
+    enabled: !!replyOpenId,
+    value: replyDraftValue,
+    shouldSave: data => !!data.text.trim(),
+    onRestore: data => setReplyText(data.text || ''),
+  });
+  const appealDraftKey = appealOpenId ? `lc:draft:shop-dashboard:appeal:${appealOpenId}` : 'lc:draft:shop-dashboard:appeal:none';
+  const appealDraftValue = useMemo<ShopTextDraft>(() => ({ text: appealReason }), [appealReason]);
+  const appealDraft = useDraftAutosave<ShopTextDraft>({
+    key: appealDraftKey,
+    version: 1,
+    enabled: !!appealOpenId,
+    value: appealDraftValue,
+    shouldSave: data => !!data.text.trim(),
+    onRestore: data => setAppealReason(data.text || ''),
+  });
 
   useEffect(() => {
     if (!auth) { navigate('/login'); return; }
@@ -117,14 +181,7 @@ export default function ShopDashboard() {
         setShop(profile);
         setReviews(revs || []);
         setComments(cmts || []);
-        setForm({
-          shop_name: profile.shop_name || '',
-          shop_description: profile.shop_description || '',
-          contact_phone: profile.contact_phone || '',
-          contact_wechat: profile.contact_wechat || '',
-          address: profile.address || '',
-          juzhanggui_link: profile.juzhanggui_link || '',
-        });
+        setForm(profileToForm(profile));
       })
       .catch(() => setError('网络错误'))
       .finally(() => setLoading(false));
@@ -140,7 +197,12 @@ export default function ShopDashboard() {
         body: JSON.stringify(form),
       });
       const d = await r.json();
-      if (d.success) { setSaveMsg('已保存'); setTimeout(() => setSaveMsg(''), 2500); }
+      if (d.success) {
+        profileDraft.clearDraft();
+        setShop(prev => prev ? { ...prev, ...form } : prev);
+        setSaveMsg('已保存');
+        setTimeout(() => setSaveMsg(''), 2500);
+      }
       else setError(d.error || '保存失败');
     } catch { setError('网络错误'); }
     finally { setSaving(false); }
@@ -157,6 +219,7 @@ export default function ShopDashboard() {
       });
       const d = await r.json();
       if (d.success) {
+        replyDraft.clearDraft();
         setReviews(prev => prev.map(rv => rv.id === reviewId ? { ...rv, shop_reply: replyText.trim() } : rv));
         setReplyOpenId(null);
         setReplyText('');
@@ -176,6 +239,7 @@ export default function ShopDashboard() {
       });
       const d = await r.json();
       if (d.success) {
+        appealDraft.clearDraft();
         setReviews(prev => prev.map(rv => rv.id === reviewId ? { ...rv, appeal_status: 'pending', appeal_reason: appealReason.trim() } : rv));
         setAppealOpenId(null);
         setAppealReason('');
@@ -248,6 +312,14 @@ export default function ShopDashboard() {
         {/* ── 主页信息编辑区 ── */}
         <div style={{ ...card, marginBottom: 32 }}>
           <h2 style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 24, color: 'rgba(186,207,231,0.9)' }}>主页信息</h2>
+          <div style={{ marginBottom: 16 }}>
+            <DraftAutosaveNotice
+              savedAt={profileDraft.savedAt}
+              restoredAt={profileDraft.restoredAt}
+              error={profileDraft.error}
+              note="未保存的店家主页资料会自动保存到当前浏览器。"
+            />
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
             <div>
               <label style={labelStyle}>店名</label>
@@ -394,6 +466,14 @@ export default function ShopDashboard() {
                     )}
                     {replyOpenId === review.id && (
                       <div style={{ width: '100%' }}>
+                        <div style={{ marginBottom: 8 }}>
+                          <DraftAutosaveNotice
+                            savedAt={replyDraft.savedAt}
+                            restoredAt={replyDraft.restoredAt}
+                            error={replyDraft.error}
+                            note="未提交的店家回复会自动保存到当前浏览器。"
+                          />
+                        </div>
                         <textarea
                           value={replyText}
                           onChange={e => setReplyText(e.target.value)}
@@ -428,6 +508,14 @@ export default function ShopDashboard() {
                     )}
                     {appealOpenId === review.id && (
                       <div style={{ width: '100%' }}>
+                        <div style={{ marginBottom: 8 }}>
+                          <DraftAutosaveNotice
+                            savedAt={appealDraft.savedAt}
+                            restoredAt={appealDraft.restoredAt}
+                            error={appealDraft.error}
+                            note="未提交的申诉理由会自动保存到当前浏览器。"
+                          />
+                        </div>
                         <textarea
                           value={appealReason}
                           onChange={e => setAppealReason(e.target.value)}

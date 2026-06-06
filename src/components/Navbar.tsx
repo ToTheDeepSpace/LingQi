@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { isTokenExpired, readStoredCreatorAuth, type StoredCreatorAuth } from '../lib/authSession';
 import { preloadRoute } from '../lib/routePreload';
 
 const BG = 'rgba(255,253,248,0.94)';
@@ -15,32 +16,8 @@ function handleLogout() {
   window.location.href = '/';
 }
 
-type CreatorAuth = {
-  display_name?: string;
-  phone?: string;
-  token?: string;
-  role?: string;
-};
-
-function isTokenExpired(token: string) {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000 < Date.now();
-  } catch {
-    return true;
-  }
-}
-
-function readCreatorAuth(): CreatorAuth | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored) as CreatorAuth;
-    if (!data.token || isTokenExpired(data.token)) return null;
-    return data;
-  } catch {
-    return null;
-  }
+function readCreatorAuth(): StoredCreatorAuth | null {
+  return readStoredCreatorAuth();
 }
 
 function readAdminToken() {

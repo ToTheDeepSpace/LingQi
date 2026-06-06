@@ -3,8 +3,11 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { AuthData, Commission, CommissionApplication, ScriptCatalogItem } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import ReportModal from '../components/ReportModal';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -32,15 +35,13 @@ const TARGET_LABEL: Record<string, string> = {
   prop: '道具师',
 };
 
+type CommissionApplicationDraft = {
+  letter: string;
+};
+
 function getAuth(): AuthData | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored) as AuthData;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return data;
-  } catch { return null; }
+  const data = readStoredCreatorAuth();
+  return data?.token ? data as AuthData : null;
 }
 
 export default function Commissions() {
@@ -65,6 +66,16 @@ export default function Commissions() {
   const [submittingApplication, setSubmittingApplication] = useState(false);
   const [reportTarget, setReportTarget] = useState<Commission | null>(null);
   const submitted = searchParams.get('submitted') === '1';
+  const applicationDraftKey = applicationModal ? `lc:draft:commission-application:${applicationModal.id}` : 'lc:draft:commission-application:none';
+  const applicationDraftValue = useMemo<CommissionApplicationDraft>(() => ({ letter: applicationLetter }), [applicationLetter]);
+  const applicationDraft = useDraftAutosave<CommissionApplicationDraft>({
+    key: applicationDraftKey,
+    version: 1,
+    enabled: !!applicationModal && !applicationDone,
+    value: applicationDraftValue,
+    shouldSave: data => !!data.letter.trim(),
+    onRestore: data => setApplicationLetter(data.letter || ''),
+  });
 
   useEffect(() => {
     let alive = true;
@@ -198,6 +209,7 @@ export default function Commissions() {
       });
       const d = await r.json();
       if (d.success) {
+        applicationDraft.clearDraft();
         setSentApplications(prev => [{ id: d.data.id, commission_id: applicationModal.id, status: 'submitted', created_at: new Date().toISOString() }, ...prev]);
         setApplicationDone(true);
       } else {
@@ -415,6 +427,14 @@ export default function Commissions() {
                 <p style={{ color: MUTED, lineHeight: 1.75, fontSize: '0.86rem', marginBottom: 16 }}>
                   写清楚你能接什么、可用时间、城市和你希望委托人先知道的条件。不要在这里放敏感隐私。
                 </p>
+                <div style={{ marginBottom: 12 }}>
+                  <DraftAutosaveNotice
+                    savedAt={applicationDraft.savedAt}
+                    restoredAt={applicationDraft.restoredAt}
+                    error={applicationDraft.error}
+                    note="这封申请信会自动保存到当前浏览器。"
+                  />
+                </div>
                 <textarea value={applicationLetter} onChange={e => setApplicationLetter(e.target.value)}
                   rows={6}
                   placeholder="例：我可以接这个角色，6月初在上海/杭州都方便。我的风格更偏沉浸陪伴，可以先沟通角色设定和边界..."

@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
+import { isTokenExpired, readStoredCreatorAuth } from '../lib/authSession';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePreference, ScriptCatalogItem } from '../types';
 
 const API  = '/api';
@@ -18,13 +21,6 @@ function getToken(): string {
     const stored = localStorage.getItem('lc_creator');
     return stored ? (JSON.parse(stored) as AuthData).token : '';
   } catch { return ''; }
-}
-
-function isTokenExpired(token: string): boolean {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000 < Date.now();
-  } catch { return true; }
 }
 
 const TABS = [
@@ -78,6 +74,45 @@ type RolePreferenceDraft = {
   note: string;
 };
 
+type ProfileForm = {
+  display_name: string;
+  avatar: string;
+  bio: string;
+  city: string;
+  wechat: string;
+  tags: string;
+  douyin: string;
+  xiaohongshu: string;
+  available_cities: string;
+  travel_status: string;
+  gender: string;
+  sexual_orientation: string;
+  preferred_story_lines: string;
+  contact_unlock_enabled: boolean;
+  contact_intent_amount: string;
+};
+
+type ProfileDraft = {
+  form: ProfileForm;
+  baseForm: ProfileForm;
+  rolePreferences: RolePreferenceDraft[];
+  baseRolePreferences: RolePreferenceDraft[];
+  roleDraft: RolePreferenceDraft;
+};
+
+type ServiceDraft = {
+  service_type: string;
+  price: string;
+  duration: string;
+  description: string;
+};
+
+type AvailabilityImportDraft = {
+  city: string;
+  location: string;
+  text: string;
+};
+
 const card: React.CSSProperties = {
   backgroundColor: '#fffaf2',
   border: '1px solid rgba(201,146,46,0.22)',
@@ -105,6 +140,69 @@ function rolePreferenceKey(item: Pick<RolePreferenceDraft, 'script_name' | 'role
   return `${item.script_name.replace(/\s+/g, '').toLowerCase()}:${item.role_name.replace(/\s+/g, '').toLowerCase()}`;
 }
 
+function blankRolePreferenceDraft(): RolePreferenceDraft {
+  return { script_id: '', script_name: '', role_name: '', role_gender: '', role_tags: [], is_recommended: true, note: '' };
+}
+
+function blankProfileForm(): ProfileForm {
+  return {
+    display_name: '',
+    avatar: '',
+    bio: '',
+    city: '',
+    wechat: '',
+    tags: '',
+    douyin: '',
+    xiaohongshu: '',
+    available_cities: '',
+    travel_status: '常驻本地',
+    gender: '',
+    sexual_orientation: '',
+    preferred_story_lines: '',
+    contact_unlock_enabled: false,
+    contact_intent_amount: '',
+  };
+}
+
+function profileToForm(profile: Creator | null): ProfileForm {
+  if (!profile) return blankProfileForm();
+  return {
+    display_name: profile.display_name || '',
+    avatar: profile.avatar || '',
+    bio: profile.bio || '',
+    city: profile.city || '',
+    wechat: profile.wechat || '',
+    tags: (profile.tags || []).join(', '),
+    gender: profile.gender || '',
+    sexual_orientation: profile.sexual_orientation || '',
+    preferred_story_lines: (profile.preferred_story_lines || []).join(', '),
+    douyin: profile.social_links?.douyin || '',
+    xiaohongshu: profile.social_links?.xiaohongshu || '',
+    available_cities: (profile.available_cities || []).join(', '),
+    travel_status: profile.travel_status || '常驻本地',
+    contact_unlock_enabled: !!profile.contact_unlock_enabled,
+    contact_intent_amount: profile.contact_intent_amount ? String(profile.contact_intent_amount) : '',
+  };
+}
+
+function rolePreferencesFromProfile(profile: Creator | null): RolePreferenceDraft[] {
+  return (((profile?.role_preferences || []) as ProfileRolePreference[]).map(item => ({
+    script_id: item.script_id || '',
+    script_name: item.script_name || '',
+    role_name: item.role_name || '',
+    role_gender: item.role_gender || '',
+    role_tags: item.role_tags || [],
+    is_recommended: !!item.is_recommended,
+    note: item.note || '',
+  })).filter(item => item.script_name && item.role_name));
+}
+
+function shouldSaveProfileDraft(data: ProfileDraft) {
+  return JSON.stringify(data.form) !== JSON.stringify(data.baseForm)
+    || JSON.stringify(data.rolePreferences) !== JSON.stringify(data.baseRolePreferences)
+    || JSON.stringify(data.roleDraft) !== JSON.stringify(blankRolePreferenceDraft());
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [creator, setCreator]   = useState<Creator | null>(null);
@@ -115,22 +213,15 @@ export default function Dashboard() {
   const [myCarpools, setMyCarpools] = useState<MyCarpool[]>([]);
   const [scripts, setScripts] = useState<ScriptCatalogItem[]>([]);
   const [rolePreferences, setRolePreferences] = useState<RolePreferenceDraft[]>([]);
-  const [roleDraft, setRoleDraft] = useState<RolePreferenceDraft>({
-    script_id: '', script_name: '', role_name: '', role_gender: '', role_tags: [], is_recommended: true, note: '',
-  });
+  const [roleDraft, setRoleDraft] = useState<RolePreferenceDraft>(() => blankRolePreferenceDraft());
   const [tab, setTab]           = useState('profile');
   const [saving, setSaving]     = useState(false);
   const [msg, setMsg]           = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(true);
 
-  const [form, setForm] = useState({
-    display_name: '', avatar: '', bio: '', city: '', wechat: '', tags: '',
-    douyin: '', xiaohongshu: '', available_cities: '', travel_status: '常驻本地',
-    gender: '', sexual_orientation: '', preferred_story_lines: '',
-    contact_unlock_enabled: false, contact_intent_amount: '',
-  });
-  const [newSvc, setNewSvc] = useState({ service_type: '', price: '', duration: '', description: '' });
+  const [form, setForm] = useState<ProfileForm>(() => blankProfileForm());
+  const [newSvc, setNewSvc] = useState<ServiceDraft>({ service_type: '', price: '', duration: '', description: '' });
   const [availDates, setAvailDates] = useState<string[]>([]);
   const [availItems, setAvailItems] = useState<Availability[]>([]);
   const [availCity, setAvailCity] = useState('');
@@ -148,11 +239,8 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) { navigate('/login'); return; }
-    let data: AuthData;
-    try { data = JSON.parse(stored); } catch { navigate('/login'); return; }
-    if (!data.id || !data.token) { navigate('/login'); return; }
+    const data = readStoredCreatorAuth() as AuthData | null;
+    if (!data?.id || !data.token) { navigate('/login'); return; }
     if (isTokenExpired(data.token)) {
       localStorage.removeItem('lc_creator');
       window.dispatchEvent(new Event('lc-auth-changed'));
@@ -173,32 +261,8 @@ export default function Dashboard() {
         setCreator(profile);
         setServices(svc || []);
         setPortfolio(port || []);
-        setRolePreferences(((profile.role_preferences || []) as ProfileRolePreference[]).map(item => ({
-          script_id: item.script_id || '',
-          script_name: item.script_name || '',
-          role_name: item.role_name || '',
-          role_gender: item.role_gender || '',
-          role_tags: item.role_tags || [],
-          is_recommended: !!item.is_recommended,
-          note: item.note || '',
-        })).filter(item => item.script_name && item.role_name));
-        setForm({
-          display_name: profile.display_name || '',
-          avatar: profile.avatar || '',
-          bio: profile.bio || '',
-          city: profile.city || '',
-          wechat: profile.wechat || '',
-          tags: (profile.tags || []).join(', '),
-          gender: profile.gender || '',
-          sexual_orientation: profile.sexual_orientation || '',
-          preferred_story_lines: (profile.preferred_story_lines || []).join(', '),
-          douyin: profile.social_links?.douyin || '',
-          xiaohongshu: profile.social_links?.xiaohongshu || '',
-          available_cities: (profile.available_cities || []).join(', '),
-          travel_status: profile.travel_status || '常驻本地',
-          contact_unlock_enabled: !!profile.contact_unlock_enabled,
-          contact_intent_amount: profile.contact_intent_amount ? String(profile.contact_intent_amount) : '',
-        });
+        setRolePreferences(rolePreferencesFromProfile(profile));
+        setForm(profileToForm(profile));
       } else { setError(profileData.error || '加载失败'); }
       if (availData.success) {
         applyAvailability(availData.data || []);
@@ -213,6 +277,55 @@ export default function Dashboard() {
   const selectedScript = scripts.find(script => script.id === roleDraft.script_id) || null;
   const selectedScriptRoles = selectedScript?.player_roles || [];
   const selectedRole = selectedScriptRoles.find(role => role.role_name === roleDraft.role_name) || null;
+  const profileDraftValue = useMemo<ProfileDraft>(() => ({
+    form,
+    baseForm: profileToForm(creator),
+    rolePreferences,
+    baseRolePreferences: rolePreferencesFromProfile(creator),
+    roleDraft,
+  }), [creator, form, roleDraft, rolePreferences]);
+  const profileDraft = useDraftAutosave<ProfileDraft>({
+    key: 'lc:draft:dashboard:profile',
+    version: 1,
+    enabled: !!creator,
+    value: profileDraftValue,
+    shouldSave: shouldSaveProfileDraft,
+    onRestore: data => {
+      setForm(data.form || blankProfileForm());
+      setRolePreferences(data.rolePreferences || []);
+      setRoleDraft(data.roleDraft || blankRolePreferenceDraft());
+    },
+  });
+  const serviceDraft = useDraftAutosave<ServiceDraft>({
+    key: 'lc:draft:dashboard:service',
+    version: 1,
+    enabled: !!creator,
+    value: newSvc,
+    shouldSave: data => !!(data.service_type.trim() || data.price.trim() || data.duration.trim() || data.description.trim()),
+    onRestore: data => setNewSvc({
+      service_type: data.service_type || '',
+      price: data.price || '',
+      duration: data.duration || '',
+      description: data.description || '',
+    }),
+  });
+  const availabilityImportDraftValue = useMemo<AvailabilityImportDraft>(() => ({
+    city: availCity,
+    location: availLocation,
+    text: screenshotText,
+  }), [availCity, availLocation, screenshotText]);
+  const availabilityImportDraft = useDraftAutosave<AvailabilityImportDraft>({
+    key: 'lc:draft:dashboard:availability-import',
+    version: 1,
+    enabled: !!creator,
+    value: availabilityImportDraftValue,
+    shouldSave: data => !!(data.city.trim() || data.location.trim() || data.text.trim()),
+    onRestore: data => {
+      setAvailCity(data.city || '');
+      setAvailLocation(data.location || '');
+      setScreenshotText(data.text || '');
+    },
+  });
 
   const selectRoleScript = (scriptId: string) => {
     const script = scripts.find(item => item.id === scriptId);
@@ -262,7 +375,7 @@ export default function Dashboard() {
         is_recommended: item.is_recommended || next.is_recommended,
       } : item);
     });
-    setRoleDraft({ script_id: '', script_name: '', role_name: '', role_gender: '', role_tags: [], is_recommended: true, note: '' });
+    setRoleDraft(blankRolePreferenceDraft());
   };
 
   const removeRolePreference = (index: number) => {
@@ -316,23 +429,34 @@ export default function Dashboard() {
       });
       const d = await r.json();
       if (d.success) {
+        const nextRolePreferences = rolePreferences.map((item, index) => ({
+          script_id: item.script_id || null,
+          script_name: item.script_name,
+          role_name: item.role_name,
+          role_gender: item.role_gender,
+          role_tags: item.role_tags,
+          is_recommended: item.is_recommended,
+          note: item.note,
+          sort_order: index,
+        }));
+        profileDraft.clearDraft();
         setCreator(prev => prev ? {
           ...prev,
           avatar: avatarOverride ?? form.avatar,
           display_name: form.display_name,
+          bio: form.bio,
+          city: form.city,
+          wechat: form.wechat,
+          tags,
           gender: form.gender,
           sexual_orientation: form.sexual_orientation,
           preferred_story_lines,
-          role_preferences: rolePreferences.map((item, index) => ({
-            script_id: item.script_id || null,
-            script_name: item.script_name,
-            role_name: item.role_name,
-            role_gender: item.role_gender,
-            role_tags: item.role_tags,
-            is_recommended: item.is_recommended,
-            note: item.note,
-            sort_order: index,
-          })),
+          social_links,
+          available_cities,
+          travel_status: form.travel_status,
+          contact_unlock_enabled: form.contact_unlock_enabled,
+          contact_intent_amount: form.contact_intent_amount ? Number(form.contact_intent_amount) : 0,
+          role_preferences: nextRolePreferences,
         } : prev);
         setMsg('已保存');
         setTimeout(() => setMsg(''), 2500);
@@ -405,6 +529,11 @@ export default function Dashboard() {
         return;
       }
       await refreshAvailability();
+      availabilityImportDraft.clearDraft();
+      setScreenshotUrl('');
+      setScreenshotText('');
+      setAvailCity('');
+      setAvailLocation('');
       setMsg(d.data?.message || `已从截图文字导入 ${d.data?.imported || 0} 条可约档期`);
       setTimeout(() => setMsg(''), 3000);
     } catch {
@@ -423,7 +552,11 @@ export default function Dashboard() {
       body: JSON.stringify({ creatorId: creator.id, serviceType: newSvc.service_type, price: parseFloat(newSvc.price), duration: newSvc.duration, description: newSvc.description }),
     });
     const d = await r.json();
-    if (d.success) { setServices([...services, d.data]); setNewSvc({ service_type: '', price: '', duration: '', description: '' }); }
+    if (d.success) {
+      serviceDraft.clearDraft();
+      setServices([...services, d.data]);
+      setNewSvc({ service_type: '', price: '', duration: '', description: '' });
+    }
     else setError(d.error || '添加失败');
   };
 
@@ -718,6 +851,14 @@ export default function Dashboard() {
                     实名由后台审核，前台只显示星标和昵称，不公开真实姓名。需要认证时可到 <Link to="/certification" style={{ color: GOLD, fontWeight: 800, textDecoration: 'none' }}>身份认证</Link> 提交水印身份证材料。
                   </p>
                 </div>
+                <div style={{ marginBottom: 16 }}>
+                  <DraftAutosaveNotice
+                    savedAt={profileDraft.savedAt}
+                    restoredAt={profileDraft.restoredAt}
+                    error={profileDraft.error}
+                    note="未保存的主页资料和角色清单会自动保存到当前浏览器。"
+                  />
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>
                     <label style={labelStyle}>昵称 / 艺名</label>
@@ -945,6 +1086,14 @@ export default function Dashboard() {
                 ))}
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
                   <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>添加服务</p>
+                  <div style={{ marginBottom: 12 }}>
+                    <DraftAutosaveNotice
+                      savedAt={serviceDraft.savedAt}
+                      restoredAt={serviceDraft.restoredAt}
+                      error={serviceDraft.error}
+                      note="未添加的服务会自动保存到当前浏览器。"
+                    />
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                     <input type="text" value={newSvc.service_type} onChange={e => setNewSvc({ ...newSvc, service_type: e.target.value })}
                       placeholder="服务类型" style={inputStyle} />
@@ -1029,6 +1178,14 @@ export default function Dashboard() {
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
                   <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 8, color: INK }}>截图快速导入</p>
                   <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.8rem', lineHeight: 1.7, marginBottom: 14 }}>上传档期截图留档，再粘贴截图中的文字，系统会把未过期日期导入为可约档期。</p>
+                  <div style={{ marginBottom: 12 }}>
+                    <DraftAutosaveNotice
+                      savedAt={availabilityImportDraft.savedAt}
+                      restoredAt={availabilityImportDraft.restoredAt}
+                      error={availabilityImportDraft.error}
+                      note="未导入的档期文字会自动保存到当前浏览器；图片文件不会保存。"
+                    />
+                  </div>
                   <div style={{ display: 'grid', gap: 12, maxWidth: 620 }}>
                     <ImageUpload onUploaded={setScreenshotUrl} token={token} api={API} scope="availability-screenshot" label="上传档期截图" />
                     {screenshotUrl && <p style={{ color: '#15803d', fontSize: '0.78rem', fontWeight: 700 }}>截图已上传</p>}

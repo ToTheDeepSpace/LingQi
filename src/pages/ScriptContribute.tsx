@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type React from 'react';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import type { AuthData, ScriptCatalogItem } from '../types';
 
 const API = '/api';
@@ -38,18 +41,17 @@ const creditFields = [
 
 type CreditKey = typeof creditFields[number]['key'];
 type CreditDraft = Record<CreditKey, string>;
+type ScriptContributionDraft = {
+  scriptId: string;
+  scriptName: string;
+  roles: RoleDraft[];
+  credits: CreditDraft;
+  note: string;
+};
 
 function getAuth(): AuthData | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored) as AuthData;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return data;
-  } catch {
-    return null;
-  }
+  const data = readStoredCreatorAuth();
+  return data?.token ? data as AuthData : null;
 }
 
 function makeRoleId() {
@@ -99,6 +101,15 @@ function cleanCredits(value: CreditDraft) {
   }, {});
 }
 
+function shouldSaveScriptContributionDraft(data: ScriptContributionDraft) {
+  return !!(
+    data.scriptName.trim()
+    || data.roles.some(role => role.role_name.trim() || role.gender || (role.tags || []).length)
+    || Object.values(data.credits).some(value => value.trim())
+    || data.note.trim()
+  );
+}
+
 function statusCopy(status: Contribution['status']) {
   if (status === 'approved') return { text: '已通过', color: '#166534', bg: 'rgba(240,253,244,0.9)' };
   if (status === 'rejected') return { text: '未通过', color: '#b91c1c', bg: 'rgba(254,242,242,0.86)' };
@@ -119,6 +130,31 @@ export default function ScriptContribute() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  const draftValue = useMemo<ScriptContributionDraft>(() => ({
+    scriptId,
+    scriptName,
+    roles,
+    credits,
+    note,
+  }), [credits, note, roles, scriptId, scriptName]);
+
+  const scriptDraft = useDraftAutosave<ScriptContributionDraft>({
+    key: 'lc:draft:script-contribution:new',
+    version: 1,
+    enabled: !!auth?.token,
+    value: draftValue,
+    shouldSave: shouldSaveScriptContributionDraft,
+    onRestore: data => {
+      setScriptId(data.scriptId || '');
+      setScriptName(data.scriptName || '');
+      setRoles((data.roles || []).length > 0
+        ? data.roles.map(role => ({ id: role.id || makeRoleId(), role_name: role.role_name || '', gender: role.gender || '', tags: role.tags || [] }))
+        : [blankRole()]);
+      setCredits({ ...blankCredits(), ...(data.credits || {}) });
+      setNote(data.note || '');
+    },
+  });
 
   const selectedScript = useMemo(() => scripts.find(item => item.id === scriptId) || null, [scriptId, scripts]);
 
@@ -220,6 +256,11 @@ export default function ScriptContribute() {
         return;
       }
       setMessage('已提交剧本库维护，后台通过后会发放 5 灵契币。');
+      scriptDraft.clearDraft();
+      setScriptId('');
+      setScriptName('');
+      setRoles([blankRole()]);
+      setCredits(blankCredits());
       setNote('');
       setHistory(prev => [d.data, ...prev]);
     } catch {
@@ -245,6 +286,14 @@ export default function ScriptContribute() {
 
       <section style={{ maxWidth: 1060, margin: '0 auto', padding: '28px 20px 82px', display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(260px, 0.65fr)', gap: 18 }} className="script-contribute-layout">
         <form onSubmit={submit} style={cardStyle}>
+          <div style={{ marginBottom: 16 }}>
+            <DraftAutosaveNotice
+              savedAt={scriptDraft.savedAt}
+              restoredAt={scriptDraft.restoredAt}
+              error={scriptDraft.error}
+              note="未提交的剧本库维护会自动保存到当前浏览器。"
+            />
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 14, marginBottom: 16 }}>
             <label>
               <Label>选择已有剧本</Label>

@@ -3,7 +3,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { AuthData, CarpoolRole, CarpoolSubsidyType, ScriptCatalogItem, StoreCatalogItem } from '../types';
 import { CITIES } from '../constants/cities';
 import { formatDetailedSubsidy, generateCarpoolMessage, parseCarpoolMessage } from '../lib/carpoolMessage';
+import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
+import { readStoredCreatorAuth } from '../lib/authSession';
+import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -23,6 +26,38 @@ const subsidyOptions: { value: CarpoolSubsidyType; label: string }[] = [
 
 type RoleDraft = CarpoolRole & { id: string };
 
+type CarpoolDraft = {
+  rawMessage: string;
+  generatedMessage: string;
+  showMore: boolean;
+  title: string;
+  city: string;
+  eventDate: string;
+  dateExpired: boolean;
+  startTime: string;
+  deadlineDate: string;
+  deadlineTime: string;
+  scriptId: string;
+  scriptName: string;
+  scriptRoles: RoleDraft[];
+  roleName: string;
+  roleNote: string;
+  neededCount: number;
+  subsidyType: CarpoolSubsidyType;
+  subsidyAmount: number;
+  subsidyDiscount: string;
+  subsidyNote: string;
+  storeName: string;
+  storeId: string;
+  storeAddress: string;
+  storeSourceUrl: string;
+  storeVerifyNote: string;
+  leaderContact: string;
+  contactNote: string;
+  content: string;
+  boostAmount: number;
+};
+
 const roleGenderOptions = ['', '男', '女', '可男可女', '其他'];
 const playerGenderOptions = ['', '男', '女', '其他', '不公开'];
 
@@ -34,14 +69,8 @@ const backLinkStyle: React.CSSProperties = {
 };
 
 function getAuth(): AuthData | null {
-  try {
-    const stored = localStorage.getItem('lc_creator');
-    if (!stored) return null;
-    const data = JSON.parse(stored) as AuthData;
-    const payload = JSON.parse(atob(data.token.split('.')[1]));
-    if (payload.exp * 1000 < Date.now()) return null;
-    return data;
-  } catch { return null; }
+  const data = readStoredCreatorAuth();
+  return data?.token ? data as AuthData : null;
 }
 
 function defaultDeadline(dateText: string) {
@@ -94,6 +123,48 @@ function rolesFromScript(script: ScriptCatalogItem): RoleDraft[] {
     player_name: '',
     player_gender: '',
   }));
+}
+
+function hasRoleDraft(roles: RoleDraft[]) {
+  return roles.some(role =>
+    !!(
+      role.role_name?.trim()
+      || role.gender
+      || (role.tags || []).length
+      || role.player_name?.trim()
+      || role.player_gender
+    ),
+  );
+}
+
+function shouldSaveCarpoolDraft(data: CarpoolDraft) {
+  return [
+    data.rawMessage,
+    data.generatedMessage,
+    data.title,
+    data.city,
+    data.eventDate,
+    data.startTime,
+    data.deadlineDate,
+    data.scriptName,
+    data.roleName,
+    data.roleNote,
+    data.subsidyDiscount,
+    data.subsidyNote,
+    data.storeName,
+    data.storeAddress,
+    data.storeSourceUrl,
+    data.storeVerifyNote,
+    data.leaderContact,
+    data.contactNote,
+    data.content,
+  ].some(item => item.trim())
+    || hasRoleDraft(data.scriptRoles)
+    || data.neededCount !== 1
+    || data.subsidyType !== 'none'
+    || data.subsidyAmount > 0
+    || data.boostAmount > 0
+    || data.showMore;
 }
 
 export default function CreateCarpool() {
@@ -223,6 +294,76 @@ export default function CreateCarpool() {
     leaderContact,
     content,
   }), [city, content, deadlineDate, deadlineTime, derivedNeededCount, derivedRoleName, eventDate, leaderContact, scriptName, startTime, subsidyAmount, subsidyDiscount, subsidyNote, subsidyType]);
+
+  const draftValue = useMemo<CarpoolDraft>(() => ({
+    rawMessage,
+    generatedMessage,
+    showMore,
+    title,
+    city,
+    eventDate,
+    dateExpired,
+    startTime,
+    deadlineDate,
+    deadlineTime,
+    scriptId,
+    scriptName,
+    scriptRoles,
+    roleName,
+    roleNote,
+    neededCount,
+    subsidyType,
+    subsidyAmount,
+    subsidyDiscount,
+    subsidyNote,
+    storeName,
+    storeId,
+    storeAddress,
+    storeSourceUrl,
+    storeVerifyNote,
+    leaderContact,
+    contactNote,
+    content,
+    boostAmount,
+  }), [boostAmount, city, contactNote, content, dateExpired, deadlineDate, deadlineTime, eventDate, generatedMessage, leaderContact, neededCount, rawMessage, roleName, roleNote, scriptId, scriptName, scriptRoles, showMore, startTime, storeAddress, storeId, storeName, storeSourceUrl, storeVerifyNote, subsidyAmount, subsidyDiscount, subsidyNote, subsidyType, title]);
+
+  const carpoolDraft = useDraftAutosave<CarpoolDraft>({
+    key: 'lc:draft:carpool:new',
+    version: 1,
+    value: draftValue,
+    shouldSave: shouldSaveCarpoolDraft,
+    onRestore: data => {
+      setRawMessage(data.rawMessage || '');
+      setGeneratedMessage(data.generatedMessage || '');
+      setShowMore(!!data.showMore);
+      setTitle(data.title || '');
+      setCity(data.city || '');
+      setEventDate(data.eventDate || '');
+      setDateExpired(!!data.dateExpired);
+      setStartTime(data.startTime || '');
+      setDeadlineDate(data.deadlineDate || '');
+      setDeadlineTime(data.deadlineTime || '18:00');
+      setScriptId(data.scriptId || '');
+      setScriptName(data.scriptName || '');
+      setScriptRoles((data.scriptRoles || []).map(role => ({ ...role, id: role.id || makeRoleId() })));
+      setRoleName(data.roleName || '');
+      setRoleNote(data.roleNote || '');
+      setNeededCount(data.neededCount || 1);
+      setSubsidyType(data.subsidyType || 'none');
+      setSubsidyAmount(data.subsidyAmount || 0);
+      setSubsidyDiscount(data.subsidyDiscount || '');
+      setSubsidyNote(data.subsidyNote || '');
+      setStoreName(data.storeName || '');
+      setStoreId(data.storeId || '');
+      setStoreAddress(data.storeAddress || '');
+      setStoreSourceUrl(data.storeSourceUrl || '');
+      setStoreVerifyNote(data.storeVerifyNote || '');
+      setLeaderContact(data.leaderContact || '');
+      setContactNote(data.contactNote || '');
+      setContent(data.content || '');
+      setBoostAmount(data.boostAmount || 0);
+    },
+  });
 
   const applyParsed = () => {
     if (!rawMessage.trim()) {
@@ -405,7 +546,10 @@ export default function CreateCarpool() {
         }),
       });
       const d = await r.json();
-      if (d.success) navigate('/carpools?published=1');
+      if (d.success) {
+        carpoolDraft.clearDraft();
+        navigate('/carpools?published=1');
+      }
       else setError(typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败'));
     } catch {
       setError('网络错误，请重试');
@@ -433,6 +577,12 @@ export default function CreateCarpool() {
 
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '30px 20px 80px' }}>
         <div style={{ display: 'grid', gap: 18 }}>
+          <DraftAutosaveNotice
+            savedAt={carpoolDraft.savedAt}
+            restoredAt={carpoolDraft.restoredAt}
+            error={carpoolDraft.error}
+            note="未发布的拼车会自动保存到当前浏览器，包含车次、角色座位和店家线索。"
+          />
           <section style={heroCardStyle}>
             <h2 style={sectionTitleStyle}>粘贴消息解析车次</h2>
             <Field label="原始群消息">
