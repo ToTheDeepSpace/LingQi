@@ -24,9 +24,9 @@ const SUBJECT_LABEL: Record<string, string> = {
 const SUBJECT_TYPES = ['creator', 'dm', 'store', 'takeaway', 'player'] as const;
 const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
 const TAB_HINT: Record<'red' | 'white' | 'black', string> = {
-  red: '好事：记录让人觉得值得推荐、值得记住的具体事件。',
-  white: '白榜：免费发帖，适合记录中性事实、补充线索、普通提醒，先留下公开记录。',
-  black: '坏事：记录违约、失联、骚扰、欺诈、严重服务不符等负面事件，公开期 30 天。',
+  red: '红榜：记录让人觉得值得推荐、值得记住的具体事件。',
+  white: '白榜：免费发帖，适合记录事实、补充线索、普通提醒，先留下公开记录。',
+  black: '黑榜：记录违约、失联、骚扰、欺诈、严重服务不符等负面事件，公开期 30 天。',
 };
 const RANKINGS_RETENTION_NOTE = '黑榜 30 天公开期不是删除记录，而是把“持续公开挂人”和“长期行业学习”分开：公开期结束后，必要记录仍可用于争议处理和安全审计，后续也会优先做去标识化的共性问题总结。欢迎投资机构、沉浸式娱乐从业者、店家、DM、委托师和技术合作者提供样本、规则建议与共建资源。';
 
@@ -219,9 +219,9 @@ function eventSummary(content: string) {
 }
 
 function eventKindCopy(type: Ranking['type']) {
-  if (type === 'red') return { label: '好事', color: '#8f4c43', bg: '#f8eee7', border: '#e6c7bd' };
-  if (type === 'black') return { label: '坏事', color: '#404a58', bg: '#f2f4f7', border: '#d7dce4' };
-  return { label: '中性', color: '#9b6a1e', bg: '#fffaf2', border: '#e4d4b3' };
+  if (type === 'red') return { label: '红', color: '#8f4c43', bg: '#f8eee7', border: '#e6c7bd' };
+  if (type === 'black') return { label: '黑', color: '#404a58', bg: '#f2f4f7', border: '#d7dce4' };
+  return { label: '白', color: '#9b6a1e', bg: '#fffaf2', border: '#e4d4b3' };
 }
 
 function voteCopy(voteType: MyVote['vote_type'], rankingType?: Ranking['type']) {
@@ -1246,9 +1246,9 @@ export default function Rankings() {
           boxShadow: '0 8px 20px rgba(102,70,30,0.05)',
         }}>
           <div style={{ width: 'min(100%, 316px)', display: 'flex', gap: 4, padding: 4, backgroundColor: '#fffaf2', border: '1px solid rgba(166,106,31,0.12)', borderRadius: 12 }}>
-            {tabBtn('red', '好事', '#8f4c43')}
-            {tabBtn('black', '坏事', '#475569')}
-            {tabBtn('white', '中性', '#b8860b')}
+            {tabBtn('red', '红', '#8f4c43')}
+            {tabBtn('black', '黑', '#475569')}
+            {tabBtn('white', '白', '#b8860b')}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 300px' }}>
             <FilterPill active={subjectTab === 'all'} onClick={() => setSubjectTab('all')}>全部</FilterPill>
@@ -1334,7 +1334,7 @@ export default function Rankings() {
             <p style={{ color: 'rgba(71,85,105,0.68)', marginBottom: 20 }}>
               {subjectTab !== 'all'
                 ? `${SUBJECT_LABEL[subjectTab] || subjectTab}暂无内容`
-                : (tab === 'red' ? '暂无好事记录' : tab === 'black' ? (blackView === 'expired' ? '暂无已过期坏事记录' : '暂无坏事记录') : '暂无中性记录')}
+                : (tab === 'red' ? '暂无红榜记录' : tab === 'black' ? (blackView === 'expired' ? '暂无已过期黑榜记录' : '暂无黑榜记录') : '暂无白榜记录')}
             </p>
             <Link to="/rankings/new" style={{ color: GOLD, fontSize: '0.875rem', textDecoration: 'underline' }}>
               成为第一个发布的人
