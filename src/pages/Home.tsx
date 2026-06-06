@@ -192,7 +192,7 @@ export default function Home() {
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <p style={{ fontSize: '1rem', color: MUTED, lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
-            先记录玩家遇到的具体事件，再沉淀成爱D墙、城市口碑榜和对象档案。<br />
+            先记录玩家遇到的具体事件，再沉淀成爱D墙、店家档案、城市口碑榜和对象档案。<br />
             每条公开记录都经过人工审核，黑榜公开期结束后，也可以去标识化沉淀为共性问题和社交礼仪。
           </p>
 
@@ -201,7 +201,7 @@ export default function Home() {
               { icon: '🏪', label: '店家事件', desc: '店面环境、服务质量、管理水平' },
               { icon: '🥡', label: '外卖榜', desc: '出餐速度、包装份量、踩雷记录' },
               { icon: '🎭', label: '玩家事件', desc: '素质、迟到率、历史评价' },
-              { icon: '🎬', label: '爱D墙', desc: 'DM 主页、工作地点、开本记录' },
+              { icon: '🎬', label: '爱D墙 / 店家档案', desc: 'DM 与店家的未认证档案' },
               { icon: '🌙', label: '城市榜单', desc: '赞扬值、口碑值、赞扬人数' },
             ].map(({ icon, label, desc }) => (
               <div key={label} style={{ padding: '22px 16px', borderRadius: 14, border: '1px solid rgba(192,57,43,0.18)', background: 'linear-gradient(180deg, rgba(254,242,242,0.9), rgba(255,255,255,0.92))', textAlign: 'center', boxShadow: '0 10px 28px rgba(31,41,55,0.05)' }}>
@@ -216,7 +216,7 @@ export default function Home() {
             <Link to="/rankings" style={homeReputationPrimaryLink}>
               进入事件榜
             </Link>
-            <Link to="/dm-wall" style={homeReputationGhostLink}>爱D墙</Link>
+            <Link to="/dm-wall" style={homeReputationGhostLink}>爱D墙 / 店家</Link>
             <Link to="/reputation/city" style={homeReputationGhostLink}>城市口碑榜</Link>
           </div>
         </div>

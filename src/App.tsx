@@ -123,7 +123,7 @@ function SiteFooter() {
             <FooterLink to="/carpools">拼车区</FooterLink>
             <FooterLink to="/rankings">红黑白榜</FooterLink>
             <FooterLink to="/reputation/city">城市口碑榜</FooterLink>
-            <FooterLink to="/dm-wall">爱D墙</FooterLink>
+            <FooterLink to="/dm-wall">爱D墙 / 店家</FooterLink>
             <FooterLink to="/wallet">我的契约币</FooterLink>
             <FooterLink to="/referrals">我的邀请</FooterLink>
           </FooterColumn>

@@ -12,9 +12,12 @@ const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 type AuthSession = { token: string; displayName: string; userId?: string };
+type DossierEntityType = 'dm' | 'store';
+type EntityFilter = 'all' | DossierEntityType;
 
 type DmDossier = {
   id: string;
+  entity_type?: DossierEntityType | null;
   dm_name: string;
   city?: string | null;
   workplace?: string | null;
@@ -25,6 +28,41 @@ type DmDossier = {
   claim_status?: 'unclaimed' | 'pending' | 'approved' | 'rejected';
   claimed_by?: string | null;
   created_at?: string;
+};
+
+const ENTITY_COPY: Record<DossierEntityType, {
+  filterLabel: string;
+  kindLabel: string;
+  nameLabel: string;
+  workplaceLabel: string;
+  profileLabel: string;
+  photoLabel: string;
+  notePlaceholder: string;
+  tagsLabel: string;
+  tagsPlaceholder: string;
+}> = {
+  dm: {
+    filterLabel: 'DM 档案',
+    kindLabel: 'DM',
+    nameLabel: 'DM 名称 *',
+    workplaceLabel: '工作地点 / 常驻店家 *',
+    profileLabel: '个人主页链接 *',
+    photoLabel: 'DM 照片 *',
+    notePlaceholder: '例如擅长本、开本风格、常驻店家补充。不要写隐私手机号。',
+    tagsLabel: '玩家标签',
+    tagsPlaceholder: '例：控场稳 / 陪伴感强 / 会加亡夫戏',
+  },
+  store: {
+    filterLabel: '店家档案',
+    kindLabel: '店家',
+    nameLabel: '店家名称 *',
+    workplaceLabel: '地址 / 商圈 / 常驻位置 *',
+    profileLabel: '店铺主页链接',
+    photoLabel: '店铺照片',
+    notePlaceholder: '例如房间环境、新本速度、常驻 DM、停车和交通情况。不要写隐私手机号。',
+    tagsLabel: '店家标签',
+    tagsPlaceholder: '例：环境好 / 隔音好 / 新本快 / 空调足',
+  },
 };
 
 function getAuth(): AuthSession | null {
@@ -46,27 +84,35 @@ function normalizeUrl(url: string) {
   return `https://${url}`;
 }
 
+function normalizeEntityType(value?: string | null): DossierEntityType {
+  return value === 'store' ? 'store' : 'dm';
+}
+
 export default function DmWall() {
   const navigate = useNavigate();
   const auth = getAuth();
   const [items, setItems] = useState<DmDossier[]>([]);
   const [loadedKey, setLoadedKey] = useState('');
   const [city, setCity] = useState('all');
+  const [entityType, setEntityType] = useState<EntityFilter>('all');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
+  const [form, setForm] = useState({ entityType: 'dm' as DossierEntityType, dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [claimingId, setClaimingId] = useState('');
 
   const cityOptions = useMemo(() => ['all', ...CITIES], []);
-  const requestKey = useMemo(() => `${city}|${query.trim()}`, [city, query]);
+  const formCityOptions = useMemo(() => ['', ...CITIES], []);
+  const requestKey = useMemo(() => `${city}|${entityType}|${query.trim()}`, [city, entityType, query]);
   const loading = loadedKey !== requestKey;
+  const activeFormCopy = ENTITY_COPY[form.entityType];
 
   const loadDossiers = useCallback((signal?: AbortSignal) => {
-    const nextKey = `${city}|${query.trim()}`;
+    const nextKey = `${city}|${entityType}|${query.trim()}`;
     const params = new URLSearchParams();
     if (city !== 'all') params.set('city', city);
+    if (entityType !== 'all') params.set('entityType', entityType);
     if (query.trim()) params.set('q', query.trim());
     fetch(`${API}/lc/dm-dossiers?${params}`, { signal })
       .then(r => r.json())
@@ -87,7 +133,7 @@ export default function DmWall() {
       .finally(() => {
         if (!signal?.aborted) setLoadedKey(nextKey);
       });
-  }, [city, query]);
+  }, [city, entityType, query]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,6 +159,7 @@ export default function DmWall() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
         body: JSON.stringify({
+          entityType: form.entityType,
           dmName: form.dmName.trim(),
           city: form.city.trim(),
           workplace: form.workplace.trim(),
@@ -120,7 +167,7 @@ export default function DmWall() {
           photoUrl: form.photoUrl.trim(),
           note: form.note.trim(),
           tags: form.tags.split(/[，,、/\n]/).map(tag => tag.trim()).filter(Boolean),
-          photoFiles: form.photoUrl ? [{ name: 'DM 照片', url: form.photoUrl, type: 'image/*' }] : [],
+          photoFiles: form.photoUrl ? [{ name: `${ENTITY_COPY[form.entityType].kindLabel} 照片`, url: form.photoUrl, type: 'image/*' }] : [],
         }),
       });
       const d = await r.json();
@@ -129,9 +176,9 @@ export default function DmWall() {
         setMessage({ text: errText, ok: false });
         return;
       }
-      setMessage({ text: '已提交，管理员审核通过后会公开到爱D墙。', ok: true });
+      setMessage({ text: '已提交，管理员审核通过后会公开到档案墙。', ok: true });
       setShowForm(false);
-      setForm({ dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
+      setForm({ entityType: form.entityType, dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
       loadDossiers();
     } catch {
       setMessage({ text: '网络错误，请稍后再试', ok: false });
@@ -146,7 +193,11 @@ export default function DmWall() {
       navigate('/login');
       return;
     }
-    const claimNote = window.prompt(`认领「${item.dm_name}」档案，请简单写明你如何证明这是你的主页`, '我是该 DM 本人，主页/手机号/实名信息可供后台核验');
+    const kind = normalizeEntityType(item.entity_type);
+    const claimNote = window.prompt(
+      `认领「${item.dm_name}」${ENTITY_COPY[kind].kindLabel}档案，请简单写明你如何证明这是你的主页或店铺`,
+      kind === 'store' ? '我是该店家负责人，营业执照/店铺后台/实名信息可供后台核验' : '我是该 DM 本人，主页/手机号/实名信息可供后台核验',
+    );
     if (claimNote === null) return;
     setClaimingId(item.id);
     setMessage(null);
@@ -176,14 +227,14 @@ export default function DmWall() {
       <section style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '44px 20px 30px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
           <div style={{ maxWidth: 760 }}>
-            <p style={{ margin: '0 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>DM 档案墙</p>
-            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>爱D墙</h1>
+            <p style={{ margin: '0 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>未认证档案墙</p>
+            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>爱D墙 / 店家档案</h1>
             <p style={{ margin: '14px 0 0', color: MUTED, lineHeight: 1.8 }}>
-              玩家可以先为还没入驻灵契的 DM 建档，补充主页、工作地点和照片；DM 入驻后可认领自己的档案，逐步沉淀成城市新人入门时能看懂的口碑百科。
+              玩家可以先为还没入驻灵契的 DM 和店家建档，补充主页、城市、工作地点或店铺位置；本人或店家入驻后可认领自己的档案，逐步沉淀成城市新人入门时能看懂的口碑百科。
             </p>
           </div>
           <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={primaryButton}>
-            {showForm ? '收起建档' : '+ 创建 DM 档案'}
+            {showForm ? '收起建档' : '+ 创建未认证档案'}
           </button>
         </div>
       </section>
@@ -195,7 +246,12 @@ export default function DmWall() {
               <option key={option} value={option}>{option === 'all' ? '全部城市' : option}</option>
             ))}
           </select>
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索 DM 名" style={{ ...inputStyle, minWidth: 180, flex: '1 1 220px' }} />
+          <select value={entityType} onChange={e => setEntityType(e.target.value as EntityFilter)} style={inputStyle}>
+            <option value="all">全部档案</option>
+            <option value="dm">DM 档案</option>
+            <option value="store">店家档案</option>
+          </select>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索 DM / 店家名称" style={{ ...inputStyle, minWidth: 180, flex: '1 1 220px' }} />
           <Link to="/reputation/city" style={ghostButton}>看城市口碑榜</Link>
           <Link to="/boundary-votes" style={ghostButton}>社交边界投票</Link>
         </div>
@@ -208,22 +264,26 @@ export default function DmWall() {
 
         {showForm && (
           <section style={formCard}>
-            <h2 style={{ margin: '0 0 12px', fontFamily: 'var(--font-serif)', fontSize: '1.35rem' }}>创建未认领 DM 档案</h2>
+            <h2 style={{ margin: '0 0 12px', fontFamily: 'var(--font-serif)', fontSize: '1.35rem' }}>创建未认证档案</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
-              <Field label="DM 名称 *" value={form.dmName} onChange={value => updateForm({ dmName: value })} />
-              <Field label="城市 *" value={form.city} onChange={value => updateForm({ city: value })} placeholder="例：上海" />
-              <Field label="工作地点 / 常驻店家 *" value={form.workplace} onChange={value => updateForm({ workplace: value })} />
-              <Field label="个人主页链接 *" value={form.profileUrl} onChange={value => updateForm({ profileUrl: value })} placeholder="抖音 / 小红书 / 微博主页" />
+              <SelectField label="档案类型 *" value={form.entityType} onChange={value => updateForm({ entityType: value as DossierEntityType })} options={[
+                { value: 'dm', label: 'DM 档案' },
+                { value: 'store', label: '店家档案' },
+              ]} />
+              <SelectField label="城市 *" value={form.city} onChange={value => updateForm({ city: value })} options={formCityOptions.map(option => ({ value: option, label: option || '请选择城市' }))} />
+              <Field label={activeFormCopy.nameLabel} value={form.dmName} onChange={value => updateForm({ dmName: value })} />
+              <Field label={activeFormCopy.workplaceLabel} value={form.workplace} onChange={value => updateForm({ workplace: value })} />
+              <Field label={activeFormCopy.profileLabel} value={form.profileUrl} onChange={value => updateForm({ profileUrl: value })} placeholder={form.entityType === 'store' ? '大众点评 / 小红书 / 抖音店铺主页，可后补' : '抖音 / 小红书 / 微博主页'} />
             </div>
             <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'end' }}>
-              <Field label="DM 照片 *" value={form.photoUrl} onChange={value => updateForm({ photoUrl: value })} placeholder="上传后自动填入，也可粘贴图片链接" />
+              <Field label={activeFormCopy.photoLabel} value={form.photoUrl} onChange={value => updateForm({ photoUrl: value })} placeholder="上传后自动填入，也可粘贴图片链接" />
               {auth && <ImageUpload token={auth.token} scope="dm-dossier" label="上传照片" onUploaded={url => updateForm({ photoUrl: url })} />}
             </div>
             <label style={{ display: 'block', marginTop: 12 }}>
               <span style={labelStyle}>补充说明</span>
-              <textarea value={form.note} onChange={e => updateForm({ note: e.target.value })} rows={4} placeholder="例如擅长本、开本风格、常驻店家补充。不要写隐私手机号。" style={{ ...inputStyle, width: '100%', resize: 'vertical' }} />
+              <textarea value={form.note} onChange={e => updateForm({ note: e.target.value })} rows={4} placeholder={activeFormCopy.notePlaceholder} style={{ ...inputStyle, width: '100%', resize: 'vertical' }} />
             </label>
-            <Field label="玩家标签" value={form.tags} onChange={value => updateForm({ tags: value })} placeholder="例：控场稳 / 陪伴感强 / 会加亡夫戏" />
+            <Field label={activeFormCopy.tagsLabel} value={form.tags} onChange={value => updateForm({ tags: value })} placeholder={activeFormCopy.tagsPlaceholder} />
             <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
               <button onClick={submit} disabled={submitting} style={{ ...primaryButton, opacity: submitting ? 0.55 : 1 }}>{submitting ? '提交中...' : '提交审核'}</button>
               <button onClick={() => setShowForm(false)} style={ghostButton}>取消</button>
@@ -234,41 +294,57 @@ export default function DmWall() {
         {loading ? (
           <p style={{ color: MUTED, padding: '36px 0' }}>加载中...</p>
         ) : items.length === 0 ? (
-          <div style={emptyStyle}>当前筛选下暂无公开 DM 档案。你可以先创建一个，审核后会出现在爱D墙。</div>
+          <div style={emptyStyle}>当前筛选下暂无公开档案。你可以先创建一个，审核后会出现在档案墙。</div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
-            {items.map(item => (
-              <article key={item.id} style={cardStyle}>
-                <img src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 10, background: '#fffaf2', marginBottom: 12 }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
-                  <h2 style={{ margin: 0, fontSize: 18 }}>{item.dm_name}</h2>
-                  <span style={{ ...badgeStyle, color: item.claim_status === 'approved' ? '#15803d' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : 'rgba(166,106,31,0.10)' }}>
-                    {item.claim_status === 'approved' ? '已认领' : item.claim_status === 'pending' ? '认领审核中' : '未认领'}
-                  </span>
-                </div>
-                <p style={{ margin: '0 0 8px', color: MUTED, lineHeight: 1.7, fontSize: 14 }}>
-                  {item.city || '未知城市'} · {item.workplace || '工作地点待补充'}
-                </p>
-                {item.note && <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.78)', lineHeight: 1.7, fontSize: 14 }}>{item.note}</p>}
-                {item.tags && item.tags.length > 0 && (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                    {item.tags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
+            {items.map(item => {
+              const kind = normalizeEntityType(item.entity_type);
+              const copy = ENTITY_COPY[kind];
+              return (
+                <article key={item.id} style={cardStyle}>
+                  <img src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 10, background: '#fffaf2', marginBottom: 12 }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
+                    <span style={{ ...badgeStyle, color: '#275389', background: 'rgba(239,246,255,0.88)' }}>{copy.kindLabel}</span>
+                    <h2 style={{ margin: 0, fontSize: 18 }}>{item.dm_name}</h2>
+                    <span style={{ ...badgeStyle, color: item.claim_status === 'approved' ? '#15803d' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : 'rgba(166,106,31,0.10)' }}>
+                      {item.claim_status === 'approved' ? '已认领' : item.claim_status === 'pending' ? '认领审核中' : '未认领'}
+                    </span>
                   </div>
-                )}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto' }}>
-                  {item.profile_url && <a href={normalizeUrl(item.profile_url)} target="_blank" rel="noreferrer" style={ghostButton}>个人主页</a>}
-                  {item.claim_status === 'approved' && item.claimed_by
-                    ? <Link to={`/explore/${item.claimed_by}`} style={ghostButton}>灵契主页</Link>
-                    : <button onClick={() => claim(item)} disabled={claimingId === item.id || item.claim_status === 'pending'} style={ghostButton}>
-                        {claimingId === item.id ? '提交中...' : item.claim_status === 'pending' ? '认领审核中' : '我是本人，认领'}
-                      </button>}
-                </div>
-              </article>
-            ))}
+                  <p style={{ margin: '0 0 8px', color: MUTED, lineHeight: 1.7, fontSize: 14 }}>
+                    {item.city || '未知城市'} · {item.workplace || (kind === 'store' ? '店铺位置待补充' : '工作地点待补充')}
+                  </p>
+                  {item.note && <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.78)', lineHeight: 1.7, fontSize: 14 }}>{item.note}</p>}
+                  {item.tags && item.tags.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                      {item.tags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto' }}>
+                    {item.profile_url && <a href={normalizeUrl(item.profile_url)} target="_blank" rel="noreferrer" style={ghostButton}>{kind === 'store' ? '店铺主页' : '个人主页'}</a>}
+                    {item.claim_status === 'approved' && item.claimed_by
+                      ? (kind === 'dm' ? <Link to={`/explore/${item.claimed_by}`} style={ghostButton}>灵契主页</Link> : <span style={ghostStatic}>已绑定店家账号</span>)
+                      : <button onClick={() => claim(item)} disabled={claimingId === item.id || item.claim_status === 'pending'} style={ghostButton}>
+                          {claimingId === item.id ? '提交中...' : item.claim_status === 'pending' ? '认领审核中' : kind === 'store' ? '我是店家，认领' : '我是本人，认领'}
+                        </button>}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
     </main>
+  );
+}
+
+function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
+  return (
+    <label style={{ display: 'block' }}>
+      <span style={labelStyle}>{label}</span>
+      <select value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, width: '100%' }}>
+        {options.map(option => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -285,6 +361,7 @@ const labelStyle: React.CSSProperties = { display: 'block', color: 'rgba(71,85,1
 const inputStyle: React.CSSProperties = { boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: '1px solid rgba(166,106,31,0.20)', background: '#fff', color: INK, outline: 'none', fontSize: 14 };
 const primaryButton: React.CSSProperties = { border: 'none', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: '#fffdf8', padding: '11px 18px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
 const ghostButton: React.CSSProperties = { border: '1px solid rgba(166,106,31,0.22)', borderRadius: 10, background: '#fffaf2', color: GOLD, padding: '9px 13px', fontWeight: 800, cursor: 'pointer', textDecoration: 'none', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+const ghostStatic: React.CSSProperties = { ...ghostButton, cursor: 'default' };
 const formCard: React.CSSProperties = { marginBottom: 18, padding: 18, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)' };
 const cardStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', padding: 14, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)', minHeight: 0 };
 const badgeStyle: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.14)', fontSize: 12, fontWeight: 900 };

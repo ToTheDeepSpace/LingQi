@@ -4708,6 +4708,7 @@ app.get('/api/lc/reputation/dossier', async (req, res) => {
 app.get('/api/lc/dm-dossiers', async (req, res) => {
   try {
     const city = cleanText(req.query.city, 80);
+    const entityType = cleanText(req.query.entityType ?? req.query.entity_type, 20);
     const q = cleanText(req.query.q, 80);
     let query = supabase
       .from('lc_dm_dossiers')
@@ -4717,6 +4718,7 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(120);
     if (city && city !== 'all') query = query.eq('city', city);
+    if (entityType === 'dm' || entityType === 'store') query = query.eq('entity_type', entityType);
     if (q) query = query.ilike('dm_name', `%${q}%`);
     const { data, error } = await query;
     if (error) {
@@ -4725,6 +4727,7 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
     }
     res.json(ok((data || []).map((row: Record<string, unknown>) => ({
       id: row.id,
+      entity_type: row.entity_type || 'dm',
       dm_name: row.dm_name,
       city: row.city,
       workplace: row.workplace,
@@ -4746,7 +4749,9 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
 
-    const dmName = cleanText(req.body?.dmName ?? req.body?.dm_name, 80);
+    const entityType = cleanText(req.body?.entityType ?? req.body?.entity_type, 20) === 'store' ? 'store' : 'dm';
+    const entityLabel = entityType === 'store' ? '店家' : 'DM';
+    const dmName = cleanText(req.body?.dmName ?? req.body?.dm_name ?? req.body?.name, 80);
     const city = cleanText(req.body?.city, 80);
     const workplace = cleanText(req.body?.workplace, 160);
     const profileUrl = cleanText(req.body?.profileUrl ?? req.body?.profile_url, 600);
@@ -4754,19 +4759,20 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     const tags = cleanTextArray(req.body?.tags, 10, 18);
     const rawFiles = Array.isArray(req.body?.photoFiles ?? req.body?.photo_files) ? (req.body?.photoFiles ?? req.body?.photo_files) : [];
     const photoFiles = rawFiles.slice(0, 4).map((file: Record<string, unknown>) => ({
-      name: cleanText(file.name, 120) || 'DM 照片',
+      name: cleanText(file.name, 120) || `${entityLabel} 照片`,
       url: cleanText(file.url, 800),
       type: cleanText(file.type, 80) || null,
     })).filter((file: { url: string }) => file.url);
     const photoUrl = cleanText(req.body?.photoUrl ?? req.body?.photo_url, 800) || photoFiles[0]?.url || '';
 
-    if (!dmName) return res.status(400).json(err(new Error('请填写 DM 名称')));
+    if (!dmName) return res.status(400).json(err(new Error(`请填写${entityLabel}名称`)));
     if (!city) return res.status(400).json(err(new Error('请选择城市')));
-    if (!workplace) return res.status(400).json(err(new Error('请填写工作地点或常驻店家')));
-    if (!profileUrl) return res.status(400).json(err(new Error('请填写 DM 个人主页链接')));
-    if (!photoUrl) return res.status(400).json(err(new Error('请上传一张 DM 照片')));
+    if (!workplace) return res.status(400).json(err(new Error(entityType === 'store' ? '请填写店家地址、商圈或常驻位置' : '请填写工作地点或常驻店家')));
+    if (entityType === 'dm' && !profileUrl) return res.status(400).json(err(new Error('请填写 DM 个人主页链接')));
+    if (entityType === 'dm' && !photoUrl) return res.status(400).json(err(new Error('请上传一张 DM 照片')));
 
     const { data, error: insErr } = await supabase.from('lc_dm_dossiers').insert({
+      entity_type: entityType,
       dm_name: dmName,
       city,
       workplace,
@@ -4786,12 +4792,12 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     }
 
     await logSecurityEvent(req, {
-      action: 'dm_dossier_submitted',
+      action: entityType === 'store' ? 'store_dossier_submitted' : 'dm_dossier_submitted',
       targetType: 'dm_dossier',
       targetId: data?.id,
-      metadata: { dm_name: dmName, city },
+      metadata: { entity_type: entityType, dm_name: dmName, city },
     });
-    res.json(ok({ id: data?.id, status: 'pending' }));
+    res.json(ok({ id: data?.id, entity_type: entityType, status: 'pending' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -4803,7 +4809,7 @@ app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, async (req, res) => {
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     const claimNote = cleanText(req.body?.claimNote ?? req.body?.claim_note, 600);
     const { data: dossier, error: findErr } = await supabase.from('lc_dm_dossiers')
-      .select('id, status, dm_name, claim_status')
+      .select('id, status, entity_type, dm_name, claim_status')
       .eq('id', req.params.id)
       .single();
     if (findErr) {
@@ -4822,10 +4828,10 @@ app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, async (req, res) => {
     if (updErr) throw updErr;
 
     await logSecurityEvent(req, {
-      action: 'dm_dossier_claim_submitted',
+      action: dossier.entity_type === 'store' ? 'store_dossier_claim_submitted' : 'dm_dossier_claim_submitted',
       targetType: 'dm_dossier',
       targetId: req.params.id,
-      metadata: { dm_name: dossier.dm_name },
+      metadata: { entity_type: dossier.entity_type || 'dm', dm_name: dossier.dm_name },
     });
     res.json(ok({ id: req.params.id, claim_status: 'pending' }));
   } catch (e) { res.status(500).json(err(e)); }

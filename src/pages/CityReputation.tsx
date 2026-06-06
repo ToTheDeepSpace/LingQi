@@ -121,7 +121,7 @@ export default function CityReputation() {
           <Segment active={sort === 'praise'} onClick={() => setSort('praise')}>赞扬榜</Segment>
           <Segment active={sort === 'people'} onClick={() => setSort('people')}>人气榜</Segment>
           <Segment active={sort === 'new'} onClick={() => setSort('new')}>新晋榜</Segment>
-          <Link to="/dm-wall" style={ghostButton}>爱D墙</Link>
+          <Link to="/dm-wall" style={ghostButton}>爱D墙 / 店家</Link>
         </div>
 
         {loading ? (
@@ -129,7 +129,7 @@ export default function CityReputation() {
         ) : error ? (
           <div style={emptyStyle}>{error}</div>
         ) : items.length === 0 ? (
-          <div style={emptyStyle}>当前城市暂无可聚合的对象档案。先去红黑榜发布事件，或去爱D墙创建 DM 档案。</div>
+          <div style={emptyStyle}>当前城市暂无可聚合的对象档案。先去红黑榜发布事件，或去爱D墙创建 DM / 店家档案。</div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
             {items.map((item, index) => (

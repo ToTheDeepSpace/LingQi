@@ -938,7 +938,7 @@ export default function Rankings() {
             <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 14 }} />
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 8 }}>灵契红黑榜事件榜</h1>
             <p style={{ color: 'rgba(71,85,105,0.80)', fontSize: '0.95rem' }}>
-              玩家遇到的具体事件在这里公开记录，再沉淀到爱D墙、城市口碑榜和对象档案。
+              玩家遇到的具体事件在这里公开记录，再沉淀到爱D墙、店家档案、城市口碑榜和对象档案。
             </p>
           </div>
           {auth && (
@@ -981,7 +981,7 @@ export default function Rankings() {
           </Link>
           <Link to="/dm-wall"
             style={{ padding: '11px 16px', borderRadius: 12, border: '1px solid rgba(166,106,31,0.22)', color: GOLD, background: '#fffdf8', fontWeight: 800, fontSize: '0.86rem', textDecoration: 'none', flexShrink: 0 }}>
-            爱D墙
+            爱D墙 / 店家
           </Link>
         </div>
         <p style={{ margin: '-2px 0 16px', color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.7 }}>

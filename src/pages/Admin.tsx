@@ -270,6 +270,7 @@ type SiteMessage = {
 
 type DmDossierReview = {
   id: string;
+  entity_type?: 'dm' | 'store' | null;
   dm_name: string;
   city?: string | null;
   workplace?: string | null;
@@ -761,7 +762,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             { label: '委托需求', value: commissions.length, color: '#fbbf24' },
             { label: '拼车', value: carpools.length, color: '#14b8a6' },
             { label: '剧本库', value: scriptContributions.length, color: '#f59e0b' },
-            { label: '爱D墙', value: dmDossiers.length, color: '#f472b6' },
+            { label: '未认证档案', value: dmDossiers.length, color: '#f472b6' },
             { label: '举报', value: reports.length, color: '#f87171' },
             { label: '站内信', value: siteMessages.length, color: '#38bdf8' },
             { label: '安全日志', value: securityEvents.length, color: '#fb923c' },
@@ -786,7 +787,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
           <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
           <button style={tabStyle(tab === 'scriptContributions')} onClick={() => setTab('scriptContributions')}>剧本库 {scriptContributions.length > 0 && `(${scriptContributions.length})`}</button>
-          <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>爱D墙 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
+          <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>未认证档案 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
           <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
           <button style={tabStyle(tab === 'messages')} onClick={() => setTab('messages')}>站内信 {siteMessages.length > 0 && `(${siteMessages.length})`}</button>
           <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
@@ -1074,11 +1075,14 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
 
             {tab === 'dmDossiers' && (
-              <ListEmpty empty={dmDossiers.length === 0} text="暂无待审核爱D墙档案">
-                {dmDossiers.map(item => (
-                  <Row key={item.id} accent="#f472b6">
+              <ListEmpty empty={dmDossiers.length === 0} text="暂无待审核未认证档案">
+                {dmDossiers.map(item => {
+                  const entityType = item.entity_type === 'store' ? 'store' : 'dm';
+                  const entityLabel = entityType === 'store' ? '店家' : 'DM';
+                  return (
+                  <Row key={item.id} accent={entityType === 'store' ? '#38bdf8' : '#f472b6'}>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={item.dm_name} pill={item.status === 'pending' ? '爱D墙建档' : 'DM 认领'} />
+                      <TitleLine title={item.dm_name} pill={item.status === 'pending' ? `${entityLabel}建档` : `${entityLabel}认领`} />
                       <Meta>
                         {item.city || '未知城市'}
                         {item.workplace ? ` · ${item.workplace}` : ''}
@@ -1108,7 +1112,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'dmDossier')}>拒绝</ActionButton>
                     </Actions>
                   </Row>
-                ))}
+                  );
+                })}
               </ListEmpty>
             )}
 
