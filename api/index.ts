@@ -2574,7 +2574,7 @@ const VOTE_CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function voteRefundAmount(voteType: RankingVoteType, rankingType?: string | null) {
   if (rankingType === 'black') return 0;
-  return voteType === 'joy' ? 0 : 1;
+  return voteType === 'like' ? 1 : 0;
 }
 
 function serializeMyVote(vote: RankingVoteRow, rankingType?: string | null) {
@@ -5473,10 +5473,7 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     if (!targetRanking) return res.status(404).json(err(new Error('帖子不存在')));
     if (targetRanking.status !== 'approved') return res.status(400).json(err(new Error('只有已公开内容可以互动')));
     if (targetRanking.type === 'black' && !['like', 'dislike'].includes(voteType)) {
-      return res.status(400).json(err(new Error('黑榜只开放免费赞同和反对；补充事实可以顺带写评论')));
-    }
-    if (targetRanking.type !== 'black' && voteType === 'dislike') {
-      return res.status(400).json(err(new Error('红榜和白榜不开放反对票；负面经历请发布黑榜、补充评论或提交举报复核')));
+      return res.status(400).json(err(new Error('黑榜只开放免费同意和反对；补充事实可以顺带写评论')));
     }
 
     const { data, error: voteErr } = await supabase.rpc('lc_apply_ranking_vote', {

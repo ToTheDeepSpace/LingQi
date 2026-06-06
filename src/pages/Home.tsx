@@ -205,7 +205,7 @@ export default function Home() {
               { icon: '🥡', label: '外卖榜', desc: '出餐速度、包装份量、踩雷记录' },
               { icon: '🎭', label: '玩家事件', desc: '素质、迟到率、历史评价' },
               { icon: '🎬', label: '爱D墙 / 店家档案', desc: 'DM 与店家的未认证档案' },
-              { icon: '🌙', label: '城市榜单', desc: '赞扬值、口碑值、赞扬人数' },
+              { icon: '🌙', label: '城市榜单', desc: '打榜值、口碑值、打榜人数' },
             ].map(({ icon, label, desc }) => (
               <div key={label} style={{ padding: '22px 16px', borderRadius: 14, border: '1px solid rgba(192,57,43,0.18)', background: 'linear-gradient(180deg, rgba(254,242,242,0.9), rgba(255,255,255,0.92))', textAlign: 'center', boxShadow: '0 10px 28px rgba(31,41,55,0.05)' }}>
                 <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>

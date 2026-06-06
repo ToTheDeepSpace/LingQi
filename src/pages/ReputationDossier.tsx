@@ -136,9 +136,9 @@ export default function ReputationDossier() {
         ) : data ? (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
-              <Metric label="赞扬值" value={data.metrics.praise_value} />
+              <Metric label="打榜值" value={data.metrics.praise_value} />
               <Metric label="口碑值" value={data.metrics.reputation_value} />
-              <Metric label="赞扬人数" value={data.metrics.praise_people} />
+              <Metric label="打榜人数" value={data.metrics.praise_people} />
               <Metric label="事件数" value={data.metrics.event_count} />
             </div>
 
@@ -163,7 +163,7 @@ export default function ReputationDossier() {
                       </div>
                       <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.86)', lineHeight: 1.75 }}>{event.content}</p>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: 'rgba(71,85,105,0.68)', fontSize: 13 }}>
-                        <span>赞扬 {event.likes || 0}</span>
+                        <span>打榜 {event.likes || 0}</span>
                         <span>欢乐 {event.joys || 0}</span>
                         {event.dislikes > 0 && <span>争议 {event.dislikes}</span>}
                         <Link to="/rankings" style={{ color: GOLD, textDecoration: 'none', fontWeight: 800 }}>去事件榜</Link>

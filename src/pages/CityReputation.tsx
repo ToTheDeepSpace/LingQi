@@ -92,7 +92,7 @@ export default function CityReputation() {
           <p style={{ margin: '18px 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>城市口碑百科</p>
           <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>城市口碑榜</h1>
           <p style={{ margin: '14px 0 0', color: MUTED, lineHeight: 1.8, maxWidth: 760 }}>
-            这里不是单条红黑榜，而是把玩家遇到的事件沉淀成城市里的 DM、店家、剧本和角色参考。赞扬值代表打榜强度，口碑值代表多人认可和信息质量。
+            这里不是单条红黑榜，而是把玩家遇到的事件沉淀成城市里的 DM、店家、剧本和角色参考。打榜值代表真金白银支持强度，口碑值代表多人认可和信息质量。
           </p>
         </div>
       </section>
@@ -121,7 +121,7 @@ export default function CityReputation() {
             {Object.entries(SUBJECT_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
           <Segment active={sort === 'composite'} onClick={() => setSort('composite')}>综合榜</Segment>
-          <Segment active={sort === 'praise'} onClick={() => setSort('praise')}>赞扬榜</Segment>
+          <Segment active={sort === 'praise'} onClick={() => setSort('praise')}>打榜排行</Segment>
           <Segment active={sort === 'people'} onClick={() => setSort('people')}>人气榜</Segment>
           <Segment active={sort === 'new'} onClick={() => setSort('new')}>新晋榜</Segment>
           <Link to="/dm-wall" style={ghostButton}>爱D墙 / 店家</Link>
@@ -148,9 +148,9 @@ export default function CityReputation() {
                   <span style={typeBadge}>{item.black_count > 0 ? '含争议记录' : '正向沉淀'}</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
-                  <Metric label="赞扬值" value={item.praise_value} />
+                  <Metric label="打榜值" value={item.praise_value} />
                   <Metric label="口碑值" value={item.reputation_value} />
-                  <Metric label="赞扬人数" value={item.praise_people} />
+                  <Metric label="打榜人数" value={item.praise_people} />
                 </div>
                 <p style={{ margin: '0 0 10px', color: MUTED, fontSize: 13, lineHeight: 1.7 }}>
                   {item.event_count} 条事件 · 红 {item.red_count} · 白 {item.white_count} · 黑 {item.black_count} · 评论 {item.comment_count}
