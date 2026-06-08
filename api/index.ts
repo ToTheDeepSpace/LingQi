@@ -3,6 +3,7 @@
 import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
+import { createTencentPgClient } from './tencentPgSupabase.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
@@ -76,11 +77,13 @@ type TencentCloudSdk = {
   };
 };
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const useTencentPg = Boolean(process.env.DATABASE_URL || process.env.PGHOST);
+const supabase = useTencentPg ? createTencentPgClient() : createClient(SUPABASE_URL, SUPABASE_KEY);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const app = express();
 app.use(cors());
+app.use('/uploads', express.static(process.env.LOCAL_UPLOAD_ROOT || `${process.cwd()}/public/uploads`));
 app.use(express.json({
   limit: '25mb',
   verify: (req, _res, buf) => {
@@ -1367,7 +1370,7 @@ async function sanitizeProfileRolePreferences(input: unknown): Promise<ProfileRo
   if (scriptsErr && isMissingRelation(scriptsErr, 'scripts')) return [];
   if (scriptsErr) throw scriptsErr;
 
-  const scriptMap = new Map((scripts || []).map(script => {
+  const scriptMap = new Map<string, { id: string; name: string; roles: CarpoolRoleDraft[] }>((scripts || []).map(script => {
     const row = script as Record<string, unknown>;
     return [String(row.id), {
       id: String(row.id),
