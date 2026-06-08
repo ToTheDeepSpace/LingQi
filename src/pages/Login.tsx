@@ -72,6 +72,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [referralOwner, setReferralOwner] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -155,6 +156,10 @@ export default function Login() {
   };
 
   const startWechatLogin = async () => {
+    if (!acceptedTerms) {
+      setError('请先阅读并同意用户协议和隐私政策');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -180,6 +185,7 @@ export default function Login() {
     if (mode === 'sms' && !code.trim()) { setError('请填写验证码'); return; }
     if (mode === 'password' && (!password.trim() || password.length < 4)) { setError('密码至少4位'); return; }
     if (mode === 'password' && isRegister && !name.trim()) { setError('请填写昵称'); return; }
+    if (!acceptedTerms) { setError('请先阅读并同意用户协议和隐私政策'); return; }
     setLoading(true);
     setError('');
     try {
@@ -318,17 +324,44 @@ export default function Login() {
                 </>
               )}
 
-              <button type="submit" disabled={loading}
+              <label style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                padding: '12px 14px',
+                borderRadius: 12,
+                border: '1px solid rgba(201,146,46,0.2)',
+                background: 'rgba(255,255,255,0.72)',
+                color: MUTED,
+                fontSize: '0.78rem',
+                lineHeight: 1.75,
+              }}>
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={e => setAcceptedTerms(e.target.checked)}
+                  style={{ marginTop: 4, width: 16, height: 16, accentColor: GOLD, flexShrink: 0 }}
+                />
+                <span>
+                  我已阅读并同意
+                  <Link to="/terms" target="_blank" style={{ color: '#925f18', fontWeight: 850, textDecoration: 'none', margin: '0 4px' }}>《用户协议》</Link>
+                  和
+                  <Link to="/privacy" target="_blank" style={{ color: '#925f18', fontWeight: 850, textDecoration: 'none', margin: '0 4px' }}>《隐私政策》</Link>
+                  ，知悉红黑白榜、委托、拼车、契约币、审核和线下合作责任规则。
+                </span>
+              </label>
+
+              <button type="submit" disabled={loading || !acceptedTerms}
                 style={{
-                  marginTop: 4, padding: '13px', borderRadius: 10, border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
-                  background: loading ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                  color: loading ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 800, fontSize: '0.9rem',
+                  marginTop: 4, padding: '13px', borderRadius: 10, border: 'none', cursor: loading || !acceptedTerms ? 'not-allowed' : 'pointer',
+                  background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                  color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 800, fontSize: '0.9rem',
                 }}>
                 {loading ? '处理中...' : mode === 'sms' ? '验证并登录' : isRegister ? '注册并登录' : '登录'}
               </button>
 
-              <button type="button" onClick={startWechatLogin} disabled={loading}
-                style={{ padding: '12px', borderRadius: 10, border: '1px solid rgba(34,197,94,0.26)', background: '#f0fdf4', color: '#166534', fontWeight: 850, cursor: loading ? 'not-allowed' : 'pointer' }}>
+              <button type="button" onClick={startWechatLogin} disabled={loading || !acceptedTerms}
+                style={{ padding: '12px', borderRadius: 10, border: '1px solid rgba(34,197,94,0.26)', background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : '#f0fdf4', color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : '#166534', fontWeight: 850, cursor: loading || !acceptedTerms ? 'not-allowed' : 'pointer' }}>
                 微信扫码登录
               </button>
 
