@@ -1,0 +1,24 @@
+<view class="page">
+  <view class="hero compact">
+    <view class="eyebrow">委托需求墙</view>
+    <view class="title">富婆富哥们挂任务的地方</view>
+    <view class="subtitle">需要谁、哪天、在哪、出什么角色，都可以先沉淀成公开需求。</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中...</view>
+  <view wx:elif="{{error}}" class="empty">{{error}}</view>
+  <view wx:elif="{{items.length === 0}}" class="empty">暂无公开委托</view>
+
+  <block wx:for="{{items}}" wx:key="id">
+    <view class="card">
+      <view class="card-title">{{item.title || '未命名委托'}}</view>
+      <view class="meta">{{item.city || '城市待定'}} · {{item.needed_date || '日期待定'}} · {{item.target_type || '灵契师'}}</view>
+      <view class="content">{{item.content}}</view>
+      <view class="pill-row">
+        <view wx:if="{{item.script_name}}" class="pill">{{item.script_name}}</view>
+        <view wx:if="{{item.desired_role}}" class="pill">{{item.desired_role}}</view>
+        <view wx:if="{{item.budget}}" class="pill">{{item.budget}}</view>
+      </view>
+    </view>
+  </block>
+</view>

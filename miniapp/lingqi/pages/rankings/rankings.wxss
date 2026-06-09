@@ -1,0 +1,56 @@
+.compact .title {
+  font-size: 38rpx;
+}
+
+.filter-row {
+  display: flex;
+  gap: 12rpx;
+  margin: 24rpx 0;
+}
+
+.filter {
+  flex: 1;
+  padding: 16rpx 8rpx;
+  border: 1rpx solid rgba(217, 168, 87, 0.22);
+  border-radius: 999rpx;
+  background: #ffffff;
+  color: #64748b;
+  text-align: center;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.filter.active {
+  background: #fff0cf;
+  color: #925f18;
+}
+
+.ranking-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+
+.ranking-type {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.ranking-type.red {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.ranking-type.black {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.ranking-type.white {
+  background: #eef6ff;
+  color: #275389;
+}

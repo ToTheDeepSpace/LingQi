@@ -41,6 +41,8 @@ const TENCENTCLOUD_SECRET_KEY = process.env.TENCENTCLOUD_SECRET_KEY || '';
 const LINGQI_SITE_URL = (process.env.LINGQI_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://lingqi.jusichen.com').replace(/\/$/, '');
 const WECHAT_OPEN_APP_ID = process.env.WECHAT_OPEN_APP_ID || '';
 const WECHAT_OPEN_APP_SECRET = process.env.WECHAT_OPEN_APP_SECRET || '';
+const LINGQI_WECHAT_MINI_APP_ID = process.env.LINGQI_WECHAT_MINI_APP_ID || process.env.WECHAT_MINI_APP_ID || '';
+const LINGQI_WECHAT_MINI_APP_SECRET = process.env.LINGQI_WECHAT_MINI_APP_SECRET || process.env.WECHAT_MINI_APP_SECRET || '';
 const WECHAT_REDIRECT_URI = process.env.WECHAT_REDIRECT_URI || `${LINGQI_SITE_URL}/api/lc/auth/wechat/callback`;
 const WECHAT_MP_TOKEN = process.env.WECHAT_MP_TOKEN || '';
 const WECHAT_MP_ENCODING_AES_KEY = process.env.WECHAT_MP_ENCODING_AES_KEY || '';
@@ -147,6 +149,10 @@ function getWechatMpConfigError(): string {
   return '';
 }
 
+function isWechatMiniLoginConfigured() {
+  return Boolean(LINGQI_WECHAT_MINI_APP_ID && LINGQI_WECHAT_MINI_APP_SECRET);
+}
+
 // --- JWT 鉴权中间件 ---
 async function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
   const auth = req.headers.authorization;
@@ -214,6 +220,7 @@ function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
     delete safe.phone_verified_at;
     delete safe.auth_provider;
     delete safe.wechat_openid;
+    delete safe.wechat_mini_openid;
     delete safe.wechat_unionid;
     delete safe.wechat_avatar;
     delete safe.wechat_nickname;
@@ -2976,6 +2983,130 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
   } catch (e) {
     res.redirect(`${LINGQI_SITE_URL}/login?auth_error=${encodeURIComponent(err(e).error || '微信登录失败')}`);
   }
+});
+
+app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
+  try {
+    if (!isWechatMiniLoginConfigured()) return res.status(503).json(err(new Error('微信小程序登录尚未配置')));
+    const code = cleanText(req.body?.code, 200);
+    const displayNameInput = cleanText(req.body?.displayName, 80);
+    const avatarInput = cleanText(req.body?.avatar, 800);
+    const referralCode = cleanText(req.body?.referralCode, 16).toUpperCase();
+    if (!code) return res.status(400).json(err(new Error('缺少微信登录 code')));
+
+    const sessionUrl = new URL('https://api.weixin.qq.com/sns/jscode2session');
+    sessionUrl.search = new URLSearchParams({
+      appid: LINGQI_WECHAT_MINI_APP_ID,
+      secret: LINGQI_WECHAT_MINI_APP_SECRET,
+      js_code: code,
+      grant_type: 'authorization_code',
+    }).toString();
+    const sessionResp = await fetch(sessionUrl);
+    const sessionData = await sessionResp.json() as Record<string, unknown>;
+    if (!sessionResp.ok || sessionData.errcode) {
+      throw new Error(String(sessionData.errmsg || '微信小程序登录失败'));
+    }
+
+    const openid = cleanText(sessionData.openid, 120);
+    const unionid = cleanText(sessionData.unionid, 120) || null;
+    if (!openid) throw new Error('微信小程序登录缺少 openid');
+
+    const nowIso = new Date().toISOString();
+    let query = supabase.from('lc_profiles').select('*');
+    if (unionid) query = query.eq('wechat_unionid', unionid);
+    else query = query.eq('wechat_mini_openid', openid);
+    let { data: profile, error: profileErr } = await query.maybeSingle();
+    if (profileErr && isMissingRelation(profileErr, 'wechat_mini_openid')) {
+      return res.status(503).json(err(new Error('微信小程序登录字段尚未初始化')));
+    }
+    if (profileErr) throw profileErr;
+
+    if (profile?.is_banned) {
+      await logSecurityEvent(req, {
+        action: 'auth_miniapp_login_blocked_banned_user',
+        targetType: 'profile',
+        targetId: profile.id,
+        actorId: profile.id,
+        actorRole: profile.role || 'creator',
+        metadata: { reason: profile.ban_reason || null },
+      });
+      return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
+    }
+
+    const displayName = displayNameInput || profile?.display_name || `微信用户${openid.slice(-4)}`;
+    if (profile) {
+      const patch: Record<string, unknown> = {
+        wechat_mini_openid: openid,
+        wechat_unionid: unionid || profile.wechat_unionid || null,
+        wechat_bound_at: nowIso,
+        auth_provider: profile.auth_provider || 'wechat_miniapp',
+        display_name: profile.display_name || displayName,
+        avatar: profile.avatar || avatarInput || null,
+        ...profileIdentityPatch(profile, ['player']),
+      };
+      await supabase.from('lc_profiles').update(patch).eq('id', profile.id);
+      profile = { ...profile, ...patch };
+    } else {
+      const inserted = await supabase.from('lc_profiles').insert({
+        phone: null,
+        display_name: displayName,
+        avatar: avatarInput || null,
+        role: 'player',
+        role_type: 'player',
+        identity_roles: ['player'],
+        password_hash: null,
+        is_visible: true,
+        balance: 30,
+        paid_balance: 0,
+        bonus_balance: 30,
+        auth_provider: 'wechat_miniapp',
+        wechat_mini_openid: openid,
+        wechat_unionid: unionid,
+        wechat_bound_at: nowIso,
+      }).select().single();
+      if (!inserted.data) throw inserted.error || new Error('微信小程序登录创建账号失败');
+      profile = inserted.data;
+      await supabase.from('lc_transactions').insert({
+        profile_id: profile.id,
+        type: 'recharge',
+        amount: 30,
+        paid_amount: 0,
+        bonus_amount: 30,
+        description: '新用户注册赠送 30 契约币',
+        status: 'approved',
+        balance_before: 0,
+        balance_after: 30,
+        paid_balance_before: 0,
+        paid_balance_after: 0,
+        bonus_balance_before: 0,
+        bonus_balance_after: 30,
+      });
+      await runReferralSideEffect('miniapp-signup', () => registerReferralForNewProfile(profile, referralCode));
+    }
+
+    const token = signProfileAuthToken(profile);
+    await logSecurityEvent(req, {
+      action: 'auth_miniapp_login_success',
+      targetType: 'profile',
+      targetId: profile.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { has_unionid: Boolean(unionid), wechat_bound_at: nowIso },
+    });
+
+    res.json(ok({
+      id: profile.id,
+      display_name: profile.display_name || displayName,
+      avatar: profile.avatar || avatarInput || null,
+      phone: profile.phone || '',
+      phone_verified_at: profile.phone_verified_at || null,
+      city: profile.city || null,
+      available_cities: profile.available_cities || [],
+      role: profile.role,
+      token,
+      auth_provider: 'wechat_miniapp',
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.post('/api/lc/auth', async (req, res) => {

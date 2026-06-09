@@ -1,0 +1,24 @@
+<view class="page">
+  <view class="hero compact">
+    <view class="eyebrow">剧本拼车</view>
+    <view class="title">找一辆能上车的车</view>
+    <view class="subtitle">第一版先展示公开拼车；申请上车和车齐通知下一步接小程序订阅消息。</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中...</view>
+  <view wx:elif="{{error}}" class="empty">{{error}}</view>
+  <view wx:elif="{{items.length === 0}}" class="empty">暂无公开拼车</view>
+
+  <block wx:for="{{items}}" wx:key="id">
+    <view class="card">
+      <view class="card-title">{{item.title || item.script_name || '未命名拼车'}}</view>
+      <view class="meta">{{item.city || '未知城市'}} · {{item.event_date || '日期待定'}} {{item.start_time || ''}}</view>
+      <view class="content">{{item.content}}</view>
+      <view class="pill-row">
+        <view class="pill">{{item.script_name || '剧本待定'}}</view>
+        <view class="pill">已上 {{item.joined_count || 0}} / {{item.needed_count || '?'}}</view>
+        <view wx:if="{{item.subsidy_note}}" class="pill">{{item.subsidy_note}}</view>
+      </view>
+    </view>
+  </block>
+</view>

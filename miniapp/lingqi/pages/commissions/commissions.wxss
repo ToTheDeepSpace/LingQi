@@ -1,0 +1,3 @@
+.compact .title {
+  font-size: 38rpx;
+}

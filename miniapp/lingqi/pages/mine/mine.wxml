@@ -1,0 +1,31 @@
+<view class="page">
+  <view class="hero">
+    <view class="eyebrow">我的身份</view>
+    <view class="title">{{auth ? auth.display_name : '微信登录灵契'}}</view>
+    <view class="subtitle" wx:if="{{auth}}">你已经通过小程序登录。发布、评论、投票等发言能力仍需要手机号认证。</view>
+    <view class="subtitle" wx:else>登录后可以把微信身份绑定到灵契账号，后续接收拼车和口碑互动通知。</view>
+  </view>
+
+  <view wx:if="{{auth}}" class="card">
+    <view class="card-title">账号状态</view>
+    <view class="meta">昵称：{{auth.display_name}}</view>
+    <view class="meta">手机号认证：{{auth.phone_verified_at ? '已认证' : '未认证'}}</view>
+    <view class="meta">所在城市：{{auth.city || '未设置'}}</view>
+    <view class="pill-row">
+      <view class="pill">{{auth.auth_provider || 'wechat_miniapp'}}</view>
+      <view wx:if="{{auth.phone_verified_at}}" class="pill">可发言</view>
+      <view wx:else class="pill">仅浏览</view>
+    </view>
+  </view>
+
+  <view wx:if="{{!auth}}" class="card">
+    <view class="card-title">设置昵称</view>
+    <view class="meta">微信现在不会自动给昵称，先填一个你愿意展示在灵契里的名字。</view>
+    <input class="input" value="{{displayName}}" bindinput="onNameInput" maxlength="40" placeholder="例如：泡泡" />
+  </view>
+
+  <view wx:if="{{error}}" class="empty">{{error}}</view>
+
+  <button wx:if="{{!auth}}" class="button" loading="{{loading}}" bindtap="login">微信登录</button>
+  <button wx:else class="ghost-button" bindtap="logout">退出登录</button>
+</view>
