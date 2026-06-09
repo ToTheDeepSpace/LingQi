@@ -1,0 +1,32 @@
+<view class="page">
+  <view class="hero">
+    <view class="eyebrow">灵契 · 微信入口</view>
+    <view class="title">把圈内体验沉淀成可以回看的口碑</view>
+    <view class="subtitle">红黑白榜、拼车、委托需求先在小程序里跑起来；完整审核、充值、后台管理仍由灵契网站承接。</view>
+  </view>
+
+  <view class="section-title">主要入口</view>
+  <view class="home-grid">
+    <view class="home-entry" bindtap="goRankings">
+      <view class="home-entry-title">红黑白榜</view>
+      <view class="home-entry-meta">看城市口碑，先从事件开始</view>
+    </view>
+    <view class="home-entry" bindtap="goCarpools">
+      <view class="home-entry-title">拼车区</view>
+      <view class="home-entry-meta">找车、上车、看角色余位</view>
+    </view>
+    <view class="home-entry" bindtap="goCommissions">
+      <view class="home-entry-title">委托需求</view>
+      <view class="home-entry-meta">富婆富哥们挂任务</view>
+    </view>
+    <view class="home-entry" bindtap="goMine">
+      <view class="home-entry-title">我的身份</view>
+      <view class="home-entry-meta">微信登录，绑定灵契账号</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">当前版本</view>
+    <view class="content">这是灵契小程序第一版：先做微信内浏览和登录入口。发布、充值、审核、相关方回应等复杂流程仍优先跳网站/后台，避免把主数据拆进微信云数据库。</view>
+  </view>
+</view>
