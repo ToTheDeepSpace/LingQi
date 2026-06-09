@@ -234,6 +234,12 @@ export default function Dashboard() {
   const [screenshotUrl, setScreenshotUrl] = useState('');
   const [screenshotText, setScreenshotText] = useState('');
   const [importingScreenshot, setImportingScreenshot] = useState(false);
+  const [bindPhone, setBindPhone] = useState('');
+  const [bindCode, setBindCode] = useState('');
+  const [bindPassword, setBindPassword] = useState('');
+  const [sendingBindCode, setSendingBindCode] = useState(false);
+  const [bindingPhone, setBindingPhone] = useState(false);
+  const [settingPassword, setSettingPassword] = useState(false);
 
   const token = getToken();
 
@@ -474,6 +480,92 @@ export default function Dashboard() {
     setForm(prev => ({ ...prev, avatar: url }));
     setCreator(prev => prev ? { ...prev, avatar: url } : prev);
     void saveProfile(url);
+  };
+
+  const refreshStoredAuth = (patch: Partial<AuthData>) => {
+    try {
+      const raw = localStorage.getItem('lc_creator');
+      if (!raw) return;
+      localStorage.setItem('lc_creator', JSON.stringify({ ...JSON.parse(raw), ...patch }));
+      window.dispatchEvent(new Event('lc-auth-changed'));
+    } catch {
+      // ignore local storage corruption; token guard will send user back to login.
+    }
+  };
+
+  const sendBindPhoneCode = async () => {
+    const targetPhone = bindPhone.trim() || creator?.phone || '';
+    if (!targetPhone || targetPhone.replace(/\D/g, '').length !== 11) { setError('请填写正确的手机号'); return; }
+    setSendingBindCode(true);
+    setError('');
+    setMsg('');
+    try {
+      const r = await fetch(`${API}/lc/auth/send-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: targetPhone }),
+      });
+      const d = await r.json();
+      if (!d.success) throw new Error(d.error || '验证码发送失败');
+      setBindPhone(targetPhone);
+      setMsg('验证码已发送');
+      setTimeout(() => setMsg(''), 2500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '验证码发送失败');
+    } finally {
+      setSendingBindCode(false);
+    }
+  };
+
+  const bindPhoneToAccount = async () => {
+    const targetPhone = bindPhone.trim() || creator?.phone || '';
+    if (!targetPhone || targetPhone.replace(/\D/g, '').length !== 11) { setError('请填写正确的手机号'); return; }
+    if (!bindCode.trim()) { setError('请填写验证码'); return; }
+    setBindingPhone(true);
+    setError('');
+    setMsg('');
+    try {
+      const r = await fetch(`${API}/lc/auth/bind-phone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone: targetPhone, code: bindCode.trim() }),
+      });
+      const d = await r.json();
+      if (!d.success) throw new Error(d.error || '绑定手机号失败');
+      setCreator(prev => prev ? { ...prev, phone: d.data.phone, phone_verified_at: d.data.phone_verified_at, has_password: d.data.has_password } : prev);
+      refreshStoredAuth({ phone: d.data.phone, token: d.data.token });
+      setBindCode('');
+      setMsg('手机号已绑定，同一个账号可在网页端使用验证码登录');
+      setTimeout(() => setMsg(''), 3200);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '绑定手机号失败');
+    } finally {
+      setBindingPhone(false);
+    }
+  };
+
+  const setWebPassword = async () => {
+    if (!bindPassword.trim() || bindPassword.length < 4) { setError('密码至少4位'); return; }
+    setSettingPassword(true);
+    setError('');
+    setMsg('');
+    try {
+      const r = await fetch(`${API}/lc/auth/set-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ password: bindPassword.trim() }),
+      });
+      const d = await r.json();
+      if (!d.success) throw new Error(d.error || '设置密码失败');
+      setCreator(prev => prev ? { ...prev, has_password: true } : prev);
+      setBindPassword('');
+      setMsg('网页登录密码已设置，之后可用手机号 + 密码登录同一个账号');
+      setTimeout(() => setMsg(''), 3200);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '设置密码失败');
+    } finally {
+      setSettingPassword(false);
+    }
   };
 
   const refreshAvailability = async () => {
@@ -837,6 +929,88 @@ export default function Dashboard() {
                     fontWeight: 700,
                   }}>
                     {hasUploadedAvatar ? '头像已上传，会展示在你的主页和互动记录里。' : '头像未上传：当前使用系统生成头像，不影响公开发言。'}
+                  </div>
+                </div>
+                <div style={{
+                  padding: '16px',
+                  borderRadius: 14,
+                  marginBottom: 20,
+                  backgroundColor: 'rgba(255,255,255,0.78)',
+                  border: '1px solid rgba(125,147,170,0.16)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
+                    <div>
+                      <p style={{ color: INK, fontWeight: 900, fontSize: '0.92rem', marginBottom: 4 }}>账号互通</p>
+                      <p style={{ color: 'rgba(71,85,105,0.64)', fontSize: '0.8rem', lineHeight: 1.7 }}>
+                        小程序微信登录创建的是同一个灵契账号。绑定手机号后，网页端可用验证码登录；设置密码后，也可用手机号和密码登录。
+                      </p>
+                    </div>
+                    <span style={{
+                      padding: '5px 10px',
+                      borderRadius: 999,
+                      background: phoneVerified && creator.has_password ? 'rgba(220,252,231,0.86)' : 'rgba(255,247,237,0.96)',
+                      color: phoneVerified && creator.has_password ? '#15803d' : '#925f18',
+                      fontWeight: 900,
+                      fontSize: '0.75rem',
+                    }}>
+                      {phoneVerified ? (creator.has_password ? '网页登录已完整开通' : '已可验证码登录') : '待绑定手机号'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
+                    <input
+                      type="tel"
+                      value={bindPhone || creator.phone || ''}
+                      onChange={e => setBindPhone(e.target.value)}
+                      placeholder="绑定手机号"
+                      style={inputStyle}
+                    />
+                    <input
+                      type="text"
+                      value={bindCode}
+                      onChange={e => setBindCode(e.target.value)}
+                      placeholder="短信验证码"
+                      style={inputStyle}
+                    />
+                    <button type="button" onClick={sendBindPhoneCode} disabled={sendingBindCode} style={{
+                      border: '1px solid rgba(201,146,46,0.28)',
+                      borderRadius: 10,
+                      background: '#fffaf2',
+                      color: '#925f18',
+                      fontWeight: 900,
+                      cursor: sendingBindCode ? 'wait' : 'pointer',
+                    }}>
+                      {sendingBindCode ? '发送中...' : '发送验证码'}
+                    </button>
+                    <button type="button" onClick={bindPhoneToAccount} disabled={bindingPhone} style={{
+                      border: 'none',
+                      borderRadius: 10,
+                      background: `linear-gradient(135deg, ${GOLD}, #c9922e)`,
+                      color: INK,
+                      fontWeight: 900,
+                      cursor: bindingPhone ? 'wait' : 'pointer',
+                    }}>
+                      {bindingPhone ? '绑定中...' : phoneVerified ? '重新验证' : '绑定手机号'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10 }}>
+                    <input
+                      type="password"
+                      value={bindPassword}
+                      onChange={e => setBindPassword(e.target.value)}
+                      placeholder={creator.has_password ? '输入新密码可修改' : '设置网页登录密码'}
+                      style={inputStyle}
+                    />
+                    <button type="button" onClick={setWebPassword} disabled={settingPassword || !phoneVerified} style={{
+                      padding: '0 18px',
+                      border: '1px solid rgba(201,146,46,0.28)',
+                      borderRadius: 10,
+                      background: phoneVerified ? '#fffaf2' : 'rgba(226,232,240,0.72)',
+                      color: phoneVerified ? '#925f18' : 'rgba(71,85,105,0.52)',
+                      fontWeight: 900,
+                      cursor: settingPassword ? 'wait' : phoneVerified ? 'pointer' : 'not-allowed',
+                    }}>
+                      {settingPassword ? '保存中...' : creator.has_password ? '修改密码' : '设置密码'}
+                    </button>
                   </div>
                 </div>
                 <div style={{

@@ -2,6 +2,7 @@ export interface Creator {
   id: string;
   phone?: string;
   phone_verified_at?: string | null;
+  has_password?: boolean;
   display_name: string;
   avatar: string | null;
   bio: string | null;
@@ -88,6 +89,8 @@ export interface AuthData {
   id: string;
   display_name: string;
   phone: string;
+  phone_verified_at?: string | null;
+  has_password?: boolean;
   token: string;
   role: string;
   role_type?: string;

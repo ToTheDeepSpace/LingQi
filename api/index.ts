@@ -208,6 +208,7 @@ function getOptionalCreatorId(req: express.Request) {
 
 function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
   const safe = { ...profile };
+  if (isOwner) safe.has_password = Boolean(profile.password_hash);
   delete safe.password_hash;
   if (!isOwner) {
     delete safe.phone;
@@ -2775,6 +2776,8 @@ app.post('/api/lc/auth/phone', async (req, res) => {
         role: existing.role,
         city: patch.city || existing.city || null,
         available_cities: patch.available_cities || existing.available_cities || [],
+        phone_verified_at: nowIso,
+        has_password: Boolean(existing.password_hash),
         token,
         new_user: false,
       }));
@@ -2831,10 +2834,92 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       role: profile.role,
       city: profile.city || null,
       available_cities: profile.available_cities || [],
+      phone_verified_at: nowIso,
+      has_password: false,
       token,
       new_user: true,
     }));
   } catch (e) { res.status(400).json(err(e)); }
+});
+
+app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
+  try {
+    const creatorId = getReq(req, 'creatorId');
+    const phone = await verifyPhoneCode('lingqi', 'login', req.body?.phone, req.body?.code);
+    const nowIso = new Date().toISOString();
+
+    const [{ data: current }, { data: existing }] = await Promise.all([
+      supabase.from('lc_profiles').select('*').eq('id', creatorId).single(),
+      supabase.from('lc_profiles').select('*').eq('phone', phone).maybeSingle(),
+    ]);
+    if (!current) return res.status(404).json(err(new Error('当前账号不存在')));
+    if (current.is_banned) return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
+    if (existing && existing.id !== creatorId) {
+      return res.status(409).json(err(new Error('该手机号已绑定其他灵契账号，请先用该手机号登录或联系客服合并账号')));
+    }
+
+    const patch = {
+      phone,
+      phone_verified_at: nowIso,
+      auth_provider: current.auth_provider || 'phone',
+      ...profileIdentityPatch(current, ['player']),
+    };
+    await supabase.from('lc_profiles').update(patch).eq('id', creatorId);
+    await runReferralSideEffect('stage1-after-bind-phone', () => maybeAwardReferralStage1(creatorId));
+
+    const nextProfile = { ...current, ...patch };
+    const token = signProfileAuthToken(nextProfile);
+    await logSecurityEvent(req, {
+      action: 'auth_phone_bound',
+      targetType: 'profile',
+      targetId: creatorId,
+      actorId: creatorId,
+      actorRole: current.role || 'creator',
+      metadata: { phone_hash: makeAuthPhoneHash(phone), phone_verified_at: nowIso },
+    });
+
+    res.json(ok({
+      id: nextProfile.id,
+      display_name: nextProfile.display_name,
+      phone,
+      phone_verified_at: nowIso,
+      city: nextProfile.city || null,
+      available_cities: nextProfile.available_cities || [],
+      role: nextProfile.role,
+      role_type: nextProfile.role_type,
+      identity_roles: nextProfile.identity_roles || [],
+      token,
+      has_password: Boolean(nextProfile.password_hash),
+    }));
+  } catch (e) { res.status(400).json(err(e)); }
+});
+
+app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
+  try {
+    const creatorId = getReq(req, 'creatorId');
+    const password = cleanText(req.body?.password, 200);
+    if (!password || password.length < 4) return res.status(400).json(err(new Error('密码至少4位')));
+
+    const { data: current } = await supabase.from('lc_profiles').select('*').eq('id', creatorId).single();
+    if (!current) return res.status(404).json(err(new Error('当前账号不存在')));
+    if (current.is_banned) return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
+    if (!current.phone || !current.phone_verified_at) {
+      return res.status(400).json(err(new Error('请先绑定并验证手机号，再设置网页端登录密码')));
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    await supabase.from('lc_profiles').update({ password_hash: passwordHash }).eq('id', creatorId);
+    await logSecurityEvent(req, {
+      action: 'auth_password_set',
+      targetType: 'profile',
+      targetId: creatorId,
+      actorId: creatorId,
+      actorRole: current.role || 'creator',
+      metadata: { phone_hash: makeAuthPhoneHash(current.phone) },
+    });
+
+    res.json(ok({ has_password: true }));
+  } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.get('/api/lc/auth/wechat/url', async (req, res) => {
@@ -3015,7 +3100,9 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
     let query = supabase.from('lc_profiles').select('*');
     if (unionid) query = query.eq('wechat_unionid', unionid);
     else query = query.eq('wechat_mini_openid', openid);
-    let { data: profile, error: profileErr } = await query.maybeSingle();
+    const profileResult = await query.maybeSingle();
+    let profile = profileResult.data;
+    const profileErr = profileResult.error;
     if (profileErr && isMissingRelation(profileErr, 'wechat_mini_openid')) {
       return res.status(503).json(err(new Error('微信小程序登录字段尚未初始化')));
     }
@@ -3105,6 +3192,7 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
       role: profile.role,
       token,
       auth_provider: 'wechat_miniapp',
+      has_password: Boolean(profile.password_hash),
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -3131,7 +3219,7 @@ app.post('/api/lc/auth', async (req, res) => {
           actorRole: existing.role || 'creator',
           metadata: { phone_hash: sha256(String(phone)) },
         });
-        return res.status(409).json(err(new Error('该手机号已注册')));
+        return res.status(409).json(err(new Error('该手机号已通过微信或验证码注册，请先用验证码登录后到个人后台设置密码')));
       }
       if (existing.is_banned) {
         await logSecurityEvent(req, {
@@ -3182,6 +3270,8 @@ app.post('/api/lc/auth', async (req, res) => {
         phone: existing.phone,
         city: profilePatch.city || existing.city || null,
         available_cities: profilePatch.available_cities || existing.available_cities || [],
+        phone_verified_at: existing.phone_verified_at || null,
+        has_password: true,
         role: existing.role,
         token,
         ...(isShop ? { juzhanggui_link: 'https://jusichen.com' } : {}),
@@ -3235,6 +3325,8 @@ app.post('/api/lc/auth', async (req, res) => {
       phone: profile.phone,
       city: profile.city || null,
       available_cities: profile.available_cities || [],
+      phone_verified_at: profile.phone_verified_at || null,
+      has_password: true,
       role: profile.role,
       token,
     }));
@@ -3244,10 +3336,10 @@ app.post('/api/lc/auth', async (req, res) => {
 app.get('/api/lc/me', authMiddleware, async (req, res) => {
   try {
     const { data } = await supabase.from('lc_profiles')
-      .select('id, display_name, avatar, phone, phone_verified_at, is_realname, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at')
+      .select('id, display_name, avatar, phone, phone_verified_at, password_hash, is_realname, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at')
       .eq('id', getReq(req, 'creatorId'))
       .single();
-    res.json(ok(data));
+    res.json(ok(data ? sanitizeProfile(data, true) : null));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
