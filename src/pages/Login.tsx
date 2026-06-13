@@ -65,7 +65,6 @@ export default function Login() {
   const [name, setName] = useState('');
   const [activityCities, setActivityCities] = useState<string[]>([]);
   const [mode, setMode] = useState<LoginMode>('sms');
-  const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -184,7 +183,6 @@ export default function Login() {
     if (!phone.trim() || phone.replace(/\D/g, '').length !== 11) { setError('请填写正确的手机号'); return; }
     if (mode === 'sms' && !code.trim()) { setError('请填写验证码'); return; }
     if (mode === 'password' && (!password.trim() || password.length < 4)) { setError('密码至少4位'); return; }
-    if (mode === 'password' && isRegister && !name.trim()) { setError('请填写昵称'); return; }
     if (!acceptedTerms) { setError('请先阅读并同意用户协议和隐私政策'); return; }
     setLoading(true);
     setError('');
@@ -202,12 +200,7 @@ export default function Login() {
         localStorage.removeItem(REFERRAL_STORAGE_KEY);
         navigate('/dashboard');
       } else {
-        if (mode === 'password' && !isRegister && d.error?.includes('未设置密码')) {
-          setIsRegister(true);
-          setError('该手机号尚未注册，请设置昵称和密码完成注册');
-        } else {
-          setError(d.error || '操作失败');
-        }
+        setError(d.error || '操作失败');
       }
     } catch {
       setError('网络错误');
@@ -255,7 +248,7 @@ export default function Login() {
           <div style={{ backgroundColor: '#fffaf2', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 20, padding: '36px 32px', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 8, color: INK }}>
-                {mode === 'sms' ? '手机号验证登录' : isRegister ? '创建账号' : '密码登录'}
+                {mode === 'sms' ? '手机号验证登录' : '密码登录'}
               </h1>
               <p style={{ fontSize: '0.85rem', color: MUTED }}>
                 {mode === 'sms' ? '注册和登录都先验证手机号，发布内容再进入审核' : '旧账号仍可使用密码登录'}
@@ -312,15 +305,8 @@ export default function Login() {
                 <>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>密码</label>
-                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isRegister ? '设置密码（至少4位）' : '输入密码'} required style={inputStyle} />
+                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="输入密码" required style={inputStyle} />
                   </div>
-                  {isRegister && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>昵称 / 艺名</label>
-                      <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="你希望别人怎么称呼你" required style={inputStyle} />
-                    </div>
-                  )}
-                  {isRegister && <CityPreferenceField cities={activityCities} onChange={setActivityCities} />}
                 </>
               )}
 
@@ -357,7 +343,7 @@ export default function Login() {
                   background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
                   color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 800, fontSize: '0.9rem',
                 }}>
-                {loading ? '处理中...' : mode === 'sms' ? '验证并登录' : isRegister ? '注册并登录' : '登录'}
+                {loading ? '处理中...' : mode === 'sms' ? '验证并登录' : '登录'}
               </button>
 
               <button type="button" onClick={startWechatLogin} disabled={loading || !acceptedTerms}
@@ -367,13 +353,7 @@ export default function Login() {
 
               {mode === 'password' && (
                 <p style={{ fontSize: '0.82rem', color: MUTED, textAlign: 'center' }}>
-                  {isRegister ? (
-                    <>已有账号？<button type="button" onClick={() => { setIsRegister(false); setError(''); }}
-                      style={{ background: 'none', border: 'none', color: '#925f18', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'underline' }}>去登录</button></>
-                  ) : (
-                    <>没有密码账号？<button type="button" onClick={() => { setIsRegister(true); setError(''); }}
-                      style={{ background: 'none', border: 'none', color: '#925f18', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'underline' }}>创建密码账号</button></>
-                  )}
+                  没有设置过密码？先用验证码登录，再到个人后台设置网页登录密码。
                 </p>
               )}
 

@@ -3297,58 +3297,11 @@ app.post('/api/lc/auth', async (req, res) => {
       }));
     }
 
-    // 注册
-    const passwordHash = await bcrypt.hash(password, 10);
-    const insertData: Record<string, unknown> = {
-      phone, display_name: displayName || '用户', role: profileRole,
-      role_type: profileRole, identity_roles: [profileRole],
-      password_hash: passwordHash, is_visible: true, balance: 30, paid_balance: 0, bonus_balance: 30,
-      city: primaryCity,
-      available_cities: activityCityList,
-    };
-    const { data: profile } = await supabase.from('lc_profiles')
-      .insert(insertData)
-      .select().single();
-
-    if (!profile) return res.status(500).json(err(new Error('注册失败')));
-
-    await supabase.from('lc_transactions').insert({
-      profile_id: profile.id,
-      type: 'recharge',
-      amount: 30,
-      paid_amount: 0,
-      bonus_amount: 30,
-      description: '新用户注册赠送 30 契约币',
-      status: 'approved',
-      balance_before: 0,
-      balance_after: 30,
-      paid_balance_before: 0,
-      paid_balance_after: 0,
-      bonus_balance_before: 0,
-      bonus_balance_after: 30,
-    });
-    const referralResult = await runReferralSideEffect('password-signup', () => registerReferralForNewProfile(profile, referralCode));
-
-    const token = signProfileAuthToken(profile);
     await logSecurityEvent(req, {
-      action: 'auth_register_success',
-      targetType: 'profile',
-      targetId: profile.id,
-      actorId: profile.id,
-      actorRole: profile.role || 'creator',
-      metadata: { welcome_credit: 30, activity_cities_count: activityCityList.length, referral_applied: Boolean(referralResult?.referral) },
+      action: 'auth_legacy_register_blocked',
+      metadata: { phone_hash: sha256(String(phone)), reason: 'password_signup_disabled' },
     });
-    res.json(ok({
-      id: profile.id,
-      display_name: profile.display_name,
-      phone: profile.phone,
-      city: profile.city || null,
-      available_cities: profile.available_cities || [],
-      phone_verified_at: profile.phone_verified_at || null,
-      has_password: true,
-      role: profile.role,
-      token,
-    }));
+    return res.status(404).json(err(new Error('该手机号还没有注册。请先用手机号验证码登录并创建账号，再到个人后台设置密码。')));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
