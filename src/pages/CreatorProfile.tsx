@@ -149,14 +149,19 @@ export default function CreatorProfile() {
 
   const availableSlots = availability.filter(item => !item.is_booked);
   const busySlots = availability.filter(item => item.is_booked);
+  const profileTags = Array.isArray(creator.tags) ? creator.tags : [];
+  const preferredStoryLines = Array.isArray(creator.preferred_story_lines) ? creator.preferred_story_lines : [];
+  const identityRoles = Array.isArray(creator.identity_roles) ? creator.identity_roles : [];
+  const availableCities = Array.isArray(creator.available_cities) ? creator.available_cities : [];
+  const socialLinks = creator.social_links && typeof creator.social_links === 'object' && !Array.isArray(creator.social_links) ? creator.social_links : {};
   const profileTraits = [
     creator.gender && creator.gender !== '不公开' ? `性别：${creator.gender}` : '',
     creator.sexual_orientation && creator.sexual_orientation !== '不公开' ? `取向：${creator.sexual_orientation}` : '',
-    ...(creator.preferred_story_lines || []).map(line => `吃${line}`),
+    ...preferredStoryLines.map(line => `吃${line}`),
   ].filter(Boolean);
   const displayRole = creator.verified_dm && (!creator.role_type || creator.role_type === 'player')
     ? 'dm'
-    : creator.role_type || creator.identity_roles?.[0] || '';
+    : creator.role_type || identityRoles[0] || '';
   const rolePreferences = [...(creator.role_preferences || [])].sort((a, b) => {
     const recDiff = Number(!!b.is_recommended) - Number(!!a.is_recommended);
     if (recDiff !== 0) return recDiff;
@@ -261,13 +266,13 @@ export default function CreatorProfile() {
             <div style={card}>
               <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: INK }}>灵契师档案</h3>
               {creator.bio && (
-                <p style={{ fontSize: '0.875rem', color: MUTED, lineHeight: 1.8, marginBottom: creator.tags?.length ? 16 : 0 }}>
+                <p style={{ fontSize: '0.875rem', color: MUTED, lineHeight: 1.8, marginBottom: profileTags.length ? 16 : 0 }}>
                   {creator.bio}
                 </p>
               )}
-              {creator.tags && creator.tags.length > 0 && (
+              {profileTags.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {creator.tags.map((t, i) => (
+                  {profileTags.map((t, i) => (
                     <span key={i} style={{ padding: '4px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(201,146,46,0.12)', border: '1px solid rgba(201,146,46,0.28)', color: GOLD }}>
                       {t}
                     </span>
@@ -275,7 +280,7 @@ export default function CreatorProfile() {
                 </div>
               )}
               {profileTraits.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: creator.tags?.length ? 12 : 0 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: profileTags.length ? 12 : 0 }}>
                   {profileTraits.map(item => (
                     <span key={item} style={{ padding: '4px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(239,246,255,0.9)', border: '1px solid rgba(59,130,246,0.16)', color: '#275389' }}>
                       {item}
@@ -283,23 +288,23 @@ export default function CreatorProfile() {
                   ))}
                 </div>
               )}
-              {!creator.bio && !creator.tags?.length && profileTraits.length === 0 && (
+              {!creator.bio && !profileTags.length && profileTraits.length === 0 && (
                 <p style={{ color: 'rgba(71,85,105,0.52)', fontSize: '0.875rem' }}>创作者还没有填写简介</p>
               )}
-              {creator.available_cities && creator.available_cities.length > 0 && (
+              {availableCities.length > 0 && (
                 <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(217,168,87,0.16)' }}>
                   <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', marginBottom: 8 }}>可接城市</p>
-                  <p style={{ color: '#925f18', fontSize: '0.86rem', lineHeight: 1.7 }}>{creator.available_cities.join(' / ')}</p>
+                  <p style={{ color: '#925f18', fontSize: '0.86rem', lineHeight: 1.7 }}>{availableCities.join(' / ')}</p>
                 </div>
               )}
             </div>
 
             {/* 社交快照 */}
-            {creator.social_links && Object.values(creator.social_links).some(Boolean) && (
+            {Object.values(socialLinks).some(Boolean) && (
               <div style={card}>
                 <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: INK }}>社交主页</h3>
                 <div style={{ display: 'grid', gap: 10 }}>
-                  {Object.entries(creator.social_links).filter(([, url]) => url).map(([key, url]) => (
+                  {Object.entries(socialLinks).filter(([, url]) => url).map(([key, url]) => (
                     <SocialCard key={key} kind={key} url={url} snapshot={creator.social_snapshots?.[key]} />
                   ))}
                 </div>

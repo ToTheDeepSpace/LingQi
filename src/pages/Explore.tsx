@@ -102,10 +102,11 @@ export default function Explore() {
   };
 
   const hasIdentity = (creator: Creator, key: string) => {
+    const identityRoles = Array.isArray(creator.identity_roles) ? creator.identity_roles : [];
     const roles = new Set([
       creator.role_type,
       creator.role,
-      ...(creator.identity_roles || []),
+      ...identityRoles,
       creator.verified_dm ? 'dm' : '',
       creator.verified_shop ? 'shop' : '',
     ].filter(Boolean));
@@ -361,9 +362,9 @@ function CreatorCard({ creator }: { creator: Creator }) {
     ? 'dm'
     : creator.role_type || creator.identity_roles?.[0] || '';
   const role = ROLE_LABEL[displayRole] || displayRole || '灵契师';
-  const tags = creator.tags || [];
+  const tags = Array.isArray(creator.tags) ? creator.tags : [];
   const travelStatus = creator.travel_status;
-  const availableCities = creator.available_cities || [];
+  const availableCities = Array.isArray(creator.available_cities) ? creator.available_cities : [];
 
   return (
     <article className="content-card" style={{

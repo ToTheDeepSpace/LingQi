@@ -206,10 +206,29 @@ function getOptionalCreatorId(req: express.Request) {
   }
 }
 
+function publicStringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map(item => cleanText(item, 80)).filter(Boolean);
+}
+
+function publicRecord(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
 function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
   const safe = { ...profile };
   if (isOwner) safe.has_password = Boolean(profile.password_hash);
   delete safe.password_hash;
+  safe.tags = publicStringArray(profile.tags);
+  safe.available_cities = publicStringArray(profile.available_cities);
+  safe.preferred_story_lines = publicStringArray(profile.preferred_story_lines);
+  safe.identity_roles = profileIdentityRoles(profile);
+  safe.social_links = publicRecord(profile.social_links);
+  safe.social_snapshots = publicRecord(profile.social_snapshots);
+  safe.is_realname = Boolean(profile.is_realname);
+  safe.verified_dm = Boolean(profile.verified_dm);
+  safe.verified_shop = Boolean(profile.verified_shop);
   if (!isOwner) {
     delete safe.phone;
     delete safe.wechat;
