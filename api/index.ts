@@ -1196,6 +1196,126 @@ function cleanText(value: unknown, max = 1200) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+type ModerationPrecheckDecision = 'pass' | 'review' | 'block';
+type ModerationPrecheckMatch = {
+  label: string;
+  severity: ModerationPrecheckDecision;
+  field: string;
+  excerpt: string;
+};
+
+type ModerationPrecheckInput = {
+  scene: string;
+  targetType: string;
+  texts: Record<string, unknown>;
+  files?: unknown;
+  allowContact?: boolean;
+};
+
+const LOCAL_MODERATION_RULES: Array<{
+  label: string;
+  severity: ModerationPrecheckDecision;
+  pattern: RegExp;
+}> = [
+  { label: 'identity_number', severity: 'block', pattern: /\b[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g },
+  { label: 'doxxing_or_privacy', severity: 'block', pattern: /(开盒|人肉|身份证|家庭住址|户籍|住址|泄露隐私|偷拍视频|偷拍视频|偷拍视频)/g },
+  { label: 'illegal_or_crime', severity: 'block', pattern: /(诈骗|赌博|毒品|枪支|卖淫|嫖娼|性交易|洗钱|套现|代开票|伪造证件|网暴|威胁恐吓)/g },
+  { label: 'minor_high_risk', severity: 'block', pattern: /(未成年|小学生|初中生|未满十八|未满18|萝莉|正太).{0,12}(约|睡|性|黄色|陪睡|裸)/g },
+  { label: 'phone_or_contact', severity: 'review', pattern: /(?:\+?86[-\s]?)?1[3-9]\d{9}/g },
+  { label: 'wechat_or_qq', severity: 'review', pattern: /(微信|VX|vx|V信|企鹅|QQ|qq)[:：\s-]*[A-Za-z0-9_-]{5,}/g },
+  { label: 'abuse_or_attack', severity: 'review', pattern: /(傻逼|煞笔|贱人|死妈|滚蛋|垃圾人|去死|婊子|人渣|烂人|畜生)/g },
+  { label: 'rumor_or_defamation_risk', severity: 'review', pattern: /(听说|据说|群里说|别人说|网传|瓜说|没有证据|纯主观|造谣|挂人)/g },
+  { label: 'sexual_content', severity: 'review', pattern: /(约炮|陪睡|裸聊|口交|做爱|上床|黄色服务|擦边|包夜)/g },
+];
+
+function maskModerationExcerpt(value: string) {
+  return value
+    .replace(/\b([1-9]\d{5})(\d{8})(\d{3}[\dXx])\b/g, '$1********$3')
+    .replace(/(1[3-9])\d{4}(\d{4})/g, '$1****$2')
+    .slice(0, 80);
+}
+
+function moderationDecisionRank(decision: ModerationPrecheckDecision) {
+  return decision === 'block' ? 3 : decision === 'review' ? 2 : 1;
+}
+
+function collectImageEvidenceStats(files: unknown) {
+  const list = Array.isArray(files) ? files : [];
+  const images = list.filter(item => {
+    if (typeof item === 'string') return item.startsWith('data:image/') || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(item);
+    if (!item || typeof item !== 'object') return false;
+    const record = item as Record<string, unknown>;
+    const url = cleanText(record.url, 100);
+    const type = cleanText(record.type, 100);
+    return url.startsWith('data:image/') || type.startsWith('image/') || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
+  });
+  const dataUrlBytes = images.reduce((sum, item) => {
+    const url = typeof item === 'string' ? item : cleanText((item as Record<string, unknown>).url, 8 * 1024 * 1024);
+    return sum + (url.startsWith('data:image/') ? Math.ceil(url.length * 0.75) : 0);
+  }, 0);
+  return { image_count: images.length, data_url_bytes: dataUrlBytes };
+}
+
+function runLocalModerationPrecheck(input: ModerationPrecheckInput) {
+  const matches: ModerationPrecheckMatch[] = [];
+  for (const [field, value] of Object.entries(input.texts)) {
+    const text = cleanText(value, 6000);
+    if (!text) continue;
+    for (const rule of LOCAL_MODERATION_RULES) {
+      if (input.allowContact && (rule.label === 'phone_or_contact' || rule.label === 'wechat_or_qq')) continue;
+      const found = Array.from(text.matchAll(rule.pattern)).slice(0, 3);
+      for (const item of found) {
+        matches.push({
+          label: rule.label,
+          severity: rule.severity,
+          field,
+          excerpt: maskModerationExcerpt(item[0] || ''),
+        });
+      }
+    }
+  }
+
+  const imageStats = collectImageEvidenceStats(input.files);
+  if (imageStats.image_count > 0) {
+    matches.push({
+      label: 'image_needs_manual_review',
+      severity: 'review',
+      field: 'files',
+      excerpt: `${imageStats.image_count} 张图片，当前仅做本地留痕，需人工查看打码和内容`,
+    });
+  }
+
+  const decision = matches.reduce<ModerationPrecheckDecision>(
+    (current, item) => moderationDecisionRank(item.severity) > moderationDecisionRank(current) ? item.severity : current,
+    'pass',
+  );
+  const labels = Array.from(new Set(matches.map(item => item.label)));
+  const textForHash = Object.entries(input.texts)
+    .map(([field, value]) => `${field}:${cleanText(value, 6000)}`)
+    .join('\n');
+  const score = Math.min(100, matches.reduce((sum, item) => sum + (item.severity === 'block' ? 40 : 18), 0));
+  return {
+    version: 'local_rules_v1',
+    provider: 'local',
+    scene: input.scene,
+    target_type: input.targetType,
+    decision,
+    risk_score: score,
+    risk_labels: labels,
+    matches: matches.slice(0, 20),
+    summary: decision === 'pass'
+      ? '本地预审未发现明显风险'
+      : decision === 'block'
+        ? '本地预审发现高风险内容，建议人工优先复核'
+        : '本地预审发现需关注内容，建议人工审核时重点查看',
+    image_count: imageStats.image_count,
+    data_url_bytes: imageStats.data_url_bytes,
+    checked_at: new Date().toISOString(),
+    text_hash: sha256(textForHash),
+    paid_provider: 'not_enabled',
+  };
+}
+
 function getChinaNow() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
@@ -3856,6 +3976,13 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'commission_submit',
+      targetType: 'commission',
+      texts: { title, content, desiredRole, targetType, city, location, budget, contactNote, scriptName },
+      files: req.body?.files,
+      allowContact: true,
+    });
 
     if (scriptIdInput) {
       const { data: scriptRow, error: scriptErr } = await supabase.from('scripts')
@@ -3886,6 +4013,7 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
       budget: budget || null,
       contact_note: contactNote || null,
       ai_assist_context: aiAssistContext || {},
+      moderation_precheck: moderationPrecheck,
     }).select().single();
     if (insErr) throw insErr;
 
@@ -3893,7 +4021,7 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
       action: 'commission_submitted',
       targetType: 'commission',
       targetId: data?.id,
-      metadata: { city: city || null, target_type: targetType || null, script_id: scriptId, script_name: scriptName || null },
+      metadata: { city: city || null, target_type: targetType || null, script_id: scriptId, script_name: scriptName || null, moderation: moderationPrecheck },
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -4090,6 +4218,11 @@ app.post('/api/lc/scripts/:id/ratings', authMiddleware, async (req, res) => {
     const tags = cleanTextArray(req.body?.tags, 8, 20);
     const { data: script } = await supabase.from('scripts').select('id,name').eq('id', scriptId).maybeSingle();
     const scriptName = cleanText(req.body?.scriptName, 160) || script?.name || '未命名剧本';
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'script_rating_submit',
+      targetType: 'script_rating',
+      texts: { scriptName, content, tags: tags.join(' ') },
+    });
     const payload = {
       script_id: scriptId,
       script_name: scriptName,
@@ -4099,6 +4232,7 @@ app.post('/api/lc/scripts/:id/ratings', authMiddleware, async (req, res) => {
       content,
       tags,
       status: 'approved',
+      moderation_precheck: moderationPrecheck,
       updated_at: new Date().toISOString(),
     };
     const { data, error: upsertErr } = await supabase.from('lc_script_ratings')
@@ -4168,6 +4302,16 @@ app.post('/api/lc/scripts/contributions', authMiddleware, async (req, res) => {
     if (!scriptId && !scriptName) return res.status(400).json(err(new Error('请填写或选择剧本名')));
     if (roles.length === 0) return res.status(400).json(err(new Error('请至少维护一个玩家角色和角色性别')));
     if (hasMissingScriptContributionGender(roles)) return res.status(400).json(err(new Error('请给每个角色填写性别')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'script_contribution_submit',
+      targetType: 'script_contribution',
+      texts: {
+        scriptName,
+        note,
+        roles: roles.map(role => `${role.role_name} ${role.gender || ''} ${(role.tags || []).join(' ')}`).join('\n'),
+        credits: Object.values(creditsPatch).flat().join(' '),
+      },
+    });
 
     const { data, error: insErr } = await supabase.from('lc_script_contributions').insert({
       profile_id: profile.id,
@@ -4179,6 +4323,7 @@ app.post('/api/lc/scripts/contributions', authMiddleware, async (req, res) => {
       note: note || null,
       status: 'pending',
       reward_amount: SCRIPT_CONTRIBUTION_REWARD,
+      moderation_precheck: moderationPrecheck,
     }).select('*').single();
     if (insErr && isMissingRelation(insErr, 'lc_script_contributions')) return res.status(503).json(err(new Error('剧本库共建表尚未初始化')));
     if (insErr) throw insErr;
@@ -4187,7 +4332,7 @@ app.post('/api/lc/scripts/contributions', authMiddleware, async (req, res) => {
       action: 'script_contribution_submitted',
       targetType: 'script_contribution',
       targetId: data?.id,
-      metadata: { script_id: scriptId || null, script_name: scriptName || null, role_count: roles.length, credit_fields: Object.keys(creditsPatch) },
+      metadata: { script_id: scriptId || null, script_name: scriptName || null, role_count: roles.length, credit_fields: Object.keys(creditsPatch), moderation: moderationPrecheck },
     });
     res.json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
@@ -4282,6 +4427,27 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
     if (boostAmount > 0 && (profile.balance || 0) < boostAmount) {
       return res.status(402).json(err(new Error('契约币不足，请先充值')));
     }
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'carpool_submit',
+      targetType: 'carpool',
+      texts: {
+        title,
+        city,
+        scriptName,
+        roleName,
+        roleNote,
+        storeName,
+        storeAddress,
+        storeVerifyNote,
+        contactNote,
+        content,
+        subsidyNote,
+        rawMessage,
+        generatedMessage,
+      },
+      files: req.body?.files,
+      allowContact: true,
+    });
 
     const sharedScript = await ensureSharedScriptForCarpool(scriptIdInput, scriptName, submittedRoles);
     scriptName = sharedScript.scriptName;
@@ -4354,6 +4520,7 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       ai_assist_context: {
         source: 'lingqi_carpool_form',
         moderation: 'post_publish',
+        moderation_precheck: moderationPrecheck,
         juzhanggui_sync: 'pending_manual_or_background_sync',
         subsidy_unit: 'cash_or_ticket_discount',
         raw_message: rawMessage || null,
@@ -4362,6 +4529,7 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
         linked_store_id: finalStoreId,
         script_roles: scriptRoles,
       },
+      moderation_precheck: moderationPrecheck,
     }).select('*').single();
     if (insErr) {
       if (isMissingRelation(insErr, 'lc_carpools')) return res.status(503).json(err(new Error('拼车区数据表尚未初始化，请先执行 Supabase migration')));
@@ -4397,7 +4565,7 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       action: 'carpool_submitted_auto_published',
       targetType: 'carpool',
       targetId: data?.id,
-      metadata: { city, event_date: eventDate, script_name: scriptName, boost_amount: boostAmount, sync: syncResult },
+      metadata: { city, event_date: eventDate, script_name: scriptName, boost_amount: boostAmount, sync: syncResult, moderation: moderationPrecheck },
     });
     res.json(ok({ id: data?.id, status: 'approved', balance: walletSpend?.balance ?? (profile.balance || 0), sync: syncResult }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -4534,6 +4702,13 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       };
     }
 
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'report_submit',
+      targetType: 'report',
+      texts: { reason, description, targetTitle, targetPreview: cleanText(snapshot.content_preview, 500) },
+      allowContact: false,
+    });
+
     const { data, error: insErr } = await supabase.from('lc_reports').upsert({
       target_type: targetType,
       target_id: targetId,
@@ -4543,6 +4718,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       reason,
       description: description || null,
       target_snapshot: snapshot,
+      moderation_precheck: moderationPrecheck,
       status: 'pending',
       updated_at: new Date().toISOString(),
     }, { onConflict: 'target_type,target_id,reporter_id' }).select('id').single();
@@ -4560,7 +4736,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       action: 'report_submitted',
       targetType,
       targetId,
-      metadata: { report_id: data?.id, reason, target_title: targetTitle, moderation },
+      metadata: { report_id: data?.id, reason, target_title: targetTitle, moderation, precheck: moderationPrecheck },
     });
     res.json(ok({ id: data?.id, moderation }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -5806,6 +5982,13 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     if (amount > 0 && (profile.balance || 0) < amount) return res.status(402).json(err(new Error('契约币不足，请先充值')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'ranking_submit',
+      targetType: 'ranking',
+      texts: { type, subjectName, subjectType, subjectCity, subjectUrl, content },
+      files,
+      allowContact: false,
+    });
 
     const posterId = getReq(req, 'creatorId');
 
@@ -5826,6 +6009,7 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       initial_amount: amount, payment_proof: paymentProof || null,
       is_realname: !!profile.is_realname, real_name: null,
       files: files || [],
+      moderation_precheck: moderationPrecheck,
       boost_amount: type === 'red' ? amount : 0,
       negative_boost_amount: 0,
       agree_count: 0,
@@ -5856,7 +6040,7 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       action: 'ranking_submitted',
       targetType: 'ranking',
       targetId: ranking?.id,
-      metadata: { ranking_type: type, subject_type: subjectType, subject_city: subjectCity || null, amount },
+      metadata: { ranking_type: type, subject_type: subjectType, subject_city: subjectCity || null, amount, moderation: moderationPrecheck },
     });
     res.json(ok({ id: ranking?.id }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -5930,6 +6114,11 @@ app.post('/api/lc/rankings/:id/paid-boost', authMiddleware, async (req, res) => 
     let attachedCommentId: string | null = null;
     let attachedCommentError = '';
     if (attachedComment) {
+      const moderationPrecheck = runLocalModerationPrecheck({
+        scene: 'ranking_vote_attached_comment',
+        targetType: 'comment',
+        texts: { content: attachedComment },
+      });
       const { data: comment, error: commentErr } = await supabase.from('lc_comments').insert({
         ranking_id: req.params.id,
         content: attachedComment,
@@ -5937,6 +6126,7 @@ app.post('/api/lc/rankings/:id/paid-boost', authMiddleware, async (req, res) => 
         author_name: profile.display_name,
         is_realname: !!profile.is_realname,
         real_name: null,
+        moderation_precheck: moderationPrecheck,
       }).select('id').single();
       if (commentErr) attachedCommentError = getErrorText(commentErr);
       else attachedCommentId = comment?.id || null;
@@ -6209,17 +6399,24 @@ app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'ranking_comment_submit',
+      targetType: 'comment',
+      texts: { content },
+      allowContact: false,
+    });
 
     const { data, error: insErr } = await supabase.from('lc_comments').insert({
       ranking_id: req.params.id, content, author_id: profile.id, author_name: profile.display_name,
       is_realname: !!profile.is_realname, real_name: null,
+      moderation_precheck: moderationPrecheck,
     }).select().single();
     if (insErr) throw insErr;
     await logSecurityEvent(req, {
       action: 'ranking_comment_submitted',
       targetType: 'comment',
       targetId: data?.id,
-      metadata: { ranking_id: req.params.id },
+      metadata: { ranking_id: req.params.id, moderation: moderationPrecheck },
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -6236,6 +6433,13 @@ app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, a
     if (!relatedNote && relatedFiles.length === 0) {
       return res.status(400).json(err(new Error('请提交能证明你是相关方的说明或图片材料')));
     }
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'related_party_certification',
+      targetType: 'comment',
+      texts: { relatedNote },
+      files: relatedFiles,
+      allowContact: true,
+    });
 
     const { data: comment } = await supabase.from('lc_comments')
       .select('id, author_id, status')
@@ -6253,6 +6457,7 @@ app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, a
         pin_label: '相关方回应',
         related_note: relatedNote || null,
         related_files: relatedFiles,
+        moderation_precheck: moderationPrecheck,
       })
       .eq('id', req.params.cid);
     if (updErr && isRelatedProofSchemaMiss(updErr)) {
@@ -6262,6 +6467,7 @@ app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, a
           is_pinned: true,
           pin_label: '相关方回应',
           payment_proof: encodeRelatedProofFallback(relatedNote, relatedFiles),
+          moderation_precheck: moderationPrecheck,
         })
         .eq('id', req.params.cid);
       if (fallbackErr) throw fallbackErr;
@@ -6269,7 +6475,7 @@ app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, a
         action: 'related_party_certification_submitted',
         targetType: 'comment',
         targetId: req.params.cid,
-        metadata: { ranking_id: req.params.id, storage: 'fallback', file_count: relatedFiles.length },
+        metadata: { ranking_id: req.params.id, storage: 'fallback', file_count: relatedFiles.length, moderation: moderationPrecheck },
       });
       return res.json(ok({ id: req.params.cid, storage: 'fallback' }));
     }
@@ -6278,7 +6484,7 @@ app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, a
       action: 'related_party_certification_submitted',
       targetType: 'comment',
       targetId: req.params.cid,
-      metadata: { ranking_id: req.params.id, storage: 'columns', file_count: relatedFiles.length },
+      metadata: { ranking_id: req.params.id, storage: 'columns', file_count: relatedFiles.length, moderation: moderationPrecheck },
     });
     res.json(ok({ id: req.params.cid }));
   } catch (e) { res.status(500).json(err(e)); }

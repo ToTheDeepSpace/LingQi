@@ -67,6 +67,15 @@ function formatCarpoolSubsidy(item: {
 
 type ProofFile = { name?: string; url: string; type?: string };
 
+type ModerationPrecheck = {
+  decision?: 'pass' | 'review' | 'block';
+  risk_score?: number;
+  risk_labels?: string[];
+  summary?: string;
+  provider?: string;
+  checked_at?: string;
+};
+
 type Profile = {
   id: string;
   display_name: string;
@@ -106,6 +115,7 @@ type Ranking = {
   joys?: number;
   status?: 'pending' | 'approved' | 'rejected';
   payment_proof: string | null;
+  moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
 };
 
@@ -128,6 +138,7 @@ type CommentReview = {
   payment_proof?: string | null;
   related_note?: string | null;
   related_files?: ProofFile[] | null;
+  moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
   lc_rankings?: { subject_name?: string; type?: 'red' | 'black' | 'white' };
 };
@@ -154,6 +165,7 @@ type CommissionReview = {
   location?: string | null;
   budget?: string | null;
   contact_note?: string | null;
+  moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
 };
 
@@ -184,6 +196,7 @@ type CarpoolReview = {
   boost_amount: number;
   juzhanggui_sync_status?: 'pending' | 'synced' | 'failed' | 'disabled';
   juzhanggui_schedule_id?: string | null;
+  moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
 };
 
@@ -196,6 +209,7 @@ type ScriptContributionReview = {
   player_roles: { role_name?: string; gender?: string | null; tags?: string[] }[];
   credits_patch?: Record<string, string[]>;
   note?: string | null;
+  moderation_precheck?: ModerationPrecheck | null;
   status: 'pending' | 'approved' | 'rejected';
   reward_amount: number;
   created_at: string;
@@ -242,6 +256,7 @@ type ReportReview = {
     safe_votes?: number;
     decisions?: Record<string, number>;
   } | null;
+  moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
 };
 
@@ -306,6 +321,23 @@ const card: React.CSSProperties = {
   borderRadius: 14,
   padding: '16px 20px',
 };
+
+function ModerationPrecheckBadge({ value }: { value?: ModerationPrecheck | null }) {
+  if (!value) return null;
+  const decision = value.decision || 'pass';
+  const color = decision === 'block' ? '#fca5a5' : decision === 'review' ? '#fbbf24' : '#86efac';
+  const bg = decision === 'block' ? 'rgba(127,29,29,0.22)' : decision === 'review' ? 'rgba(146,95,24,0.18)' : 'rgba(22,101,52,0.16)';
+  const label = decision === 'block' ? '建议拦截' : decision === 'review' ? '需关注' : '通过';
+  const labels = Array.isArray(value.risk_labels) ? value.risk_labels : [];
+  return (
+    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, border: `1px solid ${color}44`, background: bg, color, fontSize: '0.76rem', lineHeight: 1.6 }}>
+      <strong>本地预审：{label}</strong>
+      {typeof value.risk_score === 'number' ? ` · 风险 ${value.risk_score}` : ''}
+      {labels.length > 0 ? ` · ${labels.join(' / ')}` : ''}
+      {value.summary ? <div style={{ color: 'rgba(226,232,240,0.78)' }}>{value.summary}</div> : null}
+    </div>
+  );
+}
 
 function getRelatedProof(comment: CommentReview): { note: string; files: ProofFile[] } {
   const directFiles = Array.isArray(comment.related_files) ? comment.related_files : [];
@@ -920,6 +952,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <TitleLine title={r.subject_name} pill={r.type === 'red' ? '🏅 红榜' : r.type === 'black' ? '👎 黑榜' : '✨ 白榜'} />
                       <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · {r.type === 'white' && r.initial_amount === 0 ? '免费发布' : `初始：${r.initial_amount} 契约币`} · {r.created_at?.slice(0, 10)}</Meta>
                       {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
+                      <ModerationPrecheckBadge value={r.moderation_precheck} />
                       <ContentBox>{r.content}</ContentBox>
                       {r.payment_proof && <Proof>支付凭证：{r.payment_proof}</Proof>}
                     </div>
@@ -985,6 +1018,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           {c.contact_note ? `联系：${c.contact_note}` : ''}
                         </Meta>
                       )}
+                      <ModerationPrecheckBadge value={c.moderation_precheck} />
                       <ContentBox>{c.content}</ContentBox>
                     </div>
                     <Actions vertical>
@@ -1022,6 +1056,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           {c.contact_note ? `补充：${c.contact_note}` : ''}
                         </Meta>
                       )}
+                      <ModerationPrecheckBadge value={c.moderation_precheck} />
                       {c.role_note && <ContentBox>{c.role_note}</ContentBox>}
                       <ContentBox>{c.content}</ContentBox>
                     </div>
@@ -1058,6 +1093,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                             ))}
                           </Proof>
                         )}
+                        <ModerationPrecheckBadge value={item.moderation_precheck} />
                         <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
                           {contributionRoles.map((role, index) => (
                             <div key={`${role.role_name || 'role'}-${index}`} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(201,146,46,0.12)', background: 'rgba(255,255,255,0.03)' }}>
@@ -1149,6 +1185,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           {typeof r.reviewer_summary.safe_votes === 'number' ? ` · 建议保留 ${r.reviewer_summary.safe_votes}` : ''}
                         </Meta>
                       )}
+                      <ModerationPrecheckBadge value={r.moderation_precheck} />
                       {r.description && <ContentBox>{r.description}</ContentBox>}
                       {r.target_snapshot && (
                         <Proof>
@@ -1229,6 +1266,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <TitleLine title={c.lc_rankings?.subject_name || '未知帖子'} pill={c.is_pinned ? (c.pin_label || '相关方回应') : (c.lc_rankings?.type === 'black' ? '👎 黑榜评论' : c.lc_rankings?.type === 'white' ? '✨ 白榜评论' : '🏅 红榜评论')} />
                         <Meta>作者：{c.is_realname ? `⭐ ${c.author_name}` : c.author_name} · {c.created_at?.slice(0, 10)}</Meta>
+                        <ModerationPrecheckBadge value={c.moderation_precheck} />
                         <ContentBox>{c.content}</ContentBox>
                         {isRelatedProof && (
                           <Proof>
