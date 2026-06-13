@@ -25,7 +25,7 @@ const inputStyle: React.CSSProperties = {
 const QUICK_ACTIVITY_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '武汉', '南京'];
 const REFERRAL_STORAGE_KEY = 'lc_referral_code';
 
-type LoginMode = 'sms' | 'password';
+type LoginMode = 'sms' | 'email' | 'password';
 
 function storeLogin(data: Record<string, unknown>) {
   localStorage.setItem('lc_creator', JSON.stringify(data));
@@ -60,14 +60,19 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [loginAccount, setLoginAccount] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  const [emailCode, setEmailCode] = useState('');
   const [name, setName] = useState('');
   const [activityCities, setActivityCities] = useState<string[]>([]);
   const [mode, setMode] = useState<LoginMode>('sms');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
   const [error, setError] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [referralOwner, setReferralOwner] = useState('');
@@ -154,6 +159,33 @@ export default function Login() {
     }
   };
 
+  const sendEmailCode = async () => {
+    if (!email.trim() || !email.includes('@')) {
+      setError('请填写正确的邮箱');
+      return;
+    }
+    setEmailSending(true);
+    setError('');
+    try {
+      const r = await fetch(`${API}/lc/auth/email/send-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        setEmailSent(true);
+        setError('邮箱验证码已发送，请查看收件箱或垃圾邮件');
+      } else {
+        setError(d.error || '邮箱验证码发送失败');
+      }
+    } catch {
+      setError('网络错误');
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
   const startWechatLogin = async () => {
     if (!acceptedTerms) {
       setError('请先阅读并同意用户协议和隐私政策');
@@ -180,19 +212,26 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!phone.trim() || phone.replace(/\D/g, '').length !== 11) { setError('请填写正确的手机号'); return; }
+    if (mode === 'sms' && (!phone.trim() || phone.replace(/\D/g, '').length !== 11)) { setError('请填写正确的手机号'); return; }
     if (mode === 'sms' && !code.trim()) { setError('请填写验证码'); return; }
+    if (mode === 'email' && (!email.trim() || !email.includes('@'))) { setError('请填写正确的邮箱'); return; }
+    if (mode === 'email' && !emailCode.trim()) { setError('请填写邮箱验证码'); return; }
+    if (mode === 'password' && !loginAccount.trim()) { setError('请填写手机号或邮箱'); return; }
     if (mode === 'password' && (!password.trim() || password.length < 4)) { setError('密码至少4位'); return; }
     if (!acceptedTerms) { setError('请先阅读并同意用户协议和隐私政策'); return; }
     setLoading(true);
     setError('');
     try {
-      const r = await fetch(mode === 'sms' ? `${API}/lc/auth/phone` : `${API}/lc/auth`, {
+      const endpoint = mode === 'sms' ? `${API}/lc/auth/phone` : mode === 'email' ? `${API}/lc/auth/email` : `${API}/lc/auth`;
+      const body = mode === 'sms'
+        ? { phone: phone.trim(), code: code.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }
+        : mode === 'email'
+          ? { email: email.trim(), code: emailCode.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }
+          : { account: loginAccount.trim(), password: password.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined };
+      const r = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mode === 'sms'
-          ? { phone: phone.trim(), code: code.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }
-          : { phone: phone.trim(), password: password.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }),
+        body: JSON.stringify(body),
       });
       const d = await r.json();
       if (d.success) {
@@ -232,7 +271,7 @@ export default function Login() {
           </div>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 32px' }} />
           <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: MUTED, lineHeight: 2 }}>
-            用手机号验证身份<br />用微信快速登录<br />把每一次委托留在自己名下
+            用邮箱先建立身份<br />用手机号或微信提高可信度<br />把每一次委托留在自己名下
           </p>
         </div>
       </div>
@@ -248,18 +287,22 @@ export default function Login() {
           <div style={{ backgroundColor: '#fffaf2', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 20, padding: '36px 32px', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 8, color: INK }}>
-                {mode === 'sms' ? '手机号验证登录' : '密码登录'}
+                {mode === 'sms' ? '手机号验证登录' : mode === 'email' ? '邮箱验证登录' : '密码登录'}
               </h1>
               <p style={{ fontSize: '0.85rem', color: MUTED }}>
-                {mode === 'sms' ? '注册和登录都先验证手机号，发布内容再进入审核' : '旧账号仍可使用密码登录'}
+                {mode === 'sms' ? '注册和登录都先验证手机号，发布内容再进入审核' : mode === 'email' ? '短信未稳定前，可先用邮箱创建基础账号' : '已设置密码的账号可用手机号或邮箱登录'}
               </p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 18 }}>
               <button type="button" onClick={() => { setMode('sms'); setError(''); }} style={{
                 border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
                 background: mode === 'sms' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'sms' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
-              }}>验证码</button>
+              }}>手机号</button>
+              <button type="button" onClick={() => { setMode('email'); setError(''); }} style={{
+                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
+                background: mode === 'email' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'email' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
+              }}>邮箱</button>
               <button type="button" onClick={() => { setMode('password'); setError(''); }} style={{
                 border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
                 background: mode === 'password' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'password' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
@@ -279,13 +322,12 @@ export default function Login() {
                 </div>
               )}
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>手机号</label>
-                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="输入手机号" required style={inputStyle} />
-              </div>
-
               {mode === 'sms' ? (
                 <>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>手机号</label>
+                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="输入手机号" required style={inputStyle} />
+                  </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>验证码</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 112px', gap: 8 }}>
@@ -301,8 +343,36 @@ export default function Login() {
                   </div>
                   <CityPreferenceField cities={activityCities} onChange={setActivityCities} />
                 </>
+              ) : mode === 'email' ? (
+                <>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>邮箱</label>
+                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="输入邮箱" required style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>邮箱验证码</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 112px', gap: 8 }}>
+                      <input type="text" value={emailCode} onChange={e => setEmailCode(e.target.value)} placeholder="6位验证码" required style={inputStyle} />
+                      <button type="button" onClick={sendEmailCode} disabled={emailSending} style={{ border: '1px solid rgba(201,146,46,0.32)', borderRadius: 10, background: '#fff', color: '#925f18', fontWeight: 800, cursor: emailSending ? 'not-allowed' : 'pointer' }}>
+                        {emailSending ? '发送中' : emailSent ? '重发' : '获取'}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>昵称 / 艺名（首次登录可填）</label>
+                    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="不填则使用邮箱前缀生成昵称" style={inputStyle} />
+                  </div>
+                  <CityPreferenceField cities={activityCities} onChange={setActivityCities} />
+                  <p style={{ margin: 0, color: 'rgba(71,85,105,0.64)', fontSize: '0.76rem', lineHeight: 1.65 }}>
+                    邮箱可先作为基础身份使用；手机号、微信和实名认证后续会提供更高可信标记。
+                  </p>
+                </>
               ) : (
                 <>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>手机号或邮箱</label>
+                    <input type="text" value={loginAccount} onChange={e => setLoginAccount(e.target.value)} placeholder="输入手机号或邮箱" required style={inputStyle} />
+                  </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>密码</label>
                     <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="输入密码" required style={inputStyle} />
@@ -343,7 +413,7 @@ export default function Login() {
                   background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
                   color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 800, fontSize: '0.9rem',
                 }}>
-                {loading ? '处理中...' : mode === 'sms' ? '验证并登录' : '登录'}
+                {loading ? '处理中...' : mode === 'password' ? '登录' : '验证并登录'}
               </button>
 
               <button type="button" onClick={startWechatLogin} disabled={loading || !acceptedTerms}
@@ -353,12 +423,12 @@ export default function Login() {
 
               {mode === 'password' && (
                 <p style={{ fontSize: '0.82rem', color: MUTED, textAlign: 'center' }}>
-                  没有设置过密码？先用验证码登录，再到个人后台设置网页登录密码。
+                  没有设置过密码？先用手机号或邮箱验证码登录，再到个人后台设置网页登录密码。
                 </p>
               )}
 
               <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.64)', textAlign: 'center', lineHeight: 1.7 }}>
-                验证码用于确认手机号归属；登录、发布、评论、举报等关键操作会依法留存必要日志。
+                验证码用于确认手机号或邮箱归属；登录、发布、评论、举报等关键操作会依法留存必要日志。
               </p>
             </form>
           </div>

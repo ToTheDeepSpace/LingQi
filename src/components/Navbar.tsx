@@ -147,7 +147,7 @@ export default function Navbar() {
           <NavLink to="/carpools">拼车区</NavLink>
           <NavLink to="/rankings">红黑榜</NavLink>
           <NavLink to="/scripts">剧本口碑</NavLink>
-          {creatorAuth && <IdentityChip tone="user">用户：{creatorAuth.display_name || creatorAuth.phone || '已登录'}</IdentityChip>}
+          {creatorAuth && <IdentityChip tone="user">用户：{creatorAuth.display_name || creatorAuth.phone || creatorAuth.email || '已登录'}</IdentityChip>}
           {isLoggedIn
             ? <>
               <NavLink to="/dashboard">我的主页</NavLink>
@@ -223,7 +223,7 @@ export default function Navbar() {
           <MobileLink to="/carpools" onClick={() => setMenuOpen(false)}>拼车区</MobileLink>
           <MobileLink to="/rankings" onClick={() => setMenuOpen(false)}>红黑榜</MobileLink>
           <MobileLink to="/scripts" onClick={() => setMenuOpen(false)}>剧本口碑</MobileLink>
-          {creatorAuth && <MobileStatus tone="user">当前用户：{creatorAuth.display_name || creatorAuth.phone || '已登录'}</MobileStatus>}
+          {creatorAuth && <MobileStatus tone="user">当前用户：{creatorAuth.display_name || creatorAuth.phone || creatorAuth.email || '已登录'}</MobileStatus>}
           {isAdmin && <MobileStatus tone="admin">管理员已登录{pendingCount > 0 ? `，待审 ${pendingCount}` : ''}</MobileStatus>}
           {isLoggedIn
             ? <>

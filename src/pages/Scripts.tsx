@@ -80,7 +80,7 @@ export default function Scripts() {
     setMessage('');
     if (!selected) return;
     if (!auth?.token) {
-      setMessage('登录并完成手机号认证后可给剧本评分');
+      setMessage('登录并完成手机号或邮箱验证后可给剧本评分');
       return;
     }
     const r = await fetch(`${API}/lc/scripts/${selected.id}/ratings`, {

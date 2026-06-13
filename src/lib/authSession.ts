@@ -2,6 +2,9 @@ export type StoredCreatorAuth = {
   id?: string;
   display_name?: string;
   phone?: string;
+  email?: string;
+  email_verified_at?: string | null;
+  phone_verified_at?: string | null;
   city?: string | null;
   available_cities?: string[] | null;
   token?: string;

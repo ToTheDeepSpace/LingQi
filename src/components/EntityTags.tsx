@@ -34,7 +34,7 @@ export default function EntityTags({ targetType, targetId, compact = false }: { 
   const addTag = async () => {
     setMessage('');
     if (!auth?.token) {
-      setMessage('登录并完成手机号认证后可添加标签');
+      setMessage('登录并完成手机号或邮箱验证后可添加标签');
       return;
     }
     if (!draft.trim()) return;
@@ -55,7 +55,7 @@ export default function EntityTags({ targetType, targetId, compact = false }: { 
   const likeTag = async (tag: EntityTag) => {
     setMessage('');
     if (!auth?.token) {
-      setMessage('登录并完成手机号认证后可点赞标签');
+      setMessage('登录并完成手机号或邮箱验证后可点赞标签');
       return;
     }
     const r = await fetch(`${API}/lc/tags/${tag.id}/like`, {

@@ -32,12 +32,19 @@ const JUZHANGGUI_TENANT_ID = process.env.JUZHANGGUI_TENANT_ID || 'f0d6e011-6e75-
 const AUTH_CODE_PEPPER = process.env.AUTH_CODE_PEPPER || JWT_SECRET;
 const SMS_CODE_TTL_MINUTES = Number(process.env.SMS_CODE_TTL_MINUTES || 5);
 const SMS_CODE_COOLDOWN_SECONDS = Number(process.env.SMS_CODE_COOLDOWN_SECONDS || 60);
+const EMAIL_CODE_TTL_MINUTES = Number(process.env.EMAIL_CODE_TTL_MINUTES || 10);
+const EMAIL_CODE_COOLDOWN_SECONDS = Number(process.env.EMAIL_CODE_COOLDOWN_SECONDS || 60);
 const TENCENT_SMS_REGION = process.env.TENCENT_SMS_REGION || 'ap-guangzhou';
 const TENCENT_SMS_SDK_APP_ID = process.env.TENCENT_SMS_SDK_APP_ID || '';
 const TENCENT_SMS_SIGN_NAME = process.env.TENCENT_SMS_SIGN_NAME || '';
 const TENCENT_SMS_TEMPLATE_ID = process.env.TENCENT_SMS_TEMPLATE_ID || '';
 const TENCENTCLOUD_SECRET_ID = process.env.TENCENTCLOUD_SECRET_ID || '';
 const TENCENTCLOUD_SECRET_KEY = process.env.TENCENTCLOUD_SECRET_KEY || '';
+const TENCENT_SES_REGION = process.env.TENCENT_SES_REGION || 'ap-hongkong';
+const TENCENT_SES_FROM_EMAIL = process.env.TENCENT_SES_FROM_EMAIL || 'no-reply@mail.jusichen.com';
+const TENCENT_SES_REPLY_TO = process.env.TENCENT_SES_REPLY_TO || 'basara-twenty@foxmail.com';
+const TENCENT_SES_TEMPLATE_ID = process.env.TENCENT_SES_TEMPLATE_ID || '';
+const TENCENT_SES_ALLOW_SIMPLE = process.env.TENCENT_SES_ALLOW_SIMPLE === 'true';
 const LINGQI_SITE_URL = (process.env.LINGQI_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://lingqi.jusichen.com').replace(/\/$/, '');
 const WECHAT_OPEN_APP_ID = process.env.WECHAT_OPEN_APP_ID || '';
 const WECHAT_OPEN_APP_SECRET = process.env.WECHAT_OPEN_APP_SECRET || '';
@@ -71,10 +78,18 @@ type TencentSmsStatus = { Code?: string; Message?: string; SerialNo?: string };
 type TencentSmsClient = {
   SendSms(params: Record<string, unknown>): Promise<{ SendStatusSet?: TencentSmsStatus[] }>;
 };
+type TencentEmailClient = {
+  SendEmail(params: Record<string, unknown>): Promise<{ MessageId?: string }>;
+};
 type TencentCloudSdk = {
   sms: {
     v20210111: {
       Client: new (config: Record<string, unknown>) => TencentSmsClient;
+    };
+  };
+  ses: {
+    v20201002: {
+      Client: new (config: Record<string, unknown>) => TencentEmailClient;
     };
   };
 };
@@ -231,6 +246,7 @@ function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
   safe.verified_shop = Boolean(profile.verified_shop);
   if (!isOwner) {
     delete safe.phone;
+    delete safe.email;
     delete safe.wechat;
     delete safe.balance;
     delete safe.paid_balance;
@@ -238,6 +254,7 @@ function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
     delete safe.contact_phone;
     delete safe.contact_wechat;
     delete safe.phone_verified_at;
+    delete safe.email_verified_at;
     delete safe.auth_provider;
     delete safe.wechat_openid;
     delete safe.wechat_mini_openid;
@@ -343,15 +360,15 @@ function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefi
 async function getAuthedProfile(req: express.Request) {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, gender, role, role_type, identity_roles, referral_code, community_role, community_role_expires_at')
+    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, email, email_verified_at, gender, role, role_type, identity_roles, referral_code, community_role, community_role_expires_at')
     .eq('id', creatorId)
     .single();
   return data;
 }
 
-function getSpeakBlockReason(profile: { phone_verified_at?: string | null } | null) {
+function getSpeakBlockReason(profile: { phone_verified_at?: string | null; email_verified_at?: string | null } | null) {
   if (!profile) return '用户不存在';
-  if (!profile.phone_verified_at) return '发言前请先用手机号验证码完成认证';
+  if (!profile.phone_verified_at && !profile.email_verified_at) return '发言前请先完成手机号或邮箱验证';
   return '';
 }
 
@@ -722,6 +739,12 @@ function normalizeChinaPhone(input: unknown) {
   return phone;
 }
 
+function normalizeEmail(input: unknown) {
+  const email = cleanText(input, 160).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('请填写正确的邮箱');
+  return email;
+}
+
 function makeAuthPhoneHash(phone: string) {
   return sha256(`auth-phone:${phone}`);
 }
@@ -730,12 +753,47 @@ function makeAuthCodeHash(phone: string, code: string) {
   return sha256(`auth-code:${AUTH_CODE_PEPPER}:${phone}:${code}`);
 }
 
+function makeAuthEmailHash(email: string) {
+  return sha256(`auth-email:${email.toLowerCase()}`);
+}
+
+function makeAuthEmailCodeHash(email: string, code: string) {
+  return sha256(`auth-email-code:${AUTH_CODE_PEPPER}:${email.toLowerCase()}:${code}`);
+}
+
 function makeSmsCode() {
   return String(randomInt(0, 1000000)).padStart(6, '0');
 }
 
+function makeEmailCode() {
+  return String(randomInt(0, 1000000)).padStart(6, '0');
+}
+
+function maskEmail(email: string) {
+  const [name, domain] = email.split('@');
+  const left = name.length <= 2 ? `${name[0] || '*'}*` : `${name.slice(0, 2)}***${name.slice(-1)}`;
+  return `${left}@${domain || ''}`;
+}
+
 function isTencentSmsConfigured() {
   return Boolean(TENCENTCLOUD_SECRET_ID && TENCENTCLOUD_SECRET_KEY && TENCENT_SMS_SDK_APP_ID && TENCENT_SMS_SIGN_NAME && TENCENT_SMS_TEMPLATE_ID);
+}
+
+function isTencentEmailConfigured() {
+  return Boolean(
+    TENCENTCLOUD_SECRET_ID &&
+    TENCENTCLOUD_SECRET_KEY &&
+    TENCENT_SES_FROM_EMAIL &&
+    (TENCENT_SES_TEMPLATE_ID || TENCENT_SES_ALLOW_SIMPLE)
+  );
+}
+
+function isSmsCodeLoginAvailable() {
+  return isTencentSmsConfigured() || process.env.NODE_ENV !== 'production';
+}
+
+function isEmailCodeLoginAvailable() {
+  return isTencentEmailConfigured() || process.env.NODE_ENV !== 'production';
 }
 
 async function sendTencentSmsCode(phone: string, code: string) {
@@ -775,6 +833,61 @@ async function sendTencentSmsCode(phone: string, code: string) {
     throw new Error(status.Message || `短信发送失败：${status.Code}`);
   }
   return { provider: 'tencentcloud', serialNo: status?.SerialNo || null };
+}
+
+async function sendTencentEmailCode(email: string, code: string) {
+  if (!isTencentEmailConfigured()) {
+    if (process.env.NODE_ENV === 'production') throw new Error('邮箱验证码服务未配置');
+    console.log(`[邮箱验证码][dev] ${email}: ${code}`);
+    return { provider: 'dev-log', messageId: null };
+  }
+
+  const imported = await import('tencentcloud-sdk-nodejs') as unknown as TencentCloudSdk & { default?: TencentCloudSdk };
+  const tencentcloud = imported.default || imported;
+  const SesClient = tencentcloud.ses.v20201002.Client;
+  const client = new SesClient({
+    credential: {
+      secretId: TENCENTCLOUD_SECRET_ID,
+      secretKey: TENCENTCLOUD_SECRET_KEY,
+    },
+    region: TENCENT_SES_REGION,
+    profile: {
+      httpProfile: {
+        endpoint: 'ses.tencentcloudapi.com',
+        reqMethod: 'POST',
+        reqTimeout: 10,
+      },
+    },
+  });
+
+  const params: Record<string, unknown> = {
+    FromEmailAddress: TENCENT_SES_FROM_EMAIL,
+    ReplyToAddresses: TENCENT_SES_REPLY_TO,
+    Destination: [email],
+    Subject: '灵契邮箱验证码',
+    TriggerType: 1,
+  };
+
+  if (TENCENT_SES_TEMPLATE_ID) {
+    params.Template = {
+      TemplateID: Number(TENCENT_SES_TEMPLATE_ID),
+      TemplateData: JSON.stringify({
+        code,
+        ttl: String(EMAIL_CODE_TTL_MINUTES),
+        product: '灵契',
+      }),
+    };
+  } else {
+    const text = `您的灵契验证码是：${code}。${EMAIL_CODE_TTL_MINUTES} 分钟内有效。若非本人操作，请忽略本邮件。`;
+    const html = `<html><body><p>您的灵契验证码是：</p><p style="font-size:24px;font-weight:700;letter-spacing:4px;">${code}</p><p>${EMAIL_CODE_TTL_MINUTES} 分钟内有效。若非本人操作，请忽略本邮件。</p></body></html>`;
+    params.Simple = {
+      Text: Buffer.from(text, 'utf8').toString('base64'),
+      Html: Buffer.from(html, 'utf8').toString('base64'),
+    };
+  }
+
+  const response = await client.SendEmail(params);
+  return { provider: 'tencentcloud-ses', messageId: response?.MessageId || null };
 }
 
 async function createAndSendPhoneCode(req: express.Request, project: 'lingqi' | 'juzhanggui', purpose: string, rawPhone: unknown) {
@@ -817,6 +930,50 @@ async function createAndSendPhoneCode(req: express.Request, project: 'lingqi' | 
   }
 }
 
+async function createAndSendEmailCode(req: express.Request, project: 'lingqi' | 'juzhanggui', purpose: string, rawEmail: unknown) {
+  const email = normalizeEmail(rawEmail);
+  const emailHash = makeAuthEmailHash(email);
+  const { data: latest, error: latestErr } = await supabase.from('lc_auth_verification_codes')
+    .select('id, created_at')
+    .eq('project', project)
+    .eq('purpose', purpose)
+    .eq('email_hash', emailHash)
+    .is('consumed_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestErr) throw latestErr;
+  if (latest?.created_at && Date.now() - new Date(latest.created_at).getTime() < EMAIL_CODE_COOLDOWN_SECONDS * 1000) {
+    throw new Error(`邮箱验证码已发送，请 ${EMAIL_CODE_COOLDOWN_SECONDS} 秒后再试`);
+  }
+
+  const code = makeEmailCode();
+  const expiresAt = new Date(Date.now() + EMAIL_CODE_TTL_MINUTES * 60 * 1000).toISOString();
+  const domain = email.split('@')[1] || '';
+  const { data: row, error: insertErr } = await supabase.from('lc_auth_verification_codes').insert({
+    project,
+    purpose,
+    phone_hash: emailHash,
+    phone_last4: null,
+    email_hash: emailHash,
+    email_mask: maskEmail(email),
+    email_domain: domain,
+    code_hash: makeAuthEmailCodeHash(email, code),
+    ip_address: getClientIp(req),
+    user_agent: getUserAgent(req),
+    expires_at: expiresAt,
+  }).select('id').single();
+  if (insertErr) throw insertErr;
+
+  try {
+    const result = await sendTencentEmailCode(email, code);
+    return { email, expiresAt, provider: result.provider };
+  } catch (sendErr) {
+    if (row?.id) await supabase.from('lc_auth_verification_codes').update({ consumed_at: new Date().toISOString() }).eq('id', row.id);
+    throw sendErr;
+  }
+}
+
 async function verifyPhoneCode(project: 'lingqi' | 'juzhanggui', purpose: string, rawPhone: unknown, rawCode: unknown) {
   const phone = normalizeChinaPhone(rawPhone);
   const code = typeof rawCode === 'string' ? rawCode.replace(/\D/g, '') : '';
@@ -844,6 +1001,35 @@ async function verifyPhoneCode(project: 'lingqi' | 'juzhanggui', purpose: string
     consumed_at: new Date().toISOString(),
   }).eq('id', row.id);
   return phone;
+}
+
+async function verifyEmailCode(project: 'lingqi' | 'juzhanggui', purpose: string, rawEmail: unknown, rawCode: unknown) {
+  const email = normalizeEmail(rawEmail);
+  const code = typeof rawCode === 'string' ? rawCode.replace(/\D/g, '') : '';
+  if (!/^\d{4,8}$/.test(code)) throw new Error('请填写正确的邮箱验证码');
+  const emailHash = makeAuthEmailHash(email);
+  const { data: row, error: qErr } = await supabase.from('lc_auth_verification_codes')
+    .select('id, code_hash, expires_at, attempts')
+    .eq('project', project)
+    .eq('purpose', purpose)
+    .eq('email_hash', emailHash)
+    .is('consumed_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (qErr) throw qErr;
+  if (!row) throw new Error('请先获取邮箱验证码');
+  if (new Date(row.expires_at).getTime() < Date.now()) throw new Error('邮箱验证码已过期，请重新获取');
+  if ((row.attempts || 0) >= 5) throw new Error('邮箱验证码错误次数过多，请重新获取');
+  if (row.code_hash !== makeAuthEmailCodeHash(email, code)) {
+    await supabase.from('lc_auth_verification_codes').update({ attempts: (row.attempts || 0) + 1 }).eq('id', row.id);
+    throw new Error('邮箱验证码错误');
+  }
+  await supabase.from('lc_auth_verification_codes').update({
+    attempts: (row.attempts || 0) + 1,
+    consumed_at: new Date().toISOString(),
+  }).eq('id', row.id);
+  return email;
 }
 
 function isWechatLoginConfigured() {
@@ -2866,6 +3052,26 @@ app.post('/api/lc/auth/send-code', async (req, res) => {
   } catch (e) { res.status(400).json(err(e)); }
 });
 
+app.get('/api/lc/auth/config', async (_req, res) => {
+  res.json(ok({
+    smsEnabled: isSmsCodeLoginAvailable(),
+    emailCodeEnabled: isEmailCodeLoginAvailable(),
+    wechatEnabled: isWechatLoginConfigured(),
+    wechatMiniEnabled: isWechatMiniLoginConfigured(),
+  }));
+});
+
+app.post('/api/lc/auth/email/send-code', async (req, res) => {
+  try {
+    const result = await createAndSendEmailCode(req, 'lingqi', 'email_login', req.body?.email);
+    await logSecurityEvent(req, {
+      action: 'auth_email_code_sent',
+      metadata: { email_hash: makeAuthEmailHash(result.email), provider: result.provider, expires_at: result.expiresAt },
+    });
+    res.json(ok({ sent: true, expires_at: result.expiresAt, email_mask: maskEmail(result.email) }));
+  } catch (e) { res.status(400).json(err(e)); }
+});
+
 app.post('/api/lc/auth/phone', async (req, res) => {
   try {
     const { displayName, activityCities, referralCode } = req.body;
@@ -2981,6 +3187,129 @@ app.post('/api/lc/auth/phone', async (req, res) => {
   } catch (e) { res.status(400).json(err(e)); }
 });
 
+app.post('/api/lc/auth/email', async (req, res) => {
+  try {
+    const { displayName, activityCities, referralCode } = req.body;
+    const activityCityList = normalizeActivityCities(activityCities, req.body?.city);
+    const primaryCity = activityCityList[0] || null;
+    const email = await verifyEmailCode('lingqi', 'email_login', req.body?.email, req.body?.code);
+    const nowIso = new Date().toISOString();
+    const emailPrefix = email.split('@')[0]?.slice(0, 24) || 'email';
+    const { data: existing } = await supabase.from('lc_profiles').select('*').eq('email', email).maybeSingle();
+
+    if (existing) {
+      if (existing.is_banned) {
+        await logSecurityEvent(req, {
+          action: 'auth_email_login_blocked_banned_user',
+          targetType: 'profile',
+          targetId: existing.id,
+          actorId: existing.id,
+          actorRole: existing.role || 'creator',
+          metadata: { reason: existing.ban_reason || null },
+        });
+        return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
+      }
+
+      const patch: Record<string, unknown> = {
+        email,
+        email_verified_at: nowIso,
+        auth_provider: existing.auth_provider || 'email',
+        ...profileIdentityPatch(existing, ['player']),
+      };
+      if (displayName && String(displayName).trim()) patch.display_name = String(displayName).trim().slice(0, 80);
+      if (!existing.display_name) patch.display_name = `用户${emailPrefix}`;
+      if (activityCityList.length > 0) {
+        patch.available_cities = activityCityList;
+        if (!existing.city && primaryCity) patch.city = primaryCity;
+      }
+      await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
+      const nextProfile = { ...existing, ...patch };
+      const token = signProfileAuthToken(nextProfile);
+      await logSecurityEvent(req, {
+        action: 'auth_email_login_success',
+        targetType: 'profile',
+        targetId: existing.id,
+        actorId: existing.id,
+        actorRole: existing.role || 'creator',
+        metadata: { email_hash: makeAuthEmailHash(email), email_verified_at: nowIso, activity_cities_count: activityCityList.length },
+      });
+      return res.json(ok({
+        id: existing.id,
+        display_name: String(nextProfile.display_name || `用户${emailPrefix}`),
+        phone: existing.phone || '',
+        phone_verified_at: existing.phone_verified_at || null,
+        email,
+        email_verified_at: nowIso,
+        role: nextProfile.role,
+        city: nextProfile.city || null,
+        available_cities: nextProfile.available_cities || [],
+        has_password: Boolean(existing.password_hash),
+        token,
+        new_user: false,
+      }));
+    }
+
+    const profileRole = 'player';
+    const { data: profile } = await supabase.from('lc_profiles').insert({
+      email,
+      display_name: displayName && String(displayName).trim() ? String(displayName).trim().slice(0, 80) : `用户${emailPrefix}`,
+      role: profileRole,
+      role_type: profileRole,
+      identity_roles: [profileRole],
+      password_hash: null,
+      is_visible: true,
+      balance: 30,
+      paid_balance: 0,
+      bonus_balance: 30,
+      email_verified_at: nowIso,
+      auth_provider: 'email',
+      city: primaryCity,
+      available_cities: activityCityList,
+    }).select().single();
+    if (!profile) return res.status(500).json(err(new Error('注册失败')));
+
+    await supabase.from('lc_transactions').insert({
+      profile_id: profile.id,
+      type: 'recharge',
+      amount: 30,
+      paid_amount: 0,
+      bonus_amount: 30,
+      description: '新用户注册赠送 30 契约币',
+      status: 'approved',
+      balance_before: 0,
+      balance_after: 30,
+      paid_balance_before: 0,
+      paid_balance_after: 0,
+      bonus_balance_before: 0,
+      bonus_balance_after: 30,
+    });
+    const referralResult = await runReferralSideEffect('email-signup', () => registerReferralForNewProfile(profile, referralCode));
+    const token = signProfileAuthToken(profile);
+    await logSecurityEvent(req, {
+      action: 'auth_email_register_success',
+      targetType: 'profile',
+      targetId: profile.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { welcome_credit: 30, email_hash: makeAuthEmailHash(email), email_verified_at: nowIso, activity_cities_count: activityCityList.length, referral_applied: Boolean(referralResult?.referral) },
+    });
+    res.json(ok({
+      id: profile.id,
+      display_name: profile.display_name,
+      phone: profile.phone || '',
+      phone_verified_at: profile.phone_verified_at || null,
+      email: profile.email,
+      email_verified_at: nowIso,
+      role: profile.role,
+      city: profile.city || null,
+      available_cities: profile.available_cities || [],
+      has_password: false,
+      token,
+      new_user: true,
+    }));
+  } catch (e) { res.status(400).json(err(e)); }
+});
+
 app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
   try {
     const creatorId = getReq(req, 'creatorId');
@@ -3042,8 +3371,8 @@ app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
     const { data: current } = await supabase.from('lc_profiles').select('*').eq('id', creatorId).single();
     if (!current) return res.status(404).json(err(new Error('当前账号不存在')));
     if (current.is_banned) return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
-    if (!current.phone || !current.phone_verified_at) {
-      return res.status(400).json(err(new Error('请先绑定并验证手机号，再设置网页端登录密码')));
+    if (!current.phone_verified_at && !current.email_verified_at) {
+      return res.status(400).json(err(new Error('请先完成手机号或邮箱验证，再设置网页登录密码')));
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -3054,7 +3383,10 @@ app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
       targetId: creatorId,
       actorId: creatorId,
       actorRole: current.role || 'creator',
-      metadata: { phone_hash: makeAuthPhoneHash(current.phone) },
+      metadata: {
+        phone_hash: current.phone ? makeAuthPhoneHash(current.phone) : null,
+        email_hash: current.email ? makeAuthEmailHash(current.email) : null,
+      },
     });
 
     res.json(ok({ has_password: true }));
@@ -3338,15 +3670,18 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
 
 app.post('/api/lc/auth', async (req, res) => {
   try {
-    const { phone, password, displayName, activityCities, referralCode } = req.body;
+    const { phone, account, password, displayName, activityCities } = req.body;
     const activityCityList = normalizeActivityCities(activityCities, req.body?.city);
     const primaryCity = activityCityList[0] || null;
-    const profileRole = 'player';
-    if (!phone || !password) {
-      return res.status(400).json(err(new Error('请填写手机号和密码')));
+    const rawAccount = cleanText(account || phone, 160);
+    if (!rawAccount || !password) {
+      return res.status(400).json(err(new Error('请填写手机号或邮箱和密码')));
     }
 
-    const { data: existing } = await supabase.from('lc_profiles').select('*').eq('phone', phone).maybeSingle();
+    const isEmailLogin = rawAccount.includes('@');
+    const loginAccount = isEmailLogin ? normalizeEmail(rawAccount) : normalizeChinaPhone(rawAccount);
+    const loginColumn = isEmailLogin ? 'email' : 'phone';
+    const { data: existing } = await supabase.from('lc_profiles').select('*').eq(loginColumn, loginAccount).maybeSingle();
 
     if (existing) {
       if (!existing.password_hash) {
@@ -3356,9 +3691,9 @@ app.post('/api/lc/auth', async (req, res) => {
           targetId: existing.id,
           actorId: existing.id,
           actorRole: existing.role || 'creator',
-          metadata: { phone_hash: sha256(String(phone)) },
+          metadata: isEmailLogin ? { email_hash: makeAuthEmailHash(loginAccount) } : { phone_hash: makeAuthPhoneHash(loginAccount) },
         });
-        return res.status(409).json(err(new Error('该手机号已通过微信或验证码注册，请先用验证码登录后到个人后台设置密码')));
+        return res.status(409).json(err(new Error('该账号已通过验证码或微信注册，请先用验证码登录后到个人后台设置密码')));
       }
       if (existing.is_banned) {
         await logSecurityEvent(req, {
@@ -3379,7 +3714,7 @@ app.post('/api/lc/auth', async (req, res) => {
           targetId: existing.id,
           actorId: existing.id,
           actorRole: existing.role || 'creator',
-          metadata: { phone_hash: sha256(String(phone)), reason: 'bad_password' },
+          metadata: { ...(isEmailLogin ? { email_hash: makeAuthEmailHash(loginAccount) } : { phone_hash: makeAuthPhoneHash(loginAccount) }), reason: 'bad_password' },
         });
         return res.status(401).json(err(new Error('密码错误')));
       }
@@ -3406,10 +3741,12 @@ app.post('/api/lc/auth', async (req, res) => {
       return res.json(ok({
         id: existing.id,
         display_name: String(profilePatch.display_name || existing.display_name),
-        phone: existing.phone,
+        phone: existing.phone || '',
+        email: existing.email || '',
         city: profilePatch.city || existing.city || null,
         available_cities: profilePatch.available_cities || existing.available_cities || [],
         phone_verified_at: existing.phone_verified_at || null,
+        email_verified_at: existing.email_verified_at || null,
         has_password: true,
         role: existing.role,
         token,
@@ -3419,16 +3756,16 @@ app.post('/api/lc/auth', async (req, res) => {
 
     await logSecurityEvent(req, {
       action: 'auth_legacy_register_blocked',
-      metadata: { phone_hash: sha256(String(phone)), reason: 'password_signup_disabled' },
+      metadata: { ...(isEmailLogin ? { email_hash: makeAuthEmailHash(loginAccount) } : { phone_hash: makeAuthPhoneHash(loginAccount) }), reason: 'password_signup_disabled' },
     });
-    return res.status(404).json(err(new Error('该手机号还没有注册。请先用手机号验证码登录并创建账号，再到个人后台设置密码。')));
+    return res.status(404).json(err(new Error('该账号还没有注册。请先用手机号或邮箱验证码登录并创建账号，再到个人后台设置密码。')));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.get('/api/lc/me', authMiddleware, async (req, res) => {
   try {
     const { data } = await supabase.from('lc_profiles')
-      .select('id, display_name, avatar, phone, phone_verified_at, password_hash, is_realname, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at')
+      .select('id, display_name, avatar, phone, phone_verified_at, email, email_verified_at, password_hash, is_realname, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at')
       .eq('id', getReq(req, 'creatorId'))
       .single();
     res.json(ok(data ? sanitizeProfile(data, true) : null));

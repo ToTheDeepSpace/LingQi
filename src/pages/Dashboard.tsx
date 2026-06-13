@@ -559,7 +559,7 @@ export default function Dashboard() {
       if (!d.success) throw new Error(d.error || '设置密码失败');
       setCreator(prev => prev ? { ...prev, has_password: true } : prev);
       setBindPassword('');
-      setMsg('网页登录密码已设置，之后可用手机号 + 密码登录同一个账号');
+      setMsg('网页登录密码已设置，之后可用手机号或邮箱 + 密码登录同一个账号');
       setTimeout(() => setMsg(''), 3200);
     } catch (e) {
       setError(e instanceof Error ? e.message : '设置密码失败');
@@ -813,6 +813,8 @@ export default function Dashboard() {
 
   const profileAvatarUrl = form.avatar || generatedAvatarDataUrl(form.display_name || creator.display_name, creator.id);
   const phoneVerified = !!creator.phone_verified_at;
+  const emailVerified = !!creator.email_verified_at;
+  const contactVerified = phoneVerified || emailVerified;
   const hasUploadedAvatar = !!form.avatar;
   const availableItems = availItems.filter(item => !item.is_booked);
   const busyItems = availItems.filter(item => item.is_booked);
@@ -901,7 +903,7 @@ export default function Dashboard() {
                     <p style={{ color: INK, fontWeight: 800, fontSize: '0.92rem', marginBottom: 8 }}>主页头像</p>
                     <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="上传头像" />
                     <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', marginTop: 8 }}>
-                      未上传时会显示系统生成头像；手机号验证通过后即可发布、评论、投票和接单。
+                      未上传时会显示系统生成头像；手机号或邮箱验证通过后即可发布、评论、投票和接单。
                     </p>
                   </div>
                 </div>
@@ -909,14 +911,16 @@ export default function Dashboard() {
                   <div style={{
                     padding: '12px 14px',
                     borderRadius: 12,
-                    backgroundColor: phoneVerified ? 'rgba(220,252,231,0.78)' : 'rgba(254,242,242,0.82)',
-                    border: `1px solid ${phoneVerified ? 'rgba(22,163,74,0.18)' : 'rgba(185,28,28,0.18)'}`,
-                    color: phoneVerified ? '#15803d' : '#b91c1c',
+                    backgroundColor: contactVerified ? 'rgba(220,252,231,0.78)' : 'rgba(254,242,242,0.82)',
+                    border: `1px solid ${contactVerified ? 'rgba(22,163,74,0.18)' : 'rgba(185,28,28,0.18)'}`,
+                    color: contactVerified ? '#15803d' : '#b91c1c',
                     fontSize: '0.82rem',
                     lineHeight: 1.65,
                     fontWeight: 700,
                   }}>
-                    {phoneVerified ? '手机号已验证，可以参与公开发言。' : '手机号未验证：请用手机号验证码登录一次，否则不能发布、评论、投票或接单。'}
+                    {contactVerified
+                      ? `${phoneVerified ? '手机号' : '邮箱'}已验证，可以参与公开发言。`
+                      : '手机号或邮箱未验证：请先完成验证码登录，否则不能发布、评论、投票或接单。'}
                   </div>
                   <div style={{
                     padding: '12px 14px',
@@ -942,20 +946,23 @@ export default function Dashboard() {
                     <div>
                       <p style={{ color: INK, fontWeight: 900, fontSize: '0.92rem', marginBottom: 4 }}>账号互通</p>
                       <p style={{ color: 'rgba(71,85,105,0.64)', fontSize: '0.8rem', lineHeight: 1.7 }}>
-                        小程序微信登录创建的是同一个灵契账号。绑定手机号后，网页端可用验证码登录；设置密码后，也可用手机号和密码登录。
+                        小程序微信登录、邮箱验证和手机号验证会进入同一个灵契账号。绑定手机号后可信度更高；设置密码后，可用手机号或邮箱加密码登录。
                       </p>
                     </div>
                     <span style={{
                       padding: '5px 10px',
                       borderRadius: 999,
-                      background: phoneVerified && creator.has_password ? 'rgba(220,252,231,0.86)' : 'rgba(255,247,237,0.96)',
-                      color: phoneVerified && creator.has_password ? '#15803d' : '#925f18',
+                      background: contactVerified && creator.has_password ? 'rgba(220,252,231,0.86)' : 'rgba(255,247,237,0.96)',
+                      color: contactVerified && creator.has_password ? '#15803d' : '#925f18',
                       fontWeight: 900,
                       fontSize: '0.75rem',
                     }}>
-                      {phoneVerified ? (creator.has_password ? '网页登录已完整开通' : '已可验证码登录') : '待绑定手机号'}
+                      {contactVerified ? (creator.has_password ? '网页登录已完整开通' : '已可验证码登录') : '待验证账号'}
                     </span>
                   </div>
+                  <p style={{ margin: '0 0 10px', color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.65 }}>
+                    当前账号：{creator.phone ? `手机号 ${creator.phone}` : '未绑定手机号'}；{creator.email ? `邮箱 ${creator.email}` : '未绑定邮箱'}。
+                  </p>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
                     <input
                       type="tel"
@@ -1000,14 +1007,14 @@ export default function Dashboard() {
                       placeholder={creator.has_password ? '输入新密码可修改' : '设置网页登录密码'}
                       style={inputStyle}
                     />
-                    <button type="button" onClick={setWebPassword} disabled={settingPassword || !phoneVerified} style={{
+                    <button type="button" onClick={setWebPassword} disabled={settingPassword || !contactVerified} style={{
                       padding: '0 18px',
                       border: '1px solid rgba(201,146,46,0.28)',
                       borderRadius: 10,
-                      background: phoneVerified ? '#fffaf2' : 'rgba(226,232,240,0.72)',
-                      color: phoneVerified ? '#925f18' : 'rgba(71,85,105,0.52)',
+                      background: contactVerified ? '#fffaf2' : 'rgba(226,232,240,0.72)',
+                      color: contactVerified ? '#925f18' : 'rgba(71,85,105,0.52)',
                       fontWeight: 900,
-                      cursor: settingPassword ? 'wait' : phoneVerified ? 'pointer' : 'not-allowed',
+                      cursor: settingPassword ? 'wait' : contactVerified ? 'pointer' : 'not-allowed',
                     }}>
                       {settingPassword ? '保存中...' : creator.has_password ? '修改密码' : '设置密码'}
                     </button>

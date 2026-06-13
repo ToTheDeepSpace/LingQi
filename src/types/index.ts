@@ -2,6 +2,8 @@ export interface Creator {
   id: string;
   phone?: string;
   phone_verified_at?: string | null;
+  email?: string;
+  email_verified_at?: string | null;
   has_password?: boolean;
   display_name: string;
   avatar: string | null;
@@ -88,8 +90,10 @@ export interface PaginatedResponse<T> {
 export interface AuthData {
   id: string;
   display_name: string;
-  phone: string;
+  phone?: string;
   phone_verified_at?: string | null;
+  email?: string;
+  email_verified_at?: string | null;
   has_password?: boolean;
   token: string;
   role: string;
@@ -107,6 +111,8 @@ export interface ScriptCatalogItem {
   duration_minutes?: number | null;
   min_duration_hours?: number | null;
   max_duration_hours?: number | null;
+  rating_avg?: number | null;
+  rating_count?: number | null;
 }
 
 export interface StoreCatalogItem {
