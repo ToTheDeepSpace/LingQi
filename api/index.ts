@@ -3983,6 +3983,30 @@ app.get('/api/lc/scripts', async (_req, res) => {
       .order('name', { ascending: true });
     if (qErr && isMissingRelation(qErr, 'scripts')) return res.json(ok([]));
     if (qErr) throw qErr;
+    const scriptIds = (data || []).map((script: Record<string, unknown>) => String(script.id));
+    let ratingMap = new Map<string, { avg: number; count: number }>();
+    if (scriptIds.length) {
+      const { data: ratings, error: ratingErr } = await supabase.from('lc_script_ratings')
+        .select('script_id, rating')
+        .in('script_id', scriptIds)
+        .eq('status', 'approved');
+      if (ratingErr && !isMissingRelation(ratingErr, 'lc_script_ratings')) throw ratingErr;
+      const buckets = new Map<string, number[]>();
+      for (const row of ratings || []) {
+        const id = String((row as Record<string, unknown>).script_id || '');
+        if (!id) continue;
+        const list = buckets.get(id) || [];
+        list.push(Number((row as Record<string, unknown>).rating || 0));
+        buckets.set(id, list);
+      }
+      ratingMap = new Map(Array.from(buckets.entries()).map(([id, values]) => [
+        id,
+        {
+          avg: Math.round((values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length)) * 10) / 10,
+          count: values.length,
+        },
+      ]));
+    }
     res.json(ok((data || []).map((script: Record<string, unknown>) => ({
       id: script.id,
       name: script.name,
@@ -3990,12 +4014,147 @@ app.get('/api/lc/scripts', async (_req, res) => {
       min_duration_hours: script.min_duration_hours || null,
       max_duration_hours: script.max_duration_hours || null,
       credits: sanitizeScriptCredits(script.credits),
+      rating_avg: ratingMap.get(String(script.id))?.avg || null,
+      rating_count: ratingMap.get(String(script.id))?.count || 0,
       player_roles: existingScriptRoles(script).map(role => ({
         role_name: role.role_name,
         gender: role.gender || '',
         tags: role.tags || [],
       })),
     }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/tags', async (req, res) => {
+  try {
+    const targetType = cleanText(req.query.targetType, 40);
+    const targetId = cleanText(req.query.targetId, 120);
+    if (!targetType || !targetId) return res.status(400).json(err(new Error('缺少标签对象')));
+    const creatorId = getOptionalCreatorId(req);
+    const { data, error: qErr } = await supabase.from('lc_entity_tags')
+      .select('*')
+      .eq('target_type', targetType)
+      .eq('target_id', targetId)
+      .eq('status', 'approved')
+      .order('likes', { ascending: false })
+      .order('created_at', { ascending: true });
+    if (qErr && isMissingRelation(qErr, 'lc_entity_tags')) return res.json(ok([]));
+    if (qErr) throw qErr;
+    let liked = new Set<string>();
+    if (creatorId && (data || []).length) {
+      const { data: votes } = await supabase.from('lc_entity_tag_votes')
+        .select('tag_id')
+        .in('tag_id', (data || []).map((tag: Record<string, unknown>) => String(tag.id)))
+        .eq('voter_id', creatorId);
+      liked = new Set((votes || []).map((vote: Record<string, unknown>) => String(vote.tag_id)));
+    }
+    res.json(ok((data || []).map((tag: Record<string, unknown>) => ({ ...tag, liked_by_me: liked.has(String(tag.id)) }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+app.post('/api/lc/tags', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    const blockReason = getSpeakBlockReason(profile);
+    if (blockReason) return res.status(403).json(err(new Error(blockReason)));
+    const targetType = cleanText(req.body?.targetType, 40);
+    const targetId = cleanText(req.body?.targetId, 120);
+    const tag = cleanText(req.body?.tag, 24);
+    if (!targetType || !targetId || !tag) return res.status(400).json(err(new Error('请填写标签')));
+    const normalizedTag = tag.toLowerCase();
+    const existingQuery = await supabase.from('lc_entity_tags')
+      .select('*')
+      .eq('target_type', targetType)
+      .eq('target_id', targetId)
+      .eq('normalized_tag', normalizedTag)
+      .maybeSingle();
+    if (existingQuery.error && !isMissingRelation(existingQuery.error, 'lc_entity_tags')) throw existingQuery.error;
+    if (existingQuery.data) return res.json(ok(existingQuery.data));
+    const { data, error: insErr } = await supabase.from('lc_entity_tags').insert({
+      target_type: targetType,
+      target_id: targetId,
+      tag,
+      normalized_tag: normalizedTag,
+      creator_id: profile.id,
+      creator_name: profile.display_name || '用户',
+      status: 'approved',
+    }).select().single();
+    if (insErr && isMissingRelation(insErr, 'lc_entity_tags')) return res.status(503).json(err(new Error('标签表尚未初始化')));
+    if (insErr) throw insErr;
+    res.json(ok(data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+app.post('/api/lc/tags/:id/like', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    const blockReason = getSpeakBlockReason(profile);
+    if (blockReason) return res.status(403).json(err(new Error(blockReason)));
+    const tagId = cleanText(req.params.id, 80);
+    const { data: tag, error: tagErr } = await supabase.from('lc_entity_tags').select('id').eq('id', tagId).maybeSingle();
+    if (tagErr && isMissingRelation(tagErr, 'lc_entity_tags')) return res.status(503).json(err(new Error('标签表尚未初始化')));
+    if (tagErr) throw tagErr;
+    if (!tag) return res.status(404).json(err(new Error('标签不存在')));
+    const vote = await supabase.from('lc_entity_tag_votes').insert({ tag_id: tagId, voter_id: profile.id }).select().maybeSingle();
+    if (vote.error && !String(vote.error.message || '').includes('duplicate') && !String(vote.error.code || '').includes('23505')) throw vote.error;
+    const { count } = await supabase.from('lc_entity_tag_votes').select('*', { count: 'exact', head: true }).eq('tag_id', tagId);
+    await supabase.from('lc_entity_tags').update({ likes: count || 0, updated_at: new Date().toISOString() }).eq('id', tagId);
+    res.json(ok({ id: tagId, likes: count || 0 }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+app.get('/api/lc/scripts/:id/ratings', async (req, res) => {
+  try {
+    const scriptId = cleanText(req.params.id, 120);
+    const creatorId = getOptionalCreatorId(req);
+    const { data, error: qErr } = await supabase.from('lc_script_ratings')
+      .select('*')
+      .eq('script_id', scriptId)
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (qErr && isMissingRelation(qErr, 'lc_script_ratings')) return res.json(ok({ ratings: [], mine: null, summary: { avg: null, count: 0 } }));
+    if (qErr) throw qErr;
+    const values = (data || []).map((row: Record<string, unknown>) => Number(row.rating || 0)).filter(Boolean);
+    const mine = creatorId ? (data || []).find((row: Record<string, unknown>) => String(row.profile_id) === creatorId) || null : null;
+    res.json(ok({
+      ratings: data || [],
+      mine,
+      summary: {
+        avg: values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null,
+        count: values.length,
+      },
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+app.post('/api/lc/scripts/:id/ratings', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    const blockReason = getSpeakBlockReason(profile);
+    if (blockReason) return res.status(403).json(err(new Error(blockReason)));
+    const scriptId = cleanText(req.params.id, 120);
+    const rawRating = Number(req.body?.rating || 0);
+    if (!Number.isFinite(rawRating) || rawRating < 1 || rawRating > 5) return res.status(400).json(err(new Error('请选择 1-5 分评分')));
+    const rating = Math.round(rawRating);
+    const content = cleanText(req.body?.content, 1000);
+    const tags = cleanTextArray(req.body?.tags, 8, 20);
+    const { data: script } = await supabase.from('scripts').select('id,name').eq('id', scriptId).maybeSingle();
+    const scriptName = cleanText(req.body?.scriptName, 160) || script?.name || '未命名剧本';
+    const payload = {
+      script_id: scriptId,
+      script_name: scriptName,
+      profile_id: profile.id,
+      profile_name: profile.display_name || '用户',
+      rating,
+      content,
+      tags,
+      status: 'approved',
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error: upsertErr } = await supabase.from('lc_script_ratings')
+      .upsert(payload, { onConflict: 'script_id,profile_id' })
+      .select()
+      .single();
+    if (upsertErr && isMissingRelation(upsertErr, 'lc_script_ratings')) return res.status(503).json(err(new Error('剧本评分表尚未初始化')));
+    if (upsertErr) throw upsertErr;
+    res.json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

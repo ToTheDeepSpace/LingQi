@@ -26,6 +26,7 @@ const CreateCarpool = lazy(pageLoaders.createCarpool);
 const Wallet = lazy(pageLoaders.wallet);
 const Referrals = lazy(pageLoaders.referrals);
 const Roadmap = lazy(pageLoaders.roadmap);
+const Scripts = lazy(pageLoaders.scripts);
 const ScriptContribute = lazy(pageLoaders.scriptContribute);
 const CertificationPage = lazy(pageLoaders.certification);
 const ShopDashboard = lazy(pageLoaders.shopDashboard);
@@ -68,6 +69,7 @@ function AppLayout() {
           <Route path="/wallet" element={<Wallet />} />
           <Route path="/referrals" element={<Referrals />} />
           <Route path="/roadmap" element={<Roadmap />} />
+          <Route path="/scripts" element={<Scripts />} />
           <Route path="/scripts/contribute" element={<ScriptContribute />} />
           <Route path="/certification" element={<CertificationPage />} />
           <Route path="/shop/dashboard" element={<ShopDashboard />} />
@@ -126,6 +128,7 @@ function SiteFooter() {
             <FooterLink to="/rankings">红黑白榜</FooterLink>
             <FooterLink to="/reputation/city">城市口碑榜</FooterLink>
             <FooterLink to="/dm-wall">爱D墙 / 店家</FooterLink>
+            <FooterLink to="/scripts">剧本口碑</FooterLink>
             <FooterLink to="/wallet">我的契约币</FooterLink>
             <FooterLink to="/referrals">我的邀请</FooterLink>
           </FooterColumn>
@@ -134,6 +137,7 @@ function SiteFooter() {
             <FooterLink to="/carpools/new">发布拼车</FooterLink>
             <FooterLink to="/rankings/new">发布口碑</FooterLink>
             <FooterLink to="/scripts/contribute">维护剧本库</FooterLink>
+            <FooterLink to="/scripts">给剧本评分</FooterLink>
             <FooterLink to="/certification">身份认证</FooterLink>
             <FooterLink to="/dashboard">个人后台</FooterLink>
           </FooterColumn>
