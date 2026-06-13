@@ -137,6 +137,7 @@ type AuditData = {
   target?: Record<string, unknown> | null;
 };
 type AuditModal = { item: Ranking; loading: boolean; error: string; data?: AuditData } | null;
+type BoardMode = 'reputation' | 'money';
 
 const card: React.CSSProperties = {
   background: 'linear-gradient(135deg, #fffdf8 0%, #fbf4e8 100%)',
@@ -228,7 +229,7 @@ function voteCopy(voteType: MyVote['vote_type'], rankingType?: Ranking['type']) 
   void rankingType;
   if (voteType === 'like') return { label: '同意', icon: '同' };
   if (voteType === 'dislike') return { label: '反对', icon: '反' };
-  return { label: '离谱', icon: '😂' };
+  return { label: '欢乐', icon: '😂' };
 }
 
 function paidBoostCopy(direction: 'boost' | 'negative_boost') {
@@ -266,19 +267,28 @@ function applyMetricPatch(item: Ranking, data: Partial<Ranking>) {
   };
 }
 
-function rankingSortScore(item: Ranking) {
-  return boostAmount(item)
-    + negativeBoostAmount(item)
-    + agreeCount(item)
-    + opposeCount(item)
-    + (item.joys || 0);
+function reputationScore(item: Ranking) {
+  return agreeCount(item) - opposeCount(item);
+}
+
+function reputationParticipation(item: Ranking) {
+  return agreeCount(item) + opposeCount(item) + (item.joys || 0);
+}
+
+function moneyScore(item: Ranking) {
+  return boostAmount(item) + negativeBoostAmount(item);
+}
+
+function boardRankScore(item: Ranking, mode: BoardMode) {
+  if (mode === 'money') return moneyScore(item);
+  return reputationScore(item);
 }
 
 function voteRecordText(vote: VoteRecord, itemType?: Ranking['type']) {
   void itemType;
   if (vote.vote_type === 'like') return '同意';
   if (vote.vote_type === 'dislike') return '反对';
-  return '离谱';
+  return '欢乐';
 }
 
 function voteRecordIcon(vote: VoteRecord, itemType?: Ranking['type']) {
@@ -291,12 +301,12 @@ function voteRecordIcon(vote: VoteRecord, itemType?: Ranking['type']) {
 function votesToggleLabel(item: Ranking, showVotes: boolean) {
   void item;
   if (showVotes) return '收起记录';
-  return '谁同意/反对/离谱';
+  return '谁同意/反对/欢乐';
 }
 
 function emptyVoteRecordText(item: Ranking) {
   void item;
-  return '暂无同意、反对或离谱记录';
+  return '暂无同意、反对或欢乐记录';
 }
 
 function isVoteAllowed(item: Ranking | undefined, voteType: MyVote['vote_type']) {
@@ -576,6 +586,7 @@ export default function Rankings() {
   const navigate = useNavigate();
   const initialPreferredCities = getAuth()?.availableCities || [];
   const [tab, setTab] = useState<'red' | 'black' | 'white'>('red');
+  const [boardMode, setBoardMode] = useState<BoardMode>('reputation');
   const [blackView, setBlackView] = useState<'active' | 'expired'>('active');
   const [subjectTab, setSubjectTab] = useState<string>('all');
   const [city, setCity] = useState(initialPreferredCities.length > 0 ? 'preferred' : 'all');
@@ -761,11 +772,19 @@ export default function Rankings() {
 
   const rankedItems = useMemo(() => {
     return [...items].sort((a, b) => {
-      const byScore = rankingSortScore(b) - rankingSortScore(a);
+      const byScore = boardRankScore(b, boardMode) - boardRankScore(a, boardMode);
       if (byScore !== 0) return byScore;
+      if (boardMode === 'reputation') {
+        const byParticipation = reputationParticipation(b) - reputationParticipation(a);
+        if (byParticipation !== 0) return byParticipation;
+      }
+      if (boardMode === 'money') {
+        const byNetBoost = (boostAmount(b) - negativeBoostAmount(b)) - (boostAmount(a) - negativeBoostAmount(a));
+        if (byNetBoost !== 0) return byNetBoost;
+      }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [items]);
+  }, [items, boardMode]);
 
   const daysLeft = (item: Ranking) => {
     if (item.type !== 'black' || !item.expires_at) return null;
@@ -1250,6 +1269,40 @@ export default function Rankings() {
             {tabBtn('black', '黑', '#475569')}
             {tabBtn('white', '白', '#b8860b')}
           </div>
+          <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: '#f8fafc', border: '1px solid rgba(71,85,105,0.12)', borderRadius: 12 }}>
+            <button
+              onClick={() => setBoardMode('reputation')}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 9,
+                border: 'none',
+                background: boardMode === 'reputation' ? '#ffffff' : 'transparent',
+                color: boardMode === 'reputation' ? '#1f2937' : 'rgba(71,85,105,0.68)',
+                boxShadow: boardMode === 'reputation' ? '0 4px 12px rgba(15,23,42,0.08)' : 'none',
+                fontWeight: 900,
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+              }}
+            >
+              口碑榜
+            </button>
+            <button
+              onClick={() => setBoardMode('money')}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 9,
+                border: 'none',
+                background: boardMode === 'money' ? '#ffffff' : 'transparent',
+                color: boardMode === 'money' ? GOLD : 'rgba(71,85,105,0.68)',
+                boxShadow: boardMode === 'money' ? '0 4px 12px rgba(166,106,31,0.12)' : 'none',
+                fontWeight: 900,
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+              }}
+            >
+              真金榜
+            </button>
+          </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 300px' }}>
             <FilterPill active={subjectTab === 'all'} onClick={() => setSubjectTab('all')}>全部</FilterPill>
             {SUBJECT_TYPES.map(st => (
@@ -1284,7 +1337,9 @@ export default function Rankings() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
           <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.7 }}>
-            {TAB_HINT[tab]} 排序按打榜、踩榜和免费态度形成的总热度。
+            {TAB_HINT[tab]} {boardMode === 'reputation'
+              ? '口碑榜按一人一票的同意、反对和欢乐参与排序，优先看真实人数。'
+              : '真金榜按打榜值和踩榜值排序，优先看真金白银投入。'}
           </span>
           {tab === 'black' && (
             <span style={{ display: 'inline-flex', gap: 6 }}>
@@ -1364,6 +1419,7 @@ export default function Rankings() {
               const kind = eventKindCopy(item.type);
               const heading = eventTitle(item.content);
               const summary = eventSummary(item.content);
+              const currentBoardScore = boardRankScore(item, boardMode);
 
               return (
                 <div key={item.id}
@@ -1428,7 +1484,7 @@ export default function Rankings() {
                         fontSize: '0.68rem',
                         fontWeight: 900,
                         marginLeft: 'auto',
-                      }}>#{idx + 1}</span>
+                      }}>{boardMode === 'reputation' ? '口碑' : '真金'} #{idx + 1} · {currentBoardScore}</span>
                     </div>
                     {summary && (
                       <p style={{
@@ -1599,7 +1655,7 @@ export default function Rankings() {
                       <button onClick={() => openVoteModal(item.id, 'joy')}
                         style={freeActionButtonStyle(myVote?.vote_type === 'joy', 'joy')}>
                         <span style={{ display: 'inline-flex', transform: 'rotate(-45deg)', transformOrigin: 'center' }}>😂</span>
-                        <span>{myVote?.vote_type === 'joy' ? '已离谱' : '离谱'}</span><strong>{item.joys || 0}</strong>
+                        <span>{myVote?.vote_type === 'joy' ? '已欢乐' : '欢乐'}</span><strong>{item.joys || 0}</strong>
                       </button>
                       <button onClick={() => openVoteModal(item.id, 'dislike')}
                         style={freeActionButtonStyle(myVote?.vote_type === 'dislike', 'oppose')}>
