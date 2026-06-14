@@ -3375,6 +3375,28 @@ app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
       return res.status(400).json(err(new Error('请先完成手机号或邮箱验证，再设置网页登录密码')));
     }
 
+    const verifiedTimes = [current.phone_verified_at, current.email_verified_at]
+      .map(value => value ? new Date(value).getTime() : 0)
+      .filter(value => Number.isFinite(value) && value > 0);
+    const recentlyVerified = verifiedTimes.some(value => Date.now() - value < 15 * 60 * 1000);
+    if (!recentlyVerified) {
+      const verificationType = cleanText(req.body?.verificationType, 20);
+      const verificationCode = cleanText(req.body?.verificationCode, 20);
+      if (verificationType === 'phone') {
+        if (!current.phone || !current.phone_verified_at) {
+          return res.status(400).json(err(new Error('当前账号没有可用于验证的手机号')));
+        }
+        await verifyPhoneCode('lingqi', 'login', current.phone, verificationCode);
+      } else if (verificationType === 'email') {
+        if (!current.email || !current.email_verified_at) {
+          return res.status(400).json(err(new Error('当前账号没有可用于验证的邮箱')));
+        }
+        await verifyEmailCode('lingqi', 'email_login', current.email, verificationCode);
+      } else {
+        return res.status(400).json(err(new Error('修改密码前请先验证当前手机号或邮箱')));
+      }
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     await supabase.from('lc_profiles').update({ password_hash: passwordHash }).eq('id', creatorId);
     await logSecurityEvent(req, {
@@ -3386,6 +3408,7 @@ app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
       metadata: {
         phone_hash: current.phone ? makeAuthPhoneHash(current.phone) : null,
         email_hash: current.email ? makeAuthEmailHash(current.email) : null,
+        verification_required: !recentlyVerified,
       },
     });
 

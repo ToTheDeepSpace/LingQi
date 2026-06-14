@@ -67,7 +67,7 @@ export default function Login() {
   const [emailCode, setEmailCode] = useState('');
   const [name, setName] = useState('');
   const [activityCities, setActivityCities] = useState<string[]>([]);
-  const [mode, setMode] = useState<LoginMode>('sms');
+  const [mode, setMode] = useState<LoginMode>('password');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -90,10 +90,14 @@ export default function Login() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const rawRef = params.get('ref');
-    const storedRef = localStorage.getItem(REFERRAL_STORAGE_KEY);
-    const normalizedRef = normalizeReferralCode(rawRef || storedRef);
-    if (rawRef && normalizedRef) localStorage.setItem(REFERRAL_STORAGE_KEY, normalizedRef);
-    if (normalizedRef) window.setTimeout(() => setReferralCode(normalizedRef), 0);
+    const normalizedRef = normalizeReferralCode(rawRef);
+    if (normalizedRef) {
+      localStorage.setItem(REFERRAL_STORAGE_KEY, normalizedRef);
+      window.setTimeout(() => setReferralCode(normalizedRef), 0);
+    } else {
+      localStorage.removeItem(REFERRAL_STORAGE_KEY);
+      window.setTimeout(() => setReferralCode(''), 0);
+    }
     const wechatLogin = params.get('wechat_login');
     const authError = params.get('auth_error');
     if (authError) {
@@ -271,7 +275,7 @@ export default function Login() {
           </div>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 32px' }} />
           <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: MUTED, lineHeight: 2 }}>
-            用邮箱先建立身份<br />用手机号或微信提高可信度<br />把每一次委托留在自己名下
+            日常用密码登录<br />注册和敏感修改再验证<br />把每一次委托留在自己名下
           </p>
         </div>
       </div>
@@ -287,26 +291,26 @@ export default function Login() {
           <div style={{ backgroundColor: '#fffaf2', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 20, padding: '36px 32px', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 8, color: INK }}>
-                {mode === 'sms' ? '手机号验证登录' : mode === 'email' ? '邮箱验证登录' : '密码登录'}
+                {mode === 'sms' ? '手机号验证 / 注册' : mode === 'email' ? '邮箱验证 / 注册' : '密码登录'}
               </h1>
               <p style={{ fontSize: '0.85rem', color: MUTED }}>
-                {mode === 'sms' ? '注册和登录都先验证手机号，发布内容再进入审核' : mode === 'email' ? '短信未稳定前，可先用邮箱创建基础账号' : '已设置密码的账号可用手机号或邮箱登录'}
+                {mode === 'sms' ? '首次注册、绑定或找回时再发短信验证码' : mode === 'email' ? '首次注册、绑定或找回时再发邮箱验证码' : '日常登录默认使用手机号或邮箱 + 密码'}
               </p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 18 }}>
-              <button type="button" onClick={() => { setMode('sms'); setError(''); }} style={{
-                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
-                background: mode === 'sms' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'sms' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
-              }}>手机号</button>
-              <button type="button" onClick={() => { setMode('email'); setError(''); }} style={{
-                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
-                background: mode === 'email' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'email' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
-              }}>邮箱</button>
               <button type="button" onClick={() => { setMode('password'); setError(''); }} style={{
                 border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
                 background: mode === 'password' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'password' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
-              }}>密码备用</button>
+              }}>密码登录</button>
+              <button type="button" onClick={() => { setMode('sms'); setError(''); }} style={{
+                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
+                background: mode === 'sms' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'sms' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
+              }}>手机验证</button>
+              <button type="button" onClick={() => { setMode('email'); setError(''); }} style={{
+                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
+                background: mode === 'email' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'email' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
+              }}>邮箱验证</button>
             </div>
 
             {referralCode && (
@@ -423,12 +427,12 @@ export default function Login() {
 
               {mode === 'password' && (
                 <p style={{ fontSize: '0.82rem', color: MUTED, textAlign: 'center' }}>
-                  没有设置过密码？先用手机号或邮箱验证码登录，再到个人后台设置网页登录密码。
+                  新用户或还没设置密码？用手机/邮箱验证创建账号，进个人后台设置密码。之后日常登录不用再发验证码。
                 </p>
               )}
 
               <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.64)', textAlign: 'center', lineHeight: 1.7 }}>
-                验证码用于确认手机号或邮箱归属；登录、发布、评论、举报等关键操作会依法留存必要日志。
+                验证码只用于注册、绑定、找回或修改敏感账号信息；登录、发布、评论、举报等关键操作会依法留存必要日志。
               </p>
             </form>
           </div>

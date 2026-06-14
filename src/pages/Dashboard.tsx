@@ -140,6 +140,12 @@ function formatDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function recentlyVerifiedAt(value?: string | null) {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && Date.now() - time < 15 * 60 * 1000;
+}
+
 function rolePreferenceKey(item: Pick<RolePreferenceDraft, 'script_name' | 'role_name'>) {
   return `${item.script_name.replace(/\s+/g, '').toLowerCase()}:${item.role_name.replace(/\s+/g, '').toLowerCase()}`;
 }
@@ -237,6 +243,9 @@ export default function Dashboard() {
   const [bindPhone, setBindPhone] = useState('');
   const [bindCode, setBindCode] = useState('');
   const [bindPassword, setBindPassword] = useState('');
+  const [passwordVerifyType, setPasswordVerifyType] = useState<'phone' | 'email'>('email');
+  const [passwordVerifyCode, setPasswordVerifyCode] = useState('');
+  const [sendingPasswordVerifyCode, setSendingPasswordVerifyCode] = useState(false);
   const [sendingBindCode, setSendingBindCode] = useState(false);
   const [bindingPhone, setBindingPhone] = useState(false);
   const [settingPassword, setSettingPassword] = useState(false);
@@ -283,6 +292,12 @@ export default function Dashboard() {
       if (scriptsData.success) setScripts(scriptsData.data || []);
     }).catch(() => setError('网络错误')).finally(() => setLoading(false));
   }, [navigate]);
+
+  useEffect(() => {
+    if (!creator) return;
+    if (passwordVerifyType === 'email' && !creator.email && creator.phone) setPasswordVerifyType('phone');
+    if (passwordVerifyType === 'phone' && !creator.phone && creator.email) setPasswordVerifyType('email');
+  }, [creator, passwordVerifyType]);
 
   const selectedScript = scripts.find(script => script.id === roleDraft.script_id) || null;
   const selectedScriptRoles = selectedScript?.player_roles || [];
@@ -544,8 +559,38 @@ export default function Dashboard() {
     }
   };
 
+  const sendPasswordVerifyCode = async () => {
+    if (!creator) return;
+    const target = passwordVerifyType === 'phone' ? creator.phone : creator.email;
+    if (!target) { setError(passwordVerifyType === 'phone' ? '当前账号没有手机号' : '当前账号没有邮箱'); return; }
+    setSendingPasswordVerifyCode(true);
+    setError('');
+    setMsg('');
+    try {
+      const r = await fetch(passwordVerifyType === 'phone' ? `${API}/lc/auth/send-code` : `${API}/lc/auth/email/send-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(passwordVerifyType === 'phone' ? { phone: target } : { email: target }),
+      });
+      const d = await r.json();
+      if (!d.success) throw new Error(d.error || '验证码发送失败');
+      setMsg('改密验证码已发送');
+      setTimeout(() => setMsg(''), 2500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '验证码发送失败');
+    } finally {
+      setSendingPasswordVerifyCode(false);
+    }
+  };
+
   const setWebPassword = async () => {
+    if (!creator) return;
     if (!bindPassword.trim() || bindPassword.length < 4) { setError('密码至少4位'); return; }
+    const recentlyVerified = recentlyVerifiedAt(creator.phone_verified_at) || recentlyVerifiedAt(creator.email_verified_at);
+    if (!recentlyVerified && !passwordVerifyCode.trim()) {
+      setError('修改密码前请先获取并填写当前手机号或邮箱验证码');
+      return;
+    }
     setSettingPassword(true);
     setError('');
     setMsg('');
@@ -553,12 +598,17 @@ export default function Dashboard() {
       const r = await fetch(`${API}/lc/auth/set-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ password: bindPassword.trim() }),
+        body: JSON.stringify({
+          password: bindPassword.trim(),
+          verificationType: recentlyVerified ? undefined : passwordVerifyType,
+          verificationCode: recentlyVerified ? undefined : passwordVerifyCode.trim(),
+        }),
       });
       const d = await r.json();
       if (!d.success) throw new Error(d.error || '设置密码失败');
       setCreator(prev => prev ? { ...prev, has_password: true } : prev);
       setBindPassword('');
+      setPasswordVerifyCode('');
       setMsg('网页登录密码已设置，之后可用手机号或邮箱 + 密码登录同一个账号');
       setTimeout(() => setMsg(''), 3200);
     } catch (e) {
@@ -815,6 +865,7 @@ export default function Dashboard() {
   const phoneVerified = !!creator.phone_verified_at;
   const emailVerified = !!creator.email_verified_at;
   const contactVerified = phoneVerified || emailVerified;
+  const recentlyVerified = recentlyVerifiedAt(creator.phone_verified_at) || recentlyVerifiedAt(creator.email_verified_at);
   const hasUploadedAvatar = !!form.avatar;
   const availableItems = availItems.filter(item => !item.is_booked);
   const busyItems = availItems.filter(item => item.is_booked);
@@ -999,6 +1050,36 @@ export default function Dashboard() {
                       {bindingPhone ? '绑定中...' : phoneVerified ? '重新验证' : '绑定手机号'}
                     </button>
                   </div>
+                  {!recentlyVerified && contactVerified && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '112px minmax(160px, 1fr) auto', gap: 10, marginBottom: 10 }}>
+                      <select
+                        value={passwordVerifyType}
+                        onChange={e => setPasswordVerifyType(e.target.value as 'phone' | 'email')}
+                        style={inputStyle}
+                      >
+                        <option value="email" disabled={!creator.email}>邮箱</option>
+                        <option value="phone" disabled={!creator.phone}>手机号</option>
+                      </select>
+                      <input
+                        type="text"
+                        value={passwordVerifyCode}
+                        onChange={e => setPasswordVerifyCode(e.target.value)}
+                        placeholder="修改密码验证码"
+                        style={inputStyle}
+                      />
+                      <button type="button" onClick={sendPasswordVerifyCode} disabled={sendingPasswordVerifyCode} style={{
+                        padding: '0 14px',
+                        border: '1px solid rgba(201,146,46,0.28)',
+                        borderRadius: 10,
+                        background: '#fffaf2',
+                        color: '#925f18',
+                        fontWeight: 900,
+                        cursor: sendingPasswordVerifyCode ? 'wait' : 'pointer',
+                      }}>
+                        {sendingPasswordVerifyCode ? '发送中...' : '发送改密验证码'}
+                      </button>
+                    </div>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10 }}>
                     <input
                       type="password"
