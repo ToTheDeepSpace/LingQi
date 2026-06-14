@@ -1223,7 +1223,7 @@ export default function Dashboard() {
                     note="未保存的主页资料会自动保存到当前浏览器。"
                   />
                 </div>
-                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <div className="profile-grid-compact" style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1.1fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr) minmax(130px, 0.8fr)', gap: 12, marginBottom: 12 }}>
                   <div>
                     <label style={labelStyle}>昵称 / 艺名</label>
                     <input type="text" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} style={inputStyle} />
@@ -1232,8 +1232,6 @@ export default function Dashboard() {
                     <label style={labelStyle}>城市</label>
                     <input type="text" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="如：上海" style={inputStyle} />
                   </div>
-                </div>
-                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>
                     <label style={labelStyle}>性别</label>
                     <select value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })} style={inputStyle}>
@@ -1258,21 +1256,23 @@ export default function Dashboard() {
                     </select>
                   </div>
                 </div>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={labelStyle}>吃什么线（逗号分隔）</label>
-                  <input type="text" value={form.preferred_story_lines} onChange={e => setForm({ ...form, preferred_story_lines: e.target.value })} placeholder="亲情线, 爱情线, 权谋线, 事业线" style={inputStyle} />
+                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={labelStyle}>吃什么线（逗号分隔）</label>
+                    <input type="text" value={form.preferred_story_lines} onChange={e => setForm({ ...form, preferred_story_lines: e.target.value })} placeholder="亲情线, 爱情线, 权谋线, 事业线" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>标签（逗号分隔）</label>
+                    <input type="text" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })}
+                      placeholder="恋陪, 情感本, 日系" style={inputStyle} />
+                  </div>
                 </div>
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 12 }}>
                   <label style={labelStyle}>简介</label>
-                  <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} rows={4}
+                  <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} rows={3}
                     style={{ ...inputStyle, resize: 'none' }} />
                 </div>
-                <div style={{ marginBottom: 24 }}>
-                  <label style={labelStyle}>标签（逗号分隔）</label>
-                  <input type="text" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })}
-                    placeholder="恋陪, 情感本, 日系" style={inputStyle} />
-                </div>
-                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
                   <div>
                     <label style={labelStyle}>抖音主页链接</label>
                     <input type="url" value={form.douyin} onChange={e => setForm({ ...form, douyin: e.target.value })} placeholder="https://v.douyin.com/..." style={inputStyle} />
@@ -1309,7 +1309,7 @@ export default function Dashboard() {
                       note="未保存的服务设置和角色清单会自动保存到当前浏览器。"
                     />
                   </div>
-                  <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div className="service-settings-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 0.72fr) minmax(190px, 1.2fr) minmax(150px, 0.9fr) minmax(170px, 1fr)', gap: 12, marginBottom: 12, alignItems: 'end' }}>
                     <div>
                       <label style={labelStyle}>流动状态</label>
                       <select value={form.travel_status} onChange={e => setForm({ ...form, travel_status: e.target.value })} style={inputStyle}>
@@ -1323,8 +1323,6 @@ export default function Dashboard() {
                       <label style={labelStyle}>可接城市（逗号分隔）</label>
                       <input type="text" value={form.available_cities} onChange={e => setForm({ ...form, available_cities: e.target.value })} placeholder="北京, 上海, 杭州" style={inputStyle} />
                     </div>
-                  </div>
-                  <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                     <div>
                       <label style={labelStyle}>微信</label>
                       <input type="text" value={form.wechat} onChange={e => setForm({ ...form, wechat: e.target.value })}
@@ -1338,7 +1336,7 @@ export default function Dashboard() {
                           页面会写成预约意向确认，用来减少无效打扰，不写成“加微信门槛费”。
                         </InfoTip>
                       </label>
-                      <input type="number" value={form.contact_intent_amount} onChange={e => setForm({ ...form, contact_intent_amount: e.target.value })} placeholder="金额，0 表示不收" style={{ ...inputStyle, maxWidth: 180 }} />
+                      <input type="number" value={form.contact_intent_amount} onChange={e => setForm({ ...form, contact_intent_amount: e.target.value })} placeholder="金额，0 表示不收" style={{ ...inputStyle }} />
                     </div>
                   </div>
                   <button onClick={() => saveProfile()} disabled={saving}
@@ -1480,14 +1478,14 @@ export default function Dashboard() {
                       note="未添加的服务会自动保存到当前浏览器。"
                     />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div className="service-add-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(100px, 0.55fr) minmax(130px, 0.7fr)', gap: 12, marginBottom: 12 }}>
                     <input type="text" value={newSvc.service_type} onChange={e => setNewSvc({ ...newSvc, service_type: e.target.value })}
                       placeholder="服务类型" style={inputStyle} />
                     <input type="number" value={newSvc.price} onChange={e => setNewSvc({ ...newSvc, price: e.target.value })}
                       placeholder="价格（元）" style={inputStyle} />
+                    <input type="text" value={newSvc.duration} onChange={e => setNewSvc({ ...newSvc, duration: e.target.value })}
+                      placeholder="时长（如：2小时）" style={inputStyle} />
                   </div>
-                  <input type="text" value={newSvc.duration} onChange={e => setNewSvc({ ...newSvc, duration: e.target.value })}
-                    placeholder="时长（如：2小时）" style={{ ...inputStyle, marginBottom: 16 }} />
                   <button onClick={addService}
                     style={{ padding: '10px 24px', borderRadius: 10, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: INK, fontWeight: 700, fontSize: '0.875rem' }}>
                     添加
@@ -2029,8 +2027,11 @@ export default function Dashboard() {
           .account-bind-grid,
           .password-verify-grid,
           .password-set-grid,
+          .profile-grid-compact,
           .profile-grid-2,
-          .profile-grid-auto {
+          .profile-grid-auto,
+          .service-settings-grid,
+          .service-add-grid {
             grid-template-columns: 1fr !important;
             gap: 10px !important;
           }
