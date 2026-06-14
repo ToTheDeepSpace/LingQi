@@ -11,9 +11,9 @@ const MUTED = 'rgba(71,85,105,0.76)';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '12px 16px',
-  borderRadius: 10,
-  fontSize: '0.9rem',
+  padding: 'var(--lq-input-padding, 12px 16px)',
+  borderRadius: 'var(--lq-control-radius, 10px)',
+  fontSize: 'var(--lq-input-font-size, 0.9rem)',
   border: '1px solid rgba(201,146,46,0.28)',
   outline: 'none',
   backgroundColor: '#fff',
@@ -296,7 +296,7 @@ export default function Login() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', backgroundColor: C, color: INK }}>
+    <div className="login-page" style={{ minHeight: '100vh', display: 'flex', backgroundColor: C, color: INK }}>
       <div style={{
         display: 'none',
         width: '45%',
@@ -323,20 +323,20 @@ export default function Login() {
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
-        <div style={{ width: '100%', maxWidth: 420 }}>
-          <div style={{ textAlign: 'center', marginBottom: 32 }}>
+      <div className="login-main" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--lq-login-main-padding, 40px 20px)' }}>
+        <div className="login-shell" style={{ width: '100%', maxWidth: 420 }}>
+          <div className="login-logo" style={{ textAlign: 'center', marginBottom: 'var(--lq-logo-margin, 32px)' }}>
             <Link to="/" style={{ textDecoration: 'none', fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '2rem', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               灵契
             </Link>
           </div>
 
-          <div style={{ backgroundColor: '#fffaf2', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 20, padding: '36px 32px', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
-            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div className={`login-card ${mode !== 'password' ? 'register-card' : ''}`} style={{ backgroundColor: '#fffaf2', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 'var(--lq-card-radius, 20px)', padding: 'var(--lq-card-padding, 36px 32px)', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
+            <div className="login-header" style={{ textAlign: 'center', marginBottom: 'var(--lq-header-margin, 24px)' }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 8, color: INK }}>
                 {mode === 'sms' ? '手机注册' : mode === 'email' ? '邮箱注册' : '密码登录'}
               </h1>
-              <p style={{ fontSize: '0.85rem', color: MUTED }}>
+              <p className="login-subtitle" style={{ fontSize: '0.85rem', color: MUTED }}>
                 {mode === 'sms'
                   ? '输入手机号后会自动发送验证码，注册时设置密码'
                   : mode === 'email'
@@ -345,17 +345,17 @@ export default function Login() {
               </p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 18 }}>
+            <div className="login-tabs" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--lq-tab-gap, 8px)', marginBottom: 'var(--lq-tabs-margin, 18px)' }}>
               <button type="button" onClick={() => { setMode('password'); setError(''); }} style={{
-                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
+                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 'var(--lq-control-radius, 10px)', padding: 'var(--lq-tab-padding, 10px 12px)', fontSize: 'var(--lq-tab-font-size, 0.88rem)',
                 background: mode === 'password' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'password' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
               }}>密码登录</button>
               <button type="button" onClick={() => { setMode('sms'); setError(''); }} style={{
-                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
+                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 'var(--lq-control-radius, 10px)', padding: 'var(--lq-tab-padding, 10px 12px)', fontSize: 'var(--lq-tab-font-size, 0.88rem)',
                 background: mode === 'sms' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'sms' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
               }}>手机注册</button>
               <button type="button" onClick={() => { setMode('email'); setError(''); }} style={{
-                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 10, padding: '10px 12px',
+                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 'var(--lq-control-radius, 10px)', padding: 'var(--lq-tab-padding, 10px 12px)', fontSize: 'var(--lq-tab-font-size, 0.88rem)',
                 background: mode === 'email' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'email' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
               }}>邮箱注册</button>
             </div>
@@ -366,9 +366,9 @@ export default function Login() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <form className="login-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--lq-form-gap, 16px)' }}>
               {error && (
-                <div style={{ padding: '12px 16px', backgroundColor: error.includes('已发送') ? 'rgba(240,253,244,0.92)' : 'rgba(254,242,242,0.92)', border: `1px solid ${error.includes('已发送') ? 'rgba(34,197,94,0.24)' : 'rgba(220,38,38,0.24)'}`, borderRadius: 10, fontSize: '0.85rem', color: error.includes('已发送') ? '#15803d' : '#b91c1c' }}>
+                <div className="login-message" style={{ padding: 'var(--lq-message-padding, 12px 16px)', backgroundColor: error.includes('已发送') ? 'rgba(240,253,244,0.92)' : 'rgba(254,242,242,0.92)', border: `1px solid ${error.includes('已发送') ? 'rgba(34,197,94,0.24)' : 'rgba(220,38,38,0.24)'}`, borderRadius: 'var(--lq-control-radius, 10px)', fontSize: '0.85rem', color: error.includes('已发送') ? '#15803d' : '#b91c1c' }}>
                   {error}
                 </div>
               )}
@@ -408,7 +408,7 @@ export default function Login() {
                     onPasswordChange={setRegisterPassword}
                     onConfirmChange={setRegisterPasswordConfirm}
                   />
-                  <p style={{ margin: 0, color: 'rgba(71,85,105,0.64)', fontSize: '0.76rem', lineHeight: 1.65 }}>
+                  <p className="register-footnote" style={{ margin: 0, color: 'rgba(71,85,105,0.64)', fontSize: '0.76rem', lineHeight: 1.65 }}>
                     昵称、头像、常用城市进站后再设置。昵称只是公开展示名，不是登录账号；登录账号是手机号或邮箱。
                   </p>
                 </>
@@ -447,7 +447,7 @@ export default function Login() {
                     onPasswordChange={setRegisterPassword}
                     onConfirmChange={setRegisterPasswordConfirm}
                   />
-                  <p style={{ margin: 0, color: 'rgba(71,85,105,0.64)', fontSize: '0.76rem', lineHeight: 1.65 }}>
+                  <p className="register-footnote" style={{ margin: 0, color: 'rgba(71,85,105,0.64)', fontSize: '0.76rem', lineHeight: 1.65 }}>
                     邮箱可先作为基础身份使用；昵称、头像、常用城市进站后再设置。昵称不是登录账号，登录账号是手机号或邮箱。
                   </p>
                 </>
@@ -464,12 +464,12 @@ export default function Login() {
                 </>
               )}
 
-              <label style={{
+              <label className="terms-check" style={{
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: 10,
-                padding: '12px 14px',
-                borderRadius: 12,
+                padding: 'var(--lq-terms-padding, 12px 14px)',
+                borderRadius: 'var(--lq-control-radius, 12px)',
                 border: '1px solid rgba(201,146,46,0.2)',
                 background: 'rgba(255,255,255,0.72)',
                 color: MUTED,
@@ -487,23 +487,25 @@ export default function Login() {
                   <Link to="/terms" target="_blank" style={{ color: '#925f18', fontWeight: 850, textDecoration: 'none', margin: '0 4px' }}>《用户协议》</Link>
                   和
                   <Link to="/privacy" target="_blank" style={{ color: '#925f18', fontWeight: 850, textDecoration: 'none', margin: '0 4px' }}>《隐私政策》</Link>
-                  ，知悉红黑白榜、委托、拼车、契约币、审核和线下合作责任规则。
+                  <span className="terms-extra">，知悉红黑白榜、委托、拼车、契约币、审核和线下合作责任规则。</span>
                 </span>
               </label>
 
               <button type="submit" disabled={loading || !acceptedTerms}
                 style={{
-                  marginTop: 4, padding: '13px', borderRadius: 10, border: 'none', cursor: loading || !acceptedTerms ? 'not-allowed' : 'pointer',
+                  marginTop: 4, padding: 'var(--lq-primary-padding, 13px)', borderRadius: 'var(--lq-control-radius, 10px)', border: 'none', cursor: loading || !acceptedTerms ? 'not-allowed' : 'pointer',
                   background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
                   color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 800, fontSize: '0.9rem',
                 }}>
                 {loading ? '处理中...' : mode === 'password' ? '登录' : '注册并进入灵契'}
               </button>
 
-              <button type="button" onClick={startWechatLogin} disabled={loading || !acceptedTerms}
-                style={{ padding: '12px', borderRadius: 10, border: '1px solid rgba(34,197,94,0.26)', background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : '#f0fdf4', color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : '#166534', fontWeight: 850, cursor: loading || !acceptedTerms ? 'not-allowed' : 'pointer' }}>
-                微信扫码登录
-              </button>
+              {mode === 'password' && (
+                <button type="button" onClick={startWechatLogin} disabled={loading || !acceptedTerms}
+                  style={{ padding: '12px', borderRadius: 10, border: '1px solid rgba(34,197,94,0.26)', background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : '#f0fdf4', color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : '#166534', fontWeight: 850, cursor: loading || !acceptedTerms ? 'not-allowed' : 'pointer' }}>
+                  微信扫码登录
+                </button>
+              )}
 
               {mode === 'password' && (
                 <p style={{ fontSize: '0.82rem', color: MUTED, textAlign: 'center' }}>
@@ -511,13 +513,13 @@ export default function Login() {
                 </p>
               )}
 
-              <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.64)', textAlign: 'center', lineHeight: 1.7 }}>
+              <p className="auth-note" style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.64)', textAlign: 'center', lineHeight: 1.7 }}>
                 验证码只用于注册、绑定、找回或修改敏感账号信息；登录、发布、评论、举报等关键操作会依法留存必要日志。
               </p>
             </form>
           </div>
 
-          <div style={{ textAlign: 'center', marginTop: 24 }}>
+          <div className="login-back" style={{ textAlign: 'center', marginTop: 24 }}>
             <Link to="/" style={{ fontSize: '0.8rem', color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }}
               onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
               onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>
@@ -530,6 +532,69 @@ export default function Login() {
       <style>{`
         @media (min-width: 1024px) {
           .lg-flex { display: flex !important; }
+        }
+        @media (min-width: 1024px) and (max-height: 800px) {
+          .login-page {
+            --lq-login-main-padding: 24px 20px;
+            --lq-logo-margin: 18px;
+            --lq-card-padding: 26px 28px;
+            --lq-header-margin: 18px;
+            --lq-tabs-margin: 14px;
+            --lq-form-gap: 12px;
+            --lq-input-padding: 10px 13px;
+            --lq-terms-padding: 10px 12px;
+            --lq-primary-padding: 11px;
+          }
+          .login-logo { display: none !important; }
+          .login-back { margin-top: 14px !important; }
+        }
+        @media (max-width: 640px) {
+          .login-page {
+            --lq-login-main-padding: 10px 12px;
+            --lq-logo-margin: 8px;
+            --lq-card-padding: 14px;
+            --lq-card-radius: 14px;
+            --lq-control-radius: 8px;
+            --lq-input-padding: 9px 10px;
+            --lq-input-font-size: 0.84rem;
+            --lq-header-margin: 10px;
+            --lq-tabs-margin: 10px;
+            --lq-tab-gap: 6px;
+            --lq-tab-padding: 8px 6px;
+            --lq-tab-font-size: 0.78rem;
+            --lq-form-gap: 9px;
+            --lq-message-padding: 8px 10px;
+            --lq-terms-padding: 8px 10px;
+            --lq-primary-padding: 10px;
+            --lq-password-gap: 8px;
+          }
+          .login-main { align-items: flex-start !important; }
+          .login-logo a { font-size: 1.5rem !important; }
+          .login-header h1 { font-size: 1.15rem !important; margin-bottom: 2px !important; }
+          .register-card .login-subtitle,
+          .register-card .register-footnote,
+          .register-card .auth-note,
+          .terms-extra,
+          .login-back {
+            display: none !important;
+          }
+          .login-form label:not(.terms-check) {
+            margin-bottom: 4px !important;
+            font-size: 0.72rem !important;
+          }
+          .login-form p {
+            margin-top: 4px !important;
+            line-height: 1.35 !important;
+          }
+          .password-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+          .terms-check {
+            line-height: 1.35 !important;
+            font-size: 0.72rem !important;
+            gap: 8px !important;
+          }
+          .terms-check input { margin-top: 1px !important; }
         }
       `}</style>
     </div>
@@ -548,14 +613,14 @@ function PasswordSetupFields({
   onConfirmChange: (value: string) => void;
 }) {
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div className="password-grid" style={{ display: 'grid', gap: 'var(--lq-password-gap, 12px)' }}>
       <div>
         <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>设置登录密码</label>
-        <input type="password" value={password} onChange={e => onPasswordChange(e.target.value)} placeholder="至少6位，之后日常登录使用" required style={inputStyle} />
+        <input type="password" value={password} onChange={e => onPasswordChange(e.target.value)} placeholder="至少6位" required style={inputStyle} />
       </div>
       <div>
         <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>再次输入密码</label>
-        <input type="password" value={confirm} onChange={e => onConfirmChange(e.target.value)} placeholder="再输入一次，避免输错" required style={inputStyle} />
+        <input type="password" value={confirm} onChange={e => onConfirmChange(e.target.value)} placeholder="再次输入" required style={inputStyle} />
       </div>
     </div>
   );

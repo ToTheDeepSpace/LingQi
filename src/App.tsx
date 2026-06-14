@@ -43,6 +43,7 @@ const ICP_RECORD_NO = '冀ICP备2026019163号-1';
 function AppLayout() {
   const { pathname } = useLocation();
   const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new';
+  const showFooter = pathname !== '/login';
 
   return (
     <>
@@ -81,7 +82,7 @@ function AppLayout() {
           <Route path="/business-license" element={<BusinessLicense />} />
         </Routes>
       </Suspense>
-      <SiteFooter />
+      {showFooter && <SiteFooter />}
     </>
   );
 }
