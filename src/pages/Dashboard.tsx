@@ -958,7 +958,21 @@ export default function Dashboard() {
       <div className="dashboard-hero" style={{ background: `linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '24px 20px' }}>
         <div className="dashboard-hero-inner" style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div className="dashboard-identity" style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-            <img className="dashboard-identity-avatar" src={profileAvatarUrl} alt="" style={{ width: 54, height: 54, borderRadius: 16, objectFit: 'cover', border: '2px solid rgba(217,168,87,0.32)', background: '#fffaf2', boxShadow: '0 10px 24px rgba(31,41,55,0.08)' }} />
+            <div className="dashboard-avatar-stack" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <img className="dashboard-identity-avatar" src={profileAvatarUrl} alt="" style={{ width: 54, height: 54, borderRadius: 16, objectFit: 'cover', border: '2px solid rgba(217,168,87,0.32)', background: '#fffaf2', boxShadow: '0 10px 24px rgba(31,41,55,0.08)' }} />
+              <div className="dashboard-avatar-action" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <ImageUpload
+                  onUploaded={handleAvatarUploaded}
+                  token={token}
+                  api={API}
+                  scope="avatar"
+                  label="更换头像"
+                  variant="compact"
+                  hidePreview
+                />
+                <InfoTip>头像保存后会显示在公开页；请只上传可公开图片。</InfoTip>
+              </div>
+            </div>
             <div style={{ minWidth: 0 }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的主页</h1>
               <p style={{ fontSize: '0.85rem', color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{creator.display_name}</p>
@@ -1023,34 +1037,6 @@ export default function Dashboard() {
             {tab === 'profile' && (
               <div className="dashboard-card profile-editor-card" style={card}>
                 <h2 style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 24, color: INK }}>编辑资料</h2>
-                <div className="profile-avatar-panel" style={{
-                  display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
-                  padding: '16px', borderRadius: 14, marginBottom: 20,
-                  background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(239,246,255,0.82))',
-                  border: '1px solid rgba(125,147,170,0.16)',
-                }}>
-                  <div style={{
-                    width: 86, height: 86, borderRadius: 22, overflow: 'hidden', flexShrink: 0,
-                    background: 'linear-gradient(135deg, rgba(217,168,87,0.24), rgba(107,63,160,0.16))',
-                    border: '2px solid rgba(217,168,87,0.32)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#925f18', fontSize: 28, fontWeight: 900,
-                  }}>
-                    <img src={profileAvatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                  <div>
-                    <p style={{ color: INK, fontWeight: 800, fontSize: '0.92rem', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      主页头像
-                      <InfoTip>
-                        未上传时会显示系统生成头像；手机号或邮箱验证通过后即可发布、评论、投票和接单。
-                      </InfoTip>
-                    </p>
-                    <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="上传头像" />
-                    <p style={{ color: 'rgba(71,85,105,0.52)', fontSize: '0.72rem', lineHeight: 1.55, marginTop: 6 }}>
-                      当前头像保存后会直接显示在公开页，请只上传可公开图片。
-                    </p>
-                  </div>
-                </div>
                 <div className="dashboard-panel account-panel" style={{
                   padding: '16px',
                   borderRadius: 14,
@@ -1739,6 +1725,12 @@ export default function Dashboard() {
           flex-wrap: wrap;
           margin-top: 8px;
         }
+        .dashboard-avatar-stack {
+          max-width: 100%;
+        }
+        .dashboard-avatar-action {
+          max-width: 130px;
+        }
         .status-badge {
           display: inline-flex;
           align-items: center;
@@ -1979,6 +1971,18 @@ export default function Dashboard() {
             border: 1px solid rgba(201,146,46,0.16) !important;
             box-shadow: 0 10px 28px rgba(31,41,55,0.06) !important;
           }
+          .dashboard-avatar-stack {
+            align-self: flex-start !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            gap: 6px !important;
+          }
+          .dashboard-avatar-action {
+            max-width: 96px !important;
+          }
+          .dashboard-avatar-action .info-tip-wrap {
+            display: none !important;
+          }
           .dashboard-identity-avatar {
             width: 64px !important;
             height: 64px !important;
@@ -2064,20 +2068,6 @@ export default function Dashboard() {
           .profile-editor-card > h2 {
             margin-bottom: 14px !important;
             font-size: 1rem !important;
-          }
-          .profile-avatar-panel {
-            align-items: center !important;
-            gap: 12px !important;
-            padding: 12px !important;
-            margin-bottom: 12px !important;
-          }
-          .profile-avatar-panel > div:first-child {
-            width: 72px !important;
-            height: 72px !important;
-            border-radius: 20px !important;
-          }
-          .profile-avatar-panel p {
-            line-height: 1.55 !important;
           }
           .account-bind-grid,
           .password-verify-grid,
