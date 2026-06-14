@@ -1272,7 +1272,7 @@ export default function Dashboard() {
                   <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} rows={3}
                     style={{ ...inputStyle, resize: 'none' }} />
                 </div>
-                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                <div className="profile-grid-2 social-link-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
                   <div>
                     <label style={labelStyle}>抖音主页链接</label>
                     <input type="url" value={form.douyin} onChange={e => setForm({ ...form, douyin: e.target.value })} placeholder="https://v.douyin.com/..." style={inputStyle} />
@@ -2027,13 +2027,21 @@ export default function Dashboard() {
           .account-bind-grid,
           .password-verify-grid,
           .password-set-grid,
-          .profile-grid-compact,
-          .profile-grid-2,
           .profile-grid-auto,
-          .service-settings-grid,
-          .service-add-grid {
+          .social-link-grid {
             grid-template-columns: 1fr !important;
             gap: 10px !important;
+          }
+          .profile-grid-compact,
+          .profile-grid-2,
+          .service-settings-grid,
+          .service-add-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 10px !important;
+          }
+          .service-settings-grid > div:nth-child(2),
+          .service-add-grid > input:first-child {
+            grid-column: 1 / -1 !important;
           }
           .compact-status-pill {
             min-height: 28px !important;
