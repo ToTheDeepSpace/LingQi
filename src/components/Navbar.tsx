@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { isTokenExpired, readStoredCreatorAuth, type StoredCreatorAuth } from '../lib/authSession';
 import { preloadRoute } from '../lib/routePreload';
 
@@ -37,6 +37,7 @@ function readAuthSnapshot() {
 
 export default function Navbar() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [authSnapshot, setAuthSnapshot] = useState(readAuthSnapshot);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -45,6 +46,7 @@ export default function Navbar() {
   const isAdmin = !!adminToken;
   const isShop = creatorAuth?.role === 'shop';
   const isHome = pathname === '/';
+  const mobileIdentity = creatorAuth?.display_name || creatorAuth?.phone || creatorAuth?.email || (isAdmin ? '管理员' : '');
 
   useEffect(() => {
     const syncAuth = () => setAuthSnapshot(readAuthSnapshot());
@@ -95,6 +97,12 @@ export default function Navbar() {
     };
   }, [adminToken]);
 
+  const goBack = () => {
+    const historyState = window.history.state as { idx?: number } | null;
+    if (historyState?.idx && historyState.idx > 0) navigate(-1);
+    else navigate('/');
+  };
+
   return (
     <nav style={{
       position: 'sticky', top: 0, zIndex: 50,
@@ -111,26 +119,34 @@ export default function Navbar() {
         gap: 16,
       }}>
 
-        {/* 返回首页 — 左 */}
-        <Link
-          className="home-return-link"
-          to="/"
-          aria-label={isHome ? '灵契首页' : '返回灵契首页'}
-          style={homeLinkStyle(isHome)}
-          onMouseEnter={() => preloadRoute('/')}
-          onFocus={() => preloadRoute('/')}
-        >
-          <span aria-hidden="true" style={homeArrowStyle(isHome)}>←</span>
-          <span style={{ display: 'grid', gap: 1, minWidth: 0 }}>
-            <span style={homeReturnTextStyle}>{isHome ? '灵契首页' : '返回首页'}</span>
-            <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.1rem', lineHeight: 1.05 }}>
+        {/* 左上角：首页显示品牌，其他页面显示上一级返回 */}
+        {isHome ? (
+          <Link
+            className="home-return-link"
+            to="/"
+            aria-label="灵契首页"
+            style={brandLinkStyle}
+            onMouseEnter={() => preloadRoute('/')}
+            onFocus={() => preloadRoute('/')}
+          >
+            <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.12rem', lineHeight: 1.05 }}>
               灵契
               <span style={{ marginLeft: 5, fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(146,95,24,0.58)', fontFamily: 'var(--font-sans)', WebkitTextFillColor: 'rgba(146,95,24,0.58)' }}>
                 Lingqi
               </span>
             </span>
-          </span>
-        </Link>
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label="返回上一级"
+            style={backButtonStyle}
+          >
+            <span aria-hidden="true" style={backChevronStyle}>‹</span>
+            <span>返回</span>
+          </button>
+        )}
 
         {/* 桌面导航 — 右 */}
         <div className="hidden lg:flex" style={{
@@ -196,18 +212,38 @@ export default function Navbar() {
           )}
         </div>
 
-        {/* 移动端汉堡 — 右 */}
-        <button
-          onClick={() => setMenuOpen(!menuOpen)}
-          className="lg:hidden"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 8, color: MUTED }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            {menuOpen
-              ? <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
-              : <><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></>
-            }
-          </svg>
-        </button>
+        {/* 移动端身份 + 菜单 — 右 */}
+        <div className="flex lg:hidden" style={{ alignItems: 'center', gap: 8, minWidth: 0 }}>
+          {isLoggedIn || isAdmin ? (
+            <Link
+              to={isAdmin ? '/admin' : '/dashboard'}
+              style={mobileIdentityStyle(isAdmin)}
+              onClick={() => setMenuOpen(false)}
+            >
+              <span style={{
+                width: 7, height: 7, borderRadius: 999,
+                background: isAdmin ? '#925f18' : '#15803d',
+                flex: '0 0 auto',
+              }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {isAdmin ? `管理员${pendingCount > 0 ? ` ${pendingCount}` : ''}` : mobileIdentity}
+              </span>
+            </Link>
+          ) : (
+            <Link to="/login" style={mobileLoginStyle} onClick={() => setMenuOpen(false)}>登录</Link>
+          )}
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label={menuOpen ? '关闭菜单' : '打开菜单'}
+            style={{ background: 'rgba(255,250,242,0.84)', border: '1px solid rgba(201,146,46,0.18)', borderRadius: 10, cursor: 'pointer', padding: 8, color: MUTED, display: 'inline-flex' }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              {menuOpen
+                ? <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+                : <><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></>
+              }
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* 移动端下拉菜单 */}
@@ -249,45 +285,72 @@ export default function Navbar() {
   );
 }
 
-const homeLinkStyle = (isHome: boolean): React.CSSProperties => ({
+const brandLinkStyle: React.CSSProperties = {
   textDecoration: 'none',
   display: 'inline-flex',
   alignItems: 'center',
-  gap: 9,
   flex: '0 0 auto',
   minWidth: 0,
-  padding: '7px 12px 7px 8px',
-  borderRadius: 14,
-  border: isHome ? '1px solid rgba(201,146,46,0.22)' : '1px solid rgba(201,146,46,0.42)',
-  background: isHome ? 'rgba(255,250,242,0.72)' : 'linear-gradient(135deg, rgba(255,250,242,0.98), rgba(238,246,255,0.92))',
-  boxShadow: isHome ? 'none' : '0 10px 24px rgba(146,95,24,0.12)',
+  padding: '7px 10px',
+  borderRadius: 12,
+  border: '1px solid rgba(201,146,46,0.18)',
+  background: 'rgba(255,250,242,0.72)',
   color: INK,
   transition: 'transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease',
   willChange: 'transform',
-});
+};
 
-const homeArrowStyle = (isHome: boolean): React.CSSProperties => ({
-  width: 32,
-  height: 32,
+const backButtonStyle: React.CSSProperties = {
+  appearance: 'none',
+  border: 'none',
+  background: 'transparent',
+  color: '#275389',
+  padding: '8px 6px',
+  marginLeft: -6,
   borderRadius: 10,
   display: 'inline-flex',
   alignItems: 'center',
-  justifyContent: 'center',
-  flex: '0 0 auto',
-  background: isHome ? 'rgba(217,168,87,0.14)' : 'linear-gradient(135deg, #d9a857 0%, #c9922e 100%)',
-  color: isHome ? '#925f18' : '#fffdf8',
-  border: isHome ? '1px solid rgba(201,146,46,0.18)' : '1px solid rgba(146,95,24,0.22)',
-  fontSize: 18,
-  fontWeight: 900,
+  gap: 2,
+  cursor: 'pointer',
+  fontSize: '0.9rem',
+  fontWeight: 800,
   lineHeight: 1,
-});
-
-const homeReturnTextStyle: React.CSSProperties = {
-  color: 'rgba(39,83,137,0.82)',
-  fontSize: 11,
-  fontWeight: 900,
-  lineHeight: 1.05,
 };
+
+const backChevronStyle: React.CSSProperties = {
+  fontSize: 28,
+  fontWeight: 900,
+  lineHeight: 0.8,
+  transform: 'translateY(-1px)',
+};
+
+const mobileLoginStyle: React.CSSProperties = {
+  maxWidth: 86,
+  padding: '7px 10px',
+  borderRadius: 999,
+  border: '1px solid rgba(201,146,46,0.24)',
+  background: 'rgba(255,250,242,0.92)',
+  color: '#925f18',
+  textDecoration: 'none',
+  fontSize: '0.8rem',
+  fontWeight: 900,
+};
+
+const mobileIdentityStyle = (admin: boolean): React.CSSProperties => ({
+  maxWidth: 142,
+  minWidth: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '7px 10px',
+  borderRadius: 999,
+  border: admin ? '1px solid rgba(217,168,87,0.48)' : '1px solid rgba(22,163,74,0.22)',
+  background: admin ? 'rgba(217,168,87,0.18)' : 'rgba(220,252,231,0.78)',
+  color: admin ? '#925f18' : '#15803d',
+  textDecoration: 'none',
+  fontSize: '0.78rem',
+  fontWeight: 900,
+});
 
 function IdentityChip({ children, tone }: { children: React.ReactNode; tone: 'user' | 'admin' }) {
   const admin = tone === 'admin';
