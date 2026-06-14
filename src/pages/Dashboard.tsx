@@ -885,7 +885,6 @@ export default function Dashboard() {
   const recentlyVerified = recentlyVerifiedAt(creator.phone_verified_at) || recentlyVerifiedAt(creator.email_verified_at);
   const accountBindExpanded = showAccountBindForm || !contactVerified;
   const passwordExpanded = contactVerified && (showPasswordForm || !creator.has_password);
-  const hasUploadedAvatar = !!form.avatar;
   const availableItems = availItems.filter(item => !item.is_booked);
   const busyItems = availItems.filter(item => item.is_booked);
   const busyDateSet = new Set(busyItems.map(item => item.date));
@@ -1038,18 +1037,6 @@ export default function Dashboard() {
                     <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="上传头像" />
                   </div>
                 </div>
-                <div className="profile-status-grid compact-status-grid">
-                  <CompactStatus ok={contactVerified} tone={contactVerified ? 'ok' : 'danger'} label={contactVerified ? `${phoneVerified ? '手机号' : '邮箱'}已验证` : '账号未验证'}>
-                    {contactVerified
-                      ? '已可参与发布、评论、投票和接单。'
-                      : '完成手机号或邮箱验证后，才能参与公开发言、投票和接单。'}
-                  </CompactStatus>
-                  <CompactStatus ok={hasUploadedAvatar} tone={hasUploadedAvatar ? 'ok' : 'warn'} label={hasUploadedAvatar ? '头像已上传' : '系统头像'}>
-                    {hasUploadedAvatar
-                      ? '头像会展示在你的公开主页和互动记录里。'
-                      : '未上传时使用系统生成头像，目前不影响公开发言。'}
-                  </CompactStatus>
-                </div>
                 <div className="dashboard-panel account-panel" style={{
                   padding: '16px',
                   borderRadius: 14,
@@ -1059,9 +1046,11 @@ export default function Dashboard() {
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
-                      <p style={{ color: INK, fontWeight: 900, fontSize: '0.92rem', marginBottom: 4 }}>账号互通</p>
-                      <p style={{ color: 'rgba(71,85,105,0.64)', fontSize: '0.8rem', lineHeight: 1.7 }}>
-                        小程序微信登录、邮箱验证和手机号验证会进入同一个灵契账号。绑定手机号后可信度更高；设置密码后，可用手机号或邮箱加密码登录。
+                      <p style={{ color: INK, fontWeight: 900, fontSize: '0.92rem', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        账号互通
+                        <InfoTip>
+                          小程序微信登录、邮箱验证和手机号验证会进入同一个灵契账号。设置密码后，可用手机号或邮箱加密码登录。
+                        </InfoTip>
                       </p>
                     </div>
                     <span style={{
@@ -1075,16 +1064,16 @@ export default function Dashboard() {
                       {contactVerified ? (creator.has_password ? '网页登录已完整开通' : '已可验证码登录') : '待验证账号'}
                     </span>
                   </div>
-                  <div className="account-status-grid compact-status-grid account-compact-grid">
-                    <CompactStatus ok={phoneVerified} tone={phoneVerified ? 'ok' : 'warn'} label={phoneVerified ? '手机已验证' : '未绑手机'} value={creator.phone || ''}>
-                      绑定手机号后账号可信度更高，后续可用于找回和更敏感的身份校验。
-                    </CompactStatus>
-                    <CompactStatus ok={emailVerified} tone={emailVerified ? 'ok' : 'warn'} label={emailVerified ? '邮箱已验证' : '未绑邮箱'} value={creator.email || ''}>
-                      邮箱可用于注册、登录、找回密码和接收平台通知。
-                    </CompactStatus>
-                    <CompactStatus ok={!!creator.has_password} tone={creator.has_password ? 'ok' : 'warn'} label={creator.has_password ? '密码已开通' : '未设密码'}>
-                      {creator.has_password ? '日常登录可直接使用手机号或邮箱加密码。' : '设置后可以减少验证码发送次数。'}
-                    </CompactStatus>
+                  <div className="account-emoji-row">
+                    <EmojiStatus icon="📱" tone={phoneVerified ? 'ok' : 'warn'} label={phoneVerified ? '已验证' : '未绑定'}>
+                      手机号用于找回账号和更敏感的身份校验；页面不在状态区直接展示号码。
+                    </EmojiStatus>
+                    <EmojiStatus icon="✉️" tone={emailVerified ? 'ok' : 'warn'} label={emailVerified ? '已验证' : '未绑定'}>
+                      邮箱可用于注册、登录、找回密码和接收平台通知；页面不在状态区直接展示邮箱。
+                    </EmojiStatus>
+                    <EmojiStatus icon="🔐" tone={creator.has_password ? 'ok' : 'warn'} label={creator.has_password ? '已设置' : '未设置'}>
+                      {creator.has_password ? '日常登录可直接使用账号加密码。' : '设置后可以减少验证码发送次数。'}
+                    </EmojiStatus>
                   </div>
 
                   <div className="account-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: (accountBindExpanded || passwordExpanded) ? 12 : 0 }}>
@@ -1219,7 +1208,7 @@ export default function Dashboard() {
                     savedAt={profileDraft.savedAt}
                     restoredAt={profileDraft.restoredAt}
                     error={profileDraft.error}
-                    note="未保存的主页资料和角色清单会自动保存到当前浏览器。"
+                    note="未保存的主页资料会自动保存到当前浏览器。"
                   />
                 </div>
                 <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
@@ -1261,7 +1250,97 @@ export default function Dashboard() {
                   <label style={labelStyle}>吃什么线（逗号分隔）</label>
                   <input type="text" value={form.preferred_story_lines} onChange={e => setForm({ ...form, preferred_story_lines: e.target.value })} placeholder="亲情线, 爱情线, 权谋线, 事业线" style={inputStyle} />
                 </div>
-                <div className="dashboard-panel role-panel" style={{ marginBottom: 18, padding: '16px', borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.72)', border: '1px solid rgba(201,146,46,0.18)' }}>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>简介</label>
+                  <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} rows={4}
+                    style={{ ...inputStyle, resize: 'none' }} />
+                </div>
+                <div style={{ marginBottom: 24 }}>
+                  <label style={labelStyle}>标签（逗号分隔）</label>
+                  <input type="text" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })}
+                    placeholder="恋陪, 情感本, 日系" style={inputStyle} />
+                </div>
+                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                  <div>
+                    <label style={labelStyle}>抖音主页链接</label>
+                    <input type="url" value={form.douyin} onChange={e => setForm({ ...form, douyin: e.target.value })} placeholder="https://v.douyin.com/..." style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>小红书主页链接</label>
+                    <input type="url" value={form.xiaohongshu} onChange={e => setForm({ ...form, xiaohongshu: e.target.value })} placeholder="https://www.xiaohongshu.com/..." style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <button onClick={() => saveProfile()} disabled={saving}
+                    style={{
+                      padding: '11px 28px', borderRadius: 10, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
+                      background: saving ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                      color: saving ? 'rgba(71,85,105,0.52)' : INK, fontWeight: 700, fontSize: '0.9rem',
+                    }}>
+                    {saving ? '保存中...' : '保存资料'}
+                  </button>
+                  {msg && <span style={{ fontSize: '0.875rem', color: '#15803d', fontWeight: 600 }}>{msg}</span>}
+                </div>
+              </div>
+            )}
+
+            {/* 服务 */}
+            {tab === 'services' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="dashboard-panel service-settings-panel" style={{ ...card }}>
+                  <p style={{ fontWeight: 800, color: INK, fontSize: '0.96rem', marginBottom: 12 }}>委托与服务设置</p>
+                  <div style={{ marginBottom: 12 }}>
+                    <DraftAutosaveNotice
+                      savedAt={profileDraft.savedAt}
+                      restoredAt={profileDraft.restoredAt}
+                      error={profileDraft.error}
+                      note="未保存的服务设置和角色清单会自动保存到当前浏览器。"
+                    />
+                  </div>
+                  <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={labelStyle}>流动状态</label>
+                      <select value={form.travel_status} onChange={e => setForm({ ...form, travel_status: e.target.value })} style={inputStyle}>
+                        <option value="常驻本地">常驻本地</option>
+                        <option value="全国流动">全国流动</option>
+                        <option value="巡游中">巡游中</option>
+                        <option value="远程可接">远程可接</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>可接城市（逗号分隔）</label>
+                      <input type="text" value={form.available_cities} onChange={e => setForm({ ...form, available_cities: e.target.value })} placeholder="北京, 上海, 杭州" style={inputStyle} />
+                    </div>
+                  </div>
+                  <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={labelStyle}>微信</label>
+                      <input type="text" value={form.wechat} onChange={e => setForm({ ...form, wechat: e.target.value })}
+                        placeholder="粉丝通过申请后可见" style={inputStyle} />
+                    </div>
+                    <div className="intent-setting-row">
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'rgba(71,85,105,0.82)', fontSize: '0.82rem', fontWeight: 850 }}>
+                        <input type="checkbox" checked={form.contact_unlock_enabled} onChange={e => setForm({ ...form, contact_unlock_enabled: e.target.checked })} />
+                        预约意向金
+                        <InfoTip>
+                          页面会写成预约意向确认，用来减少无效打扰，不写成“加微信门槛费”。
+                        </InfoTip>
+                      </label>
+                      <input type="number" value={form.contact_intent_amount} onChange={e => setForm({ ...form, contact_intent_amount: e.target.value })} placeholder="金额，0 表示不收" style={{ ...inputStyle, maxWidth: 180 }} />
+                    </div>
+                  </div>
+                  <button onClick={() => saveProfile()} disabled={saving}
+                    style={{
+                      padding: '10px 20px', borderRadius: 10, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
+                      background: saving ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                      color: saving ? 'rgba(71,85,105,0.52)' : INK, fontWeight: 800, fontSize: '0.86rem',
+                    }}>
+                    {saving ? '保存中...' : '保存服务设置'}
+                  </button>
+                  {msg && <span style={{ marginLeft: 12, fontSize: '0.82rem', color: '#15803d', fontWeight: 700 }}>{msg}</span>}
+                </div>
+
+                <div className="dashboard-panel role-panel" style={{ ...card }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
                       <p style={{ fontWeight: 800, color: INK, fontSize: '0.92rem', marginBottom: 4 }}>可接本与角色</p>
@@ -1364,75 +1443,7 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
-                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-                  <div>
-                    <label style={labelStyle}>流动状态</label>
-                    <select value={form.travel_status} onChange={e => setForm({ ...form, travel_status: e.target.value })} style={inputStyle}>
-                      <option value="常驻本地">常驻本地</option>
-                      <option value="全国流动">全国流动</option>
-                      <option value="巡游中">巡游中</option>
-                      <option value="远程可接">远程可接</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>可接城市（逗号分隔）</label>
-                    <input type="text" value={form.available_cities} onChange={e => setForm({ ...form, available_cities: e.target.value })} placeholder="北京, 上海, 杭州" style={inputStyle} />
-                  </div>
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={labelStyle}>简介</label>
-                  <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} rows={4}
-                    style={{ ...inputStyle, resize: 'none' }} />
-                </div>
-                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
-                  <div>
-                    <label style={labelStyle}>标签（逗号分隔）</label>
-                    <input type="text" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })}
-                      placeholder="恋陪, 情感本, 日系" style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>微信</label>
-                    <input type="text" value={form.wechat} onChange={e => setForm({ ...form, wechat: e.target.value })}
-                      placeholder="粉丝通过申请后可见" style={inputStyle} />
-                  </div>
-                </div>
-                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-                  <div>
-                    <label style={labelStyle}>抖音主页链接</label>
-                    <input type="url" value={form.douyin} onChange={e => setForm({ ...form, douyin: e.target.value })} placeholder="https://v.douyin.com/..." style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>小红书主页链接</label>
-                    <input type="url" value={form.xiaohongshu} onChange={e => setForm({ ...form, xiaohongshu: e.target.value })} placeholder="https://www.xiaohongshu.com/..." style={inputStyle} />
-                  </div>
-                </div>
-                <div className="intent-setting-row">
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'rgba(71,85,105,0.82)', fontSize: '0.82rem', fontWeight: 850 }}>
-                    <input type="checkbox" checked={form.contact_unlock_enabled} onChange={e => setForm({ ...form, contact_unlock_enabled: e.target.checked })} />
-                    预约意向金
-                    <InfoTip>
-                      页面会写成预约意向确认，用来减少无效打扰，不写成“加微信门槛费”。
-                    </InfoTip>
-                  </label>
-                  <input type="number" value={form.contact_intent_amount} onChange={e => setForm({ ...form, contact_intent_amount: e.target.value })} placeholder="金额，0 表示不收" style={{ ...inputStyle, maxWidth: 180 }} />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <button onClick={() => saveProfile()} disabled={saving}
-                    style={{
-                      padding: '11px 28px', borderRadius: 10, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-                      background: saving ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                      color: saving ? 'rgba(71,85,105,0.52)' : INK, fontWeight: 700, fontSize: '0.9rem',
-                    }}>
-                    {saving ? '保存中...' : '保存资料'}
-                  </button>
-                  {msg && <span style={{ fontSize: '0.875rem', color: '#15803d', fontWeight: 600 }}>{msg}</span>}
-                </div>
-              </div>
-            )}
 
-            {/* 服务 */}
-            {tab === 'services' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {services.map(s => (
                   <div key={s.id} style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
@@ -1821,6 +1832,40 @@ export default function Dashboard() {
           font-weight: 700;
           line-height: 1.6;
         }
+        .account-emoji-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 12px;
+        }
+        .emoji-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 30px;
+          padding: 5px 9px;
+          border-radius: 999px;
+          border: 1px solid rgba(125,147,170,0.16);
+          background: rgba(255,255,255,0.78);
+          color: rgba(71,85,105,0.78);
+          font-size: 0.74rem;
+          font-weight: 900;
+          white-space: nowrap;
+        }
+        .emoji-status.ok {
+          border-color: rgba(22,163,74,0.16);
+          background: rgba(220,252,231,0.66);
+          color: #15803d;
+        }
+        .emoji-status.warn {
+          border-color: rgba(217,168,87,0.22);
+          background: rgba(255,247,237,0.86);
+          color: #925f18;
+        }
+        .emoji-status-icon {
+          font-size: 0.9rem;
+          line-height: 1;
+        }
         .inline-action-link {
           display: inline-flex;
           align-items: center;
@@ -1956,8 +2001,6 @@ export default function Dashboard() {
           .profile-avatar-panel p {
             line-height: 1.55 !important;
           }
-          .profile-status-grid,
-          .account-status-grid,
           .account-bind-grid,
           .password-verify-grid,
           .password-set-grid,
@@ -1970,8 +2013,15 @@ export default function Dashboard() {
             min-height: 28px !important;
           }
           .info-tip-popover {
-            right: -4px !important;
-            width: min(238px, 78vw) !important;
+            position: fixed !important;
+            left: 12px !important;
+            right: 12px !important;
+            bottom: 16px !important;
+            top: auto !important;
+            width: auto !important;
+            max-width: none !important;
+            transform: none !important;
+            border-radius: 14px !important;
           }
           .intent-setting-row {
             align-items: stretch !important;
@@ -2061,6 +2111,26 @@ type StatusTone = 'ok' | 'warn' | 'danger' | 'gold' | 'info' | 'muted';
 
 function StatusBadge({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
   return <span className={`status-badge ${tone}`}>{children}</span>;
+}
+
+function EmojiStatus({
+  icon,
+  tone,
+  label,
+  children,
+}: {
+  icon: string;
+  tone: Extract<StatusTone, 'ok' | 'warn'>;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className={`emoji-status ${tone}`}>
+      <span className="emoji-status-icon" aria-hidden="true">{icon}</span>
+      <span>{label}</span>
+      <InfoTip>{children}</InfoTip>
+    </span>
+  );
 }
 
 function CompactStatus({
