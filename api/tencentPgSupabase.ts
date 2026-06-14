@@ -9,7 +9,12 @@ types.setTypeParser(1083, (value) => value); // time
 types.setTypeParser(1266, (value) => value); // timetz
 
 type FilterOp = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'ilike' | 'in' | 'is' | 'not_eq' | 'not_is';
-type Filter = { column: string; op: FilterOp; value: any };
+type DbValue = unknown;
+type DbRow = Record<string, DbValue>;
+type AdapterData = { [key: string]: never } & never[];
+type AdapterError = { message: string; details?: string; code?: string };
+type AdapterResult = { data: AdapterData; error: AdapterError | null; count: number | null };
+type Filter = { column: string; op: FilterOp; value: DbValue };
 type Order = { column: string; ascending: boolean };
 type SelectOptions = { count?: 'exact'; head?: boolean };
 type RelationSpec = { name: string; inner: boolean; columns: string[]; children: RelationSpec[] };
@@ -18,10 +23,10 @@ type RelationConfig = {
   localKey: string;
   foreignKey: string;
   many?: boolean;
-  via?: (row: Record<string, any>) => any;
+  via?: (row: DbRow) => DbValue;
 };
 
-const pool = new Pool({
+export const tencentPgPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   host: process.env.PGHOST,
   port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
@@ -30,6 +35,47 @@ const pool = new Pool({
   password: process.env.PGPASSWORD,
   max: Number(process.env.PGPOOL_MAX || 10),
 });
+
+const pool = tencentPgPool;
+const columnTypeCache = new Map<string, Map<string, string>>();
+
+async function getColumnTypes(table: string) {
+  const cached = columnTypeCache.get(table);
+  if (cached) return cached;
+  const result = await pool.query(
+    `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
+    [table],
+  );
+  const map = new Map<string, string>();
+  for (const row of result.rows as Array<{ column_name: string; data_type: string }>) {
+    map.set(row.column_name, row.data_type);
+  }
+  columnTypeCache.set(table, map);
+  return map;
+}
+
+function mutationValueForType(value: DbValue, dataType?: string) {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Date) return value;
+  if (Array.isArray(value)) return dataType === 'json' || dataType === 'jsonb' ? JSON.stringify(value) : value;
+  if (typeof value === 'object') return JSON.stringify(value);
+  return value;
+}
+
+function adapterData(value: DbValue): AdapterData {
+  return value as AdapterData;
+}
+
+async function prepareMutationRows(table: string, rows: DbRow[]) {
+  const columnTypes = await getColumnTypes(table);
+  return rows.map(row => {
+    const out: DbRow = {};
+    for (const [key, value] of Object.entries(row)) out[key] = mutationValueForType(value, columnTypes.get(key));
+    return out;
+  });
+}
 
 const RELATIONS: Record<string, Record<string, RelationConfig>> = {
   schedules: {
@@ -51,7 +97,7 @@ const RELATIONS: Record<string, Record<string, RelationConfig>> = {
   },
   evaluations: {
     schedules: { table: 'schedules', localKey: 'schedule_id', foreignKey: 'id' },
-    scripts: { table: 'scripts', localKey: 'schedule_id', foreignKey: 'id', via: row => row.schedules?.script_id },
+    scripts: { table: 'scripts', localKey: 'schedule_id', foreignKey: 'id', via: row => asDbRow(row.schedules).script_id },
   },
   conflict_records: {
     customers: { table: 'customers', localKey: 'customer_id', foreignKey: 'id' },
@@ -71,7 +117,10 @@ const RELATIONS: Record<string, Record<string, RelationConfig>> = {
 
 function pgError(error: unknown) {
   if (!error) return null;
-  if (error instanceof Error) return { message: error.message, details: error.stack, code: (error as any).code };
+  if (error instanceof Error) {
+    const withCode = error as Error & { code?: string };
+    return { message: error.message, details: error.stack, code: withCode.code };
+  }
   return { message: String(error) };
 }
 
@@ -121,22 +170,33 @@ function quoteIdent(name: string) {
   return `"${name}"`;
 }
 
-function normalizeRows(input: any) {
+function normalizeRows(input: DbValue) {
   return Array.isArray(input) ? input : [input];
 }
 
-function compactRow(row: Record<string, any>) {
-  const out: Record<string, any> = {};
+function asDbRow(value: DbValue): DbRow {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as DbRow : {};
+}
+
+function getRowValue(row: DbRow, key: string) {
+  return row[key];
+}
+
+function compactRow(row: DbRow) {
+  const out: DbRow = {};
   for (const [key, value] of Object.entries(row)) {
     if (value !== undefined) out[key] = value;
   }
   return out;
 }
 
-function applyPostFilters(rows: Record<string, any>[], filters: Filter[]) {
+function applyPostFilters(rows: DbRow[], filters: Filter[]) {
   return rows.filter(row => filters.every(filter => {
     const [relation, column] = filter.column.split('.');
-    const target = column ? row?.[relation]?.[column] : row?.[filter.column];
+    const relationValue = relation ? row[relation] : null;
+    const target = column && relationValue && typeof relationValue === 'object' && !Array.isArray(relationValue)
+      ? (relationValue as DbRow)[column]
+      : row[filter.column];
     switch (filter.op) {
       case 'eq': return target === filter.value;
       case 'neq':
@@ -154,8 +214,8 @@ function applyPostFilters(rows: Record<string, any>[], filters: Filter[]) {
   }));
 }
 
-function projectRow(row: Record<string, any>, baseColumns: string[] | null, relations: RelationSpec[]) {
-  const out: Record<string, any> = {};
+function projectRow(row: DbRow, baseColumns: string[] | null, relations: RelationSpec[]) {
+  const out: DbRow = {};
   if (!baseColumns) {
     Object.assign(out, row);
   } else {
@@ -168,14 +228,14 @@ function projectRow(row: Record<string, any>, baseColumns: string[] | null, rela
   return out;
 }
 
-function projectRelationValue(value: any, spec: RelationSpec): any {
+function projectRelationValue(value: DbValue, spec: RelationSpec): DbValue {
   if (Array.isArray(value)) return value.map(item => projectRelationRow(item, spec));
   if (!value || typeof value !== 'object') return value;
-  return projectRelationRow(value, spec);
+  return projectRelationRow(value as DbRow, spec);
 }
 
-function projectRelationRow(row: Record<string, any>, spec: RelationSpec) {
-  const out: Record<string, any> = {};
+function projectRelationRow(row: DbRow, spec: RelationSpec) {
+  const out: DbRow = {};
   if (!spec.columns.length) {
     Object.assign(out, row);
   } else {
@@ -198,7 +258,7 @@ class PgQueryBuilder {
   private rangeFrom?: number;
   private rangeTo?: number;
   private singleMode: 'single' | 'maybeSingle' | null = null;
-  private payload: any;
+  private payload: DbValue;
   private upsertConflict: string[] = [];
 
   constructor(private table: string) {}
@@ -210,13 +270,13 @@ class PgQueryBuilder {
     return this;
   }
 
-  insert(payload: any) {
+  insert(payload: DbValue) {
     this.action = 'insert';
     this.payload = payload;
     return this;
   }
 
-  update(payload: any) {
+  update(payload: DbValue) {
     this.action = 'update';
     this.payload = payload;
     return this;
@@ -227,23 +287,23 @@ class PgQueryBuilder {
     return this;
   }
 
-  upsert(payload: any, options: { onConflict?: string } = {}) {
+  upsert(payload: DbValue, options: { onConflict?: string } = {}) {
     this.action = 'upsert';
     this.payload = payload;
     this.upsertConflict = (options.onConflict || '').split(',').map(s => s.trim()).filter(Boolean);
     return this;
   }
 
-  eq(column: string, value: any) { this.filters.push({ column, op: 'eq', value }); return this; }
-  neq(column: string, value: any) { this.filters.push({ column, op: 'neq', value }); return this; }
-  gt(column: string, value: any) { this.filters.push({ column, op: 'gt', value }); return this; }
-  gte(column: string, value: any) { this.filters.push({ column, op: 'gte', value }); return this; }
-  lt(column: string, value: any) { this.filters.push({ column, op: 'lt', value }); return this; }
-  lte(column: string, value: any) { this.filters.push({ column, op: 'lte', value }); return this; }
-  ilike(column: string, value: any) { this.filters.push({ column, op: 'ilike', value }); return this; }
-  in(column: string, value: any[]) { this.filters.push({ column, op: 'in', value }); return this; }
-  is(column: string, value: any) { this.filters.push({ column, op: 'is', value }); return this; }
-  not(column: string, op: string, value: any) {
+  eq(column: string, value: DbValue) { this.filters.push({ column, op: 'eq', value }); return this; }
+  neq(column: string, value: DbValue) { this.filters.push({ column, op: 'neq', value }); return this; }
+  gt(column: string, value: DbValue) { this.filters.push({ column, op: 'gt', value }); return this; }
+  gte(column: string, value: DbValue) { this.filters.push({ column, op: 'gte', value }); return this; }
+  lt(column: string, value: DbValue) { this.filters.push({ column, op: 'lt', value }); return this; }
+  lte(column: string, value: DbValue) { this.filters.push({ column, op: 'lte', value }); return this; }
+  ilike(column: string, value: DbValue) { this.filters.push({ column, op: 'ilike', value }); return this; }
+  in(column: string, value: DbValue[]) { this.filters.push({ column, op: 'in', value }); return this; }
+  is(column: string, value: DbValue) { this.filters.push({ column, op: 'is', value }); return this; }
+  not(column: string, op: string, value: DbValue) {
     this.filters.push({ column, op: op === 'is' ? 'not_is' : 'not_eq', value });
     return this;
   }
@@ -268,9 +328,9 @@ class PgQueryBuilder {
   single() { this.singleMode = 'single'; return this; }
   maybeSingle() { this.singleMode = 'maybeSingle'; return this; }
 
-  then<TResult1 = any, TResult2 = never>(
-    onfulfilled?: ((value: any) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
+  then<TResult1 = AdapterResult, TResult2 = never>(
+    onfulfilled?: ((value: AdapterResult) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ) {
     return this.execute().then(onfulfilled, onrejected);
   }
@@ -283,7 +343,7 @@ class PgQueryBuilder {
     return this.filters.filter(f => f.column.includes('.'));
   }
 
-  private whereSql(values: any[]) {
+  private whereSql(values: DbValue[]) {
     const clauses: string[] = [];
     for (const filter of this.baseFilters()) {
       const col = quoteIdent(filter.column);
@@ -317,7 +377,7 @@ class PgQueryBuilder {
     return ` ORDER BY ${baseOrders.map(order => `${quoteIdent(order.column)} ${order.ascending ? 'ASC' : 'DESC'}`).join(', ')}`;
   }
 
-  private limitSql(values: any[]) {
+  private limitSql(values: DbValue[]) {
     if (this.rangeFrom !== undefined && this.rangeTo !== undefined) {
       const limit = Math.max(0, this.rangeTo - this.rangeFrom + 1);
       return ` LIMIT $${values.push(limit)} OFFSET $${values.push(this.rangeFrom)}`;
@@ -326,7 +386,7 @@ class PgQueryBuilder {
     return '';
   }
 
-  private async execute() {
+  private async execute(): Promise<AdapterResult> {
     try {
       if (this.action === 'insert') return await this.executeInsert();
       if (this.action === 'update') return await this.executeUpdate();
@@ -334,23 +394,23 @@ class PgQueryBuilder {
       if (this.action === 'upsert') return await this.executeUpsert();
       return await this.executeSelect();
     } catch (e) {
-      return { data: null, error: pgError(e), count: null };
+      return { data: adapterData(null), error: pgError(e), count: null };
     }
   }
 
-  private async executeSelect() {
-    const values: any[] = [];
+  private async executeSelect(): Promise<AdapterResult> {
+    const values: DbValue[] = [];
     const countRequested = this.selectOptions.count === 'exact';
     if (countRequested) {
       const countSql = `SELECT count(*)::int AS count FROM ${quoteIdent(this.table)}${this.whereSql(values)}`;
       const countResult = await pool.query(countSql, values);
-      if (this.selectOptions.head) return { data: null, error: null, count: countResult.rows[0]?.count || 0 };
+      if (this.selectOptions.head) return { data: adapterData(null), error: null, count: countResult.rows[0]?.count || 0 };
     }
 
     values.length = 0;
     const sql = `SELECT * FROM ${quoteIdent(this.table)}${this.whereSql(values)}${this.orderSql()}${this.limitSql(values)}`;
     const result = await pool.query(sql, values);
-    let rows = result.rows;
+    let rows = result.rows as DbRow[];
     const relationSpecs = parseRelations(this.selectClause);
     await this.attachRelations(rows, relationSpecs);
     rows = applyPostFilters(rows, this.postFilters());
@@ -359,11 +419,11 @@ class PgQueryBuilder {
     return { data, error: null, count: countRequested ? rows.length : null };
   }
 
-  private async executeInsert() {
-    const rows = normalizeRows(this.payload).map(compactRow);
-    if (!rows.length) return { data: [], error: null, count: null };
+  private async executeInsert(): Promise<AdapterResult> {
+    const rows = await prepareMutationRows(this.table, normalizeRows(this.payload).map(value => compactRow(asDbRow(value))));
+    if (!rows.length) return { data: adapterData([]), error: null, count: null };
     const cols = Object.keys(rows[0]);
-    const values: any[] = [];
+    const values: DbValue[] = [];
     const placeholders = rows.map(row => `(${cols.map(col => `$${values.push(row[col])}`).join(', ')})`).join(', ');
     const sql = `INSERT INTO ${quoteIdent(this.table)} (${cols.map(quoteIdent).join(', ')}) VALUES ${placeholders} RETURNING *`;
     const result = await pool.query(sql, values);
@@ -371,11 +431,11 @@ class PgQueryBuilder {
     return { data, error: null, count: null };
   }
 
-  private async executeUpdate() {
-    const row = compactRow(this.payload || {});
+  private async executeUpdate(): Promise<AdapterResult> {
+    const row = (await prepareMutationRows(this.table, [compactRow(asDbRow(this.payload || {}))]))[0];
     const cols = Object.keys(row);
-    if (!cols.length) return { data: null, error: null, count: null };
-    const values: any[] = [];
+    if (!cols.length) return { data: adapterData(null), error: null, count: null };
+    const values: DbValue[] = [];
     const sets = cols.map(col => `${quoteIdent(col)} = $${values.push(row[col])}`).join(', ');
     const sql = `UPDATE ${quoteIdent(this.table)} SET ${sets}${this.whereSql(values)} RETURNING *`;
     const result = await pool.query(sql, values);
@@ -383,19 +443,19 @@ class PgQueryBuilder {
     return { data, error: null, count: null };
   }
 
-  private async executeDelete() {
-    const values: any[] = [];
+  private async executeDelete(): Promise<AdapterResult> {
+    const values: DbValue[] = [];
     const sql = `DELETE FROM ${quoteIdent(this.table)}${this.whereSql(values)} RETURNING *`;
     const result = await pool.query(sql, values);
     const data = this.formatRows(this.projectMutationRows(result.rows));
     return { data, error: null, count: null };
   }
 
-  private async executeUpsert() {
-    const rows = normalizeRows(this.payload).map(compactRow);
-    if (!rows.length) return { data: [], error: null, count: null };
+  private async executeUpsert(): Promise<AdapterResult> {
+    const rows = await prepareMutationRows(this.table, normalizeRows(this.payload).map(value => compactRow(asDbRow(value))));
+    if (!rows.length) return { data: adapterData([]), error: null, count: null };
     const cols = Array.from(new Set(rows.flatMap(row => Object.keys(row))));
-    const values: any[] = [];
+    const values: DbValue[] = [];
     const placeholders = rows.map(row => `(${cols.map(col => `$${values.push(row[col] ?? null)}`).join(', ')})`).join(', ');
     const conflict = this.upsertConflict.length ? this.upsertConflict : ['id'];
     const updateCols = cols.filter(col => !conflict.includes(col));
@@ -408,29 +468,29 @@ class PgQueryBuilder {
     return { data, error: null, count: null };
   }
 
-  private projectMutationRows(rows: Record<string, any>[]) {
+  private projectMutationRows(rows: DbRow[]) {
     const relationSpecs = parseRelations(this.selectClause);
     return rows.map(row => projectRow(row, parseBaseColumns(this.selectClause), relationSpecs));
   }
 
-  private formatRows(rows: Record<string, any>[]) {
+  private formatRows(rows: DbRow[]): AdapterData {
     if (this.singleMode === 'single') {
       if (rows.length !== 1) throw new Error(rows.length ? 'JSON object requested, multiple rows returned' : 'JSON object requested, no rows returned');
-      return rows[0];
+      return adapterData(rows[0]);
     }
     if (this.singleMode === 'maybeSingle') {
       if (rows.length > 1) throw new Error('JSON object requested, multiple rows returned');
-      return rows[0] || null;
+      return adapterData(rows[0] || null);
     }
-    return rows;
+    return adapterData(rows);
   }
 
-  private async attachRelations(rows: Record<string, any>[], specs: RelationSpec[]) {
+  private async attachRelations(rows: DbRow[], specs: RelationSpec[]) {
     if (!rows.length || !specs.length) return;
     for (const spec of specs) await this.attachRelation(rows, this.table, spec);
   }
 
-  private async attachRelation(rows: Record<string, any>[], sourceTable: string, spec: RelationSpec) {
+  private async attachRelation(rows: DbRow[], sourceTable: string, spec: RelationSpec) {
     const relation = RELATIONS[sourceTable]?.[spec.name];
     if (!relation) return;
 
@@ -445,17 +505,17 @@ class PgQueryBuilder {
       `SELECT * FROM ${quoteIdent(relation.table)} WHERE ${quoteIdent(relation.foreignKey)} = ANY($1)`,
       [uniqueValues],
     );
-    const relatedRows = result.rows;
+    const relatedRows = result.rows as DbRow[];
     await this.attachNestedRelations(relatedRows, relation.table, spec.children);
 
     for (const row of rows) {
       const local = relation.via ? relation.via(row) : row[relation.localKey];
-      const matches = relatedRows.filter(related => related[relation.foreignKey] === local);
+      const matches = relatedRows.filter(related => getRowValue(related, relation.foreignKey) === local);
       row[spec.name] = relation.many ? matches : matches[0] || null;
     }
   }
 
-  private async attachNestedRelations(rows: Record<string, any>[], table: string, specs: RelationSpec[]) {
+  private async attachNestedRelations(rows: DbRow[], table: string, specs: RelationSpec[]) {
     if (!rows.length || !specs.length) return;
     for (const spec of specs) await this.attachRelation(rows, table, spec);
   }
@@ -466,7 +526,7 @@ export function createTencentPgClient() {
     from(table: string) {
       return new PgQueryBuilder(table);
     },
-    async rpc(name: string, args: Record<string, any> = {}) {
+    async rpc(name: string, args: DbRow = {}) {
       try {
         if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`Unsafe function name: ${name}`);
         const entries = Object.entries(args);
@@ -476,9 +536,9 @@ export function createTencentPgClient() {
           return `${quoteIdent(key)} := $${index + 1}`;
         });
         const result = await pool.query(`SELECT * FROM public.${quoteIdent(name)}(${params.join(', ')})`, values);
-        return { data: result.rows, error: null };
+        return { data: adapterData(result.rows), error: null };
       } catch (error) {
-        return { data: null, error: pgError(error) };
+        return { data: adapterData(null), error: pgError(error) };
       }
     },
     storage: {
@@ -503,7 +563,10 @@ class LocalStorageBucket {
         try {
           await fs.stat(target);
           return { data: null, error: { message: 'The resource already exists' } };
-        } catch {}
+        } catch (error) {
+          const missing = typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'ENOENT';
+          if (!missing) throw error;
+        }
       }
       await fs.writeFile(target, body);
       return { data: { path: safePath, fullPath: `${safeBucket}/${safePath}`, contentType: options.contentType || null }, error: null };

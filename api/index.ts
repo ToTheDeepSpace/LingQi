@@ -357,13 +357,36 @@ function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefi
   }, {});
 }
 
-async function getAuthedProfile(req: express.Request) {
+type AuthedProfile = {
+  id: string;
+  display_name?: string | null;
+  is_realname?: boolean | null;
+  balance?: number | null;
+  paid_balance?: number | null;
+  bonus_balance?: number | null;
+  is_banned?: boolean | null;
+  ban_reason?: string | null;
+  avatar?: string | null;
+  phone?: string | null;
+  phone_verified_at?: string | null;
+  email?: string | null;
+  email_verified_at?: string | null;
+  gender?: string | null;
+  role?: string | null;
+  role_type?: string | null;
+  identity_roles?: string[] | null;
+  referral_code?: string | null;
+  community_role?: string | null;
+  community_role_expires_at?: string | null;
+};
+
+async function getAuthedProfile(req: express.Request): Promise<AuthedProfile | null> {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
     .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, email, email_verified_at, gender, role, role_type, identity_roles, referral_code, community_role, community_role_expires_at')
     .eq('id', creatorId)
     .single();
-  return data;
+  return data as AuthedProfile | null;
 }
 
 function getSpeakBlockReason(profile: { phone_verified_at?: string | null; email_verified_at?: string | null } | null) {
