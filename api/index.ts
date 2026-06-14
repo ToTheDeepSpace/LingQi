@@ -3041,6 +3041,15 @@ app.post('/api/wechat/mp/events', express.text({ type: ['text/*', 'application/x
 
 // ==================== 创作者认证 ====================
 
+function parseConfirmedAuthPassword(rawPassword: unknown, rawConfirm: unknown, required: boolean) {
+  const password = cleanText(rawPassword, 200);
+  const confirm = cleanText(rawConfirm, 200);
+  if (!password && !confirm && !required) return '';
+  if (!password || password.length < 6) throw new Error('密码至少6位');
+  if (password !== confirm) throw new Error('两次输入的密码不一致');
+  return password;
+}
+
 app.post('/api/lc/auth/send-code', async (req, res) => {
   try {
     const result = await createAndSendPhoneCode(req, 'lingqi', 'login', req.body?.phone);
@@ -3077,9 +3086,11 @@ app.post('/api/lc/auth/phone', async (req, res) => {
     const { displayName, activityCities, referralCode } = req.body;
     const activityCityList = normalizeActivityCities(activityCities, req.body?.city);
     const primaryCity = activityCityList[0] || null;
-    const phone = await verifyPhoneCode('lingqi', 'login', req.body?.phone, req.body?.code);
+    const rawPhone = normalizeChinaPhone(req.body?.phone);
+    const { data: existing } = await supabase.from('lc_profiles').select('*').eq('phone', rawPhone).maybeSingle();
+    const passwordToSet = parseConfirmedAuthPassword(req.body?.password, req.body?.passwordConfirm, !existing || !existing.password_hash);
+    const phone = await verifyPhoneCode('lingqi', 'login', rawPhone, req.body?.code);
     const nowIso = new Date().toISOString();
-    const { data: existing } = await supabase.from('lc_profiles').select('*').eq('phone', phone).maybeSingle();
 
     if (existing) {
       if (existing.is_banned) {
@@ -3103,6 +3114,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
         patch.available_cities = activityCityList;
         if (!existing.city && primaryCity) patch.city = primaryCity;
       }
+      if (passwordToSet) patch.password_hash = await bcrypt.hash(passwordToSet, 10);
       await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
       await runReferralSideEffect('stage1-after-phone-login', () => maybeAwardReferralStage1(existing.id));
       const token = signProfileAuthToken(existing);
@@ -3122,7 +3134,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
         city: patch.city || existing.city || null,
         available_cities: patch.available_cities || existing.available_cities || [],
         phone_verified_at: nowIso,
-        has_password: Boolean(existing.password_hash),
+        has_password: Boolean(passwordToSet || existing.password_hash),
         token,
         new_user: false,
       }));
@@ -3135,7 +3147,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       role: profileRole,
       role_type: profileRole,
       identity_roles: [profileRole],
-      password_hash: null,
+      password_hash: await bcrypt.hash(passwordToSet, 10),
       is_visible: true,
       balance: 30,
       paid_balance: 0,
@@ -3180,7 +3192,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       city: profile.city || null,
       available_cities: profile.available_cities || [],
       phone_verified_at: nowIso,
-      has_password: false,
+      has_password: true,
       token,
       new_user: true,
     }));
@@ -3192,10 +3204,12 @@ app.post('/api/lc/auth/email', async (req, res) => {
     const { displayName, activityCities, referralCode } = req.body;
     const activityCityList = normalizeActivityCities(activityCities, req.body?.city);
     const primaryCity = activityCityList[0] || null;
-    const email = await verifyEmailCode('lingqi', 'email_login', req.body?.email, req.body?.code);
+    const rawEmail = normalizeEmail(req.body?.email);
+    const { data: existing } = await supabase.from('lc_profiles').select('*').eq('email', rawEmail).maybeSingle();
+    const passwordToSet = parseConfirmedAuthPassword(req.body?.password, req.body?.passwordConfirm, !existing || !existing.password_hash);
+    const email = await verifyEmailCode('lingqi', 'email_login', rawEmail, req.body?.code);
     const nowIso = new Date().toISOString();
     const emailPrefix = email.split('@')[0]?.slice(0, 24) || 'email';
-    const { data: existing } = await supabase.from('lc_profiles').select('*').eq('email', email).maybeSingle();
 
     if (existing) {
       if (existing.is_banned) {
@@ -3222,6 +3236,7 @@ app.post('/api/lc/auth/email', async (req, res) => {
         patch.available_cities = activityCityList;
         if (!existing.city && primaryCity) patch.city = primaryCity;
       }
+      if (passwordToSet) patch.password_hash = await bcrypt.hash(passwordToSet, 10);
       await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
       const nextProfile = { ...existing, ...patch };
       const token = signProfileAuthToken(nextProfile);
@@ -3243,7 +3258,7 @@ app.post('/api/lc/auth/email', async (req, res) => {
         role: nextProfile.role,
         city: nextProfile.city || null,
         available_cities: nextProfile.available_cities || [],
-        has_password: Boolean(existing.password_hash),
+        has_password: Boolean(passwordToSet || existing.password_hash),
         token,
         new_user: false,
       }));
@@ -3256,7 +3271,7 @@ app.post('/api/lc/auth/email', async (req, res) => {
       role: profileRole,
       role_type: profileRole,
       identity_roles: [profileRole],
-      password_hash: null,
+      password_hash: await bcrypt.hash(passwordToSet, 10),
       is_visible: true,
       balance: 30,
       paid_balance: 0,
@@ -3303,7 +3318,7 @@ app.post('/api/lc/auth/email', async (req, res) => {
       role: profile.role,
       city: profile.city || null,
       available_cities: profile.available_cities || [],
-      has_password: false,
+      has_password: true,
       token,
       new_user: true,
     }));
@@ -3716,7 +3731,7 @@ app.post('/api/lc/auth', async (req, res) => {
           actorRole: existing.role || 'creator',
           metadata: isEmailLogin ? { email_hash: makeAuthEmailHash(loginAccount) } : { phone_hash: makeAuthPhoneHash(loginAccount) },
         });
-        return res.status(409).json(err(new Error('该账号已通过验证码或微信注册，请先用验证码登录后到个人后台设置密码')));
+        return res.status(409).json(err(new Error('该账号已通过验证码或微信注册；如忘记密码，请用手机号或邮箱验证码重新验证并设置新密码')));
       }
       if (existing.is_banned) {
         await logSecurityEvent(req, {
@@ -3781,7 +3796,7 @@ app.post('/api/lc/auth', async (req, res) => {
       action: 'auth_legacy_register_blocked',
       metadata: { ...(isEmailLogin ? { email_hash: makeAuthEmailHash(loginAccount) } : { phone_hash: makeAuthPhoneHash(loginAccount) }), reason: 'password_signup_disabled' },
     });
-    return res.status(404).json(err(new Error('该账号还没有注册。请先用手机号或邮箱验证码登录并创建账号，再到个人后台设置密码。')));
+    return res.status(404).json(err(new Error('该账号还没有注册。请先用手机号或邮箱验证码注册，并在注册时设置登录密码。')));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

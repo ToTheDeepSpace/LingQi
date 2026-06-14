@@ -63,6 +63,8 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [loginAccount, setLoginAccount] = useState('');
   const [password, setPassword] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState('');
   const [code, setCode] = useState('');
   const [emailCode, setEmailCode] = useState('');
   const [name, setName] = useState('');
@@ -220,6 +222,8 @@ export default function Login() {
     if (mode === 'sms' && !code.trim()) { setError('请填写验证码'); return; }
     if (mode === 'email' && (!email.trim() || !email.includes('@'))) { setError('请填写正确的邮箱'); return; }
     if (mode === 'email' && !emailCode.trim()) { setError('请填写邮箱验证码'); return; }
+    if ((mode === 'sms' || mode === 'email') && registerPassword.length < 6) { setError('密码至少6位'); return; }
+    if ((mode === 'sms' || mode === 'email') && registerPassword !== registerPasswordConfirm) { setError('两次输入的密码不一致'); return; }
     if (mode === 'password' && !loginAccount.trim()) { setError('请填写手机号或邮箱'); return; }
     if (mode === 'password' && (!password.trim() || password.length < 4)) { setError('密码至少4位'); return; }
     if (!acceptedTerms) { setError('请先阅读并同意用户协议和隐私政策'); return; }
@@ -228,9 +232,9 @@ export default function Login() {
     try {
       const endpoint = mode === 'sms' ? `${API}/lc/auth/phone` : mode === 'email' ? `${API}/lc/auth/email` : `${API}/lc/auth`;
       const body = mode === 'sms'
-        ? { phone: phone.trim(), code: code.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }
+        ? { phone: phone.trim(), code: code.trim(), password: registerPassword, passwordConfirm: registerPasswordConfirm, displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }
         : mode === 'email'
-          ? { email: email.trim(), code: emailCode.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }
+          ? { email: email.trim(), code: emailCode.trim(), password: registerPassword, passwordConfirm: registerPasswordConfirm, displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined }
           : { account: loginAccount.trim(), password: password.trim(), displayName: name.trim() || undefined, activityCities, referralCode: referralCode || undefined };
       const r = await fetch(endpoint, {
         method: 'POST',
@@ -345,6 +349,12 @@ export default function Login() {
                     <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>昵称 / 艺名（首次登录可填）</label>
                     <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="不填则使用手机号后四位生成昵称" style={inputStyle} />
                   </div>
+                  <PasswordSetupFields
+                    password={registerPassword}
+                    confirm={registerPasswordConfirm}
+                    onPasswordChange={setRegisterPassword}
+                    onConfirmChange={setRegisterPasswordConfirm}
+                  />
                   <CityPreferenceField cities={activityCities} onChange={setActivityCities} />
                 </>
               ) : mode === 'email' ? (
@@ -366,9 +376,15 @@ export default function Login() {
                     <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>昵称 / 艺名（首次登录可填）</label>
                     <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="不填则使用邮箱前缀生成昵称" style={inputStyle} />
                   </div>
+                  <PasswordSetupFields
+                    password={registerPassword}
+                    confirm={registerPasswordConfirm}
+                    onPasswordChange={setRegisterPassword}
+                    onConfirmChange={setRegisterPasswordConfirm}
+                  />
                   <CityPreferenceField cities={activityCities} onChange={setActivityCities} />
                   <p style={{ margin: 0, color: 'rgba(71,85,105,0.64)', fontSize: '0.76rem', lineHeight: 1.65 }}>
-                    邮箱可先作为基础身份使用；手机号、微信和实名认证后续会提供更高可信标记。
+                    邮箱可先作为基础身份使用；本页设置密码后，之后日常登录不用再发邮箱验证码。
                   </p>
                 </>
               ) : (
@@ -427,7 +443,7 @@ export default function Login() {
 
               {mode === 'password' && (
                 <p style={{ fontSize: '0.82rem', color: MUTED, textAlign: 'center' }}>
-                  新用户或还没设置密码？用手机/邮箱验证创建账号，进个人后台设置密码。之后日常登录不用再发验证码。
+                  新用户？用手机或邮箱验证注册，并在注册时设置密码。之后日常登录不用再发验证码。
                 </p>
               )}
 
@@ -452,6 +468,31 @@ export default function Login() {
           .lg-flex { display: flex !important; }
         }
       `}</style>
+    </div>
+  );
+}
+
+function PasswordSetupFields({
+  password,
+  confirm,
+  onPasswordChange,
+  onConfirmChange,
+}: {
+  password: string;
+  confirm: string;
+  onPasswordChange: (value: string) => void;
+  onConfirmChange: (value: string) => void;
+}) {
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div>
+        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>设置登录密码</label>
+        <input type="password" value={password} onChange={e => onPasswordChange(e.target.value)} placeholder="至少6位，之后日常登录使用" required style={inputStyle} />
+      </div>
+      <div>
+        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>再次输入密码</label>
+        <input type="password" value={confirm} onChange={e => onConfirmChange(e.target.value)} placeholder="再输入一次，避免输错" required style={inputStyle} />
+      </div>
     </div>
   );
 }
