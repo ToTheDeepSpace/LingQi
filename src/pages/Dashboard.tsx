@@ -1038,33 +1038,17 @@ export default function Dashboard() {
                     </p>
                   </div>
                 </div>
-                <div className="profile-status-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
-                  <div style={{
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    backgroundColor: contactVerified ? 'rgba(220,252,231,0.78)' : 'rgba(254,242,242,0.82)',
-                    border: `1px solid ${contactVerified ? 'rgba(22,163,74,0.18)' : 'rgba(185,28,28,0.18)'}`,
-                    color: contactVerified ? '#15803d' : '#b91c1c',
-                    fontSize: '0.82rem',
-                    lineHeight: 1.65,
-                    fontWeight: 700,
-                  }}>
+                <div className="profile-status-grid compact-status-grid">
+                  <CompactStatus ok={contactVerified} tone={contactVerified ? 'ok' : 'danger'} label={contactVerified ? `${phoneVerified ? '手机号' : '邮箱'}已验证` : '账号未验证'}>
                     {contactVerified
-                      ? `${phoneVerified ? '手机号' : '邮箱'}已验证，可以参与公开发言。`
-                      : '手机号或邮箱未验证：请先完成验证码登录，否则不能发布、评论、投票或接单。'}
-                  </div>
-                  <div style={{
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    backgroundColor: hasUploadedAvatar ? 'rgba(220,252,231,0.78)' : 'rgba(255,247,237,0.92)',
-                    border: `1px solid ${hasUploadedAvatar ? 'rgba(22,163,74,0.18)' : 'rgba(217,168,87,0.24)'}`,
-                    color: hasUploadedAvatar ? '#15803d' : '#925f18',
-                    fontSize: '0.82rem',
-                    lineHeight: 1.65,
-                    fontWeight: 700,
-                  }}>
-                    {hasUploadedAvatar ? '头像已上传，会展示在你的主页和互动记录里。' : '头像未上传：当前使用系统生成头像，不影响公开发言。'}
-                  </div>
+                      ? '已可参与发布、评论、投票和接单。'
+                      : '完成手机号或邮箱验证后，才能参与公开发言、投票和接单。'}
+                  </CompactStatus>
+                  <CompactStatus ok={hasUploadedAvatar} tone={hasUploadedAvatar ? 'ok' : 'warn'} label={hasUploadedAvatar ? '头像已上传' : '系统头像'}>
+                    {hasUploadedAvatar
+                      ? '头像会展示在你的公开主页和互动记录里。'
+                      : '未上传时使用系统生成头像，目前不影响公开发言。'}
+                  </CompactStatus>
                 </div>
                 <div className="dashboard-panel account-panel" style={{
                   padding: '16px',
@@ -1091,31 +1075,16 @@ export default function Dashboard() {
                       {contactVerified ? (creator.has_password ? '网页登录已完整开通' : '已可验证码登录') : '待验证账号'}
                     </span>
                   </div>
-                  <div className="account-status-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 12 }}>
-                    <div style={{ padding: '11px 12px', borderRadius: 12, background: phoneVerified ? 'rgba(220,252,231,0.78)' : 'rgba(255,247,237,0.92)', border: `1px solid ${phoneVerified ? 'rgba(22,163,74,0.18)' : 'rgba(217,168,87,0.22)'}` }}>
-                      <p style={{ margin: '0 0 4px', color: phoneVerified ? '#15803d' : '#925f18', fontSize: '0.78rem', fontWeight: 900 }}>
-                        {phoneVerified ? '手机号已验证' : '手机号未绑定'}
-                      </p>
-                      <p style={{ margin: 0, color: 'rgba(71,85,105,0.68)', fontSize: '0.76rem', lineHeight: 1.55 }}>
-                        {creator.phone || '绑定后可信度更高'}
-                      </p>
-                    </div>
-                    <div style={{ padding: '11px 12px', borderRadius: 12, background: emailVerified ? 'rgba(220,252,231,0.78)' : 'rgba(255,247,237,0.92)', border: `1px solid ${emailVerified ? 'rgba(22,163,74,0.18)' : 'rgba(217,168,87,0.22)'}` }}>
-                      <p style={{ margin: '0 0 4px', color: emailVerified ? '#15803d' : '#925f18', fontSize: '0.78rem', fontWeight: 900 }}>
-                        {emailVerified ? '邮箱已验证' : '邮箱未绑定'}
-                      </p>
-                      <p style={{ margin: 0, color: 'rgba(71,85,105,0.68)', fontSize: '0.76rem', lineHeight: 1.55 }}>
-                        {creator.email || '可用邮箱注册/找回'}
-                      </p>
-                    </div>
-                    <div style={{ padding: '11px 12px', borderRadius: 12, background: creator.has_password ? 'rgba(220,252,231,0.78)' : 'rgba(255,247,237,0.92)', border: `1px solid ${creator.has_password ? 'rgba(22,163,74,0.18)' : 'rgba(217,168,87,0.22)'}` }}>
-                      <p style={{ margin: '0 0 4px', color: creator.has_password ? '#15803d' : '#925f18', fontSize: '0.78rem', fontWeight: 900 }}>
-                        {creator.has_password ? '密码登录已开通' : '未设置网页登录密码'}
-                      </p>
-                      <p style={{ margin: 0, color: 'rgba(71,85,105,0.68)', fontSize: '0.76rem', lineHeight: 1.55 }}>
-                        {creator.has_password ? '日常登录不用发验证码' : '设置后可少用验证码'}
-                      </p>
-                    </div>
+                  <div className="account-status-grid compact-status-grid account-compact-grid">
+                    <CompactStatus ok={phoneVerified} tone={phoneVerified ? 'ok' : 'warn'} label={phoneVerified ? '手机已验证' : '未绑手机'} value={creator.phone || ''}>
+                      绑定手机号后账号可信度更高，后续可用于找回和更敏感的身份校验。
+                    </CompactStatus>
+                    <CompactStatus ok={emailVerified} tone={emailVerified ? 'ok' : 'warn'} label={emailVerified ? '邮箱已验证' : '未绑邮箱'} value={creator.email || ''}>
+                      邮箱可用于注册、登录、找回密码和接收平台通知。
+                    </CompactStatus>
+                    <CompactStatus ok={!!creator.has_password} tone={creator.has_password ? 'ok' : 'warn'} label={creator.has_password ? '密码已开通' : '未设密码'}>
+                      {creator.has_password ? '日常登录可直接使用手机号或邮箱加密码。' : '设置后可以减少验证码发送次数。'}
+                    </CompactStatus>
                   </div>
 
                   <div className="account-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: (accountBindExpanded || passwordExpanded) ? 12 : 0 }}>
@@ -1696,6 +1665,102 @@ export default function Dashboard() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        .compact-status-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+        .compact-status-pill {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          min-height: 38px;
+          padding: 8px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(125,147,170,0.16);
+          background: rgba(255,255,255,0.78);
+          color: #475569;
+          font-size: 0.78rem;
+          font-weight: 900;
+        }
+        .compact-status-pill.ok {
+          border-color: rgba(22,163,74,0.18);
+          background: rgba(220,252,231,0.64);
+          color: #15803d;
+        }
+        .compact-status-pill.warn {
+          border-color: rgba(217,168,87,0.22);
+          background: rgba(255,247,237,0.86);
+          color: #925f18;
+        }
+        .compact-status-pill.danger {
+          border-color: rgba(185,28,28,0.18);
+          background: rgba(254,242,242,0.82);
+          color: #b91c1c;
+        }
+        .compact-status-main {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          min-width: 0;
+        }
+        .compact-status-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: currentColor;
+          flex: 0 0 auto;
+        }
+        .compact-status-label {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .compact-status-value {
+          color: rgba(71,85,105,0.64);
+          font-size: 0.72rem;
+          font-weight: 800;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .info-tip-wrap {
+          position: relative;
+          display: inline-flex;
+          flex: 0 0 auto;
+        }
+        .info-tip-button {
+          width: 20px;
+          height: 20px;
+          border-radius: 999px;
+          border: 1px solid rgba(100,116,139,0.18);
+          background: rgba(255,255,255,0.82);
+          color: rgba(71,85,105,0.72);
+          cursor: pointer;
+          font-size: 0.72rem;
+          font-weight: 900;
+          line-height: 1;
+        }
+        .info-tip-popover {
+          position: absolute;
+          top: calc(100% + 8px);
+          right: 0;
+          z-index: 60;
+          width: min(260px, 72vw);
+          padding: 10px 12px;
+          border-radius: 12px;
+          border: 1px solid rgba(125,147,170,0.18);
+          background: rgba(255,255,255,0.98);
+          color: rgba(30,41,59,0.82);
+          box-shadow: 0 18px 42px rgba(31,41,55,0.16);
+          font-size: 0.78rem;
+          font-weight: 700;
+          line-height: 1.6;
+        }
+
         @media (max-width: 760px) {
           .dashboard-page {
             background: linear-gradient(180deg, #f7fbff 0%, #fffdf8 32%, #fffdf8 100%) !important;
@@ -1829,6 +1894,22 @@ export default function Dashboard() {
             grid-template-columns: 1fr !important;
             gap: 10px !important;
           }
+          .compact-status-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+            margin-bottom: 12px !important;
+          }
+          .account-compact-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .compact-status-pill {
+            border-radius: 12px !important;
+            min-height: 36px !important;
+          }
+          .info-tip-popover {
+            right: -4px !important;
+            width: min(238px, 78vw) !important;
+          }
           .account-action-row {
             display: grid !important;
             grid-template-columns: 1fr !important;
@@ -1885,6 +1966,47 @@ export default function Dashboard() {
         .dark-cal .react-calendar__month-view__days__day--neighboringMonth { color: rgba(71,85,105,0.25) !important; }
         .dark-cal abbr { text-decoration: none !important; }
       `}</style>
+    </div>
+  );
+}
+
+function InfoTip({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="info-tip-wrap">
+      <button
+        type="button"
+        className="info-tip-button"
+        aria-label={open ? '收起说明' : '查看说明'}
+        onClick={() => setOpen(value => !value)}
+      >
+        ?
+      </button>
+      {open && <span className="info-tip-popover">{children}</span>}
+    </span>
+  );
+}
+
+function CompactStatus({
+  label,
+  value,
+  tone,
+  children,
+}: {
+  ok: boolean;
+  label: string;
+  value?: string;
+  tone: 'ok' | 'warn' | 'danger';
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`compact-status-pill ${tone}`}>
+      <span className="compact-status-main">
+        <span className="compact-status-dot" />
+        <span className="compact-status-label">{label}</span>
+        {value && <span className="compact-status-value">{value}</span>}
+      </span>
+      <InfoTip>{children}</InfoTip>
     </div>
   );
 }

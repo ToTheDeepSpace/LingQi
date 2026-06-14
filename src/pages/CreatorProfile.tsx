@@ -32,6 +32,16 @@ function getAuth(): { token: string } | null {
   return data?.token ? { token: data.token } : null;
 }
 
+async function readJsonSafe(url: string) {
+  const response = await fetch(url);
+  if (!response.ok) return { success: false, data: null };
+  try {
+    return await response.json();
+  } catch {
+    return { success: false, data: null };
+  }
+}
+
 type ContactRequestDraft = {
   name: string;
   wechat: string;
@@ -77,8 +87,8 @@ export default function CreatorProfile() {
   useEffect(() => {
     if (!id) return;
     Promise.all([
-      fetch(`${API}/lc/creators/${id}`).then(r => r.json()),
-      fetch(`${API}/lc/creators/${id}/availability`).then(r => r.json()),
+      readJsonSafe(`${API}/lc/creators/${id}`),
+      readJsonSafe(`${API}/lc/creators/${id}/availability`),
     ]).then(([profileData, availData]) => {
       if (profileData.success && profileData.data) {
         const { services: svc, portfolio: port, ...profile } = profileData.data;
@@ -177,21 +187,21 @@ export default function CreatorProfile() {
   }, []);
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
+    <div className="creator-profile-page" style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
 
       {/* 顶部 Header */}
-      <div style={{
+      <div className="creator-profile-hero" style={{
         background: `radial-gradient(circle at 18% 0%, rgba(217,168,87,0.16), transparent 32%), linear-gradient(135deg, ${C2}, #fffaf2)`,
         borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '34px 20px 30px',
       }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-          <Link to="/explore" style={{ color: 'rgba(39,83,137,0.78)', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}
+        <div className="creator-profile-hero-inner" style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <Link to="/explore" className="creator-profile-back-link" style={{ color: 'rgba(39,83,137,0.78)', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}
             onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
             onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>
             ← 返回灵契师主页
           </Link>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-            <div style={{
+          <div className="creator-profile-identity" style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+            <div className="creator-profile-avatar" style={{
               width: 92, height: 92, borderRadius: 22, flexShrink: 0,
               background: 'linear-gradient(135deg, rgba(217,168,87,0.24), rgba(107,63,160,0.2))',
               border: '2px solid rgba(217,168,87,0.38)',
@@ -204,8 +214,8 @@ export default function CreatorProfile() {
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             </div>
-            <div>
-              <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.4rem, 3vw, 2rem)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div className="creator-profile-title-block">
+              <h1 className="creator-profile-title" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.4rem, 3vw, 2rem)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 {creator.display_name}
                 {creator.verified_shop && (
                   <span style={{
@@ -241,7 +251,7 @@ export default function CreatorProfile() {
               <p style={{ color: MUTED, fontSize: '0.92rem', marginBottom: 10 }}>
                 {creator.city || '未知城市'} · {ROLE_LABEL[displayRole] || displayRole || '玩家'}
               </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div className="creator-profile-badges" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {creator.is_realname && <Badge>⭐ 实名</Badge>}
                 {creator.travel_status && <Badge>{creator.travel_status}</Badge>}
                 {creator.contact_unlock_enabled && <Badge>预约意向金 ¥{creator.contact_intent_amount || 0}</Badge>}
@@ -256,14 +266,14 @@ export default function CreatorProfile() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '32px 20px 80px' }}>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+      <div className="creator-profile-body" style={{ maxWidth: 1000, margin: '0 auto', padding: '32px 20px 80px' }}>
+        <div className="creator-profile-layout" style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
 
           {/* ── 左侧边栏 ── */}
-          <div style={{ width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="creator-profile-sidebar" style={{ width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             {/* 简介卡 */}
-            <div style={card}>
+            <div className="creator-profile-card" style={card}>
               <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: INK }}>灵契师档案</h3>
               {creator.bio && (
                 <p style={{ fontSize: '0.875rem', color: MUTED, lineHeight: 1.8, marginBottom: profileTags.length ? 16 : 0 }}>
@@ -301,7 +311,7 @@ export default function CreatorProfile() {
 
             {/* 社交快照 */}
             {Object.values(socialLinks).some(Boolean) && (
-              <div style={card}>
+              <div className="creator-profile-card" style={card}>
                 <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: INK }}>社交主页</h3>
                 <div style={{ display: 'grid', gap: 10 }}>
                   {Object.entries(socialLinks).filter(([, url]) => url).map(([key, url]) => (
@@ -312,7 +322,7 @@ export default function CreatorProfile() {
             )}
 
             {/* 联系卡 */}
-            <div style={card}>
+            <div className="creator-profile-card" style={card}>
               <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: INK }}>发起委托</h3>
               {creator.contact_unlock_enabled && (
                 <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 12 }}>
@@ -363,13 +373,13 @@ export default function CreatorProfile() {
           </div>
 
           {/* ── 右侧内容 ── */}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="creator-profile-main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             {rolePreferences.length > 0 && (
-              <div style={card}>
+              <div className="creator-profile-card" style={card}>
                 <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 14, color: INK }}>可接本与角色</h3>
                 {recommendedRoles.length > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 14 }}>
+                  <div className="creator-role-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginBottom: 14 }}>
                     {recommendedRoles.slice(0, 6).map((item, index) => (
                       <div key={`${item.script_name}-${item.role_name}-${index}`} style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(217,168,87,0.12)', border: '1px solid rgba(201,146,46,0.25)' }}>
                         <span style={{ display: 'inline-flex', marginBottom: 6, padding: '2px 7px', borderRadius: 999, background: 'rgba(255,255,255,0.72)', color: '#925f18', fontSize: '0.68rem', fontWeight: 900 }}>推荐</span>
@@ -410,11 +420,11 @@ export default function CreatorProfile() {
 
             {/* 可接服务 */}
             {services.length > 0 && (
-              <div style={card}>
+              <div className="creator-profile-card" style={card}>
                 <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>可接服务</h3>
                 <div>
                   {services.map((s, i) => (
-                    <div key={s.id} style={{
+                    <div key={s.id} className="creator-service-row" style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0',
                       borderBottom: i < services.length - 1 ? '1px solid rgba(201,146,46,0.1)' : 'none',
                     }}>
@@ -432,9 +442,9 @@ export default function CreatorProfile() {
 
             {/* 可约日期 */}
             {availableSlots.length > 0 && (
-              <div style={card}>
+              <div className="creator-profile-card" style={card}>
                 <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>可约日期与地点</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+                <div className="creator-date-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
                   {availableSlots.slice(0, 40).map(item => (
                     <span key={item.id} style={{ padding: '8px 12px', borderRadius: 12, fontSize: '0.8rem', background: 'rgba(217,168,87,0.12)', border: '1px solid rgba(201,146,46,0.25)', color: '#925f18' }}>
                       <strong>{item.date.slice(5)}</strong>
@@ -453,12 +463,12 @@ export default function CreatorProfile() {
             )}
 
             {busySlots.length > 0 && (
-              <div style={{ ...card, background: 'linear-gradient(135deg, rgba(239,246,255,0.82), rgba(255,250,242,0.96))', border: '1px solid rgba(59,130,246,0.18)' }}>
+              <div className="creator-profile-card" style={{ ...card, background: 'linear-gradient(135deg, rgba(239,246,255,0.82), rgba(255,250,242,0.96))', border: '1px solid rgba(59,130,246,0.18)' }}>
                 <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: INK }}>已排档期</h3>
                 <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 14 }}>
                   这些日期来自已排班或已同步档期，默认视为忙碌。
                 </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 8 }}>
+                <div className="creator-date-grid creator-busy-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 8 }}>
                   {busySlots.slice(0, 24).map(item => (
                     <span key={item.id} style={{ padding: '8px 12px', borderRadius: 12, fontSize: '0.8rem', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.18)', color: '#1e40af' }}>
                       <strong>{item.date.slice(5)}</strong>
@@ -485,9 +495,9 @@ export default function CreatorProfile() {
 
             {/* 作品集 */}
             {portfolio.length > 0 && (
-              <div style={card}>
+              <div className="creator-profile-card" style={card}>
                 <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>作品集</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
+                <div className="creator-portfolio-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
                   {portfolio.map(p => (
                     <div key={p.id} style={{ aspectRatio: '1', borderRadius: 12, overflow: 'hidden', background: 'rgba(201,146,46,0.08)', border: '1px solid rgba(201,146,46,0.12)' }}>
                       <img src={p.image_url} alt={p.caption || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -498,7 +508,7 @@ export default function CreatorProfile() {
             )}
 
             {rolePreferences.length === 0 && services.length === 0 && availDates.length === 0 && busySlots.length === 0 && portfolio.length === 0 && (
-              <div style={{ ...card, textAlign: 'center', padding: '60px 24px' }}>
+              <div className="creator-profile-card creator-empty-card" style={{ ...card, textAlign: 'center', padding: '60px 24px' }}>
                 <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>🌙</div>
                 <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.9rem' }}>创作者还没有发布内容</p>
               </div>
@@ -517,7 +527,116 @@ export default function CreatorProfile() {
         />
       )}
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 760px) {
+          .creator-profile-page {
+            background: linear-gradient(180deg, #f7fbff 0%, #fffdf8 34%, #fffdf8 100%) !important;
+          }
+          .creator-profile-hero {
+            padding: 14px 12px 12px !important;
+            background: linear-gradient(145deg, #eef6ff 0%, #fffaf2 100%) !important;
+          }
+          .creator-profile-hero-inner {
+            max-width: none !important;
+          }
+          .creator-profile-back-link {
+            display: none !important;
+          }
+          .creator-profile-identity {
+            align-items: flex-start !important;
+            gap: 12px !important;
+            flex-wrap: nowrap !important;
+            padding: 12px !important;
+            border-radius: 16px !important;
+            background: rgba(255,255,255,0.76) !important;
+            border: 1px solid rgba(201,146,46,0.16) !important;
+            box-shadow: 0 10px 28px rgba(31,41,55,0.06) !important;
+          }
+          .creator-profile-avatar {
+            width: 70px !important;
+            height: 70px !important;
+            border-radius: 18px !important;
+          }
+          .creator-profile-title-block {
+            min-width: 0 !important;
+            flex: 1 !important;
+          }
+          .creator-profile-title {
+            font-size: 1.26rem !important;
+            line-height: 1.2 !important;
+            gap: 6px !important;
+            margin-bottom: 4px !important;
+          }
+          .creator-profile-title span {
+            max-width: 100%;
+          }
+          .creator-profile-badges {
+            gap: 6px !important;
+          }
+          .creator-profile-badges button,
+          .creator-profile-badges span {
+            font-size: 0.7rem !important;
+          }
+          .creator-profile-body {
+            padding: 12px 12px 64px !important;
+          }
+          .creator-profile-layout {
+            flex-direction: column !important;
+            gap: 12px !important;
+            flex-wrap: nowrap !important;
+          }
+          .creator-profile-sidebar,
+          .creator-profile-main {
+            width: 100% !important;
+            gap: 12px !important;
+          }
+          .creator-profile-card {
+            padding: 14px !important;
+            border-radius: 14px !important;
+            box-shadow: 0 10px 26px rgba(31,41,55,0.05) !important;
+          }
+          .creator-profile-card h3 {
+            margin-bottom: 10px !important;
+          }
+          .creator-role-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+          .creator-service-row {
+            align-items: flex-start !important;
+            gap: 10px !important;
+            padding: 12px 0 !important;
+          }
+          .creator-service-row > div {
+            min-width: 0 !important;
+          }
+          .creator-date-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+          .creator-busy-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .creator-portfolio-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+          }
+          .creator-empty-card {
+            padding: 36px 16px !important;
+          }
+        }
+
+        @media (max-width: 380px) {
+          .creator-profile-identity {
+            flex-wrap: wrap !important;
+          }
+          .creator-role-grid,
+          .creator-date-grid,
+          .creator-portfolio-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
