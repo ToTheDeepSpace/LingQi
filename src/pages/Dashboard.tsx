@@ -214,6 +214,15 @@ function shouldSaveProfileDraft(data: ProfileDraft) {
     || JSON.stringify(data.roleDraft) !== JSON.stringify(blankRolePreferenceDraft());
 }
 
+function hasServiceSetup(form: ProfileForm, services: Service[], rolePreferences: RolePreferenceDraft[]) {
+  return services.length > 0
+    || rolePreferences.length > 0
+    || !!form.available_cities.trim()
+    || !!form.wechat.trim()
+    || !!form.contact_unlock_enabled
+    || !!form.contact_intent_amount.trim();
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [creator, setCreator]   = useState<Creator | null>(null);
@@ -253,6 +262,7 @@ export default function Dashboard() {
   const [bindingPhone, setBindingPhone] = useState(false);
   const [settingPassword, setSettingPassword] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1');
+  const [offersServices, setOffersServices] = useState(false);
 
   const token = getToken();
 
@@ -286,6 +296,7 @@ export default function Dashboard() {
         setPortfolio(port || []);
         setRolePreferences(rolePreferencesFromProfile(profile));
         setForm(profileToForm(profile));
+        setOffersServices(hasServiceSetup(profileToForm(profile), svc || [], rolePreferencesFromProfile(profile)));
       } else { setError(profileData.error || '加载失败'); }
       if (availData.success) {
         applyAvailability(availData.data || []);
@@ -519,7 +530,7 @@ export default function Dashboard() {
   };
 
   const sendBindPhoneCode = async () => {
-    const targetPhone = bindPhone.trim() || creator?.phone || '';
+    const targetPhone = bindPhone.trim();
     if (!targetPhone || targetPhone.replace(/\D/g, '').length !== 11) { setError('请填写正确的手机号'); return; }
     setSendingBindCode(true);
     setError('');
@@ -543,7 +554,7 @@ export default function Dashboard() {
   };
 
   const bindPhoneToAccount = async () => {
-    const targetPhone = bindPhone.trim() || creator?.phone || '';
+    const targetPhone = bindPhone.trim();
     if (!targetPhone || targetPhone.replace(/\D/g, '').length !== 11) { setError('请填写正确的手机号'); return; }
     if (!bindCode.trim()) { setError('请填写验证码'); return; }
     setBindingPhone(true);
@@ -1035,6 +1046,9 @@ export default function Dashboard() {
                       </InfoTip>
                     </p>
                     <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="上传头像" />
+                    <p style={{ color: 'rgba(71,85,105,0.52)', fontSize: '0.72rem', lineHeight: 1.55, marginTop: 6 }}>
+                      当前头像保存后会直接显示在公开页，请只上传可公开图片。
+                    </p>
                   </div>
                 </div>
                 <div className="dashboard-panel account-panel" style={{
@@ -1090,26 +1104,28 @@ export default function Dashboard() {
 
                   <div className="account-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: (accountBindExpanded || passwordExpanded) ? 12 : 0 }}>
                     <button type="button" onClick={() => setShowAccountBindForm(v => !v)} style={{
-                      padding: '8px 12px',
+                      padding: '5px 10px',
                       border: '1px solid rgba(201,146,46,0.28)',
-                      borderRadius: 10,
+                      borderRadius: 999,
                       background: showAccountBindForm ? 'rgba(217,168,87,0.14)' : '#fffaf2',
                       color: '#925f18',
+                      fontSize: '0.75rem',
                       fontWeight: 900,
                       cursor: 'pointer',
                     }}>
-                      {showAccountBindForm ? '收起手机号设置' : phoneVerified ? '更换 / 重新验证手机号' : '绑定手机号'}
+                      {showAccountBindForm ? '收起' : phoneVerified ? '更换手机号' : '绑定手机号'}
                     </button>
                     <button type="button" onClick={() => setShowPasswordForm(v => !v)} disabled={!contactVerified} style={{
-                      padding: '8px 12px',
+                      padding: '5px 10px',
                       border: '1px solid rgba(201,146,46,0.28)',
-                      borderRadius: 10,
+                      borderRadius: 999,
                       background: !contactVerified ? 'rgba(226,232,240,0.72)' : showPasswordForm ? 'rgba(217,168,87,0.14)' : '#fffaf2',
                       color: contactVerified ? '#925f18' : 'rgba(71,85,105,0.52)',
+                      fontSize: '0.75rem',
                       fontWeight: 900,
                       cursor: !contactVerified ? 'not-allowed' : 'pointer',
                     }}>
-                      {showPasswordForm ? '收起密码设置' : creator.has_password ? '修改密码' : '设置网页登录密码'}
+                      {showPasswordForm ? '收起' : creator.has_password ? '修改密码' : '设置密码'}
                     </button>
                   </div>
 
@@ -1117,9 +1133,9 @@ export default function Dashboard() {
                     <div className="account-bind-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
                       <input
                         type="tel"
-                        value={bindPhone || creator.phone || ''}
+                        value={bindPhone}
                         onChange={e => setBindPhone(e.target.value)}
-                        placeholder="绑定手机号"
+                        placeholder={phoneVerified ? '输入新的手机号' : '绑定手机号'}
                         style={inputStyle}
                       />
                       <input
@@ -1147,7 +1163,7 @@ export default function Dashboard() {
                         fontWeight: 900,
                         cursor: bindingPhone ? 'wait' : 'pointer',
                       }}>
-                        {bindingPhone ? '绑定中...' : phoneVerified ? '重新验证' : '绑定手机号'}
+                        {bindingPhone ? '保存中...' : phoneVerified ? '保存新手机号' : '绑定手机号'}
                       </button>
                     </div>
                   )}
@@ -1299,6 +1315,41 @@ export default function Dashboard() {
             {/* 服务 */}
             {tab === 'services' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="dashboard-panel service-choice-panel" style={{ ...card, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div>
+                      <p style={{ fontWeight: 900, color: INK, fontSize: '0.94rem', marginBottom: 4 }}>是否在灵契上提供服务</p>
+                      <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.65 }}>先决定要不要接委托；选择提供服务后，再填写城市、联系方式、角色和报价。</p>
+                    </div>
+                    <div className="service-choice-buttons" style={{ display: 'inline-flex', gap: 6, padding: 4, borderRadius: 999, background: 'rgba(241,245,249,0.86)', border: '1px solid rgba(125,147,170,0.14)' }}>
+                      <button type="button" onClick={() => setOffersServices(true)}
+                        style={{
+                          padding: '7px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                          background: offersServices ? `linear-gradient(135deg, ${GOLD}, #c9922e)` : 'transparent',
+                          color: offersServices ? INK : 'rgba(71,85,105,0.72)', fontWeight: 900, fontSize: '0.78rem',
+                        }}>
+                        提供服务
+                      </button>
+                      <button type="button" onClick={() => setOffersServices(false)}
+                        style={{
+                          padding: '7px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                          background: !offersServices ? '#fff' : 'transparent',
+                          color: !offersServices ? INK : 'rgba(71,85,105,0.62)', fontWeight: 900, fontSize: '0.78rem',
+                        }}>
+                        暂不提供
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {!offersServices && (
+                  <div className="dashboard-panel" style={{ ...card, padding: '14px 16px', background: 'rgba(255,255,255,0.72)' }}>
+                    <p style={{ color: 'rgba(71,85,105,0.72)', fontSize: '0.82rem', lineHeight: 1.75 }}>
+                      当前不会引导你填写报价、可接角色或联系方式。以后想接委托时，回来切到“提供服务”再填写。
+                    </p>
+                  </div>
+                )}
+                {offersServices && (
+                  <>
                 <div className="dashboard-panel service-settings-panel" style={{ ...card }}>
                   <p style={{ fontWeight: 800, color: INK, fontSize: '0.96rem', marginBottom: 12 }}>委托与服务设置</p>
                   <div style={{ marginBottom: 12 }}>
@@ -1491,6 +1542,8 @@ export default function Dashboard() {
                     添加
                   </button>
                 </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -1614,8 +1667,10 @@ export default function Dashboard() {
                 )}
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
                   <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>上传作品</p>
-                  <ImageUpload onUploaded={addPortfolio} token={token} api={API} scope="portfolio" label="上传作品" />
-                  <p style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.52)', marginTop: 12 }}>支持 JPG、PNG、GIF，最大 10MB</p>
+                  <ImageUpload onUploaded={addPortfolio} token={token} api={API} scope="portfolio" label="上传并公开作品" />
+                  <p style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.52)', marginTop: 12, lineHeight: 1.65 }}>
+                    支持 JPG、PNG、GIF，最大 10MB。当前上传后会直接显示在公开页；请只上传你有权公开展示的图片。
+                  </p>
                 </div>
               </div>
             )}
@@ -2067,11 +2122,13 @@ export default function Dashboard() {
             max-width: none !important;
           }
           .account-action-row {
-            display: grid !important;
-            grid-template-columns: 1fr !important;
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 6px !important;
           }
           .account-action-row button {
-            min-height: 40px !important;
+            min-height: 30px !important;
+            width: auto !important;
           }
           .password-verify-grid button,
           .password-set-grid button,
