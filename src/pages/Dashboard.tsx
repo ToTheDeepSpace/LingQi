@@ -244,6 +244,8 @@ export default function Dashboard() {
   const [bindPhone, setBindPhone] = useState('');
   const [bindCode, setBindCode] = useState('');
   const [bindPassword, setBindPassword] = useState('');
+  const [showAccountBindForm, setShowAccountBindForm] = useState(false);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [passwordVerifyType, setPasswordVerifyType] = useState<'phone' | 'email'>('email');
   const [passwordVerifyCode, setPasswordVerifyCode] = useState('');
   const [sendingPasswordVerifyCode, setSendingPasswordVerifyCode] = useState(false);
@@ -558,6 +560,7 @@ export default function Dashboard() {
       setCreator(prev => prev ? { ...prev, phone: d.data.phone, phone_verified_at: d.data.phone_verified_at, has_password: d.data.has_password } : prev);
       refreshStoredAuth({ phone: d.data.phone, token: d.data.token });
       setBindCode('');
+      setShowAccountBindForm(false);
       setMsg('手机号已绑定，同一个账号可在网页端使用验证码登录');
       setTimeout(() => setMsg(''), 3200);
     } catch (e) {
@@ -617,6 +620,7 @@ export default function Dashboard() {
       setCreator(prev => prev ? { ...prev, has_password: true } : prev);
       setBindPassword('');
       setPasswordVerifyCode('');
+      setShowPasswordForm(false);
       setMsg('网页登录密码已设置，之后可用手机号或邮箱 + 密码登录同一个账号');
       setTimeout(() => setMsg(''), 3200);
     } catch (e) {
@@ -879,6 +883,8 @@ export default function Dashboard() {
   const emailVerified = !!creator.email_verified_at;
   const contactVerified = phoneVerified || emailVerified;
   const recentlyVerified = recentlyVerifiedAt(creator.phone_verified_at) || recentlyVerifiedAt(creator.email_verified_at);
+  const accountBindExpanded = showAccountBindForm || !contactVerified;
+  const passwordExpanded = contactVerified && (showPasswordForm || !creator.has_password);
   const hasUploadedAvatar = !!form.avatar;
   const availableItems = availItems.filter(item => !item.is_booked);
   const busyItems = availItems.filter(item => item.is_booked);
@@ -1085,95 +1091,151 @@ export default function Dashboard() {
                       {contactVerified ? (creator.has_password ? '网页登录已完整开通' : '已可验证码登录') : '待验证账号'}
                     </span>
                   </div>
-                  <p style={{ margin: '0 0 10px', color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.65 }}>
-                    当前账号：{creator.phone ? `手机号 ${creator.phone}` : '未绑定手机号'}；{creator.email ? `邮箱 ${creator.email}` : '未绑定邮箱'}。
-                  </p>
-                  <div className="account-bind-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
-                    <input
-                      type="tel"
-                      value={bindPhone || creator.phone || ''}
-                      onChange={e => setBindPhone(e.target.value)}
-                      placeholder="绑定手机号"
-                      style={inputStyle}
-                    />
-                    <input
-                      type="text"
-                      value={bindCode}
-                      onChange={e => setBindCode(e.target.value)}
-                      placeholder="短信验证码"
-                      style={inputStyle}
-                    />
-                    <button type="button" onClick={sendBindPhoneCode} disabled={sendingBindCode} style={{
+                  <div className="account-status-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 12 }}>
+                    <div style={{ padding: '11px 12px', borderRadius: 12, background: phoneVerified ? 'rgba(220,252,231,0.78)' : 'rgba(255,247,237,0.92)', border: `1px solid ${phoneVerified ? 'rgba(22,163,74,0.18)' : 'rgba(217,168,87,0.22)'}` }}>
+                      <p style={{ margin: '0 0 4px', color: phoneVerified ? '#15803d' : '#925f18', fontSize: '0.78rem', fontWeight: 900 }}>
+                        {phoneVerified ? '手机号已验证' : '手机号未绑定'}
+                      </p>
+                      <p style={{ margin: 0, color: 'rgba(71,85,105,0.68)', fontSize: '0.76rem', lineHeight: 1.55 }}>
+                        {creator.phone || '绑定后可信度更高'}
+                      </p>
+                    </div>
+                    <div style={{ padding: '11px 12px', borderRadius: 12, background: emailVerified ? 'rgba(220,252,231,0.78)' : 'rgba(255,247,237,0.92)', border: `1px solid ${emailVerified ? 'rgba(22,163,74,0.18)' : 'rgba(217,168,87,0.22)'}` }}>
+                      <p style={{ margin: '0 0 4px', color: emailVerified ? '#15803d' : '#925f18', fontSize: '0.78rem', fontWeight: 900 }}>
+                        {emailVerified ? '邮箱已验证' : '邮箱未绑定'}
+                      </p>
+                      <p style={{ margin: 0, color: 'rgba(71,85,105,0.68)', fontSize: '0.76rem', lineHeight: 1.55 }}>
+                        {creator.email || '可用邮箱注册/找回'}
+                      </p>
+                    </div>
+                    <div style={{ padding: '11px 12px', borderRadius: 12, background: creator.has_password ? 'rgba(220,252,231,0.78)' : 'rgba(255,247,237,0.92)', border: `1px solid ${creator.has_password ? 'rgba(22,163,74,0.18)' : 'rgba(217,168,87,0.22)'}` }}>
+                      <p style={{ margin: '0 0 4px', color: creator.has_password ? '#15803d' : '#925f18', fontSize: '0.78rem', fontWeight: 900 }}>
+                        {creator.has_password ? '密码登录已开通' : '未设置网页登录密码'}
+                      </p>
+                      <p style={{ margin: 0, color: 'rgba(71,85,105,0.68)', fontSize: '0.76rem', lineHeight: 1.55 }}>
+                        {creator.has_password ? '日常登录不用发验证码' : '设置后可少用验证码'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="account-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: (accountBindExpanded || passwordExpanded) ? 12 : 0 }}>
+                    <button type="button" onClick={() => setShowAccountBindForm(v => !v)} style={{
+                      padding: '8px 12px',
                       border: '1px solid rgba(201,146,46,0.28)',
                       borderRadius: 10,
-                      background: '#fffaf2',
+                      background: showAccountBindForm ? 'rgba(217,168,87,0.14)' : '#fffaf2',
                       color: '#925f18',
                       fontWeight: 900,
-                      cursor: sendingBindCode ? 'wait' : 'pointer',
+                      cursor: 'pointer',
                     }}>
-                      {sendingBindCode ? '发送中...' : '发送验证码'}
+                      {showAccountBindForm ? '收起手机号设置' : phoneVerified ? '更换 / 重新验证手机号' : '绑定手机号'}
                     </button>
-                    <button type="button" onClick={bindPhoneToAccount} disabled={bindingPhone} style={{
-                      border: 'none',
+                    <button type="button" onClick={() => setShowPasswordForm(v => !v)} disabled={!contactVerified} style={{
+                      padding: '8px 12px',
+                      border: '1px solid rgba(201,146,46,0.28)',
                       borderRadius: 10,
-                      background: `linear-gradient(135deg, ${GOLD}, #c9922e)`,
-                      color: INK,
+                      background: !contactVerified ? 'rgba(226,232,240,0.72)' : showPasswordForm ? 'rgba(217,168,87,0.14)' : '#fffaf2',
+                      color: contactVerified ? '#925f18' : 'rgba(71,85,105,0.52)',
                       fontWeight: 900,
-                      cursor: bindingPhone ? 'wait' : 'pointer',
+                      cursor: !contactVerified ? 'not-allowed' : 'pointer',
                     }}>
-                      {bindingPhone ? '绑定中...' : phoneVerified ? '重新验证' : '绑定手机号'}
+                      {showPasswordForm ? '收起密码设置' : creator.has_password ? '修改密码' : '设置网页登录密码'}
                     </button>
                   </div>
-                  {!recentlyVerified && contactVerified && (
-                    <div className="password-verify-grid" style={{ display: 'grid', gridTemplateColumns: '112px minmax(160px, 1fr) auto', gap: 10, marginBottom: 10 }}>
-                      <select
-                        value={passwordVerifyType}
-                        onChange={e => setPasswordVerifyType(e.target.value as 'phone' | 'email')}
-                        style={inputStyle}
-                      >
-                        <option value="email" disabled={!creator.email}>邮箱</option>
-                        <option value="phone" disabled={!creator.phone}>手机号</option>
-                      </select>
+
+                  {accountBindExpanded && (
+                    <div className="account-bind-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
                       <input
-                        type="text"
-                        value={passwordVerifyCode}
-                        onChange={e => setPasswordVerifyCode(e.target.value)}
-                        placeholder="修改密码验证码"
+                        type="tel"
+                        value={bindPhone || creator.phone || ''}
+                        onChange={e => setBindPhone(e.target.value)}
+                        placeholder="绑定手机号"
                         style={inputStyle}
                       />
-                      <button type="button" onClick={sendPasswordVerifyCode} disabled={sendingPasswordVerifyCode} style={{
-                        padding: '0 14px',
+                      <input
+                        type="text"
+                        value={bindCode}
+                        onChange={e => setBindCode(e.target.value)}
+                        placeholder="短信验证码"
+                        style={inputStyle}
+                      />
+                      <button type="button" onClick={sendBindPhoneCode} disabled={sendingBindCode} style={{
                         border: '1px solid rgba(201,146,46,0.28)',
                         borderRadius: 10,
                         background: '#fffaf2',
                         color: '#925f18',
                         fontWeight: 900,
-                        cursor: sendingPasswordVerifyCode ? 'wait' : 'pointer',
+                        cursor: sendingBindCode ? 'wait' : 'pointer',
                       }}>
-                        {sendingPasswordVerifyCode ? '发送中...' : '发送改密验证码'}
+                        {sendingBindCode ? '发送中...' : '发送验证码'}
+                      </button>
+                      <button type="button" onClick={bindPhoneToAccount} disabled={bindingPhone} style={{
+                        border: 'none',
+                        borderRadius: 10,
+                        background: `linear-gradient(135deg, ${GOLD}, #c9922e)`,
+                        color: INK,
+                        fontWeight: 900,
+                        cursor: bindingPhone ? 'wait' : 'pointer',
+                      }}>
+                        {bindingPhone ? '绑定中...' : phoneVerified ? '重新验证' : '绑定手机号'}
                       </button>
                     </div>
                   )}
-                  <div className="password-set-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10 }}>
-                    <input
-                      type="password"
-                      value={bindPassword}
-                      onChange={e => setBindPassword(e.target.value)}
-                      placeholder={creator.has_password ? '输入新密码可修改' : '设置网页登录密码'}
-                      style={inputStyle}
-                    />
-                    <button type="button" onClick={setWebPassword} disabled={settingPassword || !contactVerified} style={{
-                      padding: '0 18px',
-                      border: '1px solid rgba(201,146,46,0.28)',
-                      borderRadius: 10,
-                      background: contactVerified ? '#fffaf2' : 'rgba(226,232,240,0.72)',
-                      color: contactVerified ? '#925f18' : 'rgba(71,85,105,0.52)',
-                      fontWeight: 900,
-                      cursor: settingPassword ? 'wait' : contactVerified ? 'pointer' : 'not-allowed',
-                    }}>
-                      {settingPassword ? '保存中...' : creator.has_password ? '修改密码' : '设置密码'}
-                    </button>
-                  </div>
+
+                  {passwordExpanded && (
+                    <>
+                      {!recentlyVerified && contactVerified && (
+                        <div className="password-verify-grid" style={{ display: 'grid', gridTemplateColumns: '112px minmax(160px, 1fr) auto', gap: 10, marginBottom: 10 }}>
+                          <select
+                            value={passwordVerifyType}
+                            onChange={e => setPasswordVerifyType(e.target.value as 'phone' | 'email')}
+                            style={inputStyle}
+                          >
+                            <option value="email" disabled={!creator.email}>邮箱</option>
+                            <option value="phone" disabled={!creator.phone}>手机号</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={passwordVerifyCode}
+                            onChange={e => setPasswordVerifyCode(e.target.value)}
+                            placeholder="修改密码验证码"
+                            style={inputStyle}
+                          />
+                          <button type="button" onClick={sendPasswordVerifyCode} disabled={sendingPasswordVerifyCode} style={{
+                            padding: '0 14px',
+                            border: '1px solid rgba(201,146,46,0.28)',
+                            borderRadius: 10,
+                            background: '#fffaf2',
+                            color: '#925f18',
+                            fontWeight: 900,
+                            cursor: sendingPasswordVerifyCode ? 'wait' : 'pointer',
+                          }}>
+                            {sendingPasswordVerifyCode ? '发送中...' : '发送改密验证码'}
+                          </button>
+                        </div>
+                      )}
+                      <div className="password-set-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10 }}>
+                        <input
+                          type="password"
+                          value={bindPassword}
+                          onChange={e => setBindPassword(e.target.value)}
+                          placeholder={creator.has_password ? '输入新密码可修改' : '设置网页登录密码'}
+                          style={inputStyle}
+                        />
+                        <button type="button" onClick={setWebPassword} disabled={settingPassword || !contactVerified} style={{
+                          padding: '0 18px',
+                          border: '1px solid rgba(201,146,46,0.28)',
+                          borderRadius: 10,
+                          background: contactVerified ? '#fffaf2' : 'rgba(226,232,240,0.72)',
+                          color: contactVerified ? '#925f18' : 'rgba(71,85,105,0.52)',
+                          fontWeight: 900,
+                          cursor: settingPassword ? 'wait' : contactVerified ? 'pointer' : 'not-allowed',
+                        }}>
+                          {settingPassword ? '保存中...' : creator.has_password ? '修改密码' : '设置密码'}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div className="dashboard-panel" style={{
                   padding: '14px 16px',
@@ -1758,6 +1820,7 @@ export default function Dashboard() {
             line-height: 1.55 !important;
           }
           .profile-status-grid,
+          .account-status-grid,
           .account-bind-grid,
           .password-verify-grid,
           .password-set-grid,
@@ -1765,6 +1828,13 @@ export default function Dashboard() {
           .profile-grid-auto {
             grid-template-columns: 1fr !important;
             gap: 10px !important;
+          }
+          .account-action-row {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+          }
+          .account-action-row button {
+            min-height: 40px !important;
           }
           .password-verify-grid button,
           .password-set-grid button,
