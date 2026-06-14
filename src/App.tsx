@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router-dom';
 import type React from 'react';
 import Navbar from './components/Navbar';
@@ -47,6 +47,7 @@ function AppLayout() {
 
   return (
     <>
+      <ScrollToTop />
       {showNavbar && <Navbar />}
       <Suspense fallback={<RouteFallback />}>
         <Routes>
@@ -85,6 +86,17 @@ function AppLayout() {
       {showFooter && <SiteFooter />}
     </>
   );
+}
+
+function ScrollToTop() {
+  const { pathname, hash } = useLocation();
+
+  useEffect(() => {
+    if (hash) return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname, hash]);
+
+  return null;
 }
 
 function RouteFallback() {
