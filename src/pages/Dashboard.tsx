@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
@@ -1065,13 +1065,25 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <div className="account-emoji-row">
-                    <EmojiStatus icon="📱" tone={phoneVerified ? 'ok' : 'warn'} label={phoneVerified ? '已验证' : '未绑定'}>
-                      手机号用于找回账号和更敏感的身份校验；页面不在状态区直接展示号码。
+                    <EmojiStatus icon="📱" tone={phoneVerified ? 'ok' : 'warn'} label={phoneVerified ? '✓' : '未绑'}>
+                      {creator.phone ? (
+                        <>
+                          <strong>手机号：{creator.phone}</strong>
+                          <br />
+                          用于找回账号和更敏感的身份校验。
+                        </>
+                      ) : '暂未绑定手机号，可点击下方按钮绑定或更换。'}
                     </EmojiStatus>
-                    <EmojiStatus icon="✉️" tone={emailVerified ? 'ok' : 'warn'} label={emailVerified ? '已验证' : '未绑定'}>
-                      邮箱可用于注册、登录、找回密码和接收平台通知；页面不在状态区直接展示邮箱。
+                    <EmojiStatus icon="✉️" tone={emailVerified ? 'ok' : 'warn'} label={emailVerified ? '✓' : '未绑'}>
+                      {creator.email ? (
+                        <>
+                          <strong>邮箱：{creator.email}</strong>
+                          <br />
+                          可用于注册、登录、找回密码和接收平台通知。
+                        </>
+                      ) : '暂未绑定邮箱，可点击下方按钮绑定。'}
                     </EmojiStatus>
-                    <EmojiStatus icon="🔐" tone={creator.has_password ? 'ok' : 'warn'} label={creator.has_password ? '已设置' : '未设置'}>
+                    <EmojiStatus icon="🔐" tone={creator.has_password ? 'ok' : 'warn'} label={creator.has_password ? '✓' : '未设'}>
                       {creator.has_password ? '日常登录可直接使用账号加密码。' : '设置后可以减少验证码发送次数。'}
                     </EmojiStatus>
                   </div>
@@ -1803,10 +1815,14 @@ export default function Dashboard() {
           position: relative;
           display: inline-flex;
           flex: 0 0 auto;
+          vertical-align: middle;
         }
         .info-tip-button {
           width: 18px;
           height: 18px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           border-radius: 999px;
           border: 1px solid rgba(100,116,139,0.18);
           background: rgba(255,255,255,0.82);
@@ -1831,6 +1847,15 @@ export default function Dashboard() {
           font-size: 0.78rem;
           font-weight: 700;
           line-height: 1.6;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          text-align: left;
+          pointer-events: auto;
+        }
+        .info-tip-popover strong {
+          color: ${INK};
+          font-weight: 900;
         }
         .account-emoji-row {
           display: flex;
@@ -1843,7 +1868,7 @@ export default function Dashboard() {
           align-items: center;
           gap: 6px;
           min-height: 30px;
-          padding: 5px 9px;
+          padding: 5px 7px;
           border-radius: 999px;
           border: 1px solid rgba(125,147,170,0.16);
           background: rgba(255,255,255,0.78);
@@ -2020,6 +2045,8 @@ export default function Dashboard() {
             top: auto !important;
             width: auto !important;
             max-width: none !important;
+            max-height: min(42vh, 260px) !important;
+            overflow-y: auto !important;
             transform: none !important;
             border-radius: 14px !important;
           }
@@ -2092,13 +2119,41 @@ export default function Dashboard() {
 
 function InfoTip({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const tipRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeTimer = window.setTimeout(() => setOpen(false), 7000);
+    const closeOnOutside = (event: MouseEvent | TouchEvent) => {
+      if (tipRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.addEventListener('mousedown', closeOnOutside);
+    document.addEventListener('touchstart', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.clearTimeout(closeTimer);
+      document.removeEventListener('mousedown', closeOnOutside);
+      document.removeEventListener('touchstart', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
   return (
-    <span className="info-tip-wrap">
+    <span className="info-tip-wrap" ref={tipRef}>
       <button
         type="button"
         className="info-tip-button"
         aria-label={open ? '收起说明' : '查看说明'}
-        onClick={() => setOpen(value => !value)}
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(value => !value);
+        }}
       >
         ?
       </button>
