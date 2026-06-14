@@ -952,12 +952,10 @@ export default function Dashboard() {
             <div style={{ minWidth: 0 }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的主页</h1>
               <p style={{ fontSize: '0.85rem', color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{creator.display_name}</p>
-              <div className="dashboard-identity-badges" style={{ display: 'none', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                <span style={{ padding: '3px 8px', borderRadius: 999, background: contactVerified ? 'rgba(220,252,231,0.9)' : 'rgba(255,247,237,0.96)', color: contactVerified ? '#15803d' : '#925f18', fontSize: '0.7rem', fontWeight: 900 }}>
-                  {contactVerified ? '已验证' : '待验证'}
-                </span>
-                {creator.is_realname && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'rgba(217,168,87,0.16)', color: '#925f18', fontSize: '0.7rem', fontWeight: 900 }}>实名</span>}
-                {creator.city && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.96)', color: '#275389', fontSize: '0.7rem', fontWeight: 900 }}>{creator.city}</span>}
+              <div className="dashboard-identity-badges">
+                <StatusBadge tone={contactVerified ? 'ok' : 'warn'}>{contactVerified ? '已验证' : '待验证'}</StatusBadge>
+                <StatusBadge tone={creator.is_realname ? 'gold' : 'muted'}>{creator.is_realname ? '实名' : '未实名'}</StatusBadge>
+                {creator.city && <StatusBadge tone="info">{creator.city}</StatusBadge>}
               </div>
             </div>
           </div>
@@ -1031,11 +1029,13 @@ export default function Dashboard() {
                     <img src={profileAvatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   </div>
                   <div>
-                    <p style={{ color: INK, fontWeight: 800, fontSize: '0.92rem', marginBottom: 8 }}>主页头像</p>
-                    <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="上传头像" />
-                    <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', marginTop: 8 }}>
-                      未上传时会显示系统生成头像；手机号或邮箱验证通过后即可发布、评论、投票和接单。
+                    <p style={{ color: INK, fontWeight: 800, fontSize: '0.92rem', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      主页头像
+                      <InfoTip>
+                        未上传时会显示系统生成头像；手机号或邮箱验证通过后即可发布、评论、投票和接单。
+                      </InfoTip>
                     </p>
+                    <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="上传头像" />
                   </div>
                 </div>
                 <div className="profile-status-grid compact-status-grid">
@@ -1206,21 +1206,13 @@ export default function Dashboard() {
                     </>
                   )}
                 </div>
-                <div className="dashboard-panel" style={{
-                  padding: '14px 16px',
-                  borderRadius: 12,
-                  marginBottom: 20,
-                  backgroundColor: creator.is_realname ? 'rgba(201,146,46,0.1)' : 'rgba(255,255,255,0.72)',
-                  border: `1px solid ${creator.is_realname ? 'rgba(201,146,46,0.25)' : 'rgba(125,147,170,0.16)'}`,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <span style={{ color: creator.is_realname ? '#925f18' : 'rgba(71,85,105,0.72)', fontWeight: 800, fontSize: '0.9rem' }}>
-                      {creator.is_realname ? '⭐ 已完成实名认证' : '未完成实名认证'}
-                    </span>
-                  </div>
-                  <p style={{ color: 'rgba(71,85,105,0.64)', fontSize: '0.8rem', lineHeight: 1.7 }}>
-                    实名由后台审核，前台只显示星标和昵称，不公开真实姓名。需要认证时可到 <Link to="/certification" style={{ color: GOLD, fontWeight: 800, textDecoration: 'none' }}>身份认证</Link> 提交水印身份证材料。
-                  </p>
+                <div className="identity-check-row">
+                  <CompactStatus ok={creator.is_realname} tone={creator.is_realname ? 'gold' : 'muted'} label={creator.is_realname ? '实名已认证' : '实名未认证'}>
+                    实名由后台审核，前台只显示星标和昵称，不公开真实姓名。需要认证时可提交水印身份证材料。
+                  </CompactStatus>
+                  <Link to="/certification" className="inline-action-link">
+                    {creator.is_realname ? '查看认证' : '去认证'}
+                  </Link>
                 </div>
                 <div style={{ marginBottom: 16 }}>
                   <DraftAutosaveNotice
@@ -1414,15 +1406,15 @@ export default function Dashboard() {
                     <input type="url" value={form.xiaohongshu} onChange={e => setForm({ ...form, xiaohongshu: e.target.value })} placeholder="https://www.xiaohongshu.com/..." style={inputStyle} />
                   </div>
                 </div>
-                <div className="dashboard-panel" style={{ padding: '14px 16px', borderRadius: 12, marginBottom: 24, backgroundColor: 'rgba(217,168,87,0.07)', border: '1px solid rgba(217,168,87,0.18)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'rgba(71,85,105,0.82)', fontSize: '0.86rem', fontWeight: 700, marginBottom: 12 }}>
+                <div className="intent-setting-row">
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'rgba(71,85,105,0.82)', fontSize: '0.82rem', fontWeight: 850 }}>
                     <input type="checkbox" checked={form.contact_unlock_enabled} onChange={e => setForm({ ...form, contact_unlock_enabled: e.target.checked })} />
-                    开启预约意向金
+                    预约意向金
+                    <InfoTip>
+                      页面会写成预约意向确认，用来减少无效打扰，不写成“加微信门槛费”。
+                    </InfoTip>
                   </label>
-                  <input type="number" value={form.contact_intent_amount} onChange={e => setForm({ ...form, contact_intent_amount: e.target.value })} placeholder="意向金金额，0 表示不收" style={inputStyle} />
-                  <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.7, marginTop: 10 }}>
-                    这不是“加微信门槛费”，页面会写成预约意向确认，用来减少无效打扰。
-                  </p>
+                  <input type="number" value={form.contact_intent_amount} onChange={e => setForm({ ...form, contact_intent_amount: e.target.value })} placeholder="金额，0 表示不收" style={{ ...inputStyle, maxWidth: 180 }} />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                   <button onClick={() => saveProfile()} disabled={saving}
@@ -1665,11 +1657,69 @@ export default function Dashboard() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        .compact-status-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+        .dashboard-identity-badges {
+          display: none;
+          gap: 6px;
+          flex-wrap: wrap;
+          margin-top: 8px;
+        }
+        .status-badge {
+          display: inline-flex;
+          align-items: center;
+          max-width: 100%;
+          padding: 3px 8px;
+          border-radius: 999px;
+          border: 1px solid rgba(125,147,170,0.16);
+          background: rgba(255,255,255,0.72);
+          color: rgba(71,85,105,0.72);
+          font-size: 0.7rem;
+          font-weight: 900;
+          line-height: 1.2;
+          white-space: nowrap;
+        }
+        .status-badge.ok {
+          border-color: rgba(22,163,74,0.16);
+          background: rgba(220,252,231,0.72);
+          color: #15803d;
+        }
+        .status-badge.warn {
+          border-color: rgba(217,168,87,0.22);
+          background: rgba(255,247,237,0.84);
+          color: #925f18;
+        }
+        .status-badge.gold {
+          border-color: rgba(217,168,87,0.24);
+          background: rgba(217,168,87,0.14);
+          color: #925f18;
+        }
+        .status-badge.info {
+          border-color: rgba(59,130,246,0.14);
+          background: rgba(239,246,255,0.88);
+          color: #275389;
+        }
+        .status-badge.muted {
+          border-color: rgba(125,147,170,0.14);
+          background: rgba(241,245,249,0.78);
+          color: rgba(71,85,105,0.72);
+        }
+        .compact-status-grid,
+        .identity-check-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
           gap: 8px;
-          margin-bottom: 16px;
+          margin-bottom: 12px;
+        }
+        .intent-setting-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 22px;
+          padding: 8px 10px;
+          border-radius: 12px;
+          border: 1px solid rgba(201,146,46,0.16);
+          background: rgba(255,250,242,0.62);
         }
         .compact-status-pill {
           position: relative;
@@ -1677,13 +1727,14 @@ export default function Dashboard() {
           align-items: center;
           justify-content: space-between;
           gap: 8px;
-          min-height: 38px;
-          padding: 8px 10px;
+          min-height: 28px;
+          max-width: 100%;
+          padding: 5px 8px;
           border-radius: 999px;
           border: 1px solid rgba(125,147,170,0.16);
           background: rgba(255,255,255,0.78);
           color: #475569;
-          font-size: 0.78rem;
+          font-size: 0.74rem;
           font-weight: 900;
         }
         .compact-status-pill.ok {
@@ -1700,6 +1751,16 @@ export default function Dashboard() {
           border-color: rgba(185,28,28,0.18);
           background: rgba(254,242,242,0.82);
           color: #b91c1c;
+        }
+        .compact-status-pill.gold {
+          border-color: rgba(217,168,87,0.24);
+          background: rgba(217,168,87,0.14);
+          color: #925f18;
+        }
+        .compact-status-pill.muted {
+          border-color: rgba(125,147,170,0.14);
+          background: rgba(241,245,249,0.78);
+          color: rgba(71,85,105,0.76);
         }
         .compact-status-main {
           display: flex;
@@ -1721,7 +1782,7 @@ export default function Dashboard() {
         }
         .compact-status-value {
           color: rgba(71,85,105,0.64);
-          font-size: 0.72rem;
+          font-size: 0.7rem;
           font-weight: 800;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -1733,14 +1794,14 @@ export default function Dashboard() {
           flex: 0 0 auto;
         }
         .info-tip-button {
-          width: 20px;
-          height: 20px;
+          width: 18px;
+          height: 18px;
           border-radius: 999px;
           border: 1px solid rgba(100,116,139,0.18);
           background: rgba(255,255,255,0.82);
           color: rgba(71,85,105,0.72);
           cursor: pointer;
-          font-size: 0.72rem;
+          font-size: 0.68rem;
           font-weight: 900;
           line-height: 1;
         }
@@ -1759,6 +1820,19 @@ export default function Dashboard() {
           font-size: 0.78rem;
           font-weight: 700;
           line-height: 1.6;
+        }
+        .inline-action-link {
+          display: inline-flex;
+          align-items: center;
+          min-height: 28px;
+          padding: 5px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(201,146,46,0.22);
+          background: rgba(255,250,242,0.86);
+          color: #925f18;
+          text-decoration: none;
+          font-size: 0.74rem;
+          font-weight: 900;
         }
 
         @media (max-width: 760px) {
@@ -1791,9 +1865,7 @@ export default function Dashboard() {
             font-size: 1.28rem !important;
             margin-bottom: 2px !important;
           }
-          .dashboard-identity-badges {
-            display: flex !important;
-          }
+          .dashboard-identity-badges { display: flex !important; }
           .dashboard-actions {
             display: grid !important;
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -1894,21 +1966,19 @@ export default function Dashboard() {
             grid-template-columns: 1fr !important;
             gap: 10px !important;
           }
-          .compact-status-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            gap: 8px !important;
-            margin-bottom: 12px !important;
-          }
-          .account-compact-grid {
-            grid-template-columns: 1fr !important;
-          }
           .compact-status-pill {
-            border-radius: 12px !important;
-            min-height: 36px !important;
+            min-height: 28px !important;
           }
           .info-tip-popover {
             right: -4px !important;
             width: min(238px, 78vw) !important;
+          }
+          .intent-setting-row {
+            align-items: stretch !important;
+            flex-direction: column !important;
+          }
+          .intent-setting-row input[type="number"] {
+            max-width: none !important;
           }
           .account-action-row {
             display: grid !important;
@@ -1987,6 +2057,12 @@ function InfoTip({ children }: { children: React.ReactNode }) {
   );
 }
 
+type StatusTone = 'ok' | 'warn' | 'danger' | 'gold' | 'info' | 'muted';
+
+function StatusBadge({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
+  return <span className={`status-badge ${tone}`}>{children}</span>;
+}
+
 function CompactStatus({
   label,
   value,
@@ -1996,7 +2072,7 @@ function CompactStatus({
   ok: boolean;
   label: string;
   value?: string;
-  tone: 'ok' | 'warn' | 'danger';
+  tone: StatusTone;
   children: React.ReactNode;
 }) {
   return (
