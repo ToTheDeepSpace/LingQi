@@ -15,6 +15,7 @@ const C2   = '#eef6ff';
 const GOLD = '#d9a857';
 const INK  = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
+const ONBOARDING_STORAGE_KEY = 'lc_onboarding_pending';
 
 function getToken(): string {
   try {
@@ -249,6 +250,7 @@ export default function Dashboard() {
   const [sendingBindCode, setSendingBindCode] = useState(false);
   const [bindingPhone, setBindingPhone] = useState(false);
   const [settingPassword, setSettingPassword] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1');
 
   const token = getToken();
 
@@ -295,8 +297,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!creator) return;
-    if (passwordVerifyType === 'email' && !creator.email && creator.phone) setPasswordVerifyType('phone');
-    if (passwordVerifyType === 'phone' && !creator.phone && creator.email) setPasswordVerifyType('email');
+    if (passwordVerifyType === 'email' && !creator.email && creator.phone) {
+      const timer = window.setTimeout(() => setPasswordVerifyType('phone'), 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (passwordVerifyType === 'phone' && !creator.phone && creator.email) {
+      const timer = window.setTimeout(() => setPasswordVerifyType('email'), 0);
+      return () => window.clearTimeout(timer);
+    }
   }, [creator, passwordVerifyType]);
 
   const selectedScript = scripts.find(script => script.id === roleDraft.script_id) || null;
@@ -824,6 +832,11 @@ export default function Dashboard() {
     navigate('/login');
   };
 
+  const closeOnboarding = () => {
+    localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+    setShowOnboarding(false);
+  };
+
   if (loading) return (
     <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' }}>
@@ -873,6 +886,57 @@ export default function Dashboard() {
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
+      {showOnboarding && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 60,
+          background: 'rgba(15,23,42,0.42)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20,
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: 520,
+            borderRadius: 18,
+            background: '#fffdf8',
+            border: '1px solid rgba(201,146,46,0.28)',
+            boxShadow: '0 28px 80px rgba(15,23,42,0.22)',
+            padding: 24,
+          }}>
+            <p style={{ color: '#925f18', fontWeight: 900, fontSize: '0.78rem', marginBottom: 8 }}>新手教程</p>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.4rem', color: INK, marginBottom: 10 }}>
+              欢迎来到灵契
+            </h2>
+            <p style={{ color: MUTED, fontSize: '0.88rem', lineHeight: 1.8, marginBottom: 16 }}>
+              你已经有登录账号了。登录账号是手机号或邮箱；昵称只是公开展示名，之后可以在“资料”里改。
+            </p>
+            <div style={{ display: 'grid', gap: 10, marginBottom: 18 }}>
+              {[
+                ['先补资料', '设置昵称、头像、常用城市和公开主页，让别人知道你是谁。'],
+                ['再逛功能', '红黑白榜看口碑，剧本口碑看评分，拼车和委托需求看近期机会。'],
+                ['发布会审核', '公开内容会进入审核；手机号或邮箱验证过就能发言，实名和微信是更高可信等级。'],
+                ['契约币', '契约币用于充值、打榜、踩榜等站内服务；先按需小额使用。'],
+              ].map(([title, desc]) => (
+                <div key={title} style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(239,246,255,0.78)', border: '1px solid rgba(125,147,170,0.14)' }}>
+                  <p style={{ color: INK, fontWeight: 900, fontSize: '0.86rem', marginBottom: 4 }}>{title}</p>
+                  <p style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.78rem', lineHeight: 1.65 }}>{desc}</p>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button type="button" onClick={closeOnboarding} style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.22)', background: '#fff', color: '#925f18', fontWeight: 850, cursor: 'pointer' }}>
+                先逛逛
+              </button>
+              <button type="button" onClick={() => { closeOnboarding(); setTab('profile'); }} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD}, #c9922e)`, color: INK, fontWeight: 900, cursor: 'pointer' }}>
+                去设置昵称
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ background: `linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '24px 20px' }}>
