@@ -858,7 +858,7 @@ export default function Dashboard() {
   );
 
   const tabBtn = (id: string, label: string, iconPath: string) => (
-    <button key={id} onClick={() => setTab(id)}
+    <button key={id} className="dashboard-tab-btn" onClick={() => setTab(id)}
       style={{
         display: 'flex', alignItems: 'center', gap: 10,
         padding: '11px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
@@ -885,7 +885,7 @@ export default function Dashboard() {
   const busyDateSet = new Set(busyItems.map(item => item.date));
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
+    <div className="dashboard-page" style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
       {showOnboarding && (
         <div style={{
           position: 'fixed',
@@ -939,13 +939,23 @@ export default function Dashboard() {
       )}
 
       {/* Header */}
-      <div style={{ background: `linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '24px 20px' }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的主页</h1>
-            <p style={{ fontSize: '0.85rem', color: MUTED }}>{creator.display_name}</p>
+      <div className="dashboard-hero" style={{ background: `linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '24px 20px' }}>
+        <div className="dashboard-hero-inner" style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="dashboard-identity" style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+            <img className="dashboard-identity-avatar" src={profileAvatarUrl} alt="" style={{ width: 54, height: 54, borderRadius: 16, objectFit: 'cover', border: '2px solid rgba(217,168,87,0.32)', background: '#fffaf2', boxShadow: '0 10px 24px rgba(31,41,55,0.08)' }} />
+            <div style={{ minWidth: 0 }}>
+              <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的主页</h1>
+              <p style={{ fontSize: '0.85rem', color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{creator.display_name}</p>
+              <div className="dashboard-identity-badges" style={{ display: 'none', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                <span style={{ padding: '3px 8px', borderRadius: 999, background: contactVerified ? 'rgba(220,252,231,0.9)' : 'rgba(255,247,237,0.96)', color: contactVerified ? '#15803d' : '#925f18', fontSize: '0.7rem', fontWeight: 900 }}>
+                  {contactVerified ? '已验证' : '待验证'}
+                </span>
+                {creator.is_realname && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'rgba(217,168,87,0.16)', color: '#925f18', fontSize: '0.7rem', fontWeight: 900 }}>实名</span>}
+                {creator.city && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.96)', color: '#275389', fontSize: '0.7rem', fontWeight: 900 }}>{creator.city}</span>}
+              </div>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="dashboard-actions" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <Link to={`/explore/${creator.id}`}
               style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.28)', color: '#925f18', background: 'rgba(255,255,255,0.72)', fontSize: '0.82rem', textDecoration: 'none', fontWeight: 600 }}>
               查看公开页 →
@@ -962,7 +972,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
+      <div className="dashboard-body" style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
 
         {error && (
           <div style={{ padding: '12px 16px', backgroundColor: 'rgba(254,242,242,0.92)', border: '1px solid rgba(220,38,38,0.24)', borderRadius: 10, fontSize: '0.875rem', color: '#b91c1c', marginBottom: 20 }}>
@@ -985,21 +995,21 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+        <div className="dashboard-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
 
           {/* ── 左侧 Tab 栏 ── */}
-          <div style={{ width: 180, flexShrink: 0, ...card, padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div className="dashboard-tabs" style={{ width: 180, flexShrink: 0, ...card, padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
             {TABS.map(t => tabBtn(t.id, t.label, t.icon))}
           </div>
 
           {/* ── 主内容区 ── */}
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="dashboard-main" style={{ flex: 1, minWidth: 0 }}>
 
             {/* 资料 */}
             {tab === 'profile' && (
-              <div style={card}>
+              <div className="dashboard-card profile-editor-card" style={card}>
                 <h2 style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 24, color: INK }}>编辑资料</h2>
-                <div style={{
+                <div className="profile-avatar-panel" style={{
                   display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
                   padding: '16px', borderRadius: 14, marginBottom: 20,
                   background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(239,246,255,0.82))',
@@ -1022,7 +1032,7 @@ export default function Dashboard() {
                     </p>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
+                <div className="profile-status-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
                   <div style={{
                     padding: '12px 14px',
                     borderRadius: 12,
@@ -1050,7 +1060,7 @@ export default function Dashboard() {
                     {hasUploadedAvatar ? '头像已上传，会展示在你的主页和互动记录里。' : '头像未上传：当前使用系统生成头像，不影响公开发言。'}
                   </div>
                 </div>
-                <div style={{
+                <div className="dashboard-panel account-panel" style={{
                   padding: '16px',
                   borderRadius: 14,
                   marginBottom: 20,
@@ -1078,7 +1088,7 @@ export default function Dashboard() {
                   <p style={{ margin: '0 0 10px', color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.65 }}>
                     当前账号：{creator.phone ? `手机号 ${creator.phone}` : '未绑定手机号'}；{creator.email ? `邮箱 ${creator.email}` : '未绑定邮箱'}。
                   </p>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
+                  <div className="account-bind-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
                     <input
                       type="tel"
                       value={bindPhone || creator.phone || ''}
@@ -1115,7 +1125,7 @@ export default function Dashboard() {
                     </button>
                   </div>
                   {!recentlyVerified && contactVerified && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '112px minmax(160px, 1fr) auto', gap: 10, marginBottom: 10 }}>
+                    <div className="password-verify-grid" style={{ display: 'grid', gridTemplateColumns: '112px minmax(160px, 1fr) auto', gap: 10, marginBottom: 10 }}>
                       <select
                         value={passwordVerifyType}
                         onChange={e => setPasswordVerifyType(e.target.value as 'phone' | 'email')}
@@ -1144,7 +1154,7 @@ export default function Dashboard() {
                       </button>
                     </div>
                   )}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10 }}>
+                  <div className="password-set-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10 }}>
                     <input
                       type="password"
                       value={bindPassword}
@@ -1165,7 +1175,7 @@ export default function Dashboard() {
                     </button>
                   </div>
                 </div>
-                <div style={{
+                <div className="dashboard-panel" style={{
                   padding: '14px 16px',
                   borderRadius: 12,
                   marginBottom: 20,
@@ -1189,7 +1199,7 @@ export default function Dashboard() {
                     note="未保存的主页资料和角色清单会自动保存到当前浏览器。"
                   />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>
                     <label style={labelStyle}>昵称 / 艺名</label>
                     <input type="text" value={form.display_name} onChange={e => setForm({ ...form, display_name: e.target.value })} style={inputStyle} />
@@ -1199,7 +1209,7 @@ export default function Dashboard() {
                     <input type="text" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="如：上海" style={inputStyle} />
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>
                     <label style={labelStyle}>性别</label>
                     <select value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })} style={inputStyle}>
@@ -1228,7 +1238,7 @@ export default function Dashboard() {
                   <label style={labelStyle}>吃什么线（逗号分隔）</label>
                   <input type="text" value={form.preferred_story_lines} onChange={e => setForm({ ...form, preferred_story_lines: e.target.value })} placeholder="亲情线, 爱情线, 权谋线, 事业线" style={inputStyle} />
                 </div>
-                <div style={{ marginBottom: 18, padding: '16px', borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.72)', border: '1px solid rgba(201,146,46,0.18)' }}>
+                <div className="dashboard-panel role-panel" style={{ marginBottom: 18, padding: '16px', borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.72)', border: '1px solid rgba(201,146,46,0.18)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
                       <p style={{ fontWeight: 800, color: INK, fontSize: '0.92rem', marginBottom: 4 }}>可接本与角色</p>
@@ -1244,7 +1254,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+                  <div className="profile-grid-auto" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
                     <div>
                       <label style={labelStyle}>从剧本库选择</label>
                       <select value={roleDraft.script_id} onChange={e => selectRoleScript(e.target.value)} style={inputStyle}>
@@ -1331,7 +1341,7 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>
                     <label style={labelStyle}>流动状态</label>
                     <select value={form.travel_status} onChange={e => setForm({ ...form, travel_status: e.target.value })} style={inputStyle}>
@@ -1351,7 +1361,7 @@ export default function Dashboard() {
                   <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} rows={4}
                     style={{ ...inputStyle, resize: 'none' }} />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
                   <div>
                     <label style={labelStyle}>标签（逗号分隔）</label>
                     <input type="text" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })}
@@ -1363,7 +1373,7 @@ export default function Dashboard() {
                       placeholder="粉丝通过申请后可见" style={inputStyle} />
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
                   <div>
                     <label style={labelStyle}>抖音主页链接</label>
                     <input type="url" value={form.douyin} onChange={e => setForm({ ...form, douyin: e.target.value })} placeholder="https://v.douyin.com/..." style={inputStyle} />
@@ -1373,7 +1383,7 @@ export default function Dashboard() {
                     <input type="url" value={form.xiaohongshu} onChange={e => setForm({ ...form, xiaohongshu: e.target.value })} placeholder="https://www.xiaohongshu.com/..." style={inputStyle} />
                   </div>
                 </div>
-                <div style={{ padding: '14px 16px', borderRadius: 12, marginBottom: 24, backgroundColor: 'rgba(217,168,87,0.07)', border: '1px solid rgba(217,168,87,0.18)' }}>
+                <div className="dashboard-panel" style={{ padding: '14px 16px', borderRadius: 12, marginBottom: 24, backgroundColor: 'rgba(217,168,87,0.07)', border: '1px solid rgba(217,168,87,0.18)' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'rgba(71,85,105,0.82)', fontSize: '0.86rem', fontWeight: 700, marginBottom: 12 }}>
                     <input type="checkbox" checked={form.contact_unlock_enabled} onChange={e => setForm({ ...form, contact_unlock_enabled: e.target.checked })} />
                     开启预约意向金
@@ -1623,6 +1633,171 @@ export default function Dashboard() {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 760px) {
+          .dashboard-page {
+            background: linear-gradient(180deg, #f7fbff 0%, #fffdf8 32%, #fffdf8 100%) !important;
+          }
+          .dashboard-hero {
+            padding: 14px 14px 12px !important;
+            background: linear-gradient(145deg, #eef6ff 0%, #fffaf2 100%) !important;
+          }
+          .dashboard-hero-inner {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 12px !important;
+            align-items: stretch !important;
+          }
+          .dashboard-identity {
+            padding: 12px !important;
+            border-radius: 16px !important;
+            background: rgba(255,255,255,0.74) !important;
+            border: 1px solid rgba(201,146,46,0.16) !important;
+            box-shadow: 0 10px 28px rgba(31,41,55,0.06) !important;
+          }
+          .dashboard-identity-avatar {
+            width: 64px !important;
+            height: 64px !important;
+            border-radius: 18px !important;
+          }
+          .dashboard-identity h1 {
+            font-size: 1.28rem !important;
+            margin-bottom: 2px !important;
+          }
+          .dashboard-identity-badges {
+            display: flex !important;
+          }
+          .dashboard-actions {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+            width: 100% !important;
+          }
+          .dashboard-actions a,
+          .dashboard-actions button {
+            display: flex !important;
+            align-items: center !important;
+            min-height: 38px !important;
+            padding: 8px 10px !important;
+            border-radius: 10px !important;
+            text-align: center !important;
+            justify-content: center !important;
+            font-size: 0.78rem !important;
+            white-space: nowrap !important;
+          }
+          .dashboard-actions button {
+            grid-column: 1 / -1 !important;
+            min-height: 34px !important;
+            justify-self: stretch !important;
+          }
+          .dashboard-body {
+            padding: 14px 12px 64px !important;
+          }
+          .dashboard-layout {
+            flex-direction: column !important;
+            gap: 12px !important;
+          }
+          .dashboard-tabs {
+            width: 100% !important;
+            max-width: none !important;
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 20 !important;
+            display: flex !important;
+            flex-direction: row !important;
+            gap: 8px !important;
+            overflow-x: auto !important;
+            padding: 8px !important;
+            border-radius: 14px !important;
+            background: rgba(255,250,242,0.94) !important;
+            backdrop-filter: blur(12px) !important;
+            box-shadow: 0 8px 24px rgba(31,41,55,0.08) !important;
+            -webkit-overflow-scrolling: touch !important;
+          }
+          .dashboard-tabs::-webkit-scrollbar {
+            display: none;
+          }
+          .dashboard-tab-btn {
+            width: auto !important;
+            flex: 0 0 auto !important;
+            padding: 9px 12px !important;
+            border-radius: 999px !important;
+            white-space: nowrap !important;
+            font-size: 0.82rem !important;
+          }
+          .dashboard-tab-btn svg {
+            width: 15px !important;
+            height: 15px !important;
+          }
+          .dashboard-main {
+            width: 100% !important;
+          }
+          .dashboard-card,
+          .dashboard-panel,
+          .dashboard-main section {
+            border-radius: 14px !important;
+            padding: 14px !important;
+            box-shadow: 0 10px 26px rgba(31,41,55,0.05) !important;
+          }
+          .profile-editor-card > h2 {
+            margin-bottom: 14px !important;
+            font-size: 1rem !important;
+          }
+          .profile-avatar-panel {
+            align-items: center !important;
+            gap: 12px !important;
+            padding: 12px !important;
+            margin-bottom: 12px !important;
+          }
+          .profile-avatar-panel > div:first-child {
+            width: 72px !important;
+            height: 72px !important;
+            border-radius: 20px !important;
+          }
+          .profile-avatar-panel p {
+            line-height: 1.55 !important;
+          }
+          .profile-status-grid,
+          .account-bind-grid,
+          .password-verify-grid,
+          .password-set-grid,
+          .profile-grid-2,
+          .profile-grid-auto {
+            grid-template-columns: 1fr !important;
+            gap: 10px !important;
+          }
+          .password-verify-grid button,
+          .password-set-grid button,
+          .account-bind-grid button {
+            min-height: 42px !important;
+            padding: 0 12px !important;
+          }
+          .account-panel {
+            margin-bottom: 14px !important;
+          }
+          .account-panel > div:first-child {
+            gap: 8px !important;
+          }
+          .role-panel {
+            padding: 12px !important;
+          }
+          .role-panel > div:first-child {
+            align-items: flex-start !important;
+          }
+          .role-panel a,
+          .role-panel button {
+            min-height: 36px !important;
+          }
+          .profile-editor-card input,
+          .profile-editor-card select,
+          .profile-editor-card textarea {
+            font-size: 16px !important;
+            border-radius: 10px !important;
+          }
+          .profile-editor-card textarea {
+            min-height: 94px !important;
+          }
+        }
 
         /* Light calendar overrides */
         .dark-cal { background: transparent !important; border: none !important; width: 100% !important; color: #1f2937 !important; }
