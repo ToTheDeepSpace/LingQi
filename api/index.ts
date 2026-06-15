@@ -1525,6 +1525,186 @@ function runLocalModerationPrecheck(input: ModerationPrecheckInput) {
   };
 }
 
+type PublicReviewTargetType =
+  | 'profile_update'
+  | 'service_create'
+  | 'portfolio_create'
+  | 'availability_create'
+  | 'tag_create'
+  | 'script_rating_upsert';
+
+type PublicReviewRecord = {
+  id: string;
+  target_type: PublicReviewTargetType;
+  profile_id?: string | null;
+  profile_name?: string | null;
+  title?: string | null;
+  summary?: string | null;
+  payload?: Record<string, unknown> | null;
+  status?: 'pending' | 'approved' | 'rejected';
+  moderation_precheck?: ReturnType<typeof runLocalModerationPrecheck> | null;
+};
+
+async function createPublicReview(input: {
+  targetType: PublicReviewTargetType;
+  profile: Record<string, unknown>;
+  title: string;
+  summary?: string;
+  payload: Record<string, unknown>;
+  moderationPrecheck?: ReturnType<typeof runLocalModerationPrecheck> | null;
+}) {
+  const { data, error: insertErr } = await supabase.from('lc_public_reviews').insert({
+    target_type: input.targetType,
+    profile_id: input.profile.id,
+    profile_name: cleanText(input.profile.display_name, 120) || '用户',
+    title: cleanText(input.title, 160),
+    summary: cleanText(input.summary, 1000) || null,
+    payload: input.payload,
+    status: 'pending',
+    moderation_precheck: input.moderationPrecheck || null,
+  }).select('*').single();
+  if (insertErr && isMissingRelation(insertErr, 'lc_public_reviews')) {
+    throw new Error('公开内容审核表尚未初始化');
+  }
+  if (insertErr) throw insertErr;
+  return data;
+}
+
+function publicReviewAcceptedResponse(review: Record<string, unknown>) {
+  return {
+    id: review.id,
+    review_id: review.id,
+    status: 'pending',
+    message: '已提交审核，通过后才会公开展示',
+  };
+}
+
+async function applyProfileUpdateReview(review: PublicReviewRecord) {
+  const payload = review.payload || {};
+  const profilePatch = (payload.profile_patch && typeof payload.profile_patch === 'object')
+    ? payload.profile_patch as Record<string, unknown>
+    : {};
+  const rolePreferences = Array.isArray(payload.role_preferences) ? payload.role_preferences as Record<string, unknown>[] : null;
+  if (!review.profile_id) throw new Error('审核记录缺少用户 ID');
+  if (Object.keys(profilePatch).length > 0) {
+    const { error: profileErr } = await supabase.from('lc_profiles').update({
+      ...profilePatch,
+      updated_at: new Date().toISOString(),
+    }).eq('id', review.profile_id);
+    if (profileErr) throw profileErr;
+  }
+  if (rolePreferences) {
+    const { error: deleteErr } = await supabase.from('lc_profile_role_preferences')
+      .delete()
+      .eq('profile_id', review.profile_id);
+    if (deleteErr && !isMissingRelation(deleteErr, 'lc_profile_role_preferences')) throw deleteErr;
+    if (!deleteErr && rolePreferences.length > 0) {
+      const { error: insertErr } = await supabase.from('lc_profile_role_preferences').insert(
+        rolePreferences.map((item, index) => ({
+          profile_id: review.profile_id,
+          script_id: item.script_id,
+          script_name: item.script_name,
+          role_name: item.role_name,
+          role_gender: item.role_gender,
+          role_tags: item.role_tags,
+          is_recommended: item.is_recommended,
+          note: item.note,
+          sort_order: index,
+          updated_at: new Date().toISOString(),
+        })),
+      );
+      if (insertErr) throw insertErr;
+    }
+  }
+}
+
+async function applyPublicReview(review: PublicReviewRecord) {
+  const payload = review.payload || {};
+  if (review.target_type === 'profile_update') {
+    await applyProfileUpdateReview(review);
+    if (review.profile_id) await runReferralSideEffect('stage1-after-profile-review-approved', () => maybeAwardReferralStage1(String(review.profile_id)));
+    return;
+  }
+  if (review.target_type === 'service_create') {
+    const { error: insertErr } = await supabase.from('lc_services').insert({
+      creator_id: payload.creator_id,
+      service_type: payload.service_type,
+      price: payload.price,
+      duration: payload.duration || null,
+      description: payload.description || null,
+    });
+    if (insertErr) throw insertErr;
+    return;
+  }
+  if (review.target_type === 'portfolio_create') {
+    const { error: insertErr } = await supabase.from('lc_portfolio').insert({
+      creator_id: payload.creator_id,
+      image_url: payload.image_url,
+      caption: payload.caption || null,
+    });
+    if (insertErr) throw insertErr;
+    return;
+  }
+  if (review.target_type === 'availability_create') {
+    const items = Array.isArray(payload.items) ? payload.items as Record<string, unknown>[] : [payload];
+    const rows = items.map(item => ({
+      creator_id: item.creator_id,
+      date: item.date,
+      start_time: item.start_time || '09:00',
+      end_time: item.end_time || '22:00',
+      note: item.note || null,
+      city: item.city || null,
+      location: item.location || null,
+      is_booked: false,
+      source: item.source || 'manual',
+      source_id: item.source_id || null,
+      source_payload: item.source_payload || null,
+    })).filter(item => item.creator_id && item.date);
+    if (rows.length === 0) throw new Error('审核记录缺少档期日期');
+    const { error: insertErr } = await supabase.from('lc_availability').insert(rows);
+    if (insertErr) throw insertErr;
+    return;
+  }
+  if (review.target_type === 'tag_create') {
+    const existing = await supabase.from('lc_entity_tags')
+      .select('id')
+      .eq('target_type', payload.target_type)
+      .eq('target_id', payload.target_id)
+      .eq('normalized_tag', payload.normalized_tag)
+      .maybeSingle();
+    if (existing.error && !isMissingRelation(existing.error, 'lc_entity_tags')) throw existing.error;
+    if (existing.data) return;
+    const { error: insertErr } = await supabase.from('lc_entity_tags').insert({
+      target_type: payload.target_type,
+      target_id: payload.target_id,
+      tag: payload.tag,
+      normalized_tag: payload.normalized_tag,
+      creator_id: payload.creator_id,
+      creator_name: payload.creator_name,
+      status: 'approved',
+    });
+    if (insertErr) throw insertErr;
+    return;
+  }
+  if (review.target_type === 'script_rating_upsert') {
+    const { error: upsertErr } = await supabase.from('lc_script_ratings').upsert({
+      script_id: payload.script_id,
+      script_name: payload.script_name,
+      profile_id: payload.profile_id,
+      profile_name: payload.profile_name,
+      rating: payload.rating,
+      content: payload.content || '',
+      tags: Array.isArray(payload.tags) ? payload.tags : [],
+      status: 'approved',
+      moderation_precheck: review.moderation_precheck || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'script_id,profile_id' });
+    if (upsertErr) throw upsertErr;
+    return;
+  }
+  throw new Error('未知公开审核类型');
+}
+
 function getChinaNow() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
@@ -4004,6 +4184,8 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
     if (getReq(req, 'creatorId') !== req.params.id) {
       return res.status(403).json(err(new Error('只能修改自己的资料')));
     }
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const {
       display_name, avatar, bio, tags, city, social_links, wechat,
       available_cities, travel_status, contact_unlock_enabled, contact_intent_amount,
@@ -4011,8 +4193,7 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
     } = req.body;
     const socialSnapshots = makeSocialSnapshots(social_links);
     const rolePreferences = await sanitizeProfileRolePreferences(role_preferences);
-
-    const { error: profileErr } = await supabase.from('lc_profiles').update({
+    const profilePatch = {
       display_name, avatar, bio, tags, city, social_links, wechat,
       gender: cleanChoice(gender, PROFILE_GENDER_OPTIONS),
       sexual_orientation: cleanChoice(sexual_orientation, PROFILE_ORIENTATION_OPTIONS),
@@ -4022,35 +4203,53 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
       contact_unlock_enabled: !!contact_unlock_enabled,
       contact_intent_amount: Math.max(0, parseInt(contact_intent_amount || 0) || 0),
       social_snapshots: socialSnapshots,
-      updated_at: new Date().toISOString(),
-    }).eq('id', req.params.id);
-    if (profileErr) throw profileErr;
-
-    if (Array.isArray(role_preferences)) {
-      const { error: deleteErr } = await supabase.from('lc_profile_role_preferences')
-        .delete()
-        .eq('profile_id', req.params.id);
-      if (deleteErr && !isMissingRelation(deleteErr, 'lc_profile_role_preferences')) throw deleteErr;
-      if (!deleteErr && rolePreferences.length > 0) {
-        const { error: insertErr } = await supabase.from('lc_profile_role_preferences').insert(
-          rolePreferences.map((item, index) => ({
-            profile_id: req.params.id,
-            script_id: item.script_id,
-            script_name: item.script_name,
-            role_name: item.role_name,
-            role_gender: item.role_gender,
-            role_tags: item.role_tags,
-            is_recommended: item.is_recommended,
-            note: item.note,
-            sort_order: index,
-            updated_at: new Date().toISOString(),
-          })),
-        );
-        if (insertErr) throw insertErr;
-      }
-    }
-    await runReferralSideEffect('stage1-after-profile-update', () => maybeAwardReferralStage1(req.params.id));
-    res.json(ok());
+    };
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'profile_update_submit',
+      targetType: 'profile_update',
+      texts: {
+        display_name,
+        bio,
+        tags: Array.isArray(tags) ? tags.join(' ') : '',
+        city,
+        wechat,
+        social_links: JSON.stringify(social_links || {}),
+        preferred_story_lines: cleanTextArray(preferred_story_lines).join(' '),
+        available_cities: Array.isArray(available_cities) ? available_cities.join(' ') : '',
+        role_preferences: rolePreferences.map(item => `${item.script_name} ${item.role_name} ${item.note || ''}`).join('\n'),
+      },
+      files: avatar ? [{ url: avatar, type: 'image/*' }] : [],
+      allowContact: true,
+    });
+    const review = await createPublicReview({
+      targetType: 'profile_update',
+      profile,
+      title: '主页资料修改',
+      summary: '昵称、头像、简介、社交链接、服务设置或可接角色修改',
+      payload: {
+        profile_patch: profilePatch,
+        role_preferences: Array.isArray(role_preferences) ? rolePreferences.map((item, index) => ({
+          script_id: item.script_id,
+          script_name: item.script_name,
+          role_name: item.role_name,
+          role_gender: item.role_gender,
+          role_tags: item.role_tags,
+          is_recommended: item.is_recommended,
+          note: item.note,
+          sort_order: index,
+        })) : null,
+      },
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'profile_update_submitted_for_review',
+      targetType: 'public_review',
+      targetId: review?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { review_type: 'profile_update', moderation: moderationPrecheck },
+    });
+    res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -4071,12 +4270,40 @@ app.post('/api/lc/availability', authMiddleware, async (req, res) => {
     if (getReq(req, 'creatorId') !== creatorId) {
       return res.status(403).json(err(new Error('只能管理自己的档期')));
     }
-    const { data } = await supabase.from('lc_availability').insert({
-      creator_id: creatorId, date, start_time: startTime, end_time: endTime, note,
-      city: city || null, location: location || null,
-      is_booked: false, source: 'manual',
-    }).select().single();
-    res.json(ok(data));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const payload = {
+      creator_id: creatorId,
+      date,
+      start_time: startTime || '09:00',
+      end_time: endTime || '22:00',
+      note: note || null,
+      city: city || null,
+      location: location || null,
+      source: 'manual',
+    };
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'availability_submit',
+      targetType: 'availability',
+      texts: { date, startTime, endTime, note, city, location },
+    });
+    const review = await createPublicReview({
+      targetType: 'availability_create',
+      profile,
+      title: `档期：${date}`,
+      summary: `${city || '未填城市'} ${location || ''}`.trim(),
+      payload,
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'availability_submitted_for_review',
+      targetType: 'public_review',
+      targetId: review?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { date, moderation: moderationPrecheck },
+    });
+    res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -4195,7 +4422,7 @@ app.post('/api/lc/availability/import-text', authMiddleware, async (req, res) =>
     const rawHash = hashLooseValue(`${creatorId}:${rawText}:${screenshotUrl}`).slice(0, 16);
     const imported = [];
     for (const date of dates) {
-      const item = await upsertAvailabilityBySource({
+      const item = {
         creator_id: creatorId,
         date,
         start_time: normalizeClockTime(req.body?.startTime, '09:00'),
@@ -4207,11 +4434,35 @@ app.post('/api/lc/availability/import-text', authMiddleware, async (req, res) =>
         source: 'screenshot',
         source_id: `screenshot:${rawHash}:${date}`,
         source_payload: { raw_text: rawText, screenshot_url: screenshotUrl || null },
-      });
+      };
       imported.push(item);
     }
 
-    res.json(ok({ imported: imported.length, items: imported, dates, expiredDates }));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'availability_screenshot_submit',
+      targetType: 'availability',
+      texts: { rawText, city, location },
+      files: screenshotUrl ? [{ url: screenshotUrl, type: 'image/*' }] : [],
+    });
+    const review = await createPublicReview({
+      targetType: 'availability_create',
+      profile,
+      title: `截图档期导入：${dates.length} 天`,
+      summary: `${city || '未填城市'} ${location || ''}`.trim(),
+      payload: { items: imported },
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'availability_screenshot_submitted_for_review',
+      targetType: 'public_review',
+      targetId: review?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { dates, expiredDates, moderation: moderationPrecheck },
+    });
+    res.json(ok({ ...publicReviewAcceptedResponse(review as Record<string, unknown>), imported: 0, items: [], dates, expiredDates }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -4238,10 +4489,39 @@ app.post('/api/lc/services', authMiddleware, async (req, res) => {
     if (getReq(req, 'creatorId') !== creatorId) {
       return res.status(403).json(err(new Error('只能管理自己的服务')));
     }
-    const { data } = await supabase.from('lc_services').insert({
-      creator_id: creatorId, service_type: serviceType, price: parseFloat(price), duration, description,
-    }).select().single();
-    res.json(ok(data));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const parsedPrice = parseFloat(price);
+    if (!serviceType || !Number.isFinite(parsedPrice)) return res.status(400).json(err(new Error('请填写服务类型和价格')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'service_submit',
+      targetType: 'service',
+      texts: { serviceType, price, duration, description },
+      allowContact: true,
+    });
+    const review = await createPublicReview({
+      targetType: 'service_create',
+      profile,
+      title: `服务：${cleanText(serviceType, 80)}`,
+      summary: `${parsedPrice} 元${duration ? ` · ${duration}` : ''}`,
+      payload: {
+        creator_id: creatorId,
+        service_type: serviceType,
+        price: parsedPrice,
+        duration: duration || null,
+        description: description || null,
+      },
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'service_submitted_for_review',
+      targetType: 'public_review',
+      targetId: review?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { moderation: moderationPrecheck },
+    });
+    res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -4265,10 +4545,32 @@ app.post('/api/lc/portfolio', authMiddleware, async (req, res) => {
     if (getReq(req, 'creatorId') !== creatorId) {
       return res.status(403).json(err(new Error('只能管理自己的作品')));
     }
-    const { data } = await supabase.from('lc_portfolio').insert({
-      creator_id: creatorId, image_url: imageUrl, caption,
-    }).select().single();
-    res.json(ok(data));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if (!imageUrl) return res.status(400).json(err(new Error('请先上传作品图片')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'portfolio_submit',
+      targetType: 'portfolio',
+      texts: { caption },
+      files: [{ url: imageUrl, type: 'image/*' }],
+    });
+    const review = await createPublicReview({
+      targetType: 'portfolio_create',
+      profile,
+      title: '作品图片',
+      summary: caption || '作品集图片',
+      payload: { creator_id: creatorId, image_url: imageUrl, caption: caption || null },
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'portfolio_submitted_for_review',
+      targetType: 'public_review',
+      targetId: review?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { moderation: moderationPrecheck },
+    });
+    res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -4545,21 +4847,39 @@ app.post('/api/lc/tags', authMiddleware, async (req, res) => {
       .eq('target_type', targetType)
       .eq('target_id', targetId)
       .eq('normalized_tag', normalizedTag)
+      .eq('status', 'approved')
       .maybeSingle();
     if (existingQuery.error && !isMissingRelation(existingQuery.error, 'lc_entity_tags')) throw existingQuery.error;
     if (existingQuery.data) return res.json(ok(existingQuery.data));
-    const { data, error: insErr } = await supabase.from('lc_entity_tags').insert({
-      target_type: targetType,
-      target_id: targetId,
-      tag,
-      normalized_tag: normalizedTag,
-      creator_id: profile.id,
-      creator_name: profile.display_name || '用户',
-      status: 'approved',
-    }).select().single();
-    if (insErr && isMissingRelation(insErr, 'lc_entity_tags')) return res.status(503).json(err(new Error('标签表尚未初始化')));
-    if (insErr) throw insErr;
-    res.json(ok(data));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'tag_submit',
+      targetType: 'tag',
+      texts: { tag, targetType, targetId },
+    });
+    const review = await createPublicReview({
+      targetType: 'tag_create',
+      profile,
+      title: `标签：${tag}`,
+      summary: `${targetType} / ${targetId}`,
+      payload: {
+        target_type: targetType,
+        target_id: targetId,
+        tag,
+        normalized_tag: normalizedTag,
+        creator_id: profile.id,
+        creator_name: profile.display_name || '用户',
+      },
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'tag_submitted_for_review',
+      targetType: 'public_review',
+      targetId: review?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { target_type: targetType, target_id: targetId, moderation: moderationPrecheck },
+    });
+    res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
 });
 app.post('/api/lc/tags/:id/like', authMiddleware, async (req, res) => {
@@ -4629,17 +4949,27 @@ app.post('/api/lc/scripts/:id/ratings', authMiddleware, async (req, res) => {
       rating,
       content,
       tags,
-      status: 'approved',
+      status: 'pending',
       moderation_precheck: moderationPrecheck,
       updated_at: new Date().toISOString(),
     };
-    const { data, error: upsertErr } = await supabase.from('lc_script_ratings')
-      .upsert(payload, { onConflict: 'script_id,profile_id' })
-      .select()
-      .single();
-    if (upsertErr && isMissingRelation(upsertErr, 'lc_script_ratings')) return res.status(503).json(err(new Error('剧本评分表尚未初始化')));
-    if (upsertErr) throw upsertErr;
-    res.json(ok(data));
+    const review = await createPublicReview({
+      targetType: 'script_rating_upsert',
+      profile,
+      title: `剧本评分：${scriptName}`,
+      summary: `${rating} 分${content ? ` · ${content.slice(0, 80)}` : ''}`,
+      payload,
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'script_rating_submitted_for_review',
+      targetType: 'public_review',
+      targetId: review?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { script_id: scriptId, rating, moderation: moderationPrecheck },
+    });
+    res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -4913,11 +5243,11 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       contact_note: contactNote || null,
       content,
       boost_amount: boostAmount,
-      status: 'approved',
+      status: 'pending',
       juzhanggui_sync_status: 'pending',
       ai_assist_context: {
         source: 'lingqi_carpool_form',
-        moderation: 'post_publish',
+        moderation: 'pre_publish',
         moderation_precheck: moderationPrecheck,
         juzhanggui_sync: 'pending_manual_or_background_sync',
         subsidy_unit: 'cash_or_ticket_discount',
@@ -4934,38 +5264,13 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
       throw insErr;
     }
 
-    let publishedCarpool = data as Record<string, unknown>;
-    let syncResult: { ok: boolean; scheduleId?: string | null; reused?: boolean; error?: string } = { ok: false };
-    try {
-      const synced = await syncCarpoolToJuzhanggui(publishedCarpool);
-      syncResult = { ok: true, scheduleId: synced.scheduleId, reused: synced.reused };
-    } catch (syncErr) {
-      syncResult = { ok: false, error: getErrorText(syncErr) || '同步剧司辰失败' };
-    }
-    const { data: syncUpdated } = await supabase.from('lc_carpools')
-      .update({
-        juzhanggui_sync_status: syncResult.ok ? 'synced' : 'failed',
-        juzhanggui_schedule_id: syncResult.scheduleId || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', data?.id)
-      .select('*')
-      .maybeSingle();
-    if (syncUpdated) publishedCarpool = syncUpdated as Record<string, unknown>;
-
-    try {
-      await auditApprovedTarget('carpool', publishedCarpool, 'carpool_auto_published', profile.id, { moderation: 'post_publish', sync: syncResult });
-    } catch {
-      // 审计链失败不阻断强时效拼车发布；后台巡检再补。
-    }
-
     await logSecurityEvent(req, {
-      action: 'carpool_submitted_auto_published',
+      action: 'carpool_submitted_for_review',
       targetType: 'carpool',
       targetId: data?.id,
-      metadata: { city, event_date: eventDate, script_name: scriptName, boost_amount: boostAmount, sync: syncResult, moderation: moderationPrecheck },
+      metadata: { city, event_date: eventDate, script_name: scriptName, boost_amount: boostAmount, moderation: moderationPrecheck },
     });
-    res.json(ok({ id: data?.id, status: 'approved', balance: walletSpend?.balance ?? (profile.balance || 0), sync: syncResult }));
+    res.json(ok({ id: data?.id, status: 'pending', balance: walletSpend?.balance ?? (profile.balance || 0), message: '已提交审核，通过后才会公开展示并同步剧司辰' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -5639,7 +5944,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, publicReviewsResult] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -5658,8 +5963,10 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
         .order('created_at', { ascending: false })
         .limit(150),
       supabase.from('lc_dm_dossiers').select('*').or('status.eq.pending,claim_status.eq.pending').order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_public_reviews').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
     ]);
     if (dmDossiersResult.error && !isMissingRelation(dmDossiersResult.error, 'lc_dm_dossiers')) throw dmDossiersResult.error;
+    if (publicReviewsResult.error && !isMissingRelation(publicReviewsResult.error, 'lc_public_reviews')) throw publicReviewsResult.error;
     res.json(ok({
       profiles: (profiles || []).map(profile => sanitizeProfile(profile, true)),
       contactRequests: requests || [],
@@ -5676,7 +5983,70 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       scriptContributions: scriptContributions || [],
       securityEvents: securityEvents || [],
       dmDossiers: dmDossiersResult.error ? [] : (dmDossiersResult.data || []),
+      publicReviews: publicReviewsResult.error ? [] : (publicReviewsResult.data || []),
     }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/public-reviews/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
+    const { data: review, error: findErr } = await supabase.from('lc_public_reviews')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (findErr && isMissingRelation(findErr, 'lc_public_reviews')) return res.status(503).json(err(new Error('公开内容审核表尚未初始化')));
+    if (findErr) throw findErr;
+    if (!review) return res.status(404).json(err(new Error('审核记录不存在')));
+    if (review.status !== 'pending') return res.status(400).json(err(new Error('这条审核记录已经处理过了')));
+
+    await applyPublicReview(review as PublicReviewRecord);
+    const { data: updated, error: updErr } = await supabase.from('lc_public_reviews')
+      .update({
+        status: 'approved',
+        reviewed_by: reviewerId,
+        reviewed_at: new Date().toISOString(),
+        review_note: cleanText(req.body?.reviewNote, 500) || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .eq('status', 'pending')
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'admin_public_review_approved',
+      targetType: 'public_review',
+      targetId: req.params.id,
+      metadata: { review_type: review.target_type, review_note: cleanText(req.body?.reviewNote, 500) || null },
+    });
+    res.json(ok(updated));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/public-reviews/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
+    const rejectReason = cleanText(req.body?.rejectReason, 500) || '不符合公开展示规则';
+    const { error: updErr } = await supabase.from('lc_public_reviews')
+      .update({
+        status: 'rejected',
+        reviewed_by: reviewerId,
+        reviewed_at: new Date().toISOString(),
+        review_note: rejectReason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .eq('status', 'pending');
+    if (updErr && isMissingRelation(updErr, 'lc_public_reviews')) return res.status(503).json(err(new Error('公开内容审核表尚未初始化')));
+    if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'admin_public_review_rejected',
+      targetType: 'public_review',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason },
+    });
+    res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
 

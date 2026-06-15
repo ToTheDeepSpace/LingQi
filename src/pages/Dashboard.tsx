@@ -475,37 +475,9 @@ export default function Dashboard() {
       });
       const d = await r.json();
       if (d.success) {
-        const nextRolePreferences = rolePreferences.map((item, index) => ({
-          script_id: item.script_id || null,
-          script_name: item.script_name,
-          role_name: item.role_name,
-          role_gender: item.role_gender,
-          role_tags: item.role_tags,
-          is_recommended: item.is_recommended,
-          note: item.note,
-          sort_order: index,
-        }));
         profileDraft.clearDraft();
-        setCreator(prev => prev ? {
-          ...prev,
-          avatar: avatarOverride ?? form.avatar,
-          display_name: form.display_name,
-          bio: form.bio,
-          city: form.city,
-          wechat: form.wechat,
-          tags,
-          gender: form.gender,
-          sexual_orientation: form.sexual_orientation,
-          preferred_story_lines,
-          social_links,
-          available_cities,
-          travel_status: form.travel_status,
-          contact_unlock_enabled: form.contact_unlock_enabled,
-          contact_intent_amount: form.contact_intent_amount ? Number(form.contact_intent_amount) : 0,
-          role_preferences: nextRolePreferences,
-        } : prev);
-        setMsg('已保存');
-        setTimeout(() => setMsg(''), 2500);
+        setMsg(d.data?.message || '已提交审核，通过后才会公开展示');
+        setTimeout(() => setMsg(''), 3200);
       }
       else setError(d.error || '保存失败');
     } catch { setError('网络错误，请重试'); }
@@ -514,7 +486,6 @@ export default function Dashboard() {
 
   const handleAvatarUploaded = (url: string) => {
     setForm(prev => ({ ...prev, avatar: url }));
-    setCreator(prev => prev ? { ...prev, avatar: url } : prev);
     void saveProfile(url);
   };
 
@@ -697,13 +668,12 @@ export default function Dashboard() {
         setError(msg);
         return;
       }
-      await refreshAvailability();
       availabilityImportDraft.clearDraft();
       setScreenshotUrl('');
       setScreenshotText('');
       setAvailCity('');
       setAvailLocation('');
-      setMsg(d.data?.message || `已从截图文字导入 ${d.data?.imported || 0} 条可约档期`);
+      setMsg(d.data?.message || '截图档期已提交审核，通过后才会公开展示');
       setTimeout(() => setMsg(''), 3000);
     } catch {
       setError('网络错误，请重试');
@@ -723,8 +693,9 @@ export default function Dashboard() {
     const d = await r.json();
     if (d.success) {
       serviceDraft.clearDraft();
-      setServices([...services, d.data]);
       setNewSvc({ service_type: '', price: '', duration: '', description: '' });
+      setMsg(d.data?.message || '服务已提交审核，通过后才会公开展示');
+      setTimeout(() => setMsg(''), 3000);
     }
     else setError(d.error || '添加失败');
   };
@@ -743,7 +714,12 @@ export default function Dashboard() {
       body: JSON.stringify({ creatorId: creator.id, imageUrl: url }),
     });
     const d = await r.json();
-    if (d.success) setPortfolio([...portfolio, d.data]);
+    if (d.success) {
+      setMsg(d.data?.message || '作品已提交审核，通过后才会公开展示');
+      setTimeout(() => setMsg(''), 3000);
+    } else {
+      setError(d.error || '上传失败');
+    }
   };
 
   const deletePortfolio = async (id: string) => {
@@ -835,8 +811,8 @@ export default function Dashboard() {
       });
       const d = await r.json();
       if (d.success) {
-        setAvailDates([...availDates, dateStr]);
-        setAvailItems([...availItems, d.data]);
+        setMsg(d.data?.message || '档期已提交审核，通过后才会公开展示');
+        setTimeout(() => setMsg(''), 3000);
       }
     }
   };
@@ -970,7 +946,7 @@ export default function Dashboard() {
                   variant="compact"
                   hidePreview
                 />
-                <InfoTip>头像保存后会显示在公开页；请只上传可公开图片。</InfoTip>
+                <InfoTip>头像上传后会提交审核，通过后显示在公开页；请只上传可公开图片。</InfoTip>
               </div>
             </div>
             <div style={{ minWidth: 0 }}>
@@ -1538,7 +1514,7 @@ export default function Dashboard() {
               <div style={{ display: 'grid', gap: 16 }}>
                 <div style={card}>
                   <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 8, color: INK }}>手动标记可约日期</p>
-                  <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.58)', marginBottom: 16 }}>金色日期会显示在公开主页上，代表可以被委托人预约。</p>
+                  <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.58)', marginBottom: 16 }}>新标记的日期会先提交审核，通过后显示在公开主页上，代表可以被委托人预约。</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 560, marginBottom: 18 }}>
                     <input value={availCity} onChange={e => setAvailCity(e.target.value)} placeholder="这批档期所在城市（默认用常驻城市）" style={inputStyle} />
                     <input value={availLocation} onChange={e => setAvailLocation(e.target.value)} placeholder="地点补充，如展会/区县/可商量" style={inputStyle} />
@@ -1653,9 +1629,9 @@ export default function Dashboard() {
                 )}
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
                   <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>上传作品</p>
-                  <ImageUpload onUploaded={addPortfolio} token={token} api={API} scope="portfolio" label="上传并公开作品" />
+                  <ImageUpload onUploaded={addPortfolio} token={token} api={API} scope="portfolio" label="上传作品并提交审核" />
                   <p style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.52)', marginTop: 12, lineHeight: 1.65 }}>
-                    支持 JPG、PNG、GIF，最大 10MB。当前上传后会直接显示在公开页；请只上传你有权公开展示的图片。
+                    支持 JPG、PNG、GIF，最大 10MB。上传后进入审核，通过后才会显示在公开页；请只上传你有权公开展示的图片。
                   </p>
                 </div>
               </div>

@@ -81,7 +81,7 @@ export default function Carpools() {
   const [submittingApply, setSubmittingApply] = useState(false);
   const [contactModal, setContactModal] = useState<{ item: Carpool; loading: boolean; error: string; contact?: { leader_contact: string; contact_note: string | null } } | null>(null);
   const [reportModal, setReportModal] = useState<Carpool | null>(null);
-  const published = searchParams.get('published') === '1' || searchParams.get('submitted') === '1';
+  const submitted = searchParams.get('published') === '1' || searchParams.get('submitted') === '1';
   const applyDraftKey = applyModal ? `lc:draft:carpool-application:${applyModal.id}` : 'lc:draft:carpool-application:none';
   const applyDraftValue = useMemo<CarpoolApplicationDraft>(() => ({ role: applyRole, message: applyMessage }), [applyMessage, applyRole]);
   const applyDraft = useDraftAutosave<CarpoolApplicationDraft>({
@@ -265,9 +265,9 @@ export default function Carpools() {
       </div>
 
       <div style={{ maxWidth: 1060, margin: '0 auto', padding: '28px 20px 80px' }}>
-        {published && (
+        {submitted && (
           <div style={{ marginBottom: 18, borderRadius: 12, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(217,168,87,0.12)', padding: '14px 16px', color: '#65401c', lineHeight: 1.7 }}>
-            拼车已发布，会立即进入拼车区。平台采用先展示、后治理：如被举报或发现违规，管理员会后置处理并保留记录。
+            拼车已提交审核，通过后才会进入拼车区并同步剧司辰。急单会优先处理，平台会保留提交与审核记录。
           </div>
         )}
 

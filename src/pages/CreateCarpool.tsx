@@ -548,7 +548,7 @@ export default function CreateCarpool() {
       const d = await r.json();
       if (d.success) {
         carpoolDraft.clearDraft();
-        navigate('/carpools?published=1');
+        navigate('/carpools?submitted=1');
       }
       else setError(typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败'));
     } catch {

@@ -98,9 +98,7 @@ export default function Scripts() {
       setMessage(d.error || '评分失败');
       return;
     }
-    setMessage('评分已保存');
-    await loadRatings(selected);
-    await loadScripts();
+    setMessage(d.data?.message || '评分已提交审核，通过后才会公开展示');
   };
 
   return (

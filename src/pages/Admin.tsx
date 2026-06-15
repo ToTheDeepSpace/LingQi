@@ -287,6 +287,20 @@ type SiteMessage = {
   updated_at?: string;
 };
 
+type PublicReview = {
+  id: string;
+  target_type: 'profile_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert';
+  profile_id?: string | null;
+  profile_name?: string | null;
+  title?: string | null;
+  summary?: string | null;
+  payload?: Record<string, unknown> | null;
+  status: 'pending' | 'approved' | 'rejected';
+  review_note?: string | null;
+  moderation_precheck?: ModerationPrecheck | null;
+  created_at: string;
+};
+
 type DmDossierReview = {
   id: string;
   entity_type?: 'dm' | 'store' | null;
@@ -305,14 +319,39 @@ type DmDossierReview = {
   created_at: string;
 };
 
-type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier';
-type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'reports' | 'wallet' | 'certs' | 'security';
+type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'publicReview';
+type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'reports' | 'wallet' | 'certs' | 'security';
 
 function certificationTypeLabel(type: string) {
   if (type === 'realname') return '⭐ 实名认证';
   if (type === 'dm') return '🎭 DM 开本记录认证';
   if (type === 'shop') return '🏪 店家营业执照认证';
   return '认证申请';
+}
+
+function publicReviewTypeLabel(type: string) {
+  if (type === 'profile_update') return '主页资料';
+  if (type === 'service_create') return '服务项目';
+  if (type === 'portfolio_create') return '作品图片';
+  if (type === 'availability_create') return '公开档期';
+  if (type === 'tag_create') return '公开标签';
+  if (type === 'script_rating_upsert') return '剧本评分';
+  return '公开内容';
+}
+
+function summarizePublicReviewPayload(payload?: Record<string, unknown> | null) {
+  if (!payload || typeof payload !== 'object') return [];
+  if (payload.profile_patch && typeof payload.profile_patch === 'object') {
+    const patch = payload.profile_patch as Record<string, unknown>;
+    return Object.entries(patch)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .slice(0, 12)
+      .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join('、') : typeof value === 'object' ? JSON.stringify(value) : String(value).slice(0, 120)}`);
+  }
+  return Object.entries(payload)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .slice(0, 12)
+    .map(([key, value]) => `${key}: ${Array.isArray(value) ? `${value.length} 项` : typeof value === 'object' ? JSON.stringify(value).slice(0, 160) : String(value).slice(0, 160)}`);
 }
 
 const card: React.CSSProperties = {
@@ -380,6 +419,7 @@ export default function Admin() {
   const [reports, setReports] = useState<ReportReview[]>([]);
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
+  const [publicReviews, setPublicReviews] = useState<PublicReview[]>([]);
   const [transactions, setTransactions] = useState<TransactionReview[]>([]);
   const [certs, setCerts] = useState<CertReview[]>([]);
 const [loading, setLoading] = useState(false);
@@ -418,6 +458,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setReports((d.data as { reports: ReportReview[] }).reports || []);
         setSiteMessages((d.data as { siteMessages: SiteMessage[] }).siteMessages || []);
         setSecurityEvents((d.data as { securityEvents: SecurityEvent[] }).securityEvents || []);
+        setPublicReviews((d.data as { publicReviews: PublicReview[] }).publicReviews || []);
       } else {
         const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '加载失败');
         setError(errMsg);
@@ -614,6 +655,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
+  const approvePublicReview = async (id: string) => {
+    await fetch(`${API}/lc/admin/public-reviews/${id}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewNote: '公开内容审核通过' }),
+    });
+    setPublicReviews(prev => prev.filter(item => item.id !== id));
+    void loadData();
+  };
+
   const resolveReport = async (id: string, action: 'resolved' | 'dismissed', hideTarget = false, restoreTarget = false) => {
     await fetch(`${API}/lc/admin/reports/${id}/resolve`, {
       method: 'PUT',
@@ -708,6 +759,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     } else if (type === 'dmDossier') {
       await fetch(`${API}/lc/admin/dm-dossiers/${id}/reject`, { method: 'PUT', headers, body });
       setDmDossiers(prev => prev.filter(item => item.id !== id));
+    } else if (type === 'publicReview') {
+      await fetch(`${API}/lc/admin/public-reviews/${id}/reject`, { method: 'PUT', headers, body });
+      setPublicReviews(prev => prev.filter(item => item.id !== id));
     }
   };
 
@@ -806,6 +860,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             { label: '安全日志', value: securityEvents.length, color: '#fb923c' },
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
             { label: '已发布榜单', value: approvedRankings.length, color: '#60a5fa' },
+            { label: '公开内容', value: publicReviews.length, color: '#facc15' },
             { label: '评论', value: comments.length, color: '#38bdf8' },
             { label: '相关方', value: claims.length, color: '#f97316' },
             { label: '认证', value: certs.length, color: '#3b82f6' },
@@ -831,6 +886,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
           <button style={tabStyle(tab === 'publishedRankings')} onClick={() => setTab('publishedRankings')}>已发布 ({approvedRankings.length})</button>
+          <button style={tabStyle(tab === 'publicReviews')} onClick={() => setTab('publicReviews')}>公开内容 {publicReviews.length > 0 && `(${publicReviews.length})`}</button>
           <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
           <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
           <button style={tabStyle(tab === 'certs')} onClick={() => setTab('certs')}>认证审核 {certs.length > 0 && `(${certs.length})`}</button>
@@ -994,6 +1050,36 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     </Actions>
                   </Row>
                 ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'publicReviews' && (
+              <ListEmpty empty={publicReviews.length === 0} text="暂无待审核公开内容">
+                {publicReviews.map(item => {
+                  const details = summarizePublicReviewPayload(item.payload);
+                  return (
+                    <Row key={item.id} accent="#facc15">
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <TitleLine title={item.title || publicReviewTypeLabel(item.target_type)} pill={publicReviewTypeLabel(item.target_type)} />
+                        <Meta>
+                          提交人：{item.profile_name || item.profile_id || '未知用户'}
+                          {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
+                        </Meta>
+                        {item.summary && <Meta>{item.summary}</Meta>}
+                        <ModerationPrecheckBadge value={item.moderation_precheck} />
+                        {details.length > 0 && (
+                          <Proof>
+                            {details.map(line => <div key={line}>{line}</div>)}
+                          </Proof>
+                        )}
+                      </div>
+                      <Actions vertical>
+                        <ActionButton kind="ok" onClick={() => approvePublicReview(item.id)}>通过并公开</ActionButton>
+                        <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'publicReview')}>拒绝</ActionButton>
+                      </Actions>
+                    </Row>
+                  );
+                })}
               </ListEmpty>
             )}
 
