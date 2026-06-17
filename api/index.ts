@@ -1531,7 +1531,8 @@ type PublicReviewTargetType =
   | 'portfolio_create'
   | 'availability_create'
   | 'tag_create'
-  | 'script_rating_upsert';
+  | 'script_rating_upsert'
+  | 'entity_rating_upsert';
 
 type PublicReviewRecord = {
   id: string;
@@ -1699,6 +1700,24 @@ async function applyPublicReview(review: PublicReviewRecord) {
       moderation_precheck: review.moderation_precheck || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'script_id,profile_id' });
+    if (upsertErr) throw upsertErr;
+    return;
+  }
+  if (review.target_type === 'entity_rating_upsert') {
+    const { error: upsertErr } = await supabase.from('lc_entity_ratings').upsert({
+      target_type: payload.target_type,
+      target_id: payload.target_id,
+      target_title: payload.target_title,
+      profile_id: payload.profile_id,
+      profile_name: payload.profile_name,
+      rating: payload.rating,
+      content: payload.content || '',
+      spoiler_level: payload.spoiler_level || 'none',
+      entity_metadata: payload.entity_metadata || {},
+      status: 'approved',
+      moderation_precheck: review.moderation_precheck || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'target_type,target_id,profile_id' });
     if (upsertErr) throw upsertErr;
     return;
   }
@@ -1890,6 +1909,114 @@ function existingScriptRoles(script: Record<string, unknown> | null | undefined)
     player_name: null,
     player_gender: null,
   })).filter(role => role.role_name);
+}
+
+type RatingSummary = { avg: number | null; count: number };
+type ScriptRoleSource = 'player' | 'actor';
+type ScriptRoleEntity = {
+  targetId: string;
+  scriptId: string;
+  scriptName: string;
+  roleId: string;
+  roleName: string;
+  roleGender: string | null;
+  roleKind: string;
+  roleSource: ScriptRoleSource;
+  targetTitle: string;
+};
+
+function summarizeRatingValues(values: number[]): RatingSummary {
+  const cleanValues = values.filter(value => Number.isFinite(value) && value >= 1 && value <= 5);
+  if (cleanValues.length === 0) return { avg: null, count: 0 };
+  const sum = cleanValues.reduce((total, value) => total + value, 0);
+  return {
+    avg: Math.round((sum / cleanValues.length) * 10) / 10,
+    count: cleanValues.length,
+  };
+}
+
+function roleKindLabel(kindInput: unknown) {
+  const kind = cleanText(kindInput, 40);
+  if (kind === 'player') return '玩家角色';
+  if (kind === 'dm') return 'DM';
+  if (kind === 'field_control') return '场控';
+  if (kind === 'npc') return 'NPC';
+  if (kind === 'assistant') return '助演';
+  if (kind === 'actor') return '演绎角色';
+  return kind || '角色';
+}
+
+function scriptRoleTargetId(source: ScriptRoleSource, idInput: unknown) {
+  const id = cleanText(idInput, 80);
+  return id ? `${source}:${id}` : '';
+}
+
+function buildRatingMap(rows: Record<string, unknown>[] | null | undefined, idField = 'target_id') {
+  const buckets = new Map<string, number[]>();
+  for (const row of rows || []) {
+    const id = cleanText(row[idField], 120);
+    if (!id) continue;
+    const list = buckets.get(id) || [];
+    list.push(Number(row.rating || 0));
+    buckets.set(id, list);
+  }
+  return new Map(Array.from(buckets.entries()).map(([id, values]) => [id, summarizeRatingValues(values)]));
+}
+
+async function getScriptRoleEntity(targetIdInput: unknown): Promise<ScriptRoleEntity | null> {
+  const targetId = cleanText(targetIdInput, 120);
+  const [source, roleId] = targetId.split(':');
+  if ((source !== 'player' && source !== 'actor') || !uuidText(roleId)) return null;
+
+  const table = source === 'player' ? 'script_player_roles' : 'script_actor_roles';
+  const select = source === 'player'
+    ? 'id, script_id, role_name, gender, tags'
+    : 'id, script_id, role_name, gender, role_kind';
+  const { data: role, error: roleErr } = await supabase.from(table)
+    .select(select)
+    .eq('id', roleId)
+    .maybeSingle();
+  if (roleErr && isMissingRelation(roleErr, table)) return null;
+  if (roleErr && source === 'actor' && getErrorText(roleErr).includes('role_kind')) {
+    const fallback = await supabase.from(table)
+      .select('id, script_id, role_name, gender')
+      .eq('id', roleId)
+      .maybeSingle();
+    if (fallback.error && isMissingRelation(fallback.error, table)) return null;
+    if (fallback.error) throw fallback.error;
+    return getScriptRoleEntityFromRow(targetId, source, fallback.data as Record<string, unknown> | null);
+  }
+  if (roleErr) throw roleErr;
+  return getScriptRoleEntityFromRow(targetId, source, role as Record<string, unknown> | null);
+}
+
+async function getScriptRoleEntityFromRow(targetId: string, source: ScriptRoleSource, role: Record<string, unknown> | null) {
+  if (!role) return null;
+  const scriptId = uuidText(role.script_id);
+  const roleName = cleanText(role.role_name, 120);
+  if (!scriptId || !roleName) return null;
+  const { data: script, error: scriptErr } = await supabase.from('scripts')
+    .select('id, name')
+    .eq('tenant_id', JUZHANGGUI_TENANT_ID)
+    .eq('id', scriptId)
+    .maybeSingle();
+  if (scriptErr && isMissingRelation(scriptErr, 'scripts')) return null;
+  if (scriptErr) throw scriptErr;
+  if (!script) return null;
+  const scriptName = cleanText((script as Record<string, unknown>).name, 160) || '未命名剧本';
+  const roleKind = source === 'player' ? 'player' : cleanText(role.role_kind, 40) || 'dm';
+  const targetTitle = `${scriptName} · ${roleName} · ${roleKindLabel(roleKind)}`;
+  return {
+    targetId,
+    scriptId,
+    scriptName,
+    roleId: cleanText(role.id, 80),
+    roleName,
+    roleGender: cleanText(role.gender, 20) || null,
+    roleKind,
+    roleSource: source,
+    targetTitle,
+  };
 }
 
 async function sanitizeProfileRolePreferences(input: unknown): Promise<ProfileRolePreferenceDraft[]> {
@@ -4759,35 +4886,76 @@ app.put('/api/lc/commissions/:id/close', authMiddleware, async (req, res) => {
 app.get('/api/lc/scripts', async (_req, res) => {
   try {
     const { data, error: qErr } = await supabase.from('scripts')
-      .select('id, name, duration_minutes, min_duration_hours, max_duration_hours, credits, script_player_roles(role_name, gender, tags)')
+      .select('id, name, duration_minutes, min_duration_hours, max_duration_hours, credits, script_player_roles(id, role_name, gender, tags)')
       .eq('tenant_id', JUZHANGGUI_TENANT_ID)
       .order('name', { ascending: true });
     if (qErr && isMissingRelation(qErr, 'scripts')) return res.json(ok([]));
     if (qErr) throw qErr;
     const scriptIds = (data || []).map((script: Record<string, unknown>) => String(script.id));
-    let ratingMap = new Map<string, { avg: number; count: number }>();
+    let ratingMap = new Map<string, RatingSummary>();
     if (scriptIds.length) {
       const { data: ratings, error: ratingErr } = await supabase.from('lc_script_ratings')
         .select('script_id, rating')
         .in('script_id', scriptIds)
         .eq('status', 'approved');
       if (ratingErr && !isMissingRelation(ratingErr, 'lc_script_ratings')) throw ratingErr;
-      const buckets = new Map<string, number[]>();
-      for (const row of ratings || []) {
-        const id = String((row as Record<string, unknown>).script_id || '');
-        if (!id) continue;
-        const list = buckets.get(id) || [];
-        list.push(Number((row as Record<string, unknown>).rating || 0));
-        buckets.set(id, list);
-      }
-      ratingMap = new Map(Array.from(buckets.entries()).map(([id, values]) => [
-        id,
-        {
-          avg: Math.round((values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length)) * 10) / 10,
-          count: values.length,
-        },
-      ]));
+      ratingMap = buildRatingMap(ratings as Record<string, unknown>[] | null | undefined, 'script_id');
     }
+
+    let actorRows: Record<string, unknown>[] = [];
+    if (scriptIds.length) {
+      const actorResult = await supabase.from('script_actor_roles')
+        .select('id, script_id, role_name, gender, role_kind')
+        .in('script_id', scriptIds);
+      if (actorResult.error && isMissingRelation(actorResult.error, 'script_actor_roles')) {
+        actorRows = [];
+      } else if (actorResult.error && getErrorText(actorResult.error).includes('role_kind')) {
+        const fallback = await supabase.from('script_actor_roles')
+          .select('id, script_id, role_name, gender')
+          .in('script_id', scriptIds);
+        if (fallback.error && !isMissingRelation(fallback.error, 'script_actor_roles')) throw fallback.error;
+        actorRows = (fallback.data || []) as Record<string, unknown>[];
+      } else if (actorResult.error) {
+        throw actorResult.error;
+      } else {
+        actorRows = (actorResult.data || []) as Record<string, unknown>[];
+      }
+    }
+
+    const actorRowsByScript = new Map<string, Record<string, unknown>[]>();
+    for (const role of actorRows) {
+      const scriptId = cleanText(role.script_id, 80);
+      if (!scriptId) continue;
+      const list = actorRowsByScript.get(scriptId) || [];
+      list.push(role);
+      actorRowsByScript.set(scriptId, list);
+    }
+
+    const roleTargetIds = new Set<string>();
+    for (const script of data || []) {
+      const row = script as Record<string, unknown>;
+      const playerRows = Array.isArray(row.script_player_roles) ? row.script_player_roles as Record<string, unknown>[] : [];
+      playerRows.forEach(role => {
+        const targetId = scriptRoleTargetId('player', role.id);
+        if (targetId) roleTargetIds.add(targetId);
+      });
+      (actorRowsByScript.get(String(row.id)) || []).forEach(role => {
+        const targetId = scriptRoleTargetId('actor', role.id);
+        if (targetId) roleTargetIds.add(targetId);
+      });
+    }
+
+    let roleRatingMap = new Map<string, RatingSummary>();
+    if (roleTargetIds.size > 0) {
+      const { data: roleRatings, error: roleRatingErr } = await supabase.from('lc_entity_ratings')
+        .select('target_id, rating')
+        .eq('target_type', 'script_role')
+        .in('target_id', Array.from(roleTargetIds))
+        .eq('status', 'approved');
+      if (roleRatingErr && !isMissingRelation(roleRatingErr, 'lc_entity_ratings')) throw roleRatingErr;
+      roleRatingMap = buildRatingMap(roleRatings as Record<string, unknown>[] | null | undefined, 'target_id');
+    }
+
     res.json(ok((data || []).map((script: Record<string, unknown>) => ({
       id: script.id,
       name: script.name,
@@ -4797,11 +4965,37 @@ app.get('/api/lc/scripts', async (_req, res) => {
       credits: sanitizeScriptCredits(script.credits),
       rating_avg: ratingMap.get(String(script.id))?.avg || null,
       rating_count: ratingMap.get(String(script.id))?.count || 0,
-      player_roles: existingScriptRoles(script).map(role => ({
-        role_name: role.role_name,
-        gender: role.gender || '',
-        tags: role.tags || [],
-      })),
+      player_roles: (Array.isArray(script.script_player_roles) ? script.script_player_roles as Record<string, unknown>[] : []).map(role => {
+        const targetId = scriptRoleTargetId('player', role.id);
+        const summary = roleRatingMap.get(targetId) || { avg: null, count: 0 };
+        return {
+          id: role.id,
+          target_id: targetId,
+          role_name: cleanText(role.role_name, 80),
+          gender: cleanText(role.gender, 20) || '',
+          tags: cleanTextArray(role.tags),
+          role_kind: 'player',
+          role_source: 'player',
+          rating_avg: summary.avg,
+          rating_count: summary.count,
+        };
+      }).filter(role => role.role_name),
+      actor_roles: (actorRowsByScript.get(String(script.id)) || []).map(role => {
+        const targetId = scriptRoleTargetId('actor', role.id);
+        const summary = roleRatingMap.get(targetId) || { avg: null, count: 0 };
+        const roleKind = cleanText(role.role_kind, 40) || 'dm';
+        return {
+          id: role.id,
+          target_id: targetId,
+          role_name: cleanText(role.role_name, 80),
+          gender: cleanText(role.gender, 20) || '',
+          tags: [],
+          role_kind: roleKind,
+          role_source: 'actor',
+          rating_avg: summary.avg,
+          rating_count: summary.count,
+        };
+      }),
     }))));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -4968,6 +5162,96 @@ app.post('/api/lc/scripts/:id/ratings', authMiddleware, async (req, res) => {
       actorId: profile.id,
       actorRole: profile.role || 'creator',
       metadata: { script_id: scriptId, rating, moderation: moderationPrecheck },
+    });
+    res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/entity-ratings', async (req, res) => {
+  try {
+    const targetType = cleanText(req.query.targetType, 40);
+    const targetId = cleanText(req.query.targetId, 120);
+    if (targetType !== 'script_role' || !targetId) return res.status(400).json(err(new Error('缺少评分对象')));
+    const creatorId = getOptionalCreatorId(req);
+    const { data, error: qErr } = await supabase.from('lc_entity_ratings')
+      .select('*')
+      .eq('target_type', targetType)
+      .eq('target_id', targetId)
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (qErr && isMissingRelation(qErr, 'lc_entity_ratings')) return res.json(ok({ ratings: [], mine: null, summary: { avg: null, count: 0 } }));
+    if (qErr) throw qErr;
+    const rows = (data || []) as Record<string, unknown>[];
+    const values = rows.map(row => Number(row.rating || 0));
+    const mine = creatorId ? rows.find(row => String(row.profile_id) === creatorId) || null : null;
+    res.json(ok({
+      ratings: rows,
+      mine,
+      summary: summarizeRatingValues(values),
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/entity-ratings', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    const blockReason = getSpeakBlockReason(profile);
+    if (blockReason) return res.status(403).json(err(new Error(blockReason)));
+    const targetType = cleanText(req.body?.targetType ?? req.body?.target_type, 40);
+    const targetId = cleanText(req.body?.targetId ?? req.body?.target_id, 120);
+    if (targetType !== 'script_role' || !targetId) return res.status(400).json(err(new Error('缺少角色对象')));
+    const rawRating = Number(req.body?.rating || 0);
+    if (!Number.isFinite(rawRating) || rawRating < 1 || rawRating > 5) return res.status(400).json(err(new Error('请选择 1-5 分评分')));
+    const rating = Math.round(rawRating);
+    const content = cleanText(req.body?.content, 1200);
+    if (!content) return res.status(400).json(err(new Error('请写一句评分理由')));
+    const spoilerLevel = cleanText(req.body?.spoilerLevel ?? req.body?.spoiler_level, 20) === 'spoiler' ? 'spoiler' : 'none';
+    const entity = await getScriptRoleEntity(targetId);
+    if (!entity) return res.status(404).json(err(new Error('角色不存在或暂不可评分')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'entity_rating_submit',
+      targetType: 'entity_rating',
+      texts: {
+        targetTitle: entity.targetTitle,
+        content,
+        spoilerLevel,
+      },
+    });
+    const payload = {
+      target_type: targetType,
+      target_id: entity.targetId,
+      target_title: entity.targetTitle,
+      profile_id: profile.id,
+      profile_name: profile.display_name || '用户',
+      rating,
+      content,
+      spoiler_level: spoilerLevel,
+      entity_metadata: {
+        script_id: entity.scriptId,
+        script_name: entity.scriptName,
+        role_id: entity.roleId,
+        role_name: entity.roleName,
+        role_gender: entity.roleGender,
+        role_kind: entity.roleKind,
+        role_source: entity.roleSource,
+      },
+    };
+    const review = await createPublicReview({
+      targetType: 'entity_rating_upsert',
+      profile,
+      title: `角色评分：${entity.targetTitle}`,
+      summary: `${rating} 分 · ${content.slice(0, 80)}`,
+      payload,
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'entity_rating_submitted_for_review',
+      targetType: 'public_review',
+      targetId: review?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { target_type: targetType, target_id: entity.targetId, rating, moderation: moderationPrecheck },
     });
     res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }

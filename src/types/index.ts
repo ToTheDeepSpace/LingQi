@@ -103,11 +103,24 @@ export interface AuthData {
 
 export type CarpoolSubsidyType = 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
 
+export interface ScriptRoleCatalogItem {
+  id?: string;
+  target_id: string;
+  role_name: string;
+  gender?: string | null;
+  tags?: string[];
+  role_kind?: string | null;
+  role_source?: 'player' | 'actor';
+  rating_avg?: number | null;
+  rating_count?: number | null;
+}
+
 export interface ScriptCatalogItem {
   id: string;
   name: string;
   credits?: Record<string, string[]>;
-  player_roles: { role_name: string; gender?: string | null; tags?: string[] }[];
+  player_roles: ScriptRoleCatalogItem[];
+  actor_roles?: ScriptRoleCatalogItem[];
   duration_minutes?: number | null;
   min_duration_hours?: number | null;
   max_duration_hours?: number | null;
