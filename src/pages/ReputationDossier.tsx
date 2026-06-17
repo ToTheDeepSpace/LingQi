@@ -116,14 +116,14 @@ export default function ReputationDossier() {
 
   return (
     <main style={pageStyle}>
-      <section style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '42px 20px 30px' }}>
+      <section className="reputation-dossier-hero" style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '42px 20px 30px' }}>
         <div style={{ maxWidth: 1080, margin: '0 auto' }}>
           <Link to="/reputation/city" style={topLink}>返回城市口碑榜</Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 20 }}>
-            <img src={data?.profile?.avatar || generatedAvatarDataUrl(subjectName, `${subjectType}:${subjectName}:${city}`)} alt="" style={{ width: 84, height: 84, borderRadius: 18, objectFit: 'cover', border: '1px solid rgba(166,106,31,0.20)', background: '#fffaf2' }} />
-            <div>
+            <img className="reputation-dossier-avatar" src={data?.profile?.avatar || generatedAvatarDataUrl(subjectName, `${subjectType}:${subjectName}:${city}`)} alt="" style={{ width: 84, height: 84, borderRadius: 18, objectFit: 'cover', border: '1px solid rgba(166,106,31,0.20)', background: '#fffaf2' }} />
+            <div style={{ minWidth: 0 }}>
               <p style={{ margin: '0 0 6px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>{subjectType === 'dm' ? '爱D墙' : '对象档案'}</p>
-              <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3rem)', lineHeight: 1.15 }}>{subjectName}</h1>
+              <h1 className="reputation-dossier-title" style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3rem)', lineHeight: 1.15, overflowWrap: 'anywhere' }}>{subjectName}</h1>
               <p style={{ margin: '8px 0 0', color: MUTED }}>
                 {SUBJECT_LABEL[subjectType] || subjectType}{city ? ` · ${city}` : ''}{data?.profile?.verified_dm ? ' · 已认证 DM' : ''}
               </p>
@@ -132,7 +132,7 @@ export default function ReputationDossier() {
         </div>
       </section>
 
-      <section style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 20px 82px' }}>
+      <section className="reputation-dossier-shell" style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 20px 82px' }}>
         {loading ? (
           <p style={{ color: MUTED, padding: '36px 0' }}>加载中...</p>
         ) : error ? (
@@ -146,8 +146,8 @@ export default function ReputationDossier() {
               <Metric label="事件数" value={data.metrics.event_count} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(260px, 0.8fr)', gap: 14, alignItems: 'start' }}>
-              <section style={cardStyle}>
+            <div className="reputation-dossier-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(260px, 0.8fr)', gap: 14, alignItems: 'start' }}>
+              <section className="reputation-dossier-card" style={cardStyle}>
                 <h2 style={sectionTitle}>事件沉淀</h2>
                 <p style={{ margin: '0 0 14px', color: MUTED, lineHeight: 1.7, fontSize: 14 }}>
                   红黑榜主榜仍然记录具体事件；这里把与这个对象有关的事件聚合起来，作为新人判断口碑的档案。
@@ -156,7 +156,7 @@ export default function ReputationDossier() {
                   {data.events.length === 0 ? (
                     <div style={emptyStyle}>暂无事件记录。</div>
                   ) : data.events.map(event => (
-                    <article key={event.id} style={{ borderRadius: 12, border: '1px solid rgba(166,106,31,0.12)', background: '#fffaf2', padding: 12 }}>
+                    <article key={event.id} className="reputation-dossier-event" style={{ borderRadius: 12, border: '1px solid rgba(166,106,31,0.12)', background: '#fffaf2', padding: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                         <span style={{ ...pillStyle, color: event.type === 'black' ? '#475569' : event.type === 'red' ? '#b91c1c' : GOLD }}>
                           {event.type === 'red' ? '红榜事件' : event.type === 'black' ? '黑榜事件' : '白榜记录'}
@@ -179,8 +179,8 @@ export default function ReputationDossier() {
                 </div>
               </section>
 
-              <aside style={{ display: 'grid', gap: 14 }}>
-                <section style={cardStyle}>
+              <aside className="reputation-dossier-side" style={{ display: 'grid', gap: 14, minWidth: 0 }}>
+                <section className="reputation-dossier-card" style={cardStyle}>
                   <h2 style={sectionTitle}>{subjectType === 'dm' ? '爱D墙信息' : '档案信息'}</h2>
                   {data.profile ? (
                     <>
@@ -194,7 +194,7 @@ export default function ReputationDossier() {
                 </section>
 
                 {availableSlots.length > 0 && (
-                  <section style={cardStyle}>
+                  <section className="reputation-dossier-card" style={cardStyle}>
                     <h2 style={sectionTitle}>最近可约档期</h2>
                     <div style={{ display: 'grid', gap: 8 }}>
                       {availableSlots.map(slot => (
@@ -207,7 +207,7 @@ export default function ReputationDossier() {
                 )}
 
                 {recommendedRoles.length > 0 && (
-                  <section style={cardStyle}>
+                  <section className="reputation-dossier-card" style={cardStyle}>
                     <h2 style={sectionTitle}>推荐角色</h2>
                     <div style={{ display: 'grid', gap: 8 }}>
                       {recommendedRoles.slice(0, 8).map(role => (
@@ -221,7 +221,7 @@ export default function ReputationDossier() {
                 )}
 
                 {data.metrics.tags && data.metrics.tags.length > 0 && (
-                  <section style={cardStyle}>
+                  <section className="reputation-dossier-card" style={cardStyle}>
                     <h2 style={sectionTitle}>玩家标签</h2>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {data.metrics.tags.map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
@@ -253,7 +253,7 @@ function normalizeExternalUrl(url: string) {
 
 const pageStyle: React.CSSProperties = { minHeight: '100vh', background: BG, color: INK };
 const topLink: React.CSSProperties = { color: '#275389', textDecoration: 'none', fontSize: 14, fontWeight: 800 };
-const cardStyle: React.CSSProperties = { padding: 16, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)' };
+const cardStyle: React.CSSProperties = { minWidth: 0, padding: 16, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)', overflowWrap: 'anywhere' };
 const metricStyle: React.CSSProperties = { borderRadius: 14, background: '#fff', border: '1px solid rgba(166,106,31,0.14)', padding: 14, boxShadow: '0 10px 26px rgba(102,70,30,0.05)' };
 const sectionTitle: React.CSSProperties = { margin: '0 0 10px', fontFamily: 'var(--font-serif)', fontSize: '1.18rem', fontWeight: 900 };
 const emptyStyle: React.CSSProperties = { padding: 24, borderRadius: 14, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };

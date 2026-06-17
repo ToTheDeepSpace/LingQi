@@ -101,7 +101,7 @@ export default function Contact() {
     <main style={{ minHeight: '100vh', background: BG, color: TEXT }}>
       <section style={{ background: `linear-gradient(135deg, ${PANEL} 0%, #eef6ff 100%)`, borderBottom: '1px solid rgba(217,168,87,0.18)', padding: '54px 20px 38px' }}>
         <div style={{ maxWidth: 860, margin: '0 auto' }}>
-          <Link to="/" style={{ color: GOLD, textDecoration: 'none', fontSize: '0.84rem', fontWeight: 800 }}>返回灵契首页</Link>
+          <span style={{ color: GOLD, fontSize: '0.84rem', fontWeight: 900 }}>联系与反馈</span>
           <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 2.7rem)', margin: '18px 0 12px' }}>联系灵契</h1>
           <p style={{ color: MUTED, lineHeight: 1.8, maxWidth: 680 }}>
             账号、充值、发票、举报申诉、隐私请求和合作问题，都可以通过站内信或客服邮箱联系。

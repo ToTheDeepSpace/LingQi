@@ -74,11 +74,11 @@ export default function BoundaryVotes() {
     <main style={{ minHeight: '100vh', background: BG, color: INK }}>
       <section style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '44px 20px 30px' }}>
         <div style={{ maxWidth: 1040, margin: '0 auto' }}>
-          <Link to="/rankings" style={topLink}>返回红黑榜事件榜</Link>
-          <p style={{ margin: '18px 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>圈内共识沉淀</p>
-          <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>社交边界投票</h1>
+          <Link to="/roadmap" style={topLink}>返回口碑路线图</Link>
+          <p style={{ margin: '18px 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>实验议题 · 暂不作为主入口</p>
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.9rem, 5vw, 2.9rem)', lineHeight: 1.15 }}>社交边界共识草稿</h1>
           <p style={{ margin: '14px 0 0', color: MUTED, lineHeight: 1.8, maxWidth: 780 }}>
-            这些投票用于沉淀剧本杀礼仪和社交边界，不替代任何人的个人同意。涉及肢体接触、亲密互动、强情绪加戏时，底线是事前明确、当场可拒绝、随时可撤回。
+            这里先收纳剧本杀礼仪和互动边界的议题草稿，不替代任何人的个人同意。涉及肢体接触、亲密互动、强情绪加戏时，底线是事前明确、当场可拒绝、随时可撤回。
           </p>
         </div>
       </section>

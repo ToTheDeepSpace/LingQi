@@ -99,8 +99,11 @@ export default function Navbar() {
 
   const goBack = () => {
     const historyState = window.history.state as { idx?: number } | null;
-    if (historyState?.idx && historyState.idx > 0) navigate(-1);
-    else navigate('/');
+    if (historyState?.idx && historyState.idx > 0) {
+      navigate(-1);
+      return;
+    }
+    navigate(fallbackPathFor(pathname));
   };
 
   return (
@@ -417,4 +420,27 @@ function MobileLink({ to, children, gold, onClick }: { to: string; children: Rea
       {children}
     </Link>
   );
+}
+
+function fallbackPathFor(pathname: string) {
+  if (pathname.startsWith('/reputation/dossier')) return '/reputation/city';
+  if (pathname.startsWith('/reputation')) return '/rankings';
+  if (pathname.startsWith('/explore/')) return '/explore';
+  if (pathname.startsWith('/scripts/contribute')) return '/scripts';
+  if (pathname.startsWith('/boundary-votes')) return '/roadmap';
+  if (pathname.startsWith('/wallet') || pathname.startsWith('/referrals') || pathname.startsWith('/certification')) return '/dashboard';
+  if (pathname.startsWith('/shop/dashboard')) return '/dashboard';
+  if (pathname.startsWith('/commissions/new')) return '/commissions';
+  if (pathname.startsWith('/carpools/new')) return '/carpools';
+  if (pathname.startsWith('/rankings/new')) return '/rankings';
+  if (
+    pathname.startsWith('/rules') ||
+    pathname.startsWith('/moderation') ||
+    pathname.startsWith('/terms') ||
+    pathname.startsWith('/privacy') ||
+    pathname.startsWith('/security-assessment') ||
+    pathname.startsWith('/business-license') ||
+    pathname.startsWith('/contact')
+  ) return '/';
+  return '/';
 }

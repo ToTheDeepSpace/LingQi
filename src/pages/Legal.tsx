@@ -50,7 +50,7 @@ function LegalLayout({ title, intro, children }: { title: string; intro: string;
     <main style={{ background: BG, minHeight: '100vh', color: TEXT }}>
       <section style={{ background: `linear-gradient(135deg, ${PANEL} 0%, #eef6ff 100%)`, borderBottom: '1px solid rgba(217,168,87,0.18)', padding: '54px 20px 38px' }}>
         <div style={{ maxWidth: 920, margin: '0 auto' }}>
-          <Link to="/" style={{ color: GOLD, textDecoration: 'none', fontSize: '0.84rem', fontWeight: 800 }}>返回灵契首页</Link>
+          <span style={{ color: GOLD, fontSize: '0.84rem', fontWeight: 900 }}>规则与合规</span>
           <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 2.8rem)', margin: '18px 0 12px' }}>{title}</h1>
           <p style={{ ...pStyle, color: MUTED, maxWidth: 760 }}>{intro}</p>
           <p style={{ color: 'rgba(71,85,105,0.56)', fontSize: '0.78rem', marginTop: 14 }}>更新时间：2026-06-09 · 原型期版本</p>

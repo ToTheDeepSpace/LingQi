@@ -158,7 +158,6 @@ function SiteFooter() {
             <FooterExternal href="https://jusichen.com">剧司辰</FooterExternal>
             <FooterLink to="/shop/dashboard">店家后台</FooterLink>
             <FooterLink to="/roadmap">AI 口碑路线图</FooterLink>
-            <FooterLink to="/boundary-votes">社交边界投票</FooterLink>
             <FooterExternal href="/ai/lingqi-overview.html">AI 可读说明</FooterExternal>
             <FooterLink to="/contact">投资洽谈 / 共建合作</FooterLink>
             <FooterText>摄影师 / 妆造师</FooterText>

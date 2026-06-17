@@ -58,6 +58,48 @@ body {
   contain-intrinsic-size: 320px;
 }
 
+/* ============ 口碑档案移动端 ============ */
+.reputation-dossier-card,
+.reputation-dossier-event,
+.reputation-dossier-side {
+  min-width: 0;
+}
+
+.reputation-dossier-card,
+.reputation-dossier-event {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+@media (max-width: 760px) {
+  .reputation-dossier-hero {
+    padding: 30px 16px 24px !important;
+  }
+
+  .reputation-dossier-shell {
+    padding: 18px 16px 64px !important;
+  }
+
+  .reputation-dossier-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .reputation-dossier-avatar {
+    width: 72px !important;
+    height: 72px !important;
+    border-radius: 16px !important;
+  }
+
+  .reputation-dossier-title {
+    font-size: clamp(1.55rem, 8vw, 2.1rem) !important;
+  }
+
+  .reputation-dossier-card {
+    border-radius: 12px !important;
+    padding: 14px !important;
+  }
+}
+
 /* ============ 首页首屏入口 ============ */
 .home-hero {
   min-height: calc(100svh - 64px);
