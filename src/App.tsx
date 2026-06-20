@@ -39,6 +39,8 @@ const BusinessLicense = lazy(() => pageLoaders.legal().then(module => ({ default
 
 const CONTACT_EMAIL = 'basara-twenty@foxmail.com';
 const ICP_RECORD_NO = '冀ICP备2026019163号-1';
+const MPS_RECORD_NO = '冀公网安备13310202000316号';
+const MPS_RECORD_URL = 'https://beian.mps.gov.cn/#/query/webSearch?code=13310202000316';
 
 function AppLayout() {
   const { pathname } = useLocation();
@@ -131,7 +133,7 @@ function SiteFooter() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
               <FooterBadge>人工审核</FooterBadge>
               <FooterBadge>契约币原型期</FooterBadge>
-              <FooterBadge>公安备案办理中</FooterBadge>
+              <FooterBadge>公安备案已通过</FooterBadge>
             </div>
           </div>
           <FooterColumn title="主要入口">
@@ -174,14 +176,14 @@ function SiteFooter() {
             <FooterLink to="/contact">联系我们 / 站内信</FooterLink>
             <FooterExternal href={`mailto:${CONTACT_EMAIL}`}>客服邮箱</FooterExternal>
             <FooterExternal href="https://beian.miit.gov.cn/">{ICP_RECORD_NO}</FooterExternal>
-            <FooterText>公安联网备案办理中</FooterText>
+            <FooterExternal href={MPS_RECORD_URL}>{MPS_RECORD_NO}</FooterExternal>
           </FooterColumn>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 34, paddingTop: 18, borderTop: '1px solid rgba(201,146,46,0.14)', fontSize: '0.76rem', color: 'rgba(71,85,105,0.58)' }}>
           <span>© {new Date().getFullYear()} 灵契 LingQi. 原型期运营中。</span>
           <span style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(39,83,137,0.72)', textDecoration: 'none', fontWeight: 700 }}>{ICP_RECORD_NO}</a>
-            <span>公安联网备案办理中</span>
+            <a href={MPS_RECORD_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(39,83,137,0.72)', textDecoration: 'none', fontWeight: 700 }}>{MPS_RECORD_NO}</a>
           </span>
         </div>
       </div>

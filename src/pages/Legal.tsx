@@ -8,6 +8,8 @@ const TEXT = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 const CONTACT_EMAIL = 'basara-twenty@foxmail.com';
 const ICP_RECORD_NO = '冀ICP备2026019163号-1';
+const MPS_RECORD_NO = '冀公网安备13310202000316号';
+const MPS_RECORD_URL = 'https://beian.mps.gov.cn/#/query/webSearch?code=13310202000316';
 const BUSINESS_LICENSE_IMAGE = '/legal/business-license-huilan.jpg';
 
 const sectionStyle: React.CSSProperties = {
@@ -80,7 +82,7 @@ function List({ items }: { items: string[] }) {
   );
 }
 
-function InfoRows({ rows }: { rows: Array<[string, string]> }) {
+function InfoRows({ rows }: { rows: Array<[string, React.ReactNode]> }) {
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       {rows.map(([label, value]) => (
@@ -100,6 +102,10 @@ function InfoRows({ rows }: { rows: Array<[string, string]> }) {
   );
 }
 
+function MpsRecordLink() {
+  return <a href={MPS_RECORD_URL} target="_blank" rel="noreferrer" style={linkStyle}>{MPS_RECORD_NO}</a>;
+}
+
 export function BusinessLicense() {
   return (
     <LegalLayout
@@ -115,6 +121,7 @@ export function BusinessLicense() {
           ['注册地址', '河北雄安新区容城县容城镇奥威路130号3幢1-076（自主申报）'],
           ['网站域名', 'lingqi.jusichen.com'],
           ['ICP备案号', ICP_RECORD_NO],
+          ['公安联网备案', <MpsRecordLink />],
           ['客服邮箱', CONTACT_EMAIL],
         ]} />
       </Section>
@@ -141,7 +148,7 @@ export function BusinessLicense() {
           '营业执照图片仅用于经营主体公示。用户可结合国家企业信用信息公示系统等公开渠道自行核验主体登记信息。',
           '如需申请发票、处理充值异常、投诉举报、隐私请求或审核申诉，可使用站内信或客服邮箱联系平台。',
         ]} />
-        <p style={pStyle}>联系方式：<Link to="/contact" style={linkStyle}>站内信</Link> / <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号办理完成后会继续补充公示。</p>
+        <p style={pStyle}>联系方式：<Link to="/contact" style={linkStyle}>站内信</Link> / <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号：<MpsRecordLink />。</p>
       </Section>
     </LegalLayout>
   );
@@ -197,7 +204,7 @@ export function SecurityAssessment() {
           '公开内容旁会尽量提供举报入口；恶意举报同样会留下记录。',
           '相关方可以先发布评论，再提交相关方认证材料申请置顶回应。',
           '用户对审核、下架、账号限制或公开评价有异议时，可以补充材料并通过站内方式向管理员申诉。',
-          `用户可以通过站内信或对外联系邮箱 ${CONTACT_EMAIL} 联系平台。ICP备案号：${ICP_RECORD_NO}；公安联网备案号当前办理中，完成后会继续补充公示。`,
+          `用户可以通过站内信或对外联系邮箱 ${CONTACT_EMAIL} 联系平台。ICP备案号：${ICP_RECORD_NO}；公安联网备案号：${MPS_RECORD_NO}。`,
         ]} />
       </Section>
 
@@ -206,7 +213,7 @@ export function SecurityAssessment() {
           '平台会根据主管机关、公安机关、网信部门或司法机关依法提出的要求，提供必要的数据查询、日志留存和处置协助。',
           '当前已具备站内举报、人工审核、违规内容下架、账号限制、安全日志、防篡改审计链和高风险举报临时折叠能力。',
           '管理员可在后台查看待审核内容、举报、安全日志和认证材料，并对内容执行通过、驳回、下架、限制账号、回复申诉等处理。',
-          '后续整改方向包括敏感词/图片自动预审、多人复核、举报导出、日志筛选导出、公安联网备案号补充公示和更细的应急预案演练记录。',
+          '后续整改方向包括敏感词/图片自动预审、多人复核、举报导出、日志筛选导出和更细的应急预案演练记录。',
         ]} />
       </Section>
     </LegalLayout>
@@ -369,7 +376,7 @@ export function PrivacyPolicy() {
       </Section>
 
       <Section title="十、联系与反馈">
-        <p style={pStyle}>当前原型期的隐私、审核、申诉和删除请求，先通过站内管理员人工处理，也可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。经营主体信息见 <Link to="/business-license" style={linkStyle}>经营主体信息</Link>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号办理完成后会继续补充公示。</p>
+        <p style={pStyle}>当前原型期的隐私、审核、申诉和删除请求，先通过站内管理员人工处理，也可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。经营主体信息见 <Link to="/business-license" style={linkStyle}>经营主体信息</Link>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号：<MpsRecordLink />。</p>
       </Section>
     </LegalLayout>
   );
@@ -509,7 +516,7 @@ export function UserAgreement() {
       </Section>
 
       <Section title="十四、联系与备案">
-        <p style={pStyle}>如需联系客服、申请发票、提交隐私请求、投诉举报或申诉审核结果，可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。经营主体信息见 <Link to="/business-license" style={linkStyle}>经营主体信息</Link>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号当前办理中，完成后会继续公示。</p>
+        <p style={pStyle}>如需联系客服、申请发票、提交隐私请求、投诉举报或申诉审核结果，可以使用 <Link to="/contact" style={linkStyle}>站内信</Link> 或发送邮件至 <a href={`mailto:${CONTACT_EMAIL}`} style={linkStyle}>{CONTACT_EMAIL}</a>。经营主体信息见 <Link to="/business-license" style={linkStyle}>经营主体信息</Link>。ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={linkStyle}>{ICP_RECORD_NO}</a>；公安联网备案号：<MpsRecordLink />。</p>
       </Section>
     </LegalLayout>
   );
