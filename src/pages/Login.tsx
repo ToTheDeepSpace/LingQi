@@ -520,21 +520,50 @@ export default function Login() {
       <style>{`
         @media (min-width: 1024px) {
           .lg-flex { display: flex !important; }
-        }
-        @media (min-width: 1024px) and (max-height: 800px) {
           .login-page {
-            --lq-login-main-padding: 22px 20px;
-            --lq-logo-margin: 16px;
-            --lq-card-padding: 24px 28px;
-            --lq-header-margin: 16px;
-            --lq-tabs-margin: 14px;
-            --lq-form-gap: 11px;
-            --lq-input-padding: 10px 13px;
+            --lq-login-main-padding: 24px 28px;
+            --lq-logo-margin: 0;
+            --lq-card-padding: 26px 28px;
+            --lq-header-margin: 14px;
+            --lq-tabs-margin: 12px;
+            --lq-form-gap: 10px;
+            --lq-input-padding: 10px 12px;
             --lq-terms-padding: 9px 11px;
             --lq-primary-padding: 10px;
           }
           .login-logo { display: none !important; }
+          .login-shell { max-width: 392px !important; }
           .login-back { margin-top: 12px !important; }
+        }
+        @media (min-width: 1024px) and (max-height: 860px) {
+          .login-page {
+            --lq-login-main-padding: 18px 24px;
+            --lq-card-padding: 22px 24px;
+            --lq-header-margin: 10px;
+            --lq-tabs-margin: 10px;
+            --lq-form-gap: 8px;
+            --lq-input-padding: 9px 11px;
+            --lq-tab-padding: 8px 10px;
+            --lq-primary-padding: 9px;
+          }
+          .login-header h1 { font-size: 1.22rem !important; margin-bottom: 3px !important; }
+          .login-subtitle,
+          .register-footnote,
+          .auth-note,
+          .auth-switch-tip {
+            display: none !important;
+          }
+          .login-form label:not(.terms-check) {
+            margin-bottom: 5px !important;
+          }
+          .register-code-tip {
+            margin-top: 4px !important;
+            line-height: 1.35 !important;
+          }
+          .terms-check {
+            line-height: 1.38 !important;
+          }
+          .login-back { display: none !important; }
         }
         @media (max-width: 640px) {
           .login-page {
