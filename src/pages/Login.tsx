@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
+import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  type AuthAccountKind,
+  type AuthConfig,
+  type AuthStep,
+  getAuthAccountKind,
+  getNextAuthStep,
+  normalizeAuthAccount,
+  shouldShowWechatLogin,
+} from '../lib/authFlow';
 import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
@@ -9,7 +19,7 @@ const GOLD = '#d9a857';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
-const inputStyle: React.CSSProperties = {
+const inputStyle: CSSProperties = {
   width: '100%',
   padding: 'var(--lq-input-padding, 12px 16px)',
   borderRadius: 'var(--lq-control-radius, 10px)',
@@ -23,8 +33,11 @@ const inputStyle: React.CSSProperties = {
 
 const REFERRAL_STORAGE_KEY = 'lc_referral_code';
 
-type LoginMode = 'password' | 'register';
-type RegisterAccountKind = 'phone' | 'email';
+type SentCodeTarget = {
+  kind: AuthAccountKind;
+  value: string;
+  step: Extract<AuthStep, 'register' | 'reset'>;
+};
 
 function storeLogin(data: Record<string, unknown>) {
   localStorage.setItem('lc_creator', JSON.stringify(data));
@@ -39,28 +52,6 @@ function storeLogin(data: Record<string, unknown>) {
 
 function normalizeReferralCode(input: string | null) {
   return (input || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
-}
-
-function phoneDigits(input: string) {
-  return input.replace(/\D/g, '');
-}
-
-function isValidPhone(input: string) {
-  return /^1[3-9]\d{9}$/.test(phoneDigits(input));
-}
-
-function isValidEmail(input: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.trim());
-}
-
-function getRegisterAccountKind(input: string): RegisterAccountKind | null {
-  if (isValidPhone(input)) return 'phone';
-  if (isValidEmail(input)) return 'email';
-  return null;
-}
-
-function normalizeRegisterAccount(input: string, kind: RegisterAccountKind) {
-  return kind === 'phone' ? phoneDigits(input) : input.trim().toLowerCase();
 }
 
 function decodeWechatPayload(payload: string) {
@@ -80,27 +71,32 @@ function decodeWechatPayload(payload: string) {
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [mode, setMode] = useState<LoginMode>('password');
-  const [loginAccount, setLoginAccount] = useState('');
+  const [step, setStep] = useState<AuthStep>('account');
+  const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
-  const [registerAccount, setRegisterAccount] = useState('');
-  const [registerCode, setRegisterCode] = useState('');
-  const [registerPassword, setRegisterPassword] = useState('');
-  const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState('');
+  const [code, setCode] = useState('');
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupPasswordConfirm, setSetupPasswordConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [message, setMessage] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [referralOwner, setReferralOwner] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [sentCodeTarget, setSentCodeTarget] = useState<{ kind: RegisterAccountKind; value: string } | null>(null);
+  const [sentCodeTarget, setSentCodeTarget] = useState<SentCodeTarget | null>(null);
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
 
-  const registerKind = getRegisterAccountKind(registerAccount);
-  const registerTarget = registerKind ? normalizeRegisterAccount(registerAccount, registerKind) : '';
+  const accountKind = getAuthAccountKind(account);
+  const accountTarget = accountKind ? normalizeAuthAccount(account, accountKind) : '';
+  const codeStep = step === 'reset' ? 'reset' : 'register';
   const sentToCurrentAccount = Boolean(
-    registerKind && sentCodeTarget?.kind === registerKind && sentCodeTarget.value === registerTarget,
+    accountKind &&
+    sentCodeTarget?.kind === accountKind &&
+    sentCodeTarget.value === accountTarget &&
+    sentCodeTarget.step === codeStep,
   );
-  const isPositiveMessage = message.includes('已发送') || message.includes('请查看');
+  const isPositiveMessage = /已发送|请查看|已经注册|还没有注册|设置密码|创建账号/.test(message);
+  const showWechatLogin = shouldShowWechatLogin(authConfig);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -110,6 +106,19 @@ export default function Login() {
     const redirect = params.get('redirect') || '/dashboard';
     navigate(redirect.startsWith('/') ? redirect : '/dashboard', { replace: true });
   }, [location.search, navigate]);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API}/lc/auth/config`)
+      .then(r => r.json())
+      .then(d => {
+        if (alive && d.success) setAuthConfig(d.data || null);
+      })
+      .catch(() => {
+        if (alive) setAuthConfig(null);
+      });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -160,33 +169,111 @@ export default function Login() {
     return () => { alive = false; };
   }, [referralCode]);
 
-  const switchMode = (nextMode: LoginMode) => {
-    setMode(nextMode);
-    setMessage('');
-  };
-
-  const handleRegisterAccountChange = (value: string) => {
-    setRegisterAccount(value);
-    setRegisterCode('');
+  const clearSecrets = () => {
+    setPassword('');
+    setCode('');
+    setSetupPassword('');
+    setSetupPasswordConfirm('');
     setSentCodeTarget(null);
-    setMessage('');
   };
 
-  const sendRegisterCode = async () => {
-    if (!registerAccount.trim()) {
+  const handleAccountChange = (value: string) => {
+    setAccount(value);
+    setStep('account');
+    setMessage('');
+    clearSecrets();
+  };
+
+  const goBackToAccount = () => {
+    setStep('account');
+    setMessage('');
+    clearSecrets();
+  };
+
+  const ensureAccount = () => {
+    if (!account.trim()) {
       setMessage('请先填写手机号或邮箱');
-      return;
+      return null;
     }
-    if (!registerKind) {
+    if (!accountKind) {
       setMessage('请填写正确的手机号或邮箱');
+      return null;
+    }
+    return { kind: accountKind, value: accountTarget };
+  };
+
+  const identifyAccount = async () => {
+    const normalized = ensureAccount();
+    if (!normalized) return null;
+    setLoading(true);
+    setMessage('');
+    try {
+      const r = await fetch(`${API}/lc/auth/identify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: normalized.value }),
+      });
+      const d = await r.json();
+      if (!d.success) {
+        setMessage(d.error || '账号识别失败');
+        return null;
+      }
+      const next = getNextAuthStep({
+        exists: Boolean(d.data?.exists),
+        hasPassword: Boolean(d.data?.has_password),
+      });
+      setStep(next.step);
+      setMessage(next.message);
+      clearSecrets();
+      return { ...d.data, step: next.step as AuthStep };
+    } catch {
+      setMessage('网络错误');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sendCode = async () => {
+    const normalized = ensureAccount();
+    if (!normalized) return;
+    if (step !== 'register' && step !== 'reset') {
+      setMessage('请先确认账号状态');
       return;
     }
-    const endpoint = registerKind === 'phone' ? `${API}/lc/auth/send-code` : `${API}/lc/auth/email/send-code`;
-    const body = registerKind === 'phone' ? { phone: registerTarget } : { email: registerTarget };
 
     setSendingCode(true);
     setMessage('');
     try {
+      const identifyResp = await fetch(`${API}/lc/auth/identify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: normalized.value }),
+      });
+      const identifyData = await identifyResp.json();
+      if (!identifyData.success) {
+        setMessage(identifyData.error || '账号识别失败');
+        return;
+      }
+      const exists = Boolean(identifyData.data?.exists);
+      const hasPassword = Boolean(identifyData.data?.has_password);
+      if (step === 'register' && exists) {
+        const next = getNextAuthStep({ exists, hasPassword });
+        setStep(next.step);
+        setMessage(next.message);
+        clearSecrets();
+        return;
+      }
+      if (step === 'reset' && !exists) {
+        const next = getNextAuthStep({ exists, hasPassword });
+        setStep(next.step);
+        setMessage(next.message);
+        clearSecrets();
+        return;
+      }
+
+      const endpoint = normalized.kind === 'phone' ? `${API}/lc/auth/send-code` : `${API}/lc/auth/email/send-code`;
+      const body = normalized.kind === 'phone' ? { phone: normalized.value } : { email: normalized.value };
       const r = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -194,8 +281,8 @@ export default function Login() {
       });
       const d = await r.json();
       if (d.success) {
-        setSentCodeTarget({ kind: registerKind, value: registerTarget });
-        setMessage(registerKind === 'phone' ? '验证码已发送，请查看短信' : '验证码已发送，请查看邮箱或垃圾邮件');
+        setSentCodeTarget({ kind: normalized.kind, value: normalized.value, step: codeStep });
+        setMessage(normalized.kind === 'phone' ? '验证码已发送，请查看短信' : '验证码已发送，请查看邮箱或垃圾邮件');
       } else {
         setMessage(d.error || '验证码发送失败');
       }
@@ -206,7 +293,20 @@ export default function Login() {
     }
   };
 
+  const startReset = () => {
+    const normalized = ensureAccount();
+    if (!normalized) return;
+    setStep('reset');
+    setMessage('验证账号后设置新密码。');
+    setPassword('');
+    setCode('');
+    setSetupPassword('');
+    setSetupPasswordConfirm('');
+    setSentCodeTarget(null);
+  };
+
   const startWechatLogin = async () => {
+    if (!showWechatLogin) return;
     if (!acceptedTerms) {
       setMessage('请先阅读并同意用户协议和隐私政策');
       return;
@@ -230,50 +330,63 @@ export default function Login() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (step === 'account') {
+      await identifyAccount();
+      return;
+    }
     if (!acceptedTerms) { setMessage('请先阅读并同意用户协议和隐私政策'); return; }
+    const normalized = ensureAccount();
+    if (!normalized) return;
 
-    if (mode === 'password') {
-      if (!loginAccount.trim()) { setMessage('请填写手机号或邮箱'); return; }
+    if (step === 'password') {
       if (!password.trim() || password.length < 4) { setMessage('密码至少4位'); return; }
     } else {
-      if (!registerKind) { setMessage('请填写正确的手机号或邮箱'); return; }
       if (!sentToCurrentAccount) { setMessage('请先为当前账号发送验证码'); return; }
-      if (!registerCode.trim()) { setMessage('请填写验证码'); return; }
-      if (registerPassword.length < 6) { setMessage('密码至少6位'); return; }
-      if (registerPassword !== registerPasswordConfirm) { setMessage('两次输入的密码不一致'); return; }
+      if (!code.trim()) { setMessage('请填写验证码'); return; }
+      if (setupPassword.length < 6) { setMessage('密码至少6位'); return; }
+      if (setupPassword !== setupPasswordConfirm) { setMessage('两次输入的密码不一致'); return; }
     }
 
     setLoading(true);
     setMessage('');
     try {
-      const endpoint = mode === 'register'
-        ? registerKind === 'phone'
-          ? `${API}/lc/auth/phone`
-          : `${API}/lc/auth/email`
-        : `${API}/lc/auth`;
-      const body = mode === 'register'
-        ? registerKind === 'phone'
-          ? {
-            phone: registerTarget,
-            code: registerCode.trim(),
-            password: registerPassword,
-            passwordConfirm: registerPasswordConfirm,
-            referralCode: referralCode || undefined,
-          }
-          : {
-            email: registerTarget,
-            code: registerCode.trim(),
-            password: registerPassword,
-            passwordConfirm: registerPasswordConfirm,
-            referralCode: referralCode || undefined,
-          }
-        : {
-          account: loginAccount.trim(),
+      const endpoint = step === 'password'
+        ? `${API}/lc/auth`
+        : step === 'reset'
+          ? `${API}/lc/auth/reset-password`
+          : normalized.kind === 'phone'
+            ? `${API}/lc/auth/phone`
+            : `${API}/lc/auth/email`;
+      const body = step === 'password'
+        ? {
+          account: normalized.value,
           password: password.trim(),
           referralCode: referralCode || undefined,
-        };
+        }
+        : step === 'reset'
+          ? {
+            account: normalized.value,
+            code: code.trim(),
+            password: setupPassword,
+            passwordConfirm: setupPasswordConfirm,
+          }
+          : normalized.kind === 'phone'
+            ? {
+              phone: normalized.value,
+              code: code.trim(),
+              password: setupPassword,
+              passwordConfirm: setupPasswordConfirm,
+              referralCode: referralCode || undefined,
+            }
+            : {
+              email: normalized.value,
+              code: code.trim(),
+              password: setupPassword,
+              passwordConfirm: setupPasswordConfirm,
+              referralCode: referralCode || undefined,
+            };
       const r = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -287,6 +400,10 @@ export default function Login() {
         navigate('/dashboard');
       } else {
         setMessage(d.error || '操作失败');
+        if (r.status === 409 && /已经注册|已注册/.test(String(d.error || ''))) {
+          const next = getNextAuthStep({ exists: true, hasPassword: !/没有设置/.test(String(d.error || '')) });
+          setStep(next.step);
+        }
       }
     } catch {
       setMessage('网络错误');
@@ -294,6 +411,31 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  const title = step === 'account'
+    ? '进入灵契'
+    : step === 'password'
+      ? '输入密码'
+      : step === 'reset'
+        ? '重设登录密码'
+        : '创建灵契账号';
+  const subtitle = step === 'account'
+    ? '先输入手机号或邮箱，已有账号走密码，新账号再验证注册。'
+    : step === 'password'
+      ? '这个账号已经注册，直接用密码登录。'
+      : step === 'reset'
+        ? '验证手机号或邮箱后设置新密码。'
+        : '新账号需要验证码，并在注册时设置登录密码。';
+  const submitText = loading
+    ? '处理中...'
+    : step === 'account'
+      ? '继续'
+      : step === 'password'
+        ? '登录'
+        : step === 'reset'
+          ? '重设密码并进入灵契'
+          : '注册并进入灵契';
+  const submitDisabled = loading || (step !== 'account' && !acceptedTerms);
 
   return (
     <div className="login-page" style={{ minHeight: '100svh', display: 'flex', backgroundColor: C, color: INK }}>
@@ -318,7 +460,7 @@ export default function Login() {
           </div>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 32px' }} />
           <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: MUTED, lineHeight: 2 }}>
-            日常用密码登录<br />注册时主动验证账号<br />把每一次委托留在自己名下
+            输入账号先判断<br />已有账号直接登录<br />新账号再验证注册
           </p>
         </div>
       </div>
@@ -331,25 +473,14 @@ export default function Login() {
             </Link>
           </div>
 
-          <div className={`login-card ${mode === 'register' ? 'register-card' : ''}`} style={{ backgroundColor: '#fffaf2', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 'var(--lq-card-radius, 20px)', padding: 'var(--lq-card-padding, 32px)', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
+          <div className="login-card" style={{ backgroundColor: '#fffaf2', border: '1px solid rgba(201,146,46,0.2)', borderRadius: 'var(--lq-card-radius, 20px)', padding: 'var(--lq-card-padding, 32px)', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
             <div className="login-header" style={{ textAlign: 'center', marginBottom: 'var(--lq-header-margin, 20px)' }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.45rem', marginBottom: 8, color: INK }}>
-                {mode === 'register' ? '注册灵契账号' : '登录灵契'}
+                {title}
               </h1>
               <p className="login-subtitle" style={{ fontSize: '0.84rem', color: MUTED, margin: 0, lineHeight: 1.7 }}>
-                {mode === 'register' ? '手机号和邮箱合并在一个入口，验证码必须手动点击发送。' : '日常登录默认使用手机号或邮箱 + 密码。'}
+                {subtitle}
               </p>
-            </div>
-
-            <div className="login-tabs" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--lq-tab-gap, 8px)', marginBottom: 'var(--lq-tabs-margin, 18px)' }}>
-              <button type="button" onClick={() => switchMode('password')} style={{
-                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 'var(--lq-control-radius, 10px)', padding: 'var(--lq-tab-padding, 10px 12px)', fontSize: 'var(--lq-tab-font-size, 0.88rem)',
-                background: mode === 'password' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'password' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
-              }}>登录</button>
-              <button type="button" onClick={() => switchMode('register')} style={{
-                border: '1px solid rgba(201,146,46,0.24)', borderRadius: 'var(--lq-control-radius, 10px)', padding: 'var(--lq-tab-padding, 10px 12px)', fontSize: 'var(--lq-tab-font-size, 0.88rem)',
-                background: mode === 'register' ? 'rgba(217,168,87,0.18)' : '#fff', color: mode === 'register' ? '#925f18' : MUTED, fontWeight: 800, cursor: 'pointer',
-              }}>注册账号</button>
             </div>
 
             {referralCode && (
@@ -359,31 +490,68 @@ export default function Login() {
             )}
 
             <form className="login-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--lq-form-gap, 14px)' }}>
-              {mode === 'register' ? (
+              {step === 'account' ? (
+                <Field label="手机号或邮箱">
+                  <input
+                    type="text"
+                    value={account}
+                    onChange={e => handleAccountChange(e.target.value)}
+                    placeholder="手机号 / 邮箱"
+                    required
+                    style={inputStyle}
+                  />
+                </Field>
+              ) : (
+                <div className="account-summary" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 10px', borderRadius: 'var(--lq-control-radius, 10px)', border: '1px solid rgba(201,146,46,0.2)', background: 'rgba(255,255,255,0.68)', color: MUTED, fontSize: '0.8rem' }}>
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 800, color: INK }}>{accountTarget || account}</span>
+                  <button type="button" onClick={goBackToAccount} style={{ border: 'none', background: 'transparent', color: '#925f18', fontWeight: 850, cursor: 'pointer', flexShrink: 0, padding: 0 }}>换账号</button>
+                </div>
+              )}
+
+              {step === 'password' && (
+                <Field label={(
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <span>密码</span>
+                    <button type="button" onClick={startReset} className="text-action" style={{ border: 'none', background: 'transparent', color: '#925f18', fontWeight: 850, fontSize: '0.76rem', cursor: 'pointer', padding: 0 }}>忘记密码？</button>
+                  </span>
+                )}>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="输入密码"
+                    required
+                    style={inputStyle}
+                  />
+                </Field>
+              )}
+
+              {(step === 'register' || step === 'reset') && (
                 <>
-                  <Field label="手机号或邮箱">
+                  <Field label="验证码">
                     <div className="code-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8 }}>
                       <input
                         type="text"
-                        value={registerAccount}
-                        onChange={e => handleRegisterAccountChange(e.target.value)}
-                        placeholder="手机号 / 邮箱"
+                        value={code}
+                        onChange={e => setCode(e.target.value)}
+                        placeholder="6位验证码"
                         required
+                        inputMode="numeric"
                         style={inputStyle}
                       />
                       <button
                         type="button"
-                        onClick={sendRegisterCode}
-                        disabled={sendingCode || loading || !registerAccount.trim()}
+                        onClick={sendCode}
+                        disabled={sendingCode || loading || !accountTarget}
                         style={{
                           border: 'none',
                           borderRadius: 'var(--lq-control-radius, 10px)',
                           padding: '0 12px',
-                          background: sendingCode || loading || !registerAccount.trim() ? 'rgba(241,245,249,0.9)' : '#1f2937',
-                          color: sendingCode || loading || !registerAccount.trim() ? 'rgba(71,85,105,0.42)' : '#fff',
+                          background: sendingCode || loading || !accountTarget ? 'rgba(241,245,249,0.9)' : '#1f2937',
+                          color: sendingCode || loading || !accountTarget ? 'rgba(71,85,105,0.42)' : '#fff',
                           fontWeight: 850,
                           fontSize: '0.82rem',
-                          cursor: sendingCode || loading || !registerAccount.trim() ? 'not-allowed' : 'pointer',
+                          cursor: sendingCode || loading || !accountTarget ? 'not-allowed' : 'pointer',
                           whiteSpace: 'nowrap',
                         }}
                       >
@@ -391,59 +559,23 @@ export default function Login() {
                       </button>
                     </div>
                     <p className="register-code-tip" style={{ margin: '6px 0 0', color: 'rgba(71,85,105,0.58)', fontSize: '0.74rem', lineHeight: 1.5 }}>
-                      {registerKind === 'phone'
-                        ? '将发送短信验证码。'
-                        : registerKind === 'email'
-                          ? '将发送邮箱验证码。'
-                          : '填手机号发短信，填邮箱发邮件；不会自动发送。'}
+                      {accountKind === 'phone' ? '将发送短信验证码。' : '将发送邮箱验证码；不会自动发送。'}
                     </p>
                   </Field>
 
-                  <Field label="验证码">
-                    <input
-                      type="text"
-                      value={registerCode}
-                      onChange={e => setRegisterCode(e.target.value)}
-                      placeholder="6位验证码"
-                      required
-                      inputMode="numeric"
-                      style={inputStyle}
-                    />
-                  </Field>
-
                   <PasswordSetupFields
-                    password={registerPassword}
-                    confirm={registerPasswordConfirm}
-                    onPasswordChange={setRegisterPassword}
-                    onConfirmChange={setRegisterPasswordConfirm}
+                    password={setupPassword}
+                    confirm={setupPasswordConfirm}
+                    onPasswordChange={setSetupPassword}
+                    onConfirmChange={setSetupPasswordConfirm}
+                    firstLabel={step === 'reset' ? '新登录密码' : '设置登录密码'}
                   />
 
-                  <p className="register-footnote" style={{ margin: 0, color: 'rgba(71,85,105,0.64)', fontSize: '0.76rem', lineHeight: 1.6 }}>
-                    昵称、头像、常用城市进站后再设置。昵称只是公开展示名，不是登录账号；登录账号是手机号或邮箱。
-                  </p>
-                </>
-              ) : (
-                <>
-                  <Field label="手机号或邮箱">
-                    <input
-                      type="text"
-                      value={loginAccount}
-                      onChange={e => setLoginAccount(e.target.value)}
-                      placeholder="输入手机号或邮箱"
-                      required
-                      style={inputStyle}
-                    />
-                  </Field>
-                  <Field label="密码">
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="输入密码"
-                      required
-                      style={inputStyle}
-                    />
-                  </Field>
+                  {step === 'register' && (
+                    <p className="register-footnote" style={{ margin: 0, color: 'rgba(71,85,105,0.64)', fontSize: '0.76rem', lineHeight: 1.6 }}>
+                      昵称、头像、常用城市进站后再设置。昵称只是公开展示名，不是登录账号；登录账号是手机号或邮箱。
+                    </p>
+                  )}
                 </>
               )}
 
@@ -480,29 +612,30 @@ export default function Login() {
                 </div>
               )}
 
-              <button type="submit" disabled={loading || !acceptedTerms}
+              <button type="submit" disabled={submitDisabled}
                 style={{
-                  marginTop: 2, padding: 'var(--lq-primary-padding, 12px)', borderRadius: 'var(--lq-control-radius, 10px)', border: 'none', cursor: loading || !acceptedTerms ? 'not-allowed' : 'pointer',
-                  background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                  color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 850, fontSize: '0.9rem',
+                  marginTop: 2, padding: 'var(--lq-primary-padding, 12px)', borderRadius: 'var(--lq-control-radius, 10px)', border: 'none', cursor: submitDisabled ? 'not-allowed' : 'pointer',
+                  background: submitDisabled ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                  color: submitDisabled ? 'rgba(71,85,105,0.42)' : INK, fontWeight: 850, fontSize: '0.9rem',
                 }}>
-                {loading ? '处理中...' : mode === 'password' ? '登录' : '注册并进入灵契'}
+                {submitText}
               </button>
 
-              {mode === 'password' && (
-                <>
-                  <button type="button" onClick={startWechatLogin} disabled={loading || !acceptedTerms}
-                    style={{ padding: '11px', borderRadius: 10, border: '1px solid rgba(34,197,94,0.26)', background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : '#f0fdf4', color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : '#166534', fontWeight: 850, cursor: loading || !acceptedTerms ? 'not-allowed' : 'pointer' }}>
-                    微信扫码登录
-                  </button>
-                  <p className="auth-switch-tip" style={{ fontSize: '0.8rem', color: MUTED, textAlign: 'center', margin: 0 }}>
-                    新用户先点上方“注册账号”。忘记密码时，也可以用注册入口验证手机号或邮箱后重新设置密码。
-                  </p>
-                </>
+              {step === 'account' && showWechatLogin && (
+                <button type="button" onClick={startWechatLogin} disabled={loading || !acceptedTerms}
+                  style={{ padding: '11px', borderRadius: 10, border: '1px solid rgba(34,197,94,0.26)', background: loading || !acceptedTerms ? 'rgba(241,245,249,0.86)' : '#f0fdf4', color: loading || !acceptedTerms ? 'rgba(71,85,105,0.42)' : '#166534', fontWeight: 850, cursor: loading || !acceptedTerms ? 'not-allowed' : 'pointer' }}>
+                  微信扫码登录
+                </button>
+              )}
+
+              {step !== 'account' && step !== 'password' && (
+                <button type="button" onClick={goBackToAccount} className="auth-hint text-action" style={{ border: 'none', background: 'transparent', color: '#925f18', fontWeight: 850, cursor: 'pointer', padding: 0, fontSize: '0.78rem' }}>
+                  我有其他账号，返回重新输入
+                </button>
               )}
 
               <p className="auth-note" style={{ fontSize: '0.74rem', color: 'rgba(71,85,105,0.64)', textAlign: 'center', lineHeight: 1.65, margin: 0 }}>
-                验证码只用于注册、绑定、找回或修改敏感账号信息；登录、发布、评论、举报等关键操作会依法留存必要日志。
+                验证码只用于注册、找回、绑定或修改敏感账号信息；日常登录默认用账号和密码。
               </p>
             </form>
           </div>
@@ -525,7 +658,6 @@ export default function Login() {
             --lq-logo-margin: 0;
             --lq-card-padding: 26px 28px;
             --lq-header-margin: 14px;
-            --lq-tabs-margin: 12px;
             --lq-form-gap: 10px;
             --lq-input-padding: 10px 12px;
             --lq-terms-padding: 9px 11px;
@@ -540,17 +672,15 @@ export default function Login() {
             --lq-login-main-padding: 18px 24px;
             --lq-card-padding: 22px 24px;
             --lq-header-margin: 10px;
-            --lq-tabs-margin: 10px;
             --lq-form-gap: 8px;
             --lq-input-padding: 9px 11px;
-            --lq-tab-padding: 8px 10px;
             --lq-primary-padding: 9px;
           }
           .login-header h1 { font-size: 1.22rem !important; margin-bottom: 3px !important; }
           .login-subtitle,
           .register-footnote,
           .auth-note,
-          .auth-switch-tip {
+          .auth-hint {
             display: none !important;
           }
           .login-form label:not(.terms-check) {
@@ -575,10 +705,6 @@ export default function Login() {
             --lq-input-padding: 8px 10px;
             --lq-input-font-size: 0.84rem;
             --lq-header-margin: 8px;
-            --lq-tabs-margin: 8px;
-            --lq-tab-gap: 6px;
-            --lq-tab-padding: 8px 6px;
-            --lq-tab-font-size: 0.78rem;
             --lq-form-gap: 8px;
             --lq-message-padding: 8px 10px;
             --lq-terms-padding: 8px 10px;
@@ -613,7 +739,7 @@ export default function Login() {
             gap: 8px !important;
           }
           .terms-check input { margin-top: 1px !important; }
-          .auth-switch-tip { display: none !important; }
+          .auth-hint { display: none !important; }
           .code-row {
             grid-template-columns: minmax(0, 1fr) 92px !important;
           }
@@ -623,7 +749,7 @@ export default function Login() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <label style={{ display: 'block' }}>
       <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 8 }}>{label}</span>
@@ -637,15 +763,17 @@ function PasswordSetupFields({
   confirm,
   onPasswordChange,
   onConfirmChange,
+  firstLabel = '设置登录密码',
 }: {
   password: string;
   confirm: string;
   onPasswordChange: (value: string) => void;
   onConfirmChange: (value: string) => void;
+  firstLabel?: string;
 }) {
   return (
     <div className="password-grid" style={{ display: 'grid', gap: 'var(--lq-password-gap, 12px)' }}>
-      <Field label="设置登录密码">
+      <Field label={firstLabel}>
         <input type="password" value={password} onChange={e => onPasswordChange(e.target.value)} placeholder="至少6位" required style={inputStyle} />
       </Field>
       <Field label="再次输入密码">

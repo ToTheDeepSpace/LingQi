@@ -10,6 +10,7 @@
     "build:tencent": "npm run build && npm run build:server",
     "deploy:tencent": "bash scripts/deploy-tencent.sh",
     "lint": "eslint .",
+    "test:auth-flow": "tsc -p tsconfig.test.json && node --test dist-test/tests/authFlow.test.js",
     "preview": "vite preview",
     "start:server": "node dist-server/server/standalone.js"
   },

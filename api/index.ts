@@ -3380,6 +3380,34 @@ function parseConfirmedAuthPassword(rawPassword: unknown, rawConfirm: unknown, r
   return password;
 }
 
+function normalizeAuthLoginAccount(rawAccount: unknown) {
+  const account = cleanText(rawAccount, 160);
+  if (!account) throw new Error('请填写手机号或邮箱');
+  if (account.includes('@')) {
+    const email = normalizeEmail(account);
+    return { kind: 'email' as const, value: email, column: 'email' as const, hash: makeAuthEmailHash(email) };
+  }
+  const phone = normalizeChinaPhone(account);
+  return { kind: 'phone' as const, value: phone, column: 'phone' as const, hash: makeAuthPhoneHash(phone) };
+}
+
+function profileLoginPayload(profile: Record<string, unknown>, token: string, extra: Record<string, unknown> = {}) {
+  return {
+    id: profile.id,
+    display_name: String(profile.display_name || '用户'),
+    phone: profile.phone || '',
+    phone_verified_at: profile.phone_verified_at || null,
+    email: profile.email || '',
+    email_verified_at: profile.email_verified_at || null,
+    role: profile.role,
+    city: profile.city || null,
+    available_cities: profile.available_cities || [],
+    has_password: Boolean(profile.password_hash),
+    token,
+    ...extra,
+  };
+}
+
 app.post('/api/lc/auth/send-code', async (req, res) => {
   try {
     const result = await createAndSendPhoneCode(req, 'lingqi', 'login', req.body?.phone);
@@ -3400,6 +3428,38 @@ app.get('/api/lc/auth/config', async (_req, res) => {
   }));
 });
 
+app.post('/api/lc/auth/identify', async (req, res) => {
+  try {
+    const account = normalizeAuthLoginAccount(req.body?.account);
+    const { data: profile, error } = await supabase.from('lc_profiles')
+      .select('id, password_hash, is_banned, auth_provider, wechat_openid, wechat_unionid')
+      .eq(account.column, account.value)
+      .maybeSingle();
+    if (error) throw error;
+
+    await logSecurityEvent(req, {
+      action: 'auth_account_identified',
+      targetType: profile ? 'profile' : 'auth_account',
+      targetId: profile?.id || null,
+      metadata: {
+        account_kind: account.kind,
+        account_hash: account.hash,
+        exists: Boolean(profile),
+        has_password: Boolean(profile?.password_hash),
+      },
+    });
+
+    res.json(ok({
+      kind: account.kind,
+      exists: Boolean(profile),
+      has_password: Boolean(profile?.password_hash),
+      auth_provider: profile?.auth_provider || null,
+      has_wechat: Boolean(profile?.wechat_openid || profile?.wechat_unionid),
+      is_banned: Boolean(profile?.is_banned),
+    }));
+  } catch (e) { res.status(400).json(err(e)); }
+});
+
 app.post('/api/lc/auth/email/send-code', async (req, res) => {
   try {
     const result = await createAndSendEmailCode(req, 'lingqi', 'email_login', req.body?.email);
@@ -3418,57 +3478,15 @@ app.post('/api/lc/auth/phone', async (req, res) => {
     const primaryCity = activityCityList[0] || null;
     const rawPhone = normalizeChinaPhone(req.body?.phone);
     const { data: existing } = await supabase.from('lc_profiles').select('*').eq('phone', rawPhone).maybeSingle();
-    const passwordToSet = parseConfirmedAuthPassword(req.body?.password, req.body?.passwordConfirm, !existing || !existing.password_hash);
+    if (existing) {
+      return res.status(409).json(err(new Error(existing.password_hash
+        ? '该账号已经注册，直接输入密码登录就行'
+        : '该账号已经注册，但还没有设置网页登录密码，请点忘记密码后设置密码'
+      )));
+    }
+    const passwordToSet = parseConfirmedAuthPassword(req.body?.password, req.body?.passwordConfirm, true);
     const phone = await verifyPhoneCode('lingqi', 'login', rawPhone, req.body?.code);
     const nowIso = new Date().toISOString();
-
-    if (existing) {
-      if (existing.is_banned) {
-        await logSecurityEvent(req, {
-          action: 'auth_phone_login_blocked_banned_user',
-          targetType: 'profile',
-          targetId: existing.id,
-          actorId: existing.id,
-          actorRole: existing.role || 'creator',
-          metadata: { reason: existing.ban_reason || null },
-        });
-        return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
-      }
-      const patch: Record<string, unknown> = {
-        phone_verified_at: nowIso,
-        auth_provider: existing.auth_provider || 'phone',
-        ...profileIdentityPatch(existing, ['player']),
-      };
-      if (displayName && String(displayName).trim()) patch.display_name = String(displayName).trim().slice(0, 80);
-      if (activityCityList.length > 0) {
-        patch.available_cities = activityCityList;
-        if (!existing.city && primaryCity) patch.city = primaryCity;
-      }
-      if (passwordToSet) patch.password_hash = await bcrypt.hash(passwordToSet, 10);
-      await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
-      await runReferralSideEffect('stage1-after-phone-login', () => maybeAwardReferralStage1(existing.id));
-      const token = signProfileAuthToken(existing);
-      await logSecurityEvent(req, {
-        action: 'auth_phone_login_success',
-        targetType: 'profile',
-        targetId: existing.id,
-        actorId: existing.id,
-        actorRole: existing.role || 'creator',
-        metadata: { phone_verified_at: nowIso, activity_cities_count: activityCityList.length },
-      });
-      return res.json(ok({
-        id: existing.id,
-        display_name: String(patch.display_name || existing.display_name || `用户${phone.slice(-4)}`),
-        phone,
-        role: existing.role,
-        city: patch.city || existing.city || null,
-        available_cities: patch.available_cities || existing.available_cities || [],
-        phone_verified_at: nowIso,
-        has_password: Boolean(passwordToSet || existing.password_hash),
-        token,
-        new_user: false,
-      }));
-    }
 
     const profileRole = 'player';
     const { data: profile } = await supabase.from('lc_profiles').insert({
@@ -3536,63 +3554,16 @@ app.post('/api/lc/auth/email', async (req, res) => {
     const primaryCity = activityCityList[0] || null;
     const rawEmail = normalizeEmail(req.body?.email);
     const { data: existing } = await supabase.from('lc_profiles').select('*').eq('email', rawEmail).maybeSingle();
-    const passwordToSet = parseConfirmedAuthPassword(req.body?.password, req.body?.passwordConfirm, !existing || !existing.password_hash);
+    if (existing) {
+      return res.status(409).json(err(new Error(existing.password_hash
+        ? '该账号已经注册，直接输入密码登录就行'
+        : '该账号已经注册，但还没有设置网页登录密码，请点忘记密码后设置密码'
+      )));
+    }
+    const passwordToSet = parseConfirmedAuthPassword(req.body?.password, req.body?.passwordConfirm, true);
     const email = await verifyEmailCode('lingqi', 'email_login', rawEmail, req.body?.code);
     const nowIso = new Date().toISOString();
     const emailPrefix = email.split('@')[0]?.slice(0, 24) || 'email';
-
-    if (existing) {
-      if (existing.is_banned) {
-        await logSecurityEvent(req, {
-          action: 'auth_email_login_blocked_banned_user',
-          targetType: 'profile',
-          targetId: existing.id,
-          actorId: existing.id,
-          actorRole: existing.role || 'creator',
-          metadata: { reason: existing.ban_reason || null },
-        });
-        return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
-      }
-
-      const patch: Record<string, unknown> = {
-        email,
-        email_verified_at: nowIso,
-        auth_provider: existing.auth_provider || 'email',
-        ...profileIdentityPatch(existing, ['player']),
-      };
-      if (displayName && String(displayName).trim()) patch.display_name = String(displayName).trim().slice(0, 80);
-      if (!existing.display_name) patch.display_name = `用户${emailPrefix}`;
-      if (activityCityList.length > 0) {
-        patch.available_cities = activityCityList;
-        if (!existing.city && primaryCity) patch.city = primaryCity;
-      }
-      if (passwordToSet) patch.password_hash = await bcrypt.hash(passwordToSet, 10);
-      await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
-      const nextProfile = { ...existing, ...patch };
-      const token = signProfileAuthToken(nextProfile);
-      await logSecurityEvent(req, {
-        action: 'auth_email_login_success',
-        targetType: 'profile',
-        targetId: existing.id,
-        actorId: existing.id,
-        actorRole: existing.role || 'creator',
-        metadata: { email_hash: makeAuthEmailHash(email), email_verified_at: nowIso, activity_cities_count: activityCityList.length },
-      });
-      return res.json(ok({
-        id: existing.id,
-        display_name: String(nextProfile.display_name || `用户${emailPrefix}`),
-        phone: existing.phone || '',
-        phone_verified_at: existing.phone_verified_at || null,
-        email,
-        email_verified_at: nowIso,
-        role: nextProfile.role,
-        city: nextProfile.city || null,
-        available_cities: nextProfile.available_cities || [],
-        has_password: Boolean(passwordToSet || existing.password_hash),
-        token,
-        new_user: false,
-      }));
-    }
 
     const profileRole = 'player';
     const { data: profile } = await supabase.from('lc_profiles').insert({
@@ -3652,6 +3623,70 @@ app.post('/api/lc/auth/email', async (req, res) => {
       token,
       new_user: true,
     }));
+  } catch (e) { res.status(400).json(err(e)); }
+});
+
+app.post('/api/lc/auth/reset-password', async (req, res) => {
+  try {
+    const account = normalizeAuthLoginAccount(req.body?.account);
+    const { data: existing, error: existingErr } = await supabase.from('lc_profiles')
+      .select('*')
+      .eq(account.column, account.value)
+      .maybeSingle();
+    if (existingErr) throw existingErr;
+    if (!existing) return res.status(404).json(err(new Error('该账号还没有注册，请先注册')));
+    if (existing.is_banned) {
+      await logSecurityEvent(req, {
+        action: 'auth_reset_password_blocked_banned_user',
+        targetType: 'profile',
+        targetId: existing.id,
+        actorId: existing.id,
+        actorRole: existing.role || 'creator',
+        metadata: { reason: existing.ban_reason || null },
+      });
+      return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
+    }
+
+    const passwordToSet = parseConfirmedAuthPassword(req.body?.password, req.body?.passwordConfirm, true);
+    const nowIso = new Date().toISOString();
+    const verifiedAccount = account.kind === 'phone'
+      ? await verifyPhoneCode('lingqi', 'login', account.value, req.body?.code)
+      : await verifyEmailCode('lingqi', 'email_login', account.value, req.body?.code);
+
+    const patch: Record<string, unknown> = {
+      password_hash: await bcrypt.hash(passwordToSet, 10),
+      auth_provider: existing.auth_provider || account.kind,
+      ...profileIdentityPatch(existing, ['player']),
+    };
+    if (account.kind === 'phone') {
+      patch.phone = verifiedAccount;
+      patch.phone_verified_at = nowIso;
+    } else {
+      patch.email = verifiedAccount;
+      patch.email_verified_at = nowIso;
+      if (!existing.display_name) patch.display_name = `用户${String(verifiedAccount).split('@')[0]?.slice(0, 24) || 'email'}`;
+    }
+
+    await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
+    const nextProfile = { ...existing, ...patch, password_hash: patch.password_hash };
+    const token = signProfileAuthToken(nextProfile);
+    await logSecurityEvent(req, {
+      action: 'auth_password_reset',
+      targetType: 'profile',
+      targetId: existing.id,
+      actorId: existing.id,
+      actorRole: existing.role || 'creator',
+      metadata: {
+        account_kind: account.kind,
+        account_hash: account.hash,
+        verified_at: nowIso,
+      },
+    });
+
+    res.json(ok(profileLoginPayload(nextProfile, token, {
+      has_password: true,
+      new_user: false,
+    })));
   } catch (e) { res.status(400).json(err(e)); }
 });
 
