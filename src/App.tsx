@@ -28,6 +28,9 @@ const Referrals = lazy(pageLoaders.referrals);
 const Roadmap = lazy(pageLoaders.roadmap);
 const Scripts = lazy(pageLoaders.scripts);
 const ScriptContribute = lazy(pageLoaders.scriptContribute);
+const Guides = lazy(pageLoaders.guides);
+const CreateGuide = lazy(pageLoaders.createGuide);
+const GuideIncome = lazy(pageLoaders.guideIncome);
 const CertificationPage = lazy(pageLoaders.certification);
 const ShopDashboard = lazy(pageLoaders.shopDashboard);
 const Contact = lazy(pageLoaders.contact);
@@ -44,7 +47,7 @@ const MPS_RECORD_URL = 'https://beian.mps.gov.cn/#/query/webSearch?code=13310202
 
 function AppLayout() {
   const { pathname } = useLocation();
-  const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new';
+  const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new' && pathname !== '/guides/new';
   const showFooter = pathname !== '/login';
 
   return (
@@ -75,6 +78,9 @@ function AppLayout() {
           <Route path="/roadmap" element={<Roadmap />} />
           <Route path="/scripts" element={<Scripts />} />
           <Route path="/scripts/contribute" element={<ScriptContribute />} />
+          <Route path="/guides" element={<Guides />} />
+          <Route path="/guides/new" element={<CreateGuide />} />
+          <Route path="/guides/income" element={<GuideIncome />} />
           <Route path="/certification" element={<CertificationPage />} />
           <Route path="/shop/dashboard" element={<ShopDashboard />} />
           <Route path="/contact" element={<Contact />} />
@@ -144,6 +150,7 @@ function SiteFooter() {
             <FooterLink to="/reputation/city">城市口碑榜</FooterLink>
             <FooterLink to="/dm-wall">爱D墙 / 店家</FooterLink>
             <FooterLink to="/scripts">剧本口碑</FooterLink>
+            <FooterLink to="/guides">攻略交易</FooterLink>
             <FooterLink to="/wallet">我的契约币</FooterLink>
             <FooterLink to="/referrals">我的邀请</FooterLink>
           </FooterColumn>
@@ -152,6 +159,8 @@ function SiteFooter() {
             <FooterLink to="/carpools/new">发布拼车</FooterLink>
             <FooterLink to="/rankings/new">发布口碑</FooterLink>
             <FooterLink to="/scripts/contribute">维护剧本库</FooterLink>
+            <FooterLink to="/guides/new">发布攻略</FooterLink>
+            <FooterLink to="/guides/income">创作者收入</FooterLink>
             <FooterLink to="/scripts">给剧本评分</FooterLink>
             <FooterLink to="/certification">身份认证</FooterLink>
             <FooterLink to="/dashboard">个人后台</FooterLink>

@@ -319,8 +319,33 @@ type DmDossierReview = {
   created_at: string;
 };
 
-type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'publicReview';
-type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'reports' | 'wallet' | 'certs' | 'security';
+type GuideReview = {
+  id: string;
+  author_name: string;
+  title: string;
+  summary: string;
+  content: string;
+  price: number;
+  spoiler_level: string;
+  guide_type: string;
+  target_name?: string | null;
+  moderation_precheck?: ModerationPrecheck | null;
+  created_at: string;
+};
+
+type GuideWithdrawalReview = {
+  id: string;
+  creator_id: string;
+  amount: number;
+  account_type: string;
+  account_name: string;
+  account_identifier: string;
+  status: 'pending' | 'paid' | 'rejected' | 'cancelled';
+  created_at: string;
+};
+
+type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'publicReview' | 'guide' | 'guideWithdrawal';
+type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'reports' | 'wallet' | 'certs' | 'security';
 
 function certificationTypeLabel(type: string) {
   if (type === 'realname') return '⭐ 实名认证';
@@ -421,6 +446,8 @@ export default function Admin() {
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [publicReviews, setPublicReviews] = useState<PublicReview[]>([]);
+  const [guides, setGuides] = useState<GuideReview[]>([]);
+  const [guideWithdrawals, setGuideWithdrawals] = useState<GuideWithdrawalReview[]>([]);
   const [transactions, setTransactions] = useState<TransactionReview[]>([]);
   const [certs, setCerts] = useState<CertReview[]>([]);
 const [loading, setLoading] = useState(false);
@@ -460,6 +487,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setSiteMessages((d.data as { siteMessages: SiteMessage[] }).siteMessages || []);
         setSecurityEvents((d.data as { securityEvents: SecurityEvent[] }).securityEvents || []);
         setPublicReviews((d.data as { publicReviews: PublicReview[] }).publicReviews || []);
+        setGuides((d.data as { guides: GuideReview[] }).guides || []);
+        setGuideWithdrawals((d.data as { guideWithdrawals: GuideWithdrawalReview[] }).guideWithdrawals || []);
       } else {
         const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '加载失败');
         setError(errMsg);
@@ -666,6 +695,26 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
+  const approveGuide = async (id: string) => {
+    await fetch(`${API}/lc/admin/guides/${id}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminNote: '攻略审核通过' }),
+    });
+    setGuides(prev => prev.filter(item => item.id !== id));
+    void loadData();
+  };
+
+  const approveGuideWithdrawal = async (id: string) => {
+    await fetch(`${API}/lc/admin/guide-withdrawals/${id}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminNote: '已确认打款' }),
+    });
+    setGuideWithdrawals(prev => prev.filter(item => item.id !== id));
+    void loadData();
+  };
+
   const resolveReport = async (id: string, action: 'resolved' | 'dismissed', hideTarget = false, restoreTarget = false) => {
     await fetch(`${API}/lc/admin/reports/${id}/resolve`, {
       method: 'PUT',
@@ -763,6 +812,12 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     } else if (type === 'publicReview') {
       await fetch(`${API}/lc/admin/public-reviews/${id}/reject`, { method: 'PUT', headers, body });
       setPublicReviews(prev => prev.filter(item => item.id !== id));
+    } else if (type === 'guide') {
+      await fetch(`${API}/lc/admin/guides/${id}/reject`, { method: 'PUT', headers, body });
+      setGuides(prev => prev.filter(item => item.id !== id));
+    } else if (type === 'guideWithdrawal') {
+      await fetch(`${API}/lc/admin/guide-withdrawals/${id}/reject`, { method: 'PUT', headers, body });
+      setGuideWithdrawals(prev => prev.filter(item => item.id !== id));
     }
   };
 
@@ -788,6 +843,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setReports([]);
     setSiteMessages([]);
     setSecurityEvents([]);
+    setGuides([]);
+    setGuideWithdrawals([]);
     setTransactions([]);
     setCerts([]);
   };
@@ -862,6 +919,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
             { label: '已发布榜单', value: approvedRankings.length, color: '#60a5fa' },
             { label: '公开内容', value: publicReviews.length, color: '#facc15' },
+            { label: '攻略', value: guides.length, color: '#fb7185' },
+            { label: '提现', value: guideWithdrawals.length, color: '#34d399' },
             { label: '评论', value: comments.length, color: '#38bdf8' },
             { label: '相关方', value: claims.length, color: '#f97316' },
             { label: '认证', value: certs.length, color: '#3b82f6' },
@@ -888,6 +947,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
           <button style={tabStyle(tab === 'publishedRankings')} onClick={() => setTab('publishedRankings')}>已发布 ({approvedRankings.length})</button>
           <button style={tabStyle(tab === 'publicReviews')} onClick={() => setTab('publicReviews')}>公开内容 {publicReviews.length > 0 && `(${publicReviews.length})`}</button>
+          <button style={tabStyle(tab === 'guides')} onClick={() => setTab('guides')}>攻略 {guides.length > 0 && `(${guides.length})`}</button>
+          <button style={tabStyle(tab === 'guideWithdrawals')} onClick={() => setTab('guideWithdrawals')}>提现 {guideWithdrawals.length > 0 && `(${guideWithdrawals.length})`}</button>
           <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
           <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
           <button style={tabStyle(tab === 'certs')} onClick={() => setTab('certs')}>认证审核 {certs.length > 0 && `(${certs.length})`}</button>
@@ -1081,6 +1142,55 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     </Row>
                   );
                 })}
+              </ListEmpty>
+            )}
+
+            {tab === 'guides' && (
+              <ListEmpty empty={guides.length === 0} text="暂无待审核攻略">
+                {guides.map(item => (
+                  <Row key={item.id} accent="#fb7185">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={item.title} pill="攻略审核" />
+                      <Meta>
+                        作者：{item.author_name || '未知用户'}
+                        {` · ${item.price || 0} 契约币`}
+                        {item.target_name ? ` · 对象：${item.target_name}` : ''}
+                        {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      <Meta>类型：{item.guide_type} · 剧透等级：{item.spoiler_level}</Meta>
+                      <ModerationPrecheckBadge value={item.moderation_precheck} />
+                      <Proof>摘要：{item.summary}</Proof>
+                      <ContentBox>{item.content}</ContentBox>
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveGuide(item.id)}>通过上架</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'guide')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'guideWithdrawals' && (
+              <ListEmpty empty={guideWithdrawals.length === 0} text="暂无待处理攻略提现">
+                {guideWithdrawals.map(item => (
+                  <Row key={item.id} accent="#34d399">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={`提现 ${item.amount}`} pill="创作者收入提现" />
+                      <Meta>
+                        创作者：{item.creator_id}
+                        {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      <Proof>
+                        收款方式：{item.account_type}；收款人：{item.account_name}；账号：{item.account_identifier}
+                      </Proof>
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => approveGuideWithdrawal(item.id)}>确认已打款</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'guideWithdrawal')}>拒绝</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
               </ListEmpty>
             )}
 

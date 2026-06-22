@@ -434,6 +434,15 @@ type WalletSpendResult = {
   applied: boolean;
 };
 
+type GuidePurchaseResult = {
+  purchase_id: string;
+  guide_id: string;
+  transaction_id?: string | null;
+  balance: number;
+  creator_income_id?: string | null;
+  already_purchased: boolean;
+};
+
 function normalizeReferralCode(input: unknown) {
   return cleanText(input, 40).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
 }
@@ -6254,6 +6263,318 @@ app.delete('/api/lc/commissions/:id', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+// ==================== 攻略交易 ====================
+
+const GUIDE_SPOILER_LEVELS = ['none', 'light', 'heavy', 'played_only'];
+const GUIDE_TYPES = ['script', 'role', 'city', 'carpool', 'photo', 'store_dm', 'other'];
+const GUIDE_TARGET_TYPES = ['script', 'script_role', 'city', 'store', 'dm', 'carpool_leader', 'creator', 'custom'];
+
+function normalizeGuideChoice(value: unknown, allowed: string[], fallback: string) {
+  const text = cleanText(value, 40);
+  return allowed.includes(text) ? text : fallback;
+}
+
+function normalizeGuidePrice(value: unknown) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(500, Math.trunc(num)));
+}
+
+function isGuideReader(row: Record<string, unknown>, profile?: AuthedProfile | null, purchases: Record<string, unknown>[] = []) {
+  if (!profile) return false;
+  if (profile.role === 'admin') return true;
+  if (row.author_id === profile.id) return true;
+  return purchases.some(item => item.buyer_id === profile.id && item.status === 'approved');
+}
+
+function publicGuidePayload(row: Record<string, unknown>, canRead = false) {
+  const payload: Record<string, unknown> = {
+    id: row.id,
+    author_id: row.author_id,
+    author_name: row.author_name,
+    title: row.title,
+    summary: row.summary,
+    price: row.price || 0,
+    spoiler_level: row.spoiler_level || 'none',
+    guide_type: row.guide_type || 'other',
+    target_type: row.target_type || 'custom',
+    target_id: row.target_id || null,
+    target_name: row.target_name || '',
+    status: row.status,
+    sale_status: row.sale_status,
+    purchase_count: row.purchase_count || 0,
+    gift_count: row.gift_count || 0,
+    gift_amount: row.gift_amount || 0,
+    moderation_precheck: row.moderation_precheck || null,
+    reject_reason: row.reject_reason || null,
+    admin_note: row.admin_note || null,
+    approved_at: row.approved_at || null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    can_read_content: canRead,
+  };
+  if (canRead) payload.content = row.content || '';
+  return payload;
+}
+
+async function loadGuidePurchasesForProfile(guideIds: string[], profile?: AuthedProfile | null) {
+  if (!profile || guideIds.length === 0) return [];
+  const { data, error: qErr } = await supabase.from('lc_guide_purchases')
+    .select('id, guide_id, buyer_id, status')
+    .in('guide_id', guideIds)
+    .eq('buyer_id', profile.id)
+    .eq('status', 'approved');
+  if (qErr && isMissingRelation(qErr, 'lc_guide_purchases')) return [];
+  if (qErr) throw qErr;
+  return data || [];
+}
+
+async function refreshWithdrawableIncome(profileId: string) {
+  await supabase.from('lc_creator_income_entries')
+    .update({ status: 'withdrawable', updated_at: new Date().toISOString() })
+    .eq('creator_id', profileId)
+    .eq('status', 'frozen')
+    .lte('available_at', new Date().toISOString());
+}
+
+app.get('/api/lc/guides', async (req, res) => {
+  try {
+    const type = cleanText(req.query.type, 40);
+    const targetType = cleanText(req.query.targetType, 40);
+    const queryText = cleanText(req.query.q, 80).toLowerCase();
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 24));
+    const offset = (page - 1) * limit;
+
+    let query = supabase.from('lc_guides')
+      .select('*', { count: 'exact' })
+      .eq('status', 'approved')
+      .eq('sale_status', 'on_sale')
+      .order('created_at', { ascending: false });
+    if (GUIDE_TYPES.includes(type)) query = query.eq('guide_type', type);
+    if (GUIDE_TARGET_TYPES.includes(targetType)) query = query.eq('target_type', targetType);
+    query = query.range(offset, offset + limit - 1);
+
+    const { data, error: qErr, count } = await query;
+    if (qErr && isMissingRelation(qErr, 'lc_guides')) return res.json(ok({ items: [], total: 0, page, totalPages: 1 }));
+    if (qErr) throw qErr;
+
+    const rows = (data || []).filter(row => {
+      if (!queryText) return true;
+      return [row.title, row.summary, row.target_name, row.author_name].join(' ').toLowerCase().includes(queryText);
+    });
+    res.json(ok({
+      items: rows.map(row => publicGuidePayload(row, false)),
+      total: count || rows.length,
+      page,
+      totalPages: Math.max(1, Math.ceil((count || rows.length) / limit)),
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/guides/mine', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data, error: qErr } = await supabase.from('lc_guides')
+      .select('*')
+      .eq('author_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (qErr && isMissingRelation(qErr, 'lc_guides')) return res.json(ok([]));
+    if (qErr) throw qErr;
+    res.json(ok((data || []).map(row => publicGuidePayload(row, true))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/guides/income/me', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    await refreshWithdrawableIncome(profile.id);
+    const [{ data: entries, error: eErr }, { data: withdrawals, error: wErr }] = await Promise.all([
+      supabase.from('lc_creator_income_entries').select('*').eq('creator_id', profile.id).order('created_at', { ascending: false }).limit(200),
+      supabase.from('lc_creator_withdrawals').select('*').eq('creator_id', profile.id).order('created_at', { ascending: false }).limit(50),
+    ]);
+    if (eErr && isMissingRelation(eErr, 'lc_creator_income_entries')) return res.json(ok({ entries: [], withdrawals: [], totals: {} }));
+    if (wErr && isMissingRelation(wErr, 'lc_creator_withdrawals')) return res.json(ok({ entries: entries || [], withdrawals: [], totals: {} }));
+    if (eErr) throw eErr;
+    if (wErr) throw wErr;
+    const totals = (entries || []).reduce((acc: Record<string, number>, item: Record<string, unknown>) => {
+      const status = cleanText(item.status, 40) || 'unknown';
+      acc[status] = (acc[status] || 0) + Number(item.creator_amount || 0);
+      return acc;
+    }, {});
+    res.json(ok({ entries: entries || [], withdrawals: withdrawals || [], totals }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/guides/withdrawals', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    await refreshWithdrawableIncome(profile.id);
+
+    const amount = Math.max(0, Math.trunc(Number(req.body?.amount || 0)));
+    const accountType = normalizeGuideChoice(req.body?.accountType, ['alipay', 'wechat', 'bank', 'other'], 'alipay');
+    const accountName = cleanText(req.body?.accountName, 80);
+    const accountIdentifier = cleanText(req.body?.accountIdentifier, 160);
+    if (amount < 30) return res.status(400).json(err(new Error('提现金额最低 30')));
+    if (!accountName || !accountIdentifier) return res.status(400).json(err(new Error('请填写提现账号和姓名')));
+
+    const { data: entries, error: eErr } = await supabase.from('lc_creator_income_entries')
+      .select('id, creator_amount')
+      .eq('creator_id', profile.id)
+      .eq('status', 'withdrawable')
+      .order('created_at', { ascending: true });
+    if (eErr) throw eErr;
+    const available = (entries || []).reduce((sum, item) => sum + Number(item.creator_amount || 0), 0);
+    if (available < amount) return res.status(400).json(err(new Error('可提现收入不足')));
+    if (available !== amount) return res.status(400).json(err(new Error('第一版提现请一次性申请全部可提现收入，避免拆分流水对账出错')));
+
+    const selected = (entries || []).map(item => item.id);
+
+    const { data: withdrawal, error: wErr } = await supabase.from('lc_creator_withdrawals').insert({
+      creator_id: profile.id,
+      amount,
+      account_type: accountType,
+      account_name: accountName,
+      account_identifier: accountIdentifier,
+      status: 'pending',
+    }).select('*').single();
+    if (wErr) throw wErr;
+
+    if (selected.length > 0) {
+      await supabase.from('lc_creator_income_entries')
+        .update({ status: 'withdraw_requested', withdrawal_id: withdrawal.id, updated_at: new Date().toISOString() })
+        .in('id', selected);
+    }
+
+    await logSecurityEvent(req, {
+      action: 'guide_income_withdrawal_requested',
+      targetType: 'creator_withdrawal',
+      targetId: withdrawal.id,
+      metadata: { amount, account_type: accountType },
+    });
+    res.json(ok(withdrawal));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/guides/:id', async (req, res) => {
+  try {
+    const authHeader = (req.headers.authorization || '').replace('Bearer ', '').trim();
+    let profile: AuthedProfile | null = null;
+    if (authHeader) {
+      try {
+        const decoded = jwt.verify(authHeader, JWT_SECRET) as { id?: string; creatorId?: string };
+        const profileId = decoded?.creatorId || decoded?.id;
+        if (profileId) {
+          const { data } = await supabase.from('lc_profiles')
+            .select('id, display_name, role, phone_verified_at, email_verified_at')
+            .eq('id', profileId)
+            .maybeSingle();
+          profile = data as AuthedProfile | null;
+        }
+      } catch {
+        profile = null;
+      }
+    }
+    const { data: guide, error: qErr } = await supabase.from('lc_guides')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (qErr && isMissingRelation(qErr, 'lc_guides')) return res.status(404).json(err(new Error('攻略功能尚未初始化')));
+    if (qErr) throw qErr;
+    if (!guide) return res.status(404).json(err(new Error('攻略不存在')));
+    const purchases = await loadGuidePurchasesForProfile([req.params.id], profile);
+    const canRead = isGuideReader(guide, profile, purchases) || Number(guide.price || 0) === 0;
+    const publicAllowed = guide.status === 'approved' && guide.sale_status === 'on_sale';
+    if (!publicAllowed && !isGuideReader(guide, profile, purchases)) return res.status(404).json(err(new Error('攻略不存在或未上架')));
+    res.json(ok(publicGuidePayload(guide, canRead)));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/guides', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+
+    const title = cleanText(req.body?.title, 80);
+    const summary = cleanText(req.body?.summary, 500);
+    const content = cleanText(req.body?.content, 12000);
+    const price = normalizeGuidePrice(req.body?.price);
+    const spoilerLevel = normalizeGuideChoice(req.body?.spoilerLevel, GUIDE_SPOILER_LEVELS, 'none');
+    const guideType = normalizeGuideChoice(req.body?.guideType, GUIDE_TYPES, 'other');
+    const targetType = normalizeGuideChoice(req.body?.targetType, GUIDE_TARGET_TYPES, 'custom');
+    const targetId = cleanText(req.body?.targetId, 120) || null;
+    const targetName = cleanText(req.body?.targetName, 120);
+    const copyrightConfirmed = !!req.body?.copyrightConfirmed;
+
+    if (!title) return res.status(400).json(err(new Error('请填写攻略标题')));
+    if (!summary) return res.status(400).json(err(new Error('请填写攻略摘要')));
+    if (content.length < 80) return res.status(400).json(err(new Error('攻略正文至少 80 字')));
+    if (!copyrightConfirmed) return res.status(400).json(err(new Error('请确认未上传盗版、谜底、线索卡或未授权素材')));
+
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'guide_publish',
+      targetType: 'guide',
+      texts: { title, summary, content, targetName },
+    });
+    const { data, error: insErr } = await supabase.from('lc_guides').insert({
+      author_id: profile.id,
+      author_name: profile.display_name || '用户',
+      title,
+      summary,
+      content,
+      price,
+      spoiler_level: spoilerLevel,
+      guide_type: guideType,
+      target_type: targetType,
+      target_id: targetId,
+      target_name: targetName,
+      status: 'pending',
+      sale_status: 'draft',
+      copyright_confirmed: copyrightConfirmed,
+      moderation_precheck: moderationPrecheck,
+    }).select('*').single();
+    if (insErr && isMissingRelation(insErr, 'lc_guides')) return res.status(503).json(err(new Error('攻略交易数据表尚未初始化')));
+    if (insErr) throw insErr;
+    await logSecurityEvent(req, {
+      action: 'guide_submitted',
+      targetType: 'guide',
+      targetId: data.id,
+      metadata: { price, spoiler_level: spoilerLevel, guide_type: guideType, moderation: moderationPrecheck.decision },
+    });
+    res.json(ok(publicGuidePayload(data, true)));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/guides/:id/purchase', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const { data, error: rpcErr } = await supabase.rpc('lc_purchase_guide', {
+      p_buyer_id: profile.id,
+      p_guide_id: req.params.id,
+    });
+    if (rpcErr) return res.status(/不足/.test(rpcErr.message || '') ? 402 : 400).json(err(new Error(rpcErr.message || '购买失败')));
+    const result = firstRpcRow<GuidePurchaseResult>(data);
+    await logSecurityEvent(req, {
+      action: result?.already_purchased ? 'guide_purchase_duplicate' : 'guide_purchased',
+      targetType: 'guide',
+      targetId: req.params.id,
+      metadata: { purchase_id: result?.purchase_id || null, transaction_id: result?.transaction_id || null },
+    });
+    res.json(ok(result));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.get('/api/lc/contact-requests/:creatorId', authMiddleware, async (req, res) => {
   try {
     if (getReq(req, 'creatorId') !== req.params.creatorId && getReq(req, 'role') !== 'admin') {
@@ -6292,7 +6613,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, publicReviewsResult] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, publicReviewsResult, guidesResult, withdrawalsResult] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -6312,9 +6633,13 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
         .limit(150),
       supabase.from('lc_dm_dossiers').select('*').or('status.eq.pending,claim_status.eq.pending').order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_public_reviews').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
+      supabase.from('lc_guides').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_creator_withdrawals').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
     ]);
     if (dmDossiersResult.error && !isMissingRelation(dmDossiersResult.error, 'lc_dm_dossiers')) throw dmDossiersResult.error;
     if (publicReviewsResult.error && !isMissingRelation(publicReviewsResult.error, 'lc_public_reviews')) throw publicReviewsResult.error;
+    if (guidesResult.error && !isMissingRelation(guidesResult.error, 'lc_guides')) throw guidesResult.error;
+    if (withdrawalsResult.error && !isMissingRelation(withdrawalsResult.error, 'lc_creator_withdrawals')) throw withdrawalsResult.error;
     res.json(ok({
       profiles: (profiles || []).map(profile => sanitizeProfile(profile, true)),
       contactRequests: requests || [],
@@ -6332,7 +6657,127 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       securityEvents: securityEvents || [],
       dmDossiers: dmDossiersResult.error ? [] : (dmDossiersResult.data || []),
       publicReviews: publicReviewsResult.error ? [] : (publicReviewsResult.data || []),
+      guides: guidesResult.error ? [] : (guidesResult.data || []),
+      guideWithdrawals: withdrawalsResult.error ? [] : (withdrawalsResult.data || []),
     }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/guides/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const adminNote = cleanText(req.body?.adminNote, 500);
+    const { data: updated, error: updErr } = await supabase.from('lc_guides')
+      .update({
+        status: 'approved',
+        sale_status: 'on_sale',
+        admin_note: adminNote || null,
+        reject_reason: null,
+        approved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .eq('status', 'pending')
+      .select('*')
+      .single();
+    if (updErr && isMissingRelation(updErr, 'lc_guides')) return res.status(503).json(err(new Error('攻略交易数据表尚未初始化')));
+    if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'admin_guide_approved',
+      targetType: 'guide',
+      targetId: req.params.id,
+      metadata: { admin_note: adminNote || null },
+    });
+    res.json(ok(updated));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/guides/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const rejectReason = cleanText(req.body?.rejectReason, 500) || '不符合攻略发布规则';
+    const { error: updErr } = await supabase.from('lc_guides')
+      .update({
+        status: 'rejected',
+        sale_status: 'draft',
+        reject_reason: rejectReason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .eq('status', 'pending');
+    if (updErr && isMissingRelation(updErr, 'lc_guides')) return res.status(503).json(err(new Error('攻略交易数据表尚未初始化')));
+    if (updErr) throw updErr;
+    await logSecurityEvent(req, {
+      action: 'admin_guide_rejected',
+      targetType: 'guide',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason },
+    });
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/guide-withdrawals/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const adminNote = cleanText(req.body?.adminNote, 500);
+    const { data: withdrawal, error: findErr } = await supabase.from('lc_creator_withdrawals')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('status', 'pending')
+      .single();
+    if (findErr && isMissingRelation(findErr, 'lc_creator_withdrawals')) return res.status(503).json(err(new Error('提现数据表尚未初始化')));
+    if (findErr) throw findErr;
+    if (!withdrawal) return res.status(404).json(err(new Error('提现申请不存在')));
+
+    const { data: updated, error: updErr } = await supabase.from('lc_creator_withdrawals')
+      .update({
+        status: 'paid',
+        admin_note: adminNote || null,
+        paid_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .select('*')
+      .single();
+    if (updErr) throw updErr;
+    await supabase.from('lc_creator_income_entries')
+      .update({ status: 'withdraw_paid', updated_at: new Date().toISOString() })
+      .eq('withdrawal_id', req.params.id)
+      .eq('status', 'withdraw_requested');
+    await logSecurityEvent(req, {
+      action: 'admin_guide_withdrawal_paid',
+      targetType: 'creator_withdrawal',
+      targetId: req.params.id,
+      metadata: { amount: withdrawal.amount, admin_note: adminNote || null },
+    });
+    res.json(ok(updated));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/guide-withdrawals/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const rejectReason = cleanText(req.body?.rejectReason, 500) || '提现申请未通过';
+    const { data: updated, error: updErr } = await supabase.from('lc_creator_withdrawals')
+      .update({
+        status: 'rejected',
+        admin_note: rejectReason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .eq('status', 'pending')
+      .select('*')
+      .single();
+    if (updErr && isMissingRelation(updErr, 'lc_creator_withdrawals')) return res.status(503).json(err(new Error('提现数据表尚未初始化')));
+    if (updErr) throw updErr;
+    await supabase.from('lc_creator_income_entries')
+      .update({ status: 'withdrawable', withdrawal_id: null, updated_at: new Date().toISOString() })
+      .eq('withdrawal_id', req.params.id)
+      .eq('status', 'withdraw_requested');
+    await logSecurityEvent(req, {
+      action: 'admin_guide_withdrawal_rejected',
+      targetType: 'creator_withdrawal',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason },
+    });
+    res.json(ok(updated));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
