@@ -113,7 +113,7 @@ export default function Explore() {
     return roles.has(key);
   };
   const filtered = filter === 'all' ? creators : creators.filter(c => hasIdentity(c, filter));
-  const creatorCountText = loading ? '正在加载' : `${filtered.length} 位可查看`;
+  const creatorCountText = loading ? '正在加载' : `${filtered.length} 位可委托`;
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: PAPER }}>
@@ -130,7 +130,7 @@ export default function Explore() {
                 灵契师主页
               </h1>
               <p style={{ color: PAPER_DIM, fontSize: '1rem', lineHeight: 1.85 }}>
-                查看灵契师的主页、档期、可接城市和社交展示。想要指定角色或日期，也可以先去委托需求墙挂一段愿望。
+                这里只展示已经提交并通过服务审核的人。查看主页、档期、可接城市和社交展示；想要指定角色或日期，也可以先去委托需求墙挂一段愿望。
               </p>
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -216,7 +216,7 @@ export default function Explore() {
                 {city !== 'all' ? `${city} 暂无公开主页` : filter === 'all' ? '还在等待第一批灵契师' : '这个身份暂时没有公开主页'}
               </h2>
               <p style={{ color: PAPER_DIM, lineHeight: 1.8, marginBottom: 22 }}>
-                可以先发布一条委托需求，让合适的人来回应你；也可以自己入驻，把主页先挂出来。
+                可以先发布一条委托需求，让合适的人来回应你；也可以自己入驻，提交服务并通过审核后再出现在这里。
               </p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                 <Link to="/commissions/new" className="btn-gold" style={{ padding: '10px 20px', textDecoration: 'none' }}>发布委托需求</Link>

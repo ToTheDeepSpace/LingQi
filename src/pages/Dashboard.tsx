@@ -879,7 +879,7 @@ export default function Dashboard() {
   return (
     <div className="dashboard-page" style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
       {showOnboarding && (
-        <div style={{
+        <div className="onboarding-backdrop" style={{
           position: 'fixed',
           inset: 0,
           zIndex: 60,
@@ -889,41 +889,48 @@ export default function Dashboard() {
           justifyContent: 'center',
           padding: 20,
         }}>
-          <div style={{
+          <div className="onboarding-card" style={{
             width: '100%',
-            maxWidth: 520,
+            maxWidth: 760,
+            maxHeight: 'calc(100svh - 32px)',
+            overflowY: 'auto',
             borderRadius: 18,
             background: '#fffdf8',
             border: '1px solid rgba(201,146,46,0.28)',
             boxShadow: '0 28px 80px rgba(15,23,42,0.22)',
-            padding: 24,
+            padding: 22,
           }}>
             <p style={{ color: '#925f18', fontWeight: 900, fontSize: '0.78rem', marginBottom: 8 }}>新手教程</p>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.4rem', color: INK, marginBottom: 10 }}>
-              欢迎来到灵契
+              先认识一下灵契
             </h2>
-            <p style={{ color: MUTED, fontSize: '0.88rem', lineHeight: 1.8, marginBottom: 16 }}>
-              你已经有登录账号了。登录账号是手机号或邮箱；昵称只是公开展示名，之后可以在“资料”里改。
+            <p style={{ color: MUTED, fontSize: '0.88rem', lineHeight: 1.75, marginBottom: 14 }}>
+              你已经有登录账号了。登录账号是手机号或邮箱；昵称只是公开展示名，先进来，再慢慢补头像、昵称和主页资料。
             </p>
-            <div style={{ display: 'grid', gap: 10, marginBottom: 18 }}>
+            <div className="onboarding-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginBottom: 16 }}>
               {[
-                ['先补资料', '设置昵称、头像、常用城市和公开主页，让别人知道你是谁。'],
-                ['再逛功能', '红黑白榜看口碑，剧本口碑看评分，拼车和委托需求看近期机会。'],
-                ['发布会审核', '公开内容会进入审核；手机号或邮箱验证过就能发言，实名和微信是更高可信等级。'],
-                ['契约币', '契约币用于充值、打榜、踩榜等站内服务；先按需小额使用。'],
+                ['看红黑白榜', '夸人、避雷、记录离谱事；主帖要证据和审核，相关方可以回应。'],
+                ['给万物评分', '剧本、角色、店家、DM/卡司、玩家等都可以沉淀口碑和 tag。'],
+                ['打榜与投票', '契约币表达支持或反对强度；同意、反对、离谱这类态度投票单独保留。'],
+                ['讨论圈内行为', '比如睡车、加戏、拒绝边界等，可以通过投票和口碑记录形成共识。'],
+                ['设置个人主页', '头像、昵称、常用城市先补上；公开资料提交后会进入审核。'],
+                ['成为灵契师', '只有填写并通过服务审核的人，才会出现在灵契师大厅。'],
               ].map(([title, desc]) => (
-                <div key={title} style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(239,246,255,0.78)', border: '1px solid rgba(125,147,170,0.14)' }}>
+                <div key={title} className="onboarding-item" style={{ padding: '11px 12px', borderRadius: 12, background: 'rgba(239,246,255,0.78)', border: '1px solid rgba(125,147,170,0.14)' }}>
                   <p style={{ color: INK, fontWeight: 900, fontSize: '0.86rem', marginBottom: 4 }}>{title}</p>
                   <p style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.78rem', lineHeight: 1.65 }}>{desc}</p>
                 </div>
               ))}
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button type="button" onClick={closeOnboarding} style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.22)', background: '#fff', color: '#925f18', fontWeight: 850, cursor: 'pointer' }}>
-                先逛逛
+              <button type="button" onClick={() => { closeOnboarding(); navigate('/rankings'); }} style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.22)', background: '#fff', color: '#925f18', fontWeight: 850, cursor: 'pointer' }}>
+                看红黑榜
+              </button>
+              <button type="button" onClick={() => { closeOnboarding(); setTab('services'); setOffersServices(true); }} style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.22)', background: '#fff', color: '#925f18', fontWeight: 850, cursor: 'pointer' }}>
+                我要提供服务
               </button>
               <button type="button" onClick={() => { closeOnboarding(); setTab('profile'); }} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD}, #c9922e)`, color: INK, fontWeight: 900, cursor: 'pointer' }}>
-                去设置昵称
+                设置头像昵称
               </button>
             </div>
           </div>
@@ -1925,10 +1932,90 @@ export default function Dashboard() {
           font-size: 0.74rem;
           font-weight: 900;
         }
+        .onboarding-card {
+          scrollbar-gutter: stable;
+        }
+        .onboarding-card::-webkit-scrollbar {
+          width: 8px;
+        }
+        .onboarding-card::-webkit-scrollbar-thumb {
+          background: rgba(201,146,46,0.24);
+          border-radius: 999px;
+        }
+
+        @media (max-height: 720px) and (min-width: 761px) {
+          .onboarding-backdrop {
+            padding: 12px !important;
+          }
+          .onboarding-card {
+            max-height: calc(100svh - 24px) !important;
+            padding: 16px !important;
+          }
+          .onboarding-card h2 {
+            font-size: 1.18rem !important;
+            margin-bottom: 6px !important;
+          }
+          .onboarding-card > p {
+            margin-bottom: 6px !important;
+          }
+          .onboarding-grid {
+            gap: 8px !important;
+            margin-bottom: 12px !important;
+          }
+          .onboarding-item {
+            padding: 9px 10px !important;
+          }
+          .onboarding-item p:first-child {
+            font-size: 0.82rem !important;
+            margin-bottom: 2px !important;
+          }
+          .onboarding-item p:last-child {
+            font-size: 0.74rem !important;
+            line-height: 1.48 !important;
+          }
+        }
 
         @media (max-width: 760px) {
           .dashboard-page {
             background: linear-gradient(180deg, #f7fbff 0%, #fffdf8 32%, #fffdf8 100%) !important;
+          }
+          .onboarding-backdrop {
+            padding: 10px !important;
+            align-items: flex-start !important;
+          }
+          .onboarding-card {
+            max-height: calc(100svh - 20px) !important;
+            padding: 14px !important;
+            border-radius: 16px !important;
+          }
+          .onboarding-card h2 {
+            font-size: 1.16rem !important;
+            margin-bottom: 6px !important;
+          }
+          .onboarding-card > p {
+            margin-bottom: 7px !important;
+          }
+          .onboarding-grid {
+            grid-template-columns: 1fr !important;
+            gap: 8px !important;
+            margin-bottom: 12px !important;
+          }
+          .onboarding-item {
+            padding: 9px 10px !important;
+          }
+          .onboarding-item p:first-child {
+            font-size: 0.82rem !important;
+            margin-bottom: 2px !important;
+          }
+          .onboarding-item p:last-child {
+            font-size: 0.74rem !important;
+            line-height: 1.5 !important;
+          }
+          .onboarding-card button {
+            min-height: 36px !important;
+            flex: 1 1 auto !important;
+            padding: 8px 10px !important;
+            font-size: 0.78rem !important;
           }
           .dashboard-hero {
             padding: 14px 14px 12px !important;

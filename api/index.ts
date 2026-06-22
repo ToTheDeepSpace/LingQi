@@ -4291,20 +4291,49 @@ app.get('/api/lc/creators', async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
-    const offset = (page - 1) * limit;
+    const city = cleanText(req.query.city, 60);
 
-    const { data, count } = await supabase
+    const { data: serviceRows, error: serviceErr } = await supabase
+      .from('lc_services')
+      .select('creator_id')
+      .eq('is_active', true);
+    if (serviceErr) throw serviceErr;
+
+    const serviceCreatorIds = Array.from(new Set((serviceRows || [])
+      .map((row: { creator_id?: string | null }) => row.creator_id)
+      .filter((id): id is string => Boolean(id))));
+
+    if (serviceCreatorIds.length === 0) {
+      return res.json(ok({
+        items: [],
+        total: 0,
+        page,
+        totalPages: 1,
+      }));
+    }
+
+    const { data } = await supabase
       .from('lc_profiles')
-      .select('*', { count: 'exact' })
+      .select('*')
       .eq('is_visible', true)
+      .in('id', serviceCreatorIds)
       .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .limit(500);
+
+    const visibleProfiles = (data || []).filter((profile: Record<string, unknown>) => {
+      if (!city) return true;
+      const availableCities = Array.isArray(profile.available_cities) ? profile.available_cities : [];
+      return profile.city === city || availableCities.includes(city);
+    });
+    const total = visibleProfiles.length;
+    const offset = (page - 1) * limit;
+    const pagedItems = visibleProfiles.slice(offset, offset + limit);
 
     res.json(ok({
-      items: (data || []).map(profile => sanitizeProfile(profile)),
-      total: count || 0,
+      items: pagedItems.map(profile => sanitizeProfile(profile)),
+      total,
       page,
-      totalPages: Math.ceil((count || 0) / limit),
+      totalPages: Math.max(1, Math.ceil(total / limit)),
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
