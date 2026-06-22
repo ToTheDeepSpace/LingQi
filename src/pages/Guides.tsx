@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import InfoTip from '../components/InfoTip';
 import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
@@ -127,10 +128,10 @@ export default function Guides() {
         <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ maxWidth: 680 }}>
             <p style={{ color: '#925f18', fontWeight: 900, fontSize: '0.78rem', marginBottom: 8 }}>攻略交易</p>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 4vw, 3.4rem)', marginBottom: 10 }}>把打本经验变成可购买攻略</h1>
-            <p style={{ color: MUTED, lineHeight: 1.8, margin: 0 }}>
-              选本、角色、城市路线、成车话术、出片清单都可以沉淀。购买是购买，礼物只是看完后的自愿赞赏，不能用礼物解锁内容。
-            </p>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 4vw, 3.4rem)', marginBottom: 10, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              把打本经验变成可购买攻略
+              <InfoTip>选本、角色、城市路线、成车话术、出片清单都可以沉淀。购买是购买，礼物只是看完后的自愿赞赏，不能用礼物解锁内容。</InfoTip>
+            </h1>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <Link to="/guides/income" style={ghostButton}>创作者收入</Link>

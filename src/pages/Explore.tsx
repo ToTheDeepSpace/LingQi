@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { Creator, PaginatedResponse } from '../types';
 import { CITIES } from '../constants/cities';
+import InfoTip from '../components/InfoTip';
 import { getJsonCached } from '../lib/apiCache';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { creatorEntryPath } from '../lib/authSession';
@@ -127,11 +128,11 @@ export default function Explore() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 24, flexWrap: 'wrap' }}>
             <div style={{ maxWidth: 690 }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.85rem, 4vw, 2.75rem)', marginBottom: 10, color: PAPER }}>
-                灵契师主页
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  灵契师主页
+                  <InfoTip>这里只展示已经提交并通过服务审核的人。查看主页、档期、可接城市和社交展示；想要指定角色或日期，也可以先去委托需求墙挂一段愿望。</InfoTip>
+                </span>
               </h1>
-              <p style={{ color: PAPER_DIM, fontSize: '1rem', lineHeight: 1.85 }}>
-                这里只展示已经提交并通过服务审核的人。查看主页、档期、可接城市和社交展示；想要指定角色或日期，也可以先去委托需求墙挂一段愿望。
-              </p>
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <Link to="/commissions" style={secondaryAction}>委托需求墙</Link>

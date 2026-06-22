@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import InfoTip from '../components/InfoTip';
 import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
@@ -100,8 +101,10 @@ export default function CreateGuide() {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
             <div>
               <p style={{ color: '#925f18', fontWeight: 900, fontSize: '0.76rem', marginBottom: 6 }}>发布攻略</p>
-              <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.55rem', marginBottom: 6 }}>把经验写成可购买内容</h1>
-              <p style={{ color: MUTED, lineHeight: 1.7, margin: 0, maxWidth: 660 }}>不能上传盗版剧本文本、线索卡、谜底、核心机制复刻或未授权素材。提交后先审核。</p>
+              <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.55rem', marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                把经验写成可购买内容
+                <InfoTip>不能上传盗版剧本文本、线索卡、谜底、核心机制复刻或未授权素材。提交后先审核。</InfoTip>
+              </h1>
             </div>
             <div style={{ color: '#925f18', fontWeight: 900 }}>作者：{auth.display_name || auth.phone || auth.email || '已登录用户'}</div>
           </div>
@@ -128,9 +131,10 @@ export default function CreateGuide() {
                 <input type="checkbox" checked={form.copyrightConfirmed} onChange={e => update('copyrightConfirmed', e.target.checked)} style={{ marginTop: 4 }} />
                 <span>我确认本文为自己的经验输出，不含盗版、谜底、线索卡、未授权素材或侵犯隐私内容。</span>
               </label>
-              <div style={{ border: '1px solid rgba(185,28,28,0.16)', background: 'rgba(254,242,242,0.72)', borderRadius: 12, padding: 10, color: '#991b1b', fontSize: '0.78rem', lineHeight: 1.7 }}>
-                礼物赞赏不是解锁条件。攻略正文只能通过购买或免费解锁查看。
-              </div>
+              <p style={{ color: '#925f18', fontSize: '0.78rem', fontWeight: 850, display: 'inline-flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                交易规则
+                <InfoTip>礼物赞赏不是解锁条件。攻略正文只能通过购买或免费解锁查看。</InfoTip>
+              </p>
               {message && <p style={{ color: message.includes('失败') || message.includes('错误') ? '#b91c1c' : '#166534', margin: 0 }}>{message}</p>}
               <button type="button" onClick={() => void submit()} disabled={submitting} style={goldButton}>
                 {submitting ? '提交中...' : '提交审核'}

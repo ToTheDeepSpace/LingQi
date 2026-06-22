@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
+import InfoTip from '../components/InfoTip';
 import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
@@ -301,16 +302,9 @@ export default function Wallet() {
               {amountError && <p style={{ color: RED, fontSize: '0.76rem', fontWeight: 700 }}>{amountError}</p>}
             </div>
 
-            <div style={{
-              padding: '12px 14px',
-              borderRadius: 12,
-              border: '1px solid rgba(201,146,46,0.18)',
-              background: 'rgba(255,255,255,0.72)',
-              color: MUTED,
-              fontSize: '0.8rem',
-              lineHeight: 1.7,
-            }}>
-	              只有支付平台异步通知验签通过后才会入账。充值所得为充值币，赠送和奖励所得为赠币；站内消费默认先扣赠币，再扣充值币。契约币是站内服务预付额度，充值入账后会产生支付通道、开票和账务处理成本，原则上不支持提现或无理由退款；如遇重复扣款、支付成功未到账、平台原因无法使用等异常，可联系平台核查处理。发票可按实际支付金额申请，企业用户可按公司开票规则提交专票信息。
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: MUTED, fontSize: '0.8rem', lineHeight: 1.6, marginBottom: 2 }}>
+              按需充值，充值入账后原则上不支持提现或无理由退款。
+              <InfoTip>只有支付平台异步通知验签通过后才会入账。充值所得为充值币，赠送和奖励所得为赠币；站内消费默认先扣赠币，再扣充值币。契约币是站内服务预付额度，充值入账后会产生支付通道、开票和账务处理成本；如遇重复扣款、支付成功未到账、平台原因无法使用等异常，可联系平台核查处理。发票可按实际支付金额申请，企业用户可按公司开票规则提交专票信息。</InfoTip>
             </div>
 
             {wechatOrder && (

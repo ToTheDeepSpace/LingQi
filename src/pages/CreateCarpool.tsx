@@ -4,6 +4,7 @@ import type { AuthData, CarpoolRole, CarpoolSubsidyType, ScriptCatalogItem, Stor
 import { CITIES } from '../constants/cities';
 import { formatDetailedSubsidy, generateCarpoolMessage, parseCarpoolMessage } from '../lib/carpoolMessage';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import InfoTip from '../components/InfoTip';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
@@ -566,8 +567,10 @@ export default function CreateCarpool() {
         <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'grid', gap: 6 }}>
             <Link to="/carpools" style={backLinkStyle}>← 返回拼车区</Link>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.55rem', marginBottom: 4 }}>发布拼车</h1>
-            <p style={{ fontSize: '0.84rem', color: MUTED }}>先把群消息解析成车次，也可以直接填车次，再单独生成可粘贴文案。</p>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.55rem', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              发布拼车
+              <InfoTip>先把群消息解析成车次，也可以直接填车次，再单独生成可粘贴文案。</InfoTip>
+            </h1>
           </div>
           <Link to="/wallet" style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)', background: 'rgba(255,255,255,0.78)', color: '#925f18', textDecoration: 'none', fontWeight: 700, fontSize: '0.85rem' }}>
             契约币 {balance ?? '...'}

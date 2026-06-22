@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import InfoTip from '../components/InfoTip';
 import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { isTokenExpired, readStoredCreatorAuth } from '../lib/authSession';
@@ -1285,8 +1286,10 @@ export default function Dashboard() {
                 <div className="dashboard-panel service-choice-panel" style={{ ...card, padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                     <div>
-                      <p style={{ fontWeight: 900, color: INK, fontSize: '0.94rem', marginBottom: 4 }}>是否在灵契上提供服务</p>
-                      <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.65 }}>先决定要不要接委托；选择提供服务后，再填写城市、联系方式、角色和报价。</p>
+                      <p style={{ fontWeight: 900, color: INK, fontSize: '0.94rem', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        是否在灵契上提供服务
+                        <InfoTip>先决定要不要接委托；选择提供服务后，再填写城市、联系方式、角色和报价。</InfoTip>
+                      </p>
                     </div>
                     <div className="service-choice-buttons" style={{ display: 'inline-flex', gap: 6, padding: 4, borderRadius: 999, background: 'rgba(241,245,249,0.86)', border: '1px solid rgba(125,147,170,0.14)' }}>
                       <button type="button" onClick={() => setOffersServices(true)}
@@ -1309,9 +1312,10 @@ export default function Dashboard() {
                   </div>
                 </div>
                 {!offersServices && (
-                  <div className="dashboard-panel" style={{ ...card, padding: '14px 16px', background: 'rgba(255,255,255,0.72)' }}>
-                    <p style={{ color: 'rgba(71,85,105,0.72)', fontSize: '0.82rem', lineHeight: 1.75 }}>
-                      当前不会引导你填写报价、可接角色或联系方式。以后想接委托时，回来切到“提供服务”再填写。
+                  <div className="dashboard-panel" style={{ ...card, padding: '10px 12px', background: 'rgba(255,255,255,0.72)' }}>
+                    <p style={{ color: 'rgba(71,85,105,0.72)', fontSize: '0.8rem', lineHeight: 1.55, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      已选择暂不提供服务
+                      <InfoTip>当前不会引导你填写报价、可接角色或联系方式。以后想接委托时，回来切到“提供服务”再填写。</InfoTip>
                     </p>
                   </div>
                 )}
@@ -1371,8 +1375,10 @@ export default function Dashboard() {
                 <div className="dashboard-panel role-panel" style={{ ...card }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
-                      <p style={{ fontWeight: 800, color: INK, fontSize: '0.92rem', marginBottom: 4 }}>可接本与角色</p>
-                      <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem', lineHeight: 1.65 }}>只能从剧本库选择。库里没有的本或角色，先维护剧本库，审核通过后再添加到主页。</p>
+                      <p style={{ fontWeight: 800, color: INK, fontSize: '0.92rem', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        可接本与角色
+                        <InfoTip>只能从剧本库选择。库里没有的本或角色，先维护剧本库，审核通过后再添加到主页。</InfoTip>
+                      </p>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <Link to="/scripts/contribute" style={{ padding: '6px 12px', borderRadius: 10, background: 'rgba(31,41,55,0.92)', color: '#fffaf2', textDecoration: 'none', fontSize: '0.76rem', fontWeight: 850 }}>
@@ -1518,8 +1524,10 @@ export default function Dashboard() {
             {tab === 'availability' && (
               <div style={{ display: 'grid', gap: 16 }}>
                 <div style={card}>
-                  <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 8, color: INK }}>手动标记可约日期</p>
-                  <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.58)', marginBottom: 16 }}>新标记的日期会先提交审核，通过后显示在公开主页上，代表可以被委托人预约。</p>
+                  <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 12, color: INK, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    手动标记可约日期
+                    <InfoTip>新标记的日期会先提交审核，通过后显示在公开主页上，代表可以被委托人预约。</InfoTip>
+                  </p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 560, marginBottom: 18 }}>
                     <input value={availCity} onChange={e => setAvailCity(e.target.value)} placeholder="这批档期所在城市（默认用常驻城市）" style={inputStyle} />
                     <input value={availLocation} onChange={e => setAvailLocation(e.target.value)} placeholder="地点补充，如展会/区县/可商量" style={inputStyle} />
@@ -1554,8 +1562,10 @@ export default function Dashboard() {
                 <div style={{ ...card, border: '1px solid rgba(59,130,246,0.18)', background: 'linear-gradient(135deg, rgba(239,246,255,0.86), rgba(255,250,242,0.96))' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
-                      <p style={{ fontWeight: 800, fontSize: '0.96rem', color: INK, marginBottom: 4 }}>剧司辰已排档期</p>
-                      <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.8rem', lineHeight: 1.7 }}>这里同步的是已排班/忙碌时间，不会当成可约日期展示。</p>
+                      <p style={{ fontWeight: 800, fontSize: '0.96rem', color: INK, marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        剧司辰已排档期
+                        <InfoTip>这里同步的是已排班/忙碌时间，不会当成可约日期展示。</InfoTip>
+                      </p>
                     </div>
                     <button onClick={syncJuzhangguiAvailability} disabled={syncingJzg}
                       style={{
@@ -1580,8 +1590,10 @@ export default function Dashboard() {
                 </div>
 
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
-                  <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 8, color: INK }}>截图快速导入</p>
-                  <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.8rem', lineHeight: 1.7, marginBottom: 14 }}>上传档期截图留档，再粘贴截图中的文字，系统会把未过期日期导入为可约档期。</p>
+                  <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 12, color: INK, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    截图快速导入
+                    <InfoTip>上传档期截图留档，再粘贴截图中的文字，系统会把未过期日期导入为可约档期。</InfoTip>
+                  </p>
                   <div style={{ marginBottom: 12 }}>
                     <DraftAutosaveNotice
                       savedAt={availabilityImportDraft.savedAt}
@@ -1633,11 +1645,11 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
-                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>上传作品</p>
-                  <ImageUpload onUploaded={addPortfolio} token={token} api={API} scope="portfolio" label="上传作品并提交审核" />
-                  <p style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.52)', marginTop: 12, lineHeight: 1.65 }}>
-                    支持 JPG、PNG、GIF，最大 10MB。上传后进入审核，通过后才会显示在公开页；请只上传你有权公开展示的图片。
+                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    上传作品
+                    <InfoTip>支持 JPG、PNG、GIF，最大 10MB。上传后进入审核，通过后才会显示在公开页；请只上传你有权公开展示的图片。</InfoTip>
                   </p>
+                  <ImageUpload onUploaded={addPortfolio} token={token} api={API} scope="portfolio" label="上传作品并提交审核" />
                 </div>
               </div>
             )}
@@ -2231,51 +2243,6 @@ export default function Dashboard() {
         .dark-cal abbr { text-decoration: none !important; }
       `}</style>
     </div>
-  );
-}
-
-function InfoTip({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const tipRef = useRef<HTMLSpanElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const closeTimer = window.setTimeout(() => setOpen(false), 7000);
-    const closeOnOutside = (event: MouseEvent | TouchEvent) => {
-      if (tipRef.current?.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-
-    document.addEventListener('mousedown', closeOnOutside);
-    document.addEventListener('touchstart', closeOnOutside);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      window.clearTimeout(closeTimer);
-      document.removeEventListener('mousedown', closeOnOutside);
-      document.removeEventListener('touchstart', closeOnOutside);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [open]);
-
-  return (
-    <span className="info-tip-wrap" ref={tipRef}>
-      <button
-        type="button"
-        className="info-tip-button"
-        aria-label={open ? '收起说明' : '查看说明'}
-        aria-expanded={open}
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpen(value => !value);
-        }}
-      >
-        ?
-      </button>
-      {open && <span className="info-tip-popover">{children}</span>}
-    </span>
   );
 }
 

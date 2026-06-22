@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import InfoTip from '../components/InfoTip';
 import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
@@ -98,8 +99,10 @@ export default function GuideIncome() {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 18 }}>
           <div>
             <Link to="/guides" style={{ color: '#275389', textDecoration: 'none', fontWeight: 850 }}>‹ 返回攻略交易</Link>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.7rem', marginTop: 10 }}>创作者收入</h1>
-            <p style={{ color: MUTED }}>这里是攻略和礼物产生的创作者收入，不是你的契约币钱包。</p>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.7rem', marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              创作者收入
+              <InfoTip>这里是攻略和礼物产生的创作者收入，不是你的契约币钱包。</InfoTip>
+            </h1>
           </div>
           <Link to="/guides/new" style={goldButton}>发布攻略</Link>
         </div>
@@ -136,8 +139,10 @@ export default function GuideIncome() {
           </section>
 
           <aside style={cardStyle}>
-            <h2 style={{ marginBottom: 8 }}>申请提现</h2>
-            <p style={{ color: MUTED, fontSize: '0.82rem', lineHeight: 1.7 }}>第一版只支持一次性申请全部可提现收入，管理员审核后手工或半自动打款。</p>
+            <h2 style={{ marginBottom: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              申请提现
+              <InfoTip>第一版只支持一次性申请全部可提现收入，管理员审核后手工或半自动打款。</InfoTip>
+            </h2>
             <select value={form.accountType} onChange={e => setForm({ ...form, accountType: e.target.value })} style={inputStyle}>
               <option value="alipay">支付宝</option>
               <option value="wechat">微信</option>

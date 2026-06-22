@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
 import type { AuthData, ScriptCatalogItem } from '../types';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import InfoTip from '../components/InfoTip';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
@@ -191,13 +192,14 @@ export default function CreateCommission() {
         <Link to="/commissions" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none', fontSize: '0.88rem' }}>← 返回委托需求墙</Link>
         <div style={{ marginTop: 24, padding: '28px', borderRadius: 16, background: C2, border: '1px solid rgba(217,168,87,0.22)', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
           <div className="gold-line" style={{ marginBottom: 16 }} />
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.3rem)', marginBottom: 8 }}>发布委托需求</h1>
-          <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 22 }}>
-            你可以写得很具体，也可以只留一段愿望。内容会先进入人工审核。
-          </p>
+          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.3rem)', marginBottom: 12, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            发布委托需求
+            <InfoTip>你可以写得很具体，也可以只留一段愿望。内容会先进入人工审核。</InfoTip>
+          </h1>
 
-          <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(217,168,87,0.1)', border: '1px solid rgba(217,168,87,0.24)', color: '#65401c', fontSize: '0.84rem', marginBottom: 22 }}>
-            以 <strong style={{ color: '#925f18' }}>{auth.display_name}</strong> 的身份发布。AI 填表助手接口已预留，当前先由你手动填写。
+          <div style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(217,168,87,0.1)', border: '1px solid rgba(217,168,87,0.24)', color: '#65401c', fontSize: '0.84rem', marginBottom: 18, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            以 <strong style={{ color: '#925f18' }}>{auth.display_name}</strong> 的身份发布
+            <InfoTip>AI 填表助手接口已预留，当前先由你手动填写。</InfoTip>
           </div>
 
           <div style={{ marginBottom: 18 }}>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import CitySearchSelect from '../components/CitySearchSelect';
+import InfoTip from '../components/InfoTip';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -90,22 +91,22 @@ export default function CityReputation() {
         <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           <Link to="/rankings" style={topLink}>返回红黑榜事件榜</Link>
           <p style={{ margin: '18px 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>城市口碑百科</p>
-          <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>城市口碑榜</h1>
-          <p style={{ margin: '14px 0 0', color: MUTED, lineHeight: 1.8, maxWidth: 760 }}>
-            这里不是单条红黑榜，而是把玩家遇到的事件沉淀成城市里的 DM、店家、剧本和角色参考。打榜值代表真金白银支持强度，口碑值代表多人认可和信息质量。
-          </p>
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            城市口碑榜
+            <InfoTip>这里不是单条红黑榜，而是把玩家遇到的事件沉淀成城市里的 DM、店家、剧本和角色参考。打榜值代表真金白银支持强度，口碑值代表多人认可和信息质量。</InfoTip>
+          </h1>
         </div>
       </section>
 
       <section style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 20px 82px' }}>
         <div style={promoStyle}>
           <div>
-            <strong style={{ color: GOLD }}>本城置顶空间</strong>
+            <strong style={{ color: GOLD }}>广告位招租</strong>
             <p style={{ margin: '6px 0 0', color: MUTED, lineHeight: 1.7, fontSize: 14 }}>
-              后续可放新本公告、缺人车次、推荐车和店家活动，按城市独立运营并标注推广。
+              城市置顶推广位，可放新本公告、缺人车次、推荐车和店家活动，并明确标注推广。
             </p>
           </div>
-          <Link to="/contact" style={ghostButton}>咨询城市置顶</Link>
+          <Link to="/contact" style={ghostButton}>联系投放</Link>
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
