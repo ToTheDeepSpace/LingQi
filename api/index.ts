@@ -6267,7 +6267,7 @@ app.delete('/api/lc/commissions/:id', authMiddleware, async (req, res) => {
 
 const GUIDE_SPOILER_LEVELS = ['none', 'light', 'heavy', 'played_only'];
 const GUIDE_TYPES = ['script', 'role', 'city', 'carpool', 'photo', 'store_dm', 'other'];
-const GUIDE_TARGET_TYPES = ['script', 'script_role', 'city', 'store', 'dm', 'carpool_leader', 'creator', 'custom'];
+const GUIDE_TARGET_TYPES = ['script', 'script_role', 'dm_role', 'city', 'store', 'dm', 'carpool_leader', 'creator', 'custom'];
 
 function normalizeGuideChoice(value: unknown, allowed: string[], fallback: string) {
   const text = cleanText(value, 40);

@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS public.lc_guides (
   CONSTRAINT lc_guides_price_check CHECK (price >= 0 AND price <= 500),
   CONSTRAINT lc_guides_spoiler_level_check CHECK (spoiler_level IN ('none', 'light', 'heavy', 'played_only')),
   CONSTRAINT lc_guides_guide_type_check CHECK (guide_type IN ('script', 'role', 'city', 'carpool', 'photo', 'store_dm', 'other')),
-  CONSTRAINT lc_guides_target_type_check CHECK (target_type IN ('script', 'script_role', 'city', 'store', 'dm', 'carpool_leader', 'creator', 'custom')),
+  CONSTRAINT lc_guides_target_type_check CHECK (target_type IN ('script', 'script_role', 'dm_role', 'city', 'store', 'dm', 'carpool_leader', 'creator', 'custom')),
   CONSTRAINT lc_guides_status_check CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn')),
   CONSTRAINT lc_guides_sale_status_check CHECK (sale_status IN ('draft', 'on_sale', 'off_sale', 'suspended'))
 );
