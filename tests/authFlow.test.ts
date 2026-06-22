@@ -6,6 +6,11 @@ import {
   normalizeAuthAccount,
   shouldShowWechatLogin,
 } from '../src/lib/authFlow.js';
+import {
+  getPostLoginRedirect,
+  nextOnboardingViewCount,
+  shouldShowOnboarding,
+} from '../src/lib/postLoginFlow.js';
 
 test('normalizes phone and email accounts', () => {
   assert.equal(getAuthAccountKind('158 0272 3241'), 'phone');
@@ -36,4 +41,21 @@ test('shows wechat login only when backend config enables it', () => {
   assert.equal(shouldShowWechatLogin({ wechatEnabled: true }), true);
   assert.equal(shouldShowWechatLogin({ wechatEnabled: false }), false);
   assert.equal(shouldShowWechatLogin(null), false);
+});
+
+test('defaults ordinary login to rankings while respecting safe redirects', () => {
+  assert.equal(getPostLoginRedirect(null), '/rankings');
+  assert.equal(getPostLoginRedirect(''), '/rankings');
+  assert.equal(getPostLoginRedirect('https://evil.example'), '/rankings');
+  assert.equal(getPostLoginRedirect('//evil.example'), '/rankings');
+  assert.equal(getPostLoginRedirect('/guides/new'), '/guides/new');
+});
+
+test('limits onboarding to three automatic views and allows early dismissal', () => {
+  assert.equal(shouldShowOnboarding({ pending: true, dismissed: false, viewCount: 0 }), true);
+  assert.equal(nextOnboardingViewCount(0), 1);
+  assert.equal(nextOnboardingViewCount(2), 3);
+  assert.equal(shouldShowOnboarding({ pending: true, dismissed: false, viewCount: 3 }), false);
+  assert.equal(shouldShowOnboarding({ pending: true, dismissed: true, viewCount: 1 }), false);
+  assert.equal(shouldShowOnboarding({ pending: false, dismissed: false, viewCount: 0 }), false);
 });

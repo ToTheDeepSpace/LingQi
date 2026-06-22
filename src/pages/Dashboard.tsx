@@ -15,7 +15,6 @@ const C2   = '#eef6ff';
 const GOLD = '#d9a857';
 const INK  = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
-const ONBOARDING_STORAGE_KEY = 'lc_onboarding_pending';
 
 function getToken(): string {
   try {
@@ -261,7 +260,7 @@ export default function Dashboard() {
   const [sendingBindCode, setSendingBindCode] = useState(false);
   const [bindingPhone, setBindingPhone] = useState(false);
   const [settingPassword, setSettingPassword] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1');
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [offersServices, setOffersServices] = useState(false);
 
   const token = getToken();
@@ -824,7 +823,6 @@ export default function Dashboard() {
   };
 
   const closeOnboarding = () => {
-    localStorage.removeItem(ONBOARDING_STORAGE_KEY);
     setShowOnboarding(false);
   };
 

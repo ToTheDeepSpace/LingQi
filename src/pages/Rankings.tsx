@@ -3,6 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import {
+  nextOnboardingViewCount,
+  ONBOARDING_DISMISSED_KEY,
+  ONBOARDING_PENDING_KEY,
+  ONBOARDING_VIEW_COUNT_KEY,
+  shouldShowOnboarding,
+} from '../lib/postLoginFlow';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal, { type ReportTargetType } from '../components/ReportModal';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
@@ -636,6 +643,17 @@ export default function Rankings() {
   const [boostsMap, setBoostsMap] = useState<Record<string, BoostRecord[]>>({});
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [auditModal, setAuditModal] = useState<AuditModal>(null);
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try {
+      return shouldShowOnboarding({
+        pending: localStorage.getItem(ONBOARDING_PENDING_KEY) === '1',
+        dismissed: localStorage.getItem(ONBOARDING_DISMISSED_KEY) === '1',
+        viewCount: localStorage.getItem(ONBOARDING_VIEW_COUNT_KEY),
+      });
+    } catch {
+      return false;
+    }
+  });
   const commentDraftKey = commentModal ? `lc:draft:ranking-comment:${commentModal.rankingId}` : 'lc:draft:ranking-comment:none';
   const commentDraftValue = useMemo<RankingCommentDraft>(() => ({ content: commentText }), [commentText]);
   const commentDraft = useDraftAutosave<RankingCommentDraft>({
@@ -659,6 +677,18 @@ export default function Rankings() {
 
   const auth = getAuth();
   const preferredCityParam = preferredCities.join(',');
+
+  useEffect(() => {
+    if (!showOnboarding) return;
+    const nextCount = nextOnboardingViewCount(localStorage.getItem(ONBOARDING_VIEW_COUNT_KEY));
+    localStorage.setItem(ONBOARDING_VIEW_COUNT_KEY, String(nextCount));
+  }, [showOnboarding]);
+
+  const closeOnboarding = () => {
+    localStorage.setItem(ONBOARDING_DISMISSED_KEY, '1');
+    localStorage.removeItem(ONBOARDING_PENDING_KEY);
+    setShowOnboarding(false);
+  };
 
   const requireAuth = (): AuthSession | null => {
     const current = getAuth();
@@ -1223,6 +1253,85 @@ export default function Rankings() {
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#1f2937' }}>
+      {showOnboarding && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 80,
+          background: 'rgba(15,23,42,0.38)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 18,
+        }}>
+          <div style={{
+            position: 'relative',
+            width: 'min(100%, 760px)',
+            maxHeight: 'calc(100svh - 28px)',
+            overflowY: 'auto',
+            borderRadius: 18,
+            background: '#fffdf8',
+            border: '1px solid rgba(166,106,31,0.18)',
+            boxShadow: '0 28px 80px rgba(15,23,42,0.24)',
+            padding: '22px 22px 18px',
+          }}>
+            <button
+              type="button"
+              onClick={closeOnboarding}
+              aria-label="关闭新手教程"
+              style={{
+                position: 'absolute',
+                top: 12,
+                right: 12,
+                width: 32,
+                height: 32,
+                borderRadius: 999,
+                border: '1px solid rgba(166,106,31,0.16)',
+                background: '#fffaf2',
+                color: 'rgba(71,85,105,0.72)',
+                fontWeight: 900,
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
+            <p style={{ color: GOLD, fontWeight: 900, fontSize: '0.76rem', marginBottom: 8 }}>新手教程</p>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.36rem', marginBottom: 8 }}>
+              先看这里，灵契最热闹的是口碑
+            </h2>
+            <p style={{ color: 'rgba(71,85,105,0.74)', fontSize: '0.88rem', lineHeight: 1.75, marginBottom: 14 }}>
+              你已经有登录账号了。登录账号是手机号或邮箱；昵称只是公开展示名。这里可以看红黑白榜、给剧本/角色/店家/DM/玩家沉淀口碑，也可以以后再慢慢补个人主页。
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10, marginBottom: 16 }}>
+              {[
+                ['红黑白榜', '红榜夸好事，黑榜记录风险，白榜放事实、笑话和普通线索。'],
+                ['口碑榜 / 真金榜', '口碑榜看一人一票，真金榜看真实打榜值，两套榜单分开看。'],
+                ['万物皆可评分', '剧本、角色、DM、店家、玩家、圈内行为都可以继续沉淀 tag 和评价。'],
+                ['公开内容会审核', '发布前准备证据，涉及第三方隐私要打码；相关方可以发表置顶回应。'],
+              ].map(([title, desc]) => (
+                <div key={title} style={{ padding: '11px 12px', borderRadius: 12, background: 'rgba(255,250,242,0.92)', border: '1px solid rgba(166,106,31,0.12)' }}>
+                  <p style={{ fontWeight: 900, fontSize: '0.86rem', marginBottom: 4 }}>{title}</p>
+                  <p style={{ color: 'rgba(71,85,105,0.66)', fontSize: '0.78rem', lineHeight: 1.65 }}>{desc}</p>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ color: 'rgba(71,85,105,0.54)', fontSize: '0.76rem' }}>本提示最多自动出现 3 次，关闭后不再打扰。</span>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => { closeOnboarding(); navigate('/dashboard'); }} style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', color: '#925f18', fontWeight: 850, cursor: 'pointer' }}>
+                  设置个人主页
+                </button>
+                <Link onClick={closeOnboarding} to="/rankings/new" style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', color: '#925f18', fontWeight: 850, textDecoration: 'none' }}>
+                  发布口碑
+                </Link>
+                <button type="button" onClick={closeOnboarding} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD}, #c9922e)`, color: '#fffdf8', fontWeight: 900, cursor: 'pointer' }}>
+                  先看榜
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{
         background: 'linear-gradient(135deg, #fffaf2 0%, #fffdf8 64%, #f7ead7 100%)',
         borderBottom: '1px solid rgba(166,106,31,0.12)',

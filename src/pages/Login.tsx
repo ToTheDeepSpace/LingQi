@@ -11,6 +11,7 @@ import {
   shouldShowWechatLogin,
 } from '../lib/authFlow';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import { getPostLoginRedirect, ONBOARDING_DISMISSED_KEY, ONBOARDING_PENDING_KEY } from '../lib/postLoginFlow';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -103,8 +104,7 @@ export default function Login() {
     if (params.get('wechat_login') || params.get('auth_error')) return;
     const current = readStoredCreatorAuth();
     if (!current) return;
-    const redirect = params.get('redirect') || '/dashboard';
-    navigate(redirect.startsWith('/') ? redirect : '/dashboard', { replace: true });
+    navigate(getPostLoginRedirect(params.get('redirect')), { replace: true });
   }, [location.search, navigate]);
 
   useEffect(() => {
@@ -143,8 +143,7 @@ export default function Login() {
     if (data?.token) {
       storeLogin(data);
       localStorage.removeItem(REFERRAL_STORAGE_KEY);
-      const redirect = params.get('redirect') || '/dashboard';
-      navigate(redirect.startsWith('/') ? redirect : '/dashboard', { replace: true });
+      navigate(getPostLoginRedirect(params.get('redirect')), { replace: true });
     } else {
       window.setTimeout(() => setMessage('微信登录结果无效，请重试'), 0);
       window.history.replaceState(null, '', '/login');
@@ -314,7 +313,8 @@ export default function Login() {
     setLoading(true);
     setMessage('');
     try {
-      const params = new URLSearchParams({ redirect: '/dashboard' });
+      const currentParams = new URLSearchParams(location.search);
+      const params = new URLSearchParams({ redirect: getPostLoginRedirect(currentParams.get('redirect')) });
       if (referralCode) params.set('ref', referralCode);
       const r = await fetch(`${API}/lc/auth/wechat/url?${params.toString()}`);
       const d = await r.json();
@@ -395,9 +395,13 @@ export default function Login() {
       const d = await r.json();
       if (d.success) {
         storeLogin(d.data);
-        if (d.data?.new_user) localStorage.setItem('lc_onboarding_pending', '1');
+        if (d.data?.new_user) {
+          localStorage.setItem(ONBOARDING_PENDING_KEY, '1');
+          localStorage.removeItem(ONBOARDING_DISMISSED_KEY);
+        }
         localStorage.removeItem(REFERRAL_STORAGE_KEY);
-        navigate('/dashboard');
+        const params = new URLSearchParams(location.search);
+        navigate(getPostLoginRedirect(params.get('redirect')));
       } else {
         setMessage(d.error || '操作失败');
         if (r.status === 409 && /已经注册|已注册/.test(String(d.error || ''))) {
