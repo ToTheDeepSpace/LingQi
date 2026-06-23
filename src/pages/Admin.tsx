@@ -117,6 +117,7 @@ type Ranking = {
   dislikes?: number;
   joys?: number;
   status?: 'pending' | 'approved' | 'rejected';
+  reject_reason?: string | null;
   payment_proof: string | null;
   moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
@@ -348,7 +349,18 @@ type GuideWithdrawalReview = {
 };
 
 type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'publicReview' | 'guide' | 'guideWithdrawal';
-type Tab = 'pending' | 'active' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'reports' | 'wallet' | 'certs' | 'security';
+type Tab = 'allPending' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'reports' | 'wallet' | 'certs' | 'security';
+
+type PendingReviewItem = {
+  id: string;
+  tab: Tab;
+  category: string;
+  title: string;
+  meta: string;
+  createdAt?: string | null;
+  accent: string;
+  tags?: string[];
+};
 
 function certificationTypeLabel(type: string) {
   if (type === 'realname') return '⭐ 实名认证';
@@ -366,6 +378,28 @@ function publicReviewTypeLabel(type: string) {
   if (type === 'script_rating_upsert') return '剧本评分';
   if (type === 'entity_rating_upsert') return '角色评分';
   return '公开内容';
+}
+
+function rankingTypeLabel(type: string) {
+  if (type === 'red') return '红榜';
+  if (type === 'black') return '黑榜';
+  if (type === 'white') return '白榜';
+  return '榜单';
+}
+
+function publicReviewTags(item: PublicReview) {
+  const tags = [publicReviewTypeLabel(item.target_type)];
+  const payload = item.payload || {};
+  if (item.target_type === 'tag_create') {
+    const tag = typeof payload.tag === 'string' ? payload.tag.trim() : '';
+    const targetType = typeof payload.target_type === 'string' ? payload.target_type.trim() : '';
+    if (tag) tags.push(`#${tag}`);
+    if (targetType) tags.push(`对象:${targetType}`);
+  } else if (item.target_type === 'script_rating_upsert' || item.target_type === 'entity_rating_upsert') {
+    if (Array.isArray(payload.tags)) tags.push(...payload.tags.map(tag => `#${String(tag)}`).slice(0, 4));
+    if (payload.spoiler_level) tags.push(`剧透:${String(payload.spoiler_level)}`);
+  }
+  return Array.from(new Set(tags.filter(Boolean))).slice(0, 6);
 }
 
 function summarizePublicReviewPayload(payload?: Record<string, unknown> | null) {
@@ -458,7 +492,7 @@ const [loading, setLoading] = useState(false);
 const [transactionLoading, setTransactionLoading] = useState(false);
 const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('pending');
+  const [tab, setTab] = useState<Tab>('allPending');
   const [rejectModal, setRejectModal] = useState<{ open: boolean; id: string; reason: string; type: RejectType }>({
     open: false,
     id: '',
@@ -854,7 +888,151 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   };
 
   const pendingProfiles = profiles.filter(p => !p.is_visible && !p.reject_reason);
-  const activeProfiles = profiles.filter(p => p.is_visible || p.is_banned);
+  const accountProfiles = profiles;
+  const pendingReviewItems: PendingReviewItem[] = [
+    ...pendingProfiles.map(p => ({
+      id: `profile-${p.id}`,
+      tab: 'pending' as const,
+      category: '创作者资料',
+      title: p.display_name || '未命名用户',
+      meta: `${p.phone || '未绑定手机号'}${p.role_type ? ` · ${p.role_type}` : ''}`,
+      createdAt: p.created_at,
+      accent: '#b91c1c',
+    })),
+    ...rankings.map(r => ({
+      id: `ranking-${r.id}`,
+      tab: 'rankings' as const,
+      category: `${rankingTypeLabel(r.type)}帖子`,
+      title: r.subject_name,
+      meta: `${SUBJECT_LABEL[r.subject_type] || r.subject_type} · ${r.subject_city || '未知城市'} · 作者：${r.author_name}`,
+      createdAt: r.created_at,
+      accent: r.type === 'red' ? '#dc2626' : r.type === 'black' ? '#475569' : '#d9a857',
+      tags: [rankingTypeLabel(r.type), SUBJECT_LABEL[r.subject_type] || r.subject_type, r.subject_city || '未知城市'],
+    })),
+    ...publicReviews.map(item => ({
+      id: `public-${item.id}`,
+      tab: 'publicReviews' as const,
+      category: publicReviewTypeLabel(item.target_type),
+      title: item.title || publicReviewTypeLabel(item.target_type),
+      meta: `提交人：${item.profile_name || item.profile_id || '未知用户'}${item.summary ? ` · ${item.summary}` : ''}`,
+      createdAt: item.created_at,
+      accent: item.target_type === 'tag_create' ? '#7c3aed' : '#ca8a04',
+      tags: publicReviewTags(item),
+    })),
+    ...comments.map(c => ({
+      id: `comment-${c.id}`,
+      tab: 'comments' as const,
+      category: c.is_pinned ? '相关方回应' : '评论',
+      title: c.lc_rankings?.subject_name || '未知帖子',
+      meta: `作者：${c.author_name}`,
+      createdAt: c.created_at,
+      accent: '#0284c7',
+      tags: [c.is_pinned ? '相关方' : '评论', rankingTypeLabel(c.lc_rankings?.type || '')],
+    })),
+    ...claims.map(c => ({
+      id: `claim-${c.id}`,
+      tab: 'claims' as const,
+      category: '相关方申请',
+      title: c.lc_rankings?.subject_name || '未知帖子',
+      meta: `申请人：${c.claimant_name || '未知用户'} · ${c.contact || '未填联系方式'}`,
+      createdAt: c.created_at,
+      accent: '#ea580c',
+    })),
+    ...commissions.map(c => ({
+      id: `commission-${c.id}`,
+      tab: 'commissions' as const,
+      category: '委托需求',
+      title: c.title,
+      meta: `发布人：${c.poster_name}${c.city ? ` · ${c.city}` : ''}${c.needed_date ? ` · ${c.needed_date}` : ''}`,
+      createdAt: c.created_at,
+      accent: '#b45309',
+    })),
+    ...carpools.map(c => ({
+      id: `carpool-${c.id}`,
+      tab: 'carpools' as const,
+      category: '拼车',
+      title: c.title,
+      meta: `${c.city} · ${c.event_date} · ${c.script_name}`,
+      createdAt: c.created_at,
+      accent: '#0f766e',
+    })),
+    ...scriptContributions.map(item => ({
+      id: `script-${item.id}`,
+      tab: 'scriptContributions' as const,
+      category: '剧本库',
+      title: item.script_name,
+      meta: `提交人：${item.profile_name || '未知用户'}`,
+      createdAt: item.created_at,
+      accent: '#a16207',
+      tags: item.player_roles.flatMap(role => role.tags || []).slice(0, 6),
+    })),
+    ...dmDossiers.map(item => ({
+      id: `dossier-${item.id}`,
+      tab: 'dmDossiers' as const,
+      category: item.claim_status === 'pending' && item.status !== 'pending' ? '档案认领' : '未认证档案',
+      title: item.dm_name,
+      meta: `${item.city || '未知城市'}${item.workplace ? ` · ${item.workplace}` : ''}`,
+      createdAt: item.created_at,
+      accent: '#be185d',
+      tags: item.tags || [],
+    })),
+    ...reports.map(r => ({
+      id: `report-${r.id}`,
+      tab: 'reports' as const,
+      category: '举报',
+      title: r.target_title || r.target_id,
+      meta: `举报人：${r.reporter_name} · ${r.reason}`,
+      createdAt: r.created_at,
+      accent: '#dc2626',
+      tags: [r.target_type, r.risk_level || 'normal'],
+    })),
+    ...siteMessages.map(item => ({
+      id: `message-${item.id}`,
+      tab: 'messages' as const,
+      category: '站内信',
+      title: item.subject,
+      meta: `${item.sender_name || '匿名'}${item.contact ? ` · ${item.contact}` : ''}`,
+      createdAt: item.created_at,
+      accent: '#0369a1',
+    })),
+    ...transactions.map(tx => ({
+      id: `transaction-${tx.id}`,
+      tab: 'wallet' as const,
+      category: '充值',
+      title: `充值 ${tx.amount} 契约币`,
+      meta: `用户：${tx.lc_profiles?.display_name || tx.profile_id}`,
+      createdAt: tx.created_at,
+      accent: '#15803d',
+    })),
+    ...certs.map(c => ({
+      id: `cert-${c.id}`,
+      tab: 'certs' as const,
+      category: '认证',
+      title: certificationTypeLabel(c.type),
+      meta: `用户：${c.lc_profiles?.display_name || c.profile_id}`,
+      createdAt: c.created_at,
+      accent: '#2563eb',
+    })),
+    ...guides.map(item => ({
+      id: `guide-${item.id}`,
+      tab: 'guides' as const,
+      category: '攻略',
+      title: item.title,
+      meta: `作者：${item.author_name || '未知用户'} · ${item.price || 0} 契约币`,
+      createdAt: item.created_at,
+      accent: '#be123c',
+      tags: [item.guide_type, `剧透:${item.spoiler_level}`],
+    })),
+    ...guideWithdrawals.map(item => ({
+      id: `withdrawal-${item.id}`,
+      tab: 'guideWithdrawals' as const,
+      category: '提现',
+      title: `提现 ${item.amount}`,
+      meta: `${item.account_name} · ${item.account_type}`,
+      createdAt: item.created_at,
+      accent: '#047857',
+    })),
+  ].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
   if (!authed) return (
     <div style={{ backgroundColor: BG, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -898,8 +1076,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   });
 
   const statCards = [
-    { label: '待审核创作者', value: pendingProfiles.length, color: '#b91c1c' },
-    { label: '账号', value: activeProfiles.length, color: '#047857' },
+    { label: '全部待审', value: pendingReviewItems.length, color: '#b91c1c' },
+    { label: '账号', value: accountProfiles.length, color: '#047857' },
     { label: '联系申请', value: requests.length, color: '#8a5a19' },
     { label: '充值', value: transactions.length, color: '#15803d' },
     { label: '委托需求', value: commissions.length, color: '#b45309' },
@@ -949,8 +1127,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             </div>
 
             <div className="admin-tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: 8, backgroundColor: 'rgba(255,255,255,0.72)', border: `1px solid ${LINE}`, borderRadius: 14, boxShadow: '0 8px 22px rgba(31,41,55,0.04)' }}>
-              <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>待审核 {pendingProfiles.length > 0 && `(${pendingProfiles.length})`}</button>
-              <button style={tabStyle(tab === 'active')} onClick={() => setTab('active')}>账号 ({activeProfiles.length})</button>
+              <button style={tabStyle(tab === 'allPending')} onClick={() => setTab('allPending')}>全部待审 {pendingReviewItems.length > 0 && `(${pendingReviewItems.length})`}</button>
+              <button style={tabStyle(tab === 'accounts')} onClick={() => setTab('accounts')}>账号 ({accountProfiles.length})</button>
+              <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>创作者 {pendingProfiles.length > 0 && `(${pendingProfiles.length})`}</button>
               <button style={tabStyle(tab === 'requests')} onClick={() => setTab('requests')}>联系 {requests.length > 0 && `(${requests.length})`}</button>
               <button style={tabStyle(tab === 'wallet')} onClick={() => setTab('wallet')}>充值 {transactions.length > 0 && `(${transactions.length})`}</button>
               <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
@@ -979,6 +1158,28 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </div>
             ) : (
               <>
+            {tab === 'allPending' && (
+              <ListEmpty empty={pendingReviewItems.length === 0} text="没有待审核内容">
+                {pendingReviewItems.map(item => (
+                  <Row key={item.id} accent={item.accent}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={item.title} pill={item.category} />
+                      <Meta>
+                        {item.meta}
+                        {item.createdAt ? ` · ${item.createdAt.slice(0, 10)}` : ''}
+                      </Meta>
+                      {item.tags && item.tags.length > 0 && (
+                        <TagCloud tags={item.tags} />
+                      )}
+                    </div>
+                    <Actions vertical>
+                      <ActionButton onClick={() => setTab(item.tab)}>去处理</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
             {tab === 'pending' && (
               <ListEmpty empty={pendingProfiles.length === 0} text="没有待审核的创作者">
                 {pendingProfiles.map(p => (
@@ -996,17 +1197,20 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </ListEmpty>
             )}
 
-            {tab === 'active' && (
-              <ListEmpty empty={activeProfiles.length === 0} text="暂无可管理账号">
-                {activeProfiles.map(p => (
+            {tab === 'accounts' && (
+              <ListEmpty empty={accountProfiles.length === 0} text="暂无可管理账号">
+                {accountProfiles.map(p => (
                   <Row key={p.id}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{p.display_name}</span>
                         {p.is_realname && <span style={{ fontSize: '0.72rem', color: GOLD }}>⭐ 实名</span>}
+                        {!p.is_visible && !p.reject_reason && <span style={{ fontSize: '0.72rem', color: '#925f18' }}>待审</span>}
+                        {p.reject_reason && <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>已驳回</span>}
                         {p.is_banned && <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>已限制</span>}
                       </div>
                       <div style={{ fontSize: '0.78rem', color: MUTED }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.banned_at ? ` · 限制于 ${p.banned_at.slice(0, 10)}` : ''}</div>
+                      {p.reject_reason && <Proof>驳回原因：{p.reject_reason}</Proof>}
                       {p.ban_reason && <Proof>限制原因：{p.ban_reason}</Proof>}
                     </div>
                     <Actions>
@@ -1092,14 +1296,11 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     </div>
                     <Actions vertical>
                       <ActionButton onClick={() => openRankingEdit(r)}>编辑</ActionButton>
-                      <ActionButton kind="ok" onClick={() => approveRanking(r.id)}>通过</ActionButton>
-                      {r.type === 'white' && (
-                        <>
-                          <ActionButton onClick={() => approveRanking(r.id, 'red')}>转红榜</ActionButton>
-                          <ActionButton onClick={() => approveRanking(r.id, 'black')}>转黑榜</ActionButton>
-                        </>
-                      )}
-                      <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking')}>拒绝</ActionButton>
+                      <ActionButton kind="ok" onClick={() => approveRanking(r.id)}>按{rankingTypeLabel(r.type)}通过</ActionButton>
+                      {(['red', 'black', 'white'] as const).filter(type => type !== r.type).map(type => (
+                        <ActionButton key={type} onClick={() => approveRanking(r.id, type)}>改成{rankingTypeLabel(type)}并通过</ActionButton>
+                      ))}
+                      <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking')}>打回重写</ActionButton>
                     </Actions>
                   </Row>
                 ))}
@@ -1145,6 +1346,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         </Meta>
                         {item.summary && <Meta>{item.summary}</Meta>}
                         <ModerationPrecheckBadge value={item.moderation_precheck} />
+                        <TagCloud tags={publicReviewTags(item)} />
                         {details.length > 0 && (
                           <Proof>
                             {details.map(line => <div key={line}>{line}</div>)}
@@ -1657,10 +1859,14 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       {rejectModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(217,168,87,0.24)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 28px 80px rgba(31,41,55,0.22)' }}>
-            <h3 style={{ fontWeight: 800, fontSize: '1rem', marginBottom: 8, color: INK }}>填写拒绝原因</h3>
-            <p style={{ fontSize: '0.8rem', color: MUTED, marginBottom: 16 }}>原因可不填，主要给自己留审核记录。</p>
+            <h3 style={{ fontWeight: 800, fontSize: '1rem', marginBottom: 8, color: INK }}>{rejectModal.type === 'ranking' ? '打回重写原因' : '填写拒绝原因'}</h3>
+            <p style={{ fontSize: '0.8rem', color: MUTED, marginBottom: 16 }}>
+              {rejectModal.type === 'ranking'
+                ? '这段原因会写回帖子记录，用户在自己的发布记录里能看到为什么需要重写。'
+                : '原因可不填，主要给自己留审核记录。'}
+            </p>
             <textarea value={rejectModal.reason} onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}
-              placeholder="请说明拒绝原因（选填）..." rows={4}
+              placeholder={rejectModal.type === 'ranking' ? '例如：证据不足，请补充聊天记录截图并打码第三方信息。' : '请说明拒绝原因（选填）...'} rows={4}
               style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, fontSize: '0.875rem', boxSizing: 'border-box', resize: 'none', outline: 'none' }} />
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button onClick={() => setRejectModal({ open: false, id: '', reason: '', type: 'profile' })}
@@ -1669,7 +1875,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </button>
               <button onClick={confirmReject}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(185,28,28,0.20)', background: '#fef2f2', color: '#b91c1c', cursor: 'pointer', fontWeight: 800, fontSize: '0.875rem' }}>
-                确认拒绝
+                {rejectModal.type === 'ranking' ? '确认打回' : '确认拒绝'}
               </button>
             </div>
           </div>
@@ -1766,4 +1972,26 @@ function ContentBox({ children }: { children: React.ReactNode }) {
 
 function Proof({ children }: { children: React.ReactNode }) {
   return <div style={{ marginTop: 8, padding: '8px 12px', backgroundColor: '#fff8e8', border: '1px solid rgba(217,168,87,0.24)', borderRadius: 8, fontSize: '0.78rem', color: '#8a5a19', lineHeight: 1.55 }}>{children}</div>;
+}
+
+function TagCloud({ tags }: { tags: string[] }) {
+  const clean = Array.from(new Set(tags.map(tag => tag.trim()).filter(Boolean))).slice(0, 8);
+  if (clean.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+      {clean.map(tag => (
+        <span key={tag} style={{
+          padding: '3px 8px',
+          borderRadius: 999,
+          border: '1px solid rgba(124,58,237,0.16)',
+          background: 'rgba(245,243,255,0.82)',
+          color: '#6d28d9',
+          fontSize: '0.72rem',
+          fontWeight: 800,
+        }}>
+          {tag}
+        </span>
+      ))}
+    </div>
+  );
 }

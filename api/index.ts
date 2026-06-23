@@ -7582,7 +7582,7 @@ app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
   try {
     const posterId = getReq(req, 'creatorId');
     const { data, error } = await supabase.from('lc_rankings')
-      .select('id, type, subject_name, subject_type, subject_city, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, created_at')
+      .select('id, type, subject_name, subject_type, subject_city, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, reject_reason, created_at')
       .eq('poster_id', posterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -7633,6 +7633,7 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       subject_url: subjectUrl || null, content,
       author_name: profile.display_name, poster_id: posterId,
       status: 'pending',
+      reject_reason: null,
       initial_amount: amount, payment_proof: paymentProof || null,
       is_realname: !!profile.is_realname, real_name: null,
       files: files || [],
@@ -8217,6 +8218,7 @@ app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, a
     const patch: Record<string, unknown> = {
       status: 'approved',
       type: nextType,
+      reject_reason: null,
       boost_amount: nextType === 'red' ? r.initial_amount : 0,
       negative_boost_amount: 0,
       agree_count: 0,
@@ -8325,7 +8327,10 @@ app.put('/api/lc/admin/rankings/:id/edit', authMiddleware, adminMiddleware, asyn
 app.put('/api/lc/admin/rankings/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const rejectReason = cleanText(req.body?.rejectReason, 300);
-    await supabase.from('lc_rankings').update({ status: 'rejected' }).eq('id', req.params.id);
+    await supabase.from('lc_rankings').update({
+      status: 'rejected',
+      reject_reason: rejectReason || '请按审核要求补充或修改后重新发布',
+    }).eq('id', req.params.id);
     await logSecurityEvent(req, {
       action: 'admin_ranking_rejected',
       targetType: 'ranking',

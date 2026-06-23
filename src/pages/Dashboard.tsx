@@ -47,6 +47,7 @@ type MyRanking = {
   agree_count?: number;
   oppose_count?: number;
   status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+  reject_reason?: string | null;
   created_at: string;
 };
 
@@ -1675,6 +1676,7 @@ export default function Dashboard() {
                       title={item.subject_name}
                       meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · ${item.initial_amount === 0 ? '免费发布' : `初始 ${item.initial_amount} 契约币`} · 打榜${item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0)} 踩榜${item.negative_boost_amount || 0} 同意${item.agree_count ?? (item.type === 'black' ? item.likes || 0 : 0)} 反对${item.oppose_count ?? item.dislikes ?? 0} 离谱${item.joys || 0}`}
                       status={item.status}
+                      note={item.status === 'rejected' && item.reject_reason ? `打回原因：${item.reject_reason}` : undefined}
                       to="/rankings"
                       action={item.status === 'pending' && item.initial_amount === 0 ? (
                         <button onClick={() => withdrawRanking(item.id)} style={miniButtonStyle}>
@@ -2330,7 +2332,7 @@ const miniButtonStyle: React.CSSProperties = {
   fontWeight: 800,
 };
 
-function MineRow({ title, meta, status, to, action }: { title: string; meta: string; status: string; to: string; action?: React.ReactNode }) {
+function MineRow({ title, meta, status, to, action, note }: { title: string; meta: string; status: string; to: string; action?: React.ReactNode; note?: string }) {
   const statusMap: Record<string, { label: string; color: string; bg: string }> = {
     pending: { label: '待审核', color: '#925f18', bg: 'rgba(217,168,87,0.12)' },
     approved: { label: '已公开', color: '#15803d', bg: 'rgba(220,252,231,0.78)' },
@@ -2344,6 +2346,7 @@ function MineRow({ title, meta, status, to, action }: { title: string; meta: str
       <div style={{ minWidth: 0 }}>
         <h3 style={{ fontWeight: 800, fontSize: '0.92rem', color: INK, marginBottom: 5 }}>{title}</h3>
         <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.6 }}>{meta}</p>
+        {note && <p style={{ color: '#b91c1c', fontSize: '0.76rem', lineHeight: 1.55, marginTop: 4 }}>{note}</p>}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <span style={{ padding: '4px 8px', borderRadius: 999, background: item.bg, color: item.color, fontSize: '0.74rem', fontWeight: 800 }}>{item.label}</span>
