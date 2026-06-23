@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
@@ -13,7 +13,6 @@ import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePr
 
 const API  = '/api';
 const C    = '#fffdf8';
-const C2   = '#eef6ff';
 const GOLD = '#d9a857';
 const INK  = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
@@ -25,13 +24,18 @@ function getToken(): string {
   } catch { return ''; }
 }
 
-const TABS = [
-  { id: 'profile',      label: '资料',   icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0z M12 14c-3.3 0-6 1.8-6 4v1h12v-1c0-2.2-2.7-4-6-4z' },
-  { id: 'services',    label: '服务',   icon: 'M4 6h16M4 10h16M4 14h12 M8 18l2 2 4-4' },
-  { id: 'availability',label: '档期',   icon: 'M8 2v4M16 2v4M3 10h18M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2v-7' },
-  { id: 'portfolio',   label: '作品',   icon: 'M4 16l4.6-4.6 3.4 3.4L18 9l4 4V6a2 2 0 00-2-2H6a2 2 0 00-2 2v10a2 2 0 002 2h12 M6 7h.01' },
-  { id: 'posts',       label: '我的发布', icon: 'M4 5h16M4 12h16M4 19h10' },
+const DASHBOARD_NAV = [
+  { key: 'overview', label: '总览', path: '/dashboard' },
+  { key: 'profile', label: '公开资料', path: '/dashboard/profile' },
+  { key: 'services', label: '服务与作品', path: '/dashboard/services' },
+  { key: 'wallet', label: '钱包余额', path: '/wallet' },
+  { key: 'account', label: '账号安全', path: '/dashboard/account' },
+  { key: 'identity', label: '认证身份', path: '/certification' },
+  { key: 'posts', label: '我的发布', path: '/dashboard/posts' },
+  { key: 'referral', label: '邀请奖励', path: '/referrals' },
 ] as const;
+
+type DashboardSection = 'overview' | 'profile' | 'services' | 'account' | 'posts';
 
 type MyRanking = {
   id: string;
@@ -121,10 +125,11 @@ type AvailabilityImportDraft = {
 };
 
 const card: React.CSSProperties = {
-  backgroundColor: '#fffaf2',
-  border: '1px solid rgba(201,146,46,0.22)',
-  borderRadius: 16, padding: 24,
-  boxShadow: '0 14px 34px rgba(31,41,55,0.06)',
+  backgroundColor: '#ffffff',
+  border: '1px solid rgba(31,41,55,0.08)',
+  borderRadius: 8,
+  padding: 16,
+  boxShadow: 'none',
 };
 
 const inputStyle: React.CSSProperties = {
@@ -225,8 +230,33 @@ function hasServiceSetup(form: ProfileForm, services: Service[], rolePreferences
     || !!form.contact_intent_amount.trim();
 }
 
+function dashboardSectionFromPath(pathname: string): DashboardSection {
+  if (pathname === '/dashboard/profile') return 'profile';
+  if (pathname === '/dashboard/services') return 'services';
+  if (pathname === '/dashboard/account') return 'account';
+  if (pathname === '/dashboard/posts') return 'posts';
+  return 'overview';
+}
+
+function getProfileCompletion(form: ProfileForm, services: Service[], portfolio: Portfolio[], rolePreferences: RolePreferenceDraft[]) {
+  const checks = [
+    form.display_name.trim(),
+    form.city.trim(),
+    form.bio.trim(),
+    form.tags.trim(),
+    form.avatar.trim(),
+    form.available_cities.trim(),
+    services.length > 0,
+    portfolio.length > 0,
+    rolePreferences.length > 0,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const activeSection = dashboardSectionFromPath(pathname);
   const [creator, setCreator]   = useState<Creator | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
@@ -236,7 +266,6 @@ export default function Dashboard() {
   const [scripts, setScripts] = useState<ScriptCatalogItem[]>([]);
   const [rolePreferences, setRolePreferences] = useState<RolePreferenceDraft[]>([]);
   const [roleDraft, setRoleDraft] = useState<RolePreferenceDraft>(() => blankRolePreferenceDraft());
-  const [tab, setTab]           = useState('profile');
   const [saving, setSaving]     = useState(false);
   const [msg, setMsg]           = useState('');
   const [error, setError]       = useState('');
@@ -849,23 +878,6 @@ export default function Dashboard() {
     </div>
   );
 
-  const tabBtn = (id: string, label: string, iconPath: string) => (
-    <button key={id} className="dashboard-tab-btn" onClick={() => setTab(id)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '11px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
-        fontWeight: 600, fontSize: '0.875rem', textAlign: 'left', width: '100%',
-        background: tab === id ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'transparent',
-        color: tab === id ? INK : 'rgba(71,85,105,0.74)',
-        transition: 'all 0.2s',
-      }}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d={iconPath} />
-      </svg>
-      {label}
-    </button>
-  );
-
   const profileAvatarUrl = form.avatar || generatedAvatarDataUrl(form.display_name || creator.display_name, creator.id);
   const phoneVerified = !!creator.phone_verified_at;
   const emailVerified = !!creator.email_verified_at;
@@ -876,6 +888,13 @@ export default function Dashboard() {
   const availableItems = availItems.filter(item => !item.is_booked);
   const busyItems = availItems.filter(item => item.is_booked);
   const busyDateSet = new Set(busyItems.map(item => item.date));
+  const profileCompletion = getProfileCompletion(form, services, portfolio, rolePreferences);
+  const pendingItems = [
+    !creator.is_visible,
+    myRankings.some(item => item.status === 'pending'),
+    myCommissions.some(item => item.status === 'pending'),
+    myCarpools.some(item => item.status === 'pending'),
+  ].filter(Boolean).length;
 
   return (
     <div className="dashboard-page" style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
@@ -927,10 +946,10 @@ export default function Dashboard() {
               <button type="button" onClick={() => { closeOnboarding(); navigate('/rankings'); }} style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.22)', background: '#fff', color: '#925f18', fontWeight: 850, cursor: 'pointer' }}>
                 看红黑榜
               </button>
-              <button type="button" onClick={() => { closeOnboarding(); setTab('services'); setOffersServices(true); }} style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.22)', background: '#fff', color: '#925f18', fontWeight: 850, cursor: 'pointer' }}>
+              <button type="button" onClick={() => { closeOnboarding(); setOffersServices(true); navigate('/dashboard/services'); }} style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.22)', background: '#fff', color: '#925f18', fontWeight: 850, cursor: 'pointer' }}>
                 我要提供服务
               </button>
-              <button type="button" onClick={() => { closeOnboarding(); setTab('profile'); }} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD}, #c9922e)`, color: INK, fontWeight: 900, cursor: 'pointer' }}>
+              <button type="button" onClick={() => { closeOnboarding(); navigate('/dashboard/profile'); }} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD}, #c9922e)`, color: INK, fontWeight: 900, cursor: 'pointer' }}>
                 设置头像昵称
               </button>
             </div>
@@ -938,53 +957,31 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="dashboard-hero" style={{ background: `linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '24px 20px' }}>
-        <div className="dashboard-hero-inner" style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div className="dashboard-identity" style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-            <div className="dashboard-avatar-stack" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <img className="dashboard-identity-avatar" src={profileAvatarUrl} alt="" style={{ width: 54, height: 54, borderRadius: 16, objectFit: 'cover', border: '2px solid rgba(217,168,87,0.32)', background: '#fffaf2', boxShadow: '0 10px 24px rgba(31,41,55,0.08)' }} />
-              <div className="dashboard-avatar-action" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <ImageUpload
-                  onUploaded={handleAvatarUploaded}
-                  token={token}
-                  api={API}
-                  scope="avatar"
-                  label="更换头像"
-                  variant="compact"
-                  hidePreview
-                />
-                <InfoTip>头像上传后会提交审核，通过后显示在公开页；请只上传可公开图片。</InfoTip>
-              </div>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的主页</h1>
-              <p style={{ fontSize: '0.85rem', color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{creator.display_name}</p>
-              <div className="dashboard-identity-badges">
-                <StatusBadge tone={contactVerified ? 'ok' : 'warn'}>{contactVerified ? '已验证' : '待验证'}</StatusBadge>
-                <StatusBadge tone={creator.is_realname ? 'gold' : 'muted'}>{creator.is_realname ? '实名' : '未实名'}</StatusBadge>
-                {creator.city && <StatusBadge tone="info">{creator.city}</StatusBadge>}
-              </div>
-            </div>
-          </div>
-          <div className="dashboard-actions" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <Link to={`/explore/${creator.id}`}
-              style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.28)', color: '#925f18', background: 'rgba(255,255,255,0.72)', fontSize: '0.82rem', textDecoration: 'none', fontWeight: 600 }}>
-              查看公开页 →
-            </Link>
-            <Link to="/referrals"
-              style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.28)', color: '#925f18', background: 'rgba(255,255,255,0.72)', fontSize: '0.82rem', textDecoration: 'none', fontWeight: 600 }}>
-              我的邀请
-            </Link>
-            <button onClick={logout}
-              style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(220,38,38,0.22)', background: 'rgba(254,242,242,0.78)', color: '#b91c1c', cursor: 'pointer', fontSize: '0.82rem' }}>
-              退出
-            </button>
-          </div>
+      <div className="dashboard-shell-top" style={{ padding: '18px 22px 0' }}>
+        <div className="dashboard-topbar" style={{
+          maxWidth: 1396,
+          minHeight: 52,
+          margin: '0 auto',
+          padding: '0 14px',
+          borderRadius: 8,
+          border: '1px solid rgba(31,41,55,0.08)',
+          background: '#ffffff',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+        }}>
+          <strong style={{ fontFamily: 'var(--font-serif)', fontSize: 18, fontWeight: 900, color: INK }}>灵契</strong>
+          <span style={{ flex: 1, minWidth: 0, color: '#275389', fontSize: 13, fontWeight: 900 }}>个人主页后台</span>
+          <Link to={`/explore/${creator.id}`} className="dashboard-top-action" style={{ height: 36, display: 'inline-flex', alignItems: 'center', padding: '0 14px', borderRadius: 8, background: '#275389', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 900 }}>
+            预览公开页
+          </Link>
+          <button onClick={logout} className="dashboard-top-action" style={{ height: 36, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(185,28,28,0.18)', background: '#fff1f2', color: '#b91c1c', cursor: 'pointer', fontSize: 13, fontWeight: 900 }}>
+            退出
+          </button>
         </div>
       </div>
 
-      <div className="dashboard-body" style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
+      <div className="dashboard-body" style={{ maxWidth: 1396, margin: '0 auto', padding: '14px 22px 80px' }}>
 
         {error && (
           <div style={{ padding: '12px 16px', backgroundColor: 'rgba(254,242,242,0.92)', border: '1px solid rgba(220,38,38,0.24)', borderRadius: 10, fontSize: '0.875rem', color: '#b91c1c', marginBottom: 20 }}>
@@ -1007,20 +1004,97 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="dashboard-layout" style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+        <div className="dashboard-layout" style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
 
-          {/* ── 左侧 Tab 栏 ── */}
-          <div className="dashboard-tabs" style={{ width: 180, flexShrink: 0, ...card, padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {TABS.map(t => tabBtn(t.id, t.label, t.icon))}
+          {/* ── 左侧导航 ── */}
+          <div className="dashboard-tabs" style={{ width: 248, minHeight: 760, flexShrink: 0, ...card, padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="dashboard-side-head" style={{ display: 'grid', gap: 6, paddingBottom: 8 }}>
+              <p style={{ color: INK, fontSize: 14, fontWeight: 900, lineHeight: 1 }}>主页管理</p>
+              <p style={{ color: 'rgba(71,85,105,0.70)', fontSize: 12, fontWeight: 700, lineHeight: 1.35 }}>
+                {form.display_name || creator.display_name}{services.length > 0 ? ` · ${services.slice(0, 2).map(item => serviceCategoryLabel(item.service_type)).join(' / ')}` : ' · 普通用户'}
+              </p>
+            </div>
+            <nav className="dashboard-side-nav" style={{ display: 'grid', gap: 4, paddingTop: 8 }}>
+              {DASHBOARD_NAV.map(item => {
+                const active = item.key === 'wallet'
+                  ? pathname === '/wallet'
+                  : item.key === 'identity'
+                    ? pathname === '/certification'
+                    : item.key === 'referral'
+                      ? pathname === '/referrals'
+                      : item.key === activeSection;
+                return (
+                  <Link key={item.key} to={item.path} className="dashboard-tab-btn" style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    minHeight: 38,
+                    padding: '0 10px',
+                    borderRadius: 8,
+                    border: active ? '1px solid rgba(39,83,137,0.14)' : '1px solid transparent',
+                    background: active ? '#EEF6FF' : 'transparent',
+                    color: active ? '#275389' : 'rgba(71,85,105,0.70)',
+                    textDecoration: 'none',
+                    fontSize: 13,
+                    fontWeight: active ? 900 : 750,
+                  }}>
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
           </div>
 
           {/* ── 主内容区 ── */}
           <div className="dashboard-main" style={{ flex: 1, minWidth: 0 }}>
 
+            {activeSection === 'overview' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <PageIntro
+                  eyebrow="HOME BASE"
+                  title="个人主页"
+                  subtitle="主屏只放公开展示和经营状态；账号、余额、安全都拆到独立页。"
+                  action={<Link to="/dashboard/services" style={primaryActionStyle}>发布新服务</Link>}
+                />
+                <div className="dashboard-metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                  <MetricCard label="资料完整度" value={`${profileCompletion}%`} tone="blue" />
+                  <MetricCard label="可展示服务" value={`${services.length} 项`} tone="green" />
+                  <MetricCard label="待处理" value={`${pendingItems} 件`} tone="gold" />
+                </div>
+                <section style={{ ...card, minHeight: 198 }}>
+                  <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 12 }}>今日处理</h2>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <OverviewRow label="公开页" value={creator.is_visible ? '可访问' : '资料审核中'} tone={creator.is_visible ? 'green' : 'gold'} />
+                    <OverviewRow label="服务身份" value={services.length > 0 ? `${services.length} 项` : '未添加'} tone={services.length > 0 ? 'green' : 'red'} />
+                    <OverviewRow label="本周档期" value={`${availableItems.length} 天可约`} tone={availableItems.length > 0 ? 'green' : 'gray'} />
+                  </div>
+                </section>
+                <div className="dashboard-quick-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                  {[
+                    { title: '公开资料', copy: '编辑别人看到的主页信息。', to: '/dashboard/profile' },
+                    { title: '服务与作品', copy: '维护摄影、委托和作品集。', to: '/dashboard/services' },
+                    { title: '我的发布', copy: '查看发布内容与审核状态。', to: '/dashboard/posts' },
+                  ].map(item => (
+                    <Link key={item.title} to={item.to} style={{ ...card, minHeight: 110, display: 'grid', gap: 10, textDecoration: 'none' }}>
+                      <span style={{ color: INK, fontSize: 15, fontWeight: 900 }}>{item.title}</span>
+                      <span style={{ color: MUTED, fontSize: 13, fontWeight: 700, lineHeight: 1.55 }}>{item.copy}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 资料 */}
-            {tab === 'profile' && (
+            {activeSection === 'profile' && (
               <div className="dashboard-card profile-editor-card" style={card}>
-                <h2 style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 24, color: INK }}>编辑资料</h2>
+                <h2 style={{ fontWeight: 900, fontSize: '1.05rem', marginBottom: 16, color: INK }}>公开主页资料</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 8, border: '1px solid rgba(31,41,55,0.08)', background: '#FFFDF8', marginBottom: 14 }}>
+                  <img src={profileAvatarUrl} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(39,83,137,0.16)', background: '#EEF6FF' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: INK, fontSize: 13, fontWeight: 900, marginBottom: 5 }}>公开头像</p>
+                    <p style={{ color: MUTED, fontSize: 12, fontWeight: 650, lineHeight: 1.5 }}>头像上传后会提交审核，通过后显示在公开页。</p>
+                  </div>
+                  <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="更换头像" variant="compact" hidePreview />
+                </div>
                 <div className="dashboard-panel account-panel" style={{
                   padding: '16px',
                   borderRadius: 14,
@@ -1282,9 +1356,92 @@ export default function Dashboard() {
               </div>
             )}
 
+            {activeSection === 'account' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <PageIntro
+                  eyebrow="SECURITY"
+                  title="账号与安全"
+                  subtitle="手机号、邮箱、密码和登录状态单独收纳，不再挤在公开主页资料首屏。"
+                  action={contactVerified ? <button type="button" onClick={() => setShowPasswordForm(v => !v)} style={darkActionStyle}>{creator.has_password ? '修改密码' : '设置密码'}</button> : null}
+                />
+                <div className="dashboard-metric-grid account-security-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                  <SecurityCard title="手机号" value={creator.phone || '未绑定'} status={phoneVerified ? '已验证' : '待验证'} tone={phoneVerified ? 'green' : 'gold'} />
+                  <SecurityCard title="邮箱" value={creator.email || '未绑定'} status={emailVerified ? '已验证' : '待验证'} tone={emailVerified ? 'green' : 'gold'} />
+                  <SecurityCard title="网页登录密码" value={creator.has_password ? '已设置' : '未设置'} status={creator.has_password ? '可用' : '建议设置'} tone={creator.has_password ? 'green' : 'red'} />
+                </div>
+                <section style={card}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+                    <div>
+                      <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 5 }}>账号操作</h2>
+                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>登录账号是手机号或邮箱；昵称只用于公开展示。</p>
+                    </div>
+                    <div className="account-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      <button type="button" onClick={() => setShowAccountBindForm(v => !v)} style={secondaryActionStyle}>
+                        {showAccountBindForm ? '收起' : phoneVerified ? '更换手机号' : '绑定手机号'}
+                      </button>
+                      <button type="button" onClick={() => setShowPasswordForm(v => !v)} disabled={!contactVerified} style={{ ...secondaryActionStyle, opacity: contactVerified ? 1 : 0.56, cursor: contactVerified ? 'pointer' : 'not-allowed' }}>
+                        {showPasswordForm ? '收起' : creator.has_password ? '修改密码' : '设置密码'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {accountBindExpanded && (
+                    <div className="account-bind-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 12 }}>
+                      <input type="tel" value={bindPhone} onChange={e => setBindPhone(e.target.value)} placeholder={phoneVerified ? '输入新的手机号' : '绑定手机号'} style={inputStyle} />
+                      <input type="text" value={bindCode} onChange={e => setBindCode(e.target.value)} placeholder="短信验证码" style={inputStyle} />
+                      <button type="button" onClick={sendBindPhoneCode} disabled={sendingBindCode} style={secondaryActionStyle}>
+                        {sendingBindCode ? '发送中...' : '发送验证码'}
+                      </button>
+                      <button type="button" onClick={bindPhoneToAccount} disabled={bindingPhone} style={primaryButtonStyle}>
+                        {bindingPhone ? '保存中...' : phoneVerified ? '保存新手机号' : '绑定手机号'}
+                      </button>
+                    </div>
+                  )}
+
+                  {passwordExpanded && (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      {!recentlyVerified && contactVerified && (
+                        <div className="password-verify-grid" style={{ display: 'grid', gridTemplateColumns: '112px minmax(160px, 1fr) auto', gap: 10 }}>
+                          <select value={passwordVerifyType} onChange={e => setPasswordVerifyType(e.target.value as 'phone' | 'email')} style={inputStyle}>
+                            <option value="email" disabled={!creator.email}>邮箱</option>
+                            <option value="phone" disabled={!creator.phone}>手机号</option>
+                          </select>
+                          <input type="text" value={passwordVerifyCode} onChange={e => setPasswordVerifyCode(e.target.value)} placeholder="修改密码验证码" style={inputStyle} />
+                          <button type="button" onClick={sendPasswordVerifyCode} disabled={sendingPasswordVerifyCode} style={secondaryActionStyle}>
+                            {sendingPasswordVerifyCode ? '发送中...' : '发送改密验证码'}
+                          </button>
+                        </div>
+                      )}
+                      <div className="password-set-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10 }}>
+                        <input type="password" value={bindPassword} onChange={e => setBindPassword(e.target.value)} placeholder={creator.has_password ? '输入新密码可修改' : '设置网页登录密码'} style={inputStyle} />
+                        <button type="button" onClick={setWebPassword} disabled={settingPassword || !contactVerified} style={{ ...primaryButtonStyle, opacity: contactVerified ? 1 : 0.56, cursor: settingPassword ? 'wait' : contactVerified ? 'pointer' : 'not-allowed' }}>
+                          {settingPassword ? '保存中...' : creator.has_password ? '修改密码' : '设置密码'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </section>
+                <section style={{ ...card, minHeight: 150 }}>
+                  <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 12 }}>登录设备</h2>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <OverviewRow label="当前浏览器" value="当前会话" tone="green" />
+                    <OverviewRow label="异常处理" value="如发现账号异常，请先修改密码" tone="gray" />
+                  </div>
+                </section>
+                {msg && <p style={{ color: '#15803d', fontSize: 13, fontWeight: 800 }}>{msg}</p>}
+                {error && <p style={{ color: '#b91c1c', fontSize: 13, fontWeight: 800 }}>{error}</p>}
+              </div>
+            )}
+
             {/* 服务 */}
-            {tab === 'services' && (
+            {activeSection === 'services' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <PageIntro
+                  eyebrow="SERVICES"
+                  title="服务与作品"
+                  subtitle="服务身份、可约档期和作品集集中在这里，避免大厅和个人页口径不一致。"
+                  action={<button type="button" onClick={() => setOffersServices(true)} style={darkActionStyle}>新增服务</button>}
+                />
                 <div className="dashboard-panel service-choice-panel" style={{ ...card, padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                     <div>
@@ -1535,7 +1692,7 @@ export default function Dashboard() {
             )}
 
             {/* 档期 */}
-            {tab === 'availability' && (
+            {activeSection === 'services' && (
               <div style={{ display: 'grid', gap: 16 }}>
                 <div style={card}>
                   <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 12, color: INK, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -1638,7 +1795,7 @@ export default function Dashboard() {
             )}
 
             {/* 作品集 */}
-            {tab === 'portfolio' && (
+            {activeSection === 'services' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {portfolio.length > 0 && (
                   <div style={card}>
@@ -1668,8 +1825,14 @@ export default function Dashboard() {
               </div>
             )}
 
-            {tab === 'posts' && (
+            {activeSection === 'posts' && (
               <div style={{ display: 'grid', gap: 16 }}>
+                <PageIntro
+                  eyebrow="CONTENT"
+                  title="我的发布"
+                  subtitle="红黑白、委托、拼车和攻略等内容按状态归档。"
+                  action={<Link to="/rankings/new" style={darkActionStyle}>发布内容</Link>}
+                />
                 <MineSection title="红黑白榜" emptyText="还没有发布过口碑">
                   {myRankings.map(item => (
                     <MineRow key={item.id}
@@ -1967,6 +2130,9 @@ export default function Dashboard() {
           background: rgba(201,146,46,0.24);
           border-radius: 999px;
         }
+        .profile-editor-card > .account-panel {
+          display: none;
+        }
 
         @media (max-height: 720px) and (min-width: 761px) {
           .onboarding-backdrop {
@@ -2114,11 +2280,11 @@ export default function Dashboard() {
           .dashboard-tabs {
             width: 100% !important;
             max-width: none !important;
+            min-height: 0 !important;
             position: sticky !important;
             top: 0 !important;
             z-index: 20 !important;
-            display: flex !important;
-            flex-direction: row !important;
+            display: block !important;
             gap: 8px !important;
             overflow-x: auto !important;
             padding: 8px !important;
@@ -2129,6 +2295,20 @@ export default function Dashboard() {
             -webkit-overflow-scrolling: touch !important;
           }
           .dashboard-tabs::-webkit-scrollbar {
+            display: none;
+          }
+          .dashboard-side-head {
+            display: none !important;
+          }
+          .dashboard-side-nav {
+            display: flex !important;
+            gap: 8px !important;
+            overflow-x: auto !important;
+            padding: 0 !important;
+            -webkit-overflow-scrolling: touch !important;
+            scrollbar-width: none !important;
+          }
+          .dashboard-side-nav::-webkit-scrollbar {
             display: none;
           }
           .dashboard-tab-btn {
@@ -2145,6 +2325,11 @@ export default function Dashboard() {
           }
           .dashboard-main {
             width: 100% !important;
+          }
+          .dashboard-metric-grid,
+          .dashboard-quick-grid,
+          .account-security-grid {
+            grid-template-columns: 1fr !important;
           }
           .dashboard-card,
           .dashboard-panel,
@@ -2263,10 +2448,6 @@ export default function Dashboard() {
 
 type StatusTone = 'ok' | 'warn' | 'danger' | 'gold' | 'info' | 'muted';
 
-function StatusBadge({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
-  return <span className={`status-badge ${tone}`}>{children}</span>;
-}
-
 function EmojiStatus({
   icon,
   tone,
@@ -2331,6 +2512,113 @@ const miniButtonStyle: React.CSSProperties = {
   fontSize: '0.76rem',
   fontWeight: 800,
 };
+
+const primaryActionStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minHeight: 38,
+  padding: '0 14px',
+  borderRadius: 8,
+  border: 'none',
+  background: `linear-gradient(135deg, ${GOLD}, #c9922e)`,
+  color: INK,
+  textDecoration: 'none',
+  fontSize: 13,
+  fontWeight: 900,
+  cursor: 'pointer',
+};
+
+const darkActionStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minHeight: 38,
+  padding: '0 14px',
+  borderRadius: 8,
+  border: 'none',
+  background: INK,
+  color: '#fffdf8',
+  textDecoration: 'none',
+  fontSize: 13,
+  fontWeight: 900,
+  cursor: 'pointer',
+};
+
+const secondaryActionStyle: React.CSSProperties = {
+  minHeight: 38,
+  padding: '0 14px',
+  border: '1px solid rgba(201,146,46,0.24)',
+  borderRadius: 8,
+  background: '#fffaf2',
+  color: '#925f18',
+  fontSize: 13,
+  fontWeight: 900,
+  cursor: 'pointer',
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  ...primaryActionStyle,
+  minHeight: 42,
+};
+
+type ToneName = 'blue' | 'green' | 'gold' | 'red' | 'gray';
+
+const toneStyles: Record<ToneName, { bg: string; border: string; color: string }> = {
+  blue: { bg: '#EEF6FF', border: 'rgba(39,83,137,0.16)', color: '#275389' },
+  green: { bg: '#ECFDF3', border: 'rgba(22,101,52,0.14)', color: '#166534' },
+  gold: { bg: '#FFF8E8', border: 'rgba(217,168,87,0.26)', color: '#8A5A19' },
+  red: { bg: '#FFF1F2', border: 'rgba(159,18,57,0.12)', color: '#9F1239' },
+  gray: { bg: '#F8FAFC', border: 'rgba(31,41,55,0.08)', color: 'rgba(71,85,105,0.72)' },
+};
+
+function PageIntro({ eyebrow, title, subtitle, action }: { eyebrow: string; title: string; subtitle: string; action?: React.ReactNode }) {
+  return (
+    <section style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '2px 0 4px' }}>
+      <div style={{ flex: 1, minWidth: 0, display: 'grid', gap: 5 }}>
+        <span style={{ color: GOLD, fontSize: 11, fontWeight: 900, lineHeight: 1 }}>{eyebrow}</span>
+        <h1 style={{ margin: 0, color: INK, fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 900, lineHeight: 1.1 }}>{title}</h1>
+        <p style={{ margin: 0, color: MUTED, fontSize: 13, fontWeight: 700, lineHeight: 1.45 }}>{subtitle}</p>
+      </div>
+      {action}
+    </section>
+  );
+}
+
+function MetricCard({ label, value, tone }: { label: string; value: string; tone: ToneName }) {
+  const colors = toneStyles[tone];
+  return (
+    <section style={{ ...card, minHeight: 94, background: colors.bg }}>
+      <p style={{ marginBottom: 9, color: MUTED, fontSize: 12, fontWeight: 800, lineHeight: 1 }}>{label}</p>
+      <strong style={{ color: INK, fontSize: 24, fontWeight: 950, lineHeight: 1 }}>{value}</strong>
+    </section>
+  );
+}
+
+function OverviewRow({ label, value, tone }: { label: string; value: string; tone: ToneName }) {
+  const colors = toneStyles[tone];
+  return (
+    <div style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ flex: 1, color: INK, fontSize: 13, fontWeight: 800, lineHeight: 1.25 }}>{label}</span>
+      <span style={{ height: 28, display: 'inline-flex', alignItems: 'center', padding: '0 10px', borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.bg, color: colors.color, fontSize: 12, fontWeight: 900 }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SecurityCard({ title, value, status, tone }: { title: string; value: string; status: string; tone: ToneName }) {
+  const colors = toneStyles[tone];
+  return (
+    <section style={{ ...card, minHeight: 112, display: 'grid', gap: 8 }}>
+      <p style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{title}</p>
+      <strong style={{ color: INK, fontSize: 17, fontWeight: 950, overflowWrap: 'anywhere' }}>{value}</strong>
+      <span style={{ justifySelf: 'start', height: 26, display: 'inline-flex', alignItems: 'center', padding: '0 9px', borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.bg, color: colors.color, fontSize: 12, fontWeight: 900 }}>
+        {status}
+      </span>
+    </section>
+  );
+}
 
 function MineRow({ title, meta, status, to, action, note }: { title: string; meta: string; status: string; to: string; action?: React.ReactNode; note?: string }) {
   const statusMap: Record<string, { label: string; color: string; bg: string }> = {

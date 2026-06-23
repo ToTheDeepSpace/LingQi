@@ -47,8 +47,9 @@ const MPS_RECORD_URL = 'https://beian.mps.gov.cn/#/query/webSearch?code=13310202
 
 function AppLayout() {
   const { pathname } = useLocation();
-  const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new' && pathname !== '/guides/new';
-  const showFooter = pathname !== '/login';
+  const isDashboardRoute = pathname === '/dashboard' || pathname.startsWith('/dashboard/');
+  const showNavbar = !isDashboardRoute && pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new' && pathname !== '/guides/new';
+  const showFooter = pathname !== '/login' && !isDashboardRoute;
 
   return (
     <>
@@ -61,6 +62,10 @@ function AppLayout() {
           <Route path="/explore/:id" element={<CreatorProfile />} />
           <Route path="/login" element={<Login />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/profile" element={<Dashboard />} />
+          <Route path="/dashboard/services" element={<Dashboard />} />
+          <Route path="/dashboard/account" element={<Dashboard />} />
+          <Route path="/dashboard/posts" element={<Dashboard />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/moderation" element={<CommunityModeration />} />
           <Route path="/rankings" element={<Rankings />} />
