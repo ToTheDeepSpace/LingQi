@@ -149,7 +149,7 @@ function SiteFooter() {
             <FooterLink to="/rankings">红黑白榜</FooterLink>
             <FooterLink to="/reputation/city">城市口碑</FooterLink>
             <FooterLink to="/dm-wall">爱D墙 / 店家</FooterLink>
-            <FooterLink to="/scripts">剧本口碑</FooterLink>
+            <FooterLink to="/scripts">角色点评</FooterLink>
             <FooterLink to="/guides">攻略交易</FooterLink>
             <FooterLink to="/wallet">我的契约币</FooterLink>
             <FooterLink to="/referrals">我的邀请</FooterLink>

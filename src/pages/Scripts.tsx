@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import EntityTags from '../components/EntityTags';
+import { ReputationBadge, ReputationButton, ReputationHubShell, ReputationPanel } from '../components/ReputationHubChrome';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import type { ScriptCatalogItem, ScriptRoleCatalogItem } from '../types';
 
 const API = '/api';
-const BG = '#fffdf8';
 const INK = '#1f2937';
 const GOLD = '#d9a857';
 
@@ -232,26 +232,31 @@ export default function Scripts() {
   };
 
   return (
-    <main style={{ minHeight: '100vh', background: BG, color: INK, padding: '42px 18px 72px' }}>
-      <div style={{ maxWidth: 1180, margin: '0 auto' }}>
-        <header style={{ marginBottom: 24 }}>
-          <p style={{ margin: 0, color: GOLD, fontWeight: 900, letterSpacing: 0 }}>剧本口碑</p>
-          <h1 style={{ margin: '8px 0 10px', fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 4vw, 3.8rem)', letterSpacing: 0 }}>
-            剧本、角色、标签，都会沉淀成口碑。
+    <ReputationHubShell active="roles">
+      <section style={rolesHeroStyle}>
+        <ReputationPanel style={heroCopyStyle}>
+          <ReputationBadge>红黑榜 / 角色点评</ReputationBadge>
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2.1rem, 4vw, 2.7rem)', lineHeight: 1.08 }}>
+            角色点评
           </h1>
-          <p style={{ margin: 0, maxWidth: 800, color: 'rgba(71,85,105,0.78)', lineHeight: 1.8 }}>
-            剧本库来自剧司辰；灵契负责记录玩家对剧本、玩家角色、DM、场控、NPC 和助演角色的评分理由与共识标签。
+          <p style={{ margin: 0, maxWidth: 760, color: 'rgba(31,41,55,0.76)', lineHeight: 1.65, fontSize: 15, fontWeight: 600 }}>
+            剧本里的玩家角色、DM、场控、NPC、助演都可以评分，也都可以被打 tag。评分写理由，tag 让社区慢慢把共识投出来。
           </p>
-        </header>
+        </ReputationPanel>
+        <aside style={searchCardStyle}>
+          <strong style={{ color: '#a66a1f', fontSize: 13 }}>搜剧本 / 角色</strong>
+          <input
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="琳琅 / 祝魇 / 场控"
+            style={{ width: '100%', boxSizing: 'border-box', border: '1px solid rgba(166,106,31,0.16)', borderRadius: 8, padding: '12px 13px', fontSize: 14, background: '#fff' }}
+          />
+          <ReputationButton to="/scripts/contribute" tone="gold">维护剧本库</ReputationButton>
+        </aside>
+      </section>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 18, alignItems: 'start' }}>
-          <section style={panelStyle}>
-            <input
-              value={query}
-              onChange={event => setQuery(event.target.value)}
-              placeholder="搜索剧本名 / 角色名"
-              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid rgba(148,163,184,0.28)', borderRadius: 12, padding: '12px 13px', fontSize: 14, marginBottom: 12 }}
-            />
+      <div style={rolesBodyStyle}>
+          <ReputationPanel>
             <div style={{ display: 'grid', gap: 10, maxHeight: '68vh', overflow: 'auto' }}>
               {visibleScripts.map(script => (
                 <button
@@ -274,10 +279,10 @@ export default function Scripts() {
                 </button>
               ))}
             </div>
-          </section>
+          </ReputationPanel>
 
           {selected && (
-            <section style={panelStyle}>
+            <ReputationPanel style={{ minWidth: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
                 <div>
                   <h2 style={{ margin: 0, fontSize: 28 }}>{selected.name}</h2>
@@ -410,23 +415,18 @@ export default function Scripts() {
                   {!ratings?.ratings?.length && <p style={{ color: 'rgba(71,85,105,0.62)' }}>还没有短评。</p>}
                 </div>
               </div>
-            </section>
+            </ReputationPanel>
           )}
-        </div>
       </div>
-    </main>
+    </ReputationHubShell>
   );
 }
-
-const panelStyle: React.CSSProperties = {
-  border: '1px solid rgba(148,163,184,0.18)',
-  borderRadius: 16,
-  background: 'rgba(255,255,255,0.88)',
-  padding: 18,
-  boxShadow: '0 16px 44px rgba(31,41,55,0.07)',
-};
 
 const subheadStyle: React.CSSProperties = { margin: '0 0 10px', fontSize: 15, color: '#334155' };
 const roleMetaStyle: React.CSSProperties = { color: 'rgba(71,85,105,0.62)', fontSize: 12, fontWeight: 900 };
 const inputStyle: React.CSSProperties = { border: '1px solid rgba(148,163,184,0.28)', borderRadius: 12, padding: '10px 12px', fontSize: 14, color: INK, background: '#fff' };
 const reviewStyle: React.CSSProperties = { border: '1px solid rgba(148,163,184,0.18)', borderRadius: 12, padding: 12, background: '#fff' };
+const rolesHeroStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 18, alignItems: 'stretch' };
+const heroCopyStyle: React.CSSProperties = { display: 'grid', gap: 14, alignContent: 'center' };
+const searchCardStyle: React.CSSProperties = { borderRadius: 14, background: '#fff8e8', border: '1px solid rgba(217,168,87,0.24)', padding: 18, display: 'grid', gap: 12, alignContent: 'start' };
+const rolesBodyStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 18, alignItems: 'start' };

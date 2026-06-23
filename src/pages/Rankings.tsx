@@ -12,6 +12,7 @@ import {
 } from '../lib/postLoginFlow';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal, { type ReportTargetType } from '../components/ReportModal';
+import { ReputationBadge, ReputationButton, ReputationHubShell, ReputationPanel, ReputationStat } from '../components/ReputationHubChrome';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import { cityReputationTitle } from '../lib/reputationNaming';
 
@@ -168,6 +169,51 @@ const inputStyle: React.CSSProperties = {
   backgroundColor: '#fffdf8', color: '#1f2937',
   fontSize: '0.875rem', boxSizing: 'border-box',
 };
+
+const rankHeroStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+  gap: 18,
+  alignItems: 'stretch',
+};
+
+const rankHeroCopyStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 16,
+  alignContent: 'center',
+  background: 'linear-gradient(135deg, #fff8e8 0%, #eef6ff 100%)',
+  borderColor: 'rgba(166,106,31,0.13)',
+  overflow: 'hidden',
+};
+
+const walletChipStyle: React.CSSProperties = {
+  minHeight: 42,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 8,
+  border: '1px solid rgba(217,168,87,0.28)',
+  background: '#fff8e8',
+  color: GOLD,
+  padding: '0 14px',
+  textDecoration: 'none',
+  fontSize: 13,
+  fontWeight: 900,
+};
+
+function hubToggleStyle(active: boolean, color: string): React.CSSProperties {
+  return {
+    minHeight: 38,
+    borderRadius: 999,
+    border: `1px solid ${active ? color : 'rgba(31,41,55,0.10)'}`,
+    background: active ? color : '#fff',
+    color: active ? '#fff' : 'rgba(31,41,55,0.72)',
+    padding: '0 12px',
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: 'pointer',
+  };
+}
 
 function getAuth(): AuthSession | null {
   const data = readStoredCreatorAuth();
@@ -1336,35 +1382,44 @@ export default function Rankings() {
           </div>
         </div>
       )}
-      <div style={{
-        background: 'linear-gradient(135deg, #fffaf2 0%, #fffdf8 64%, #f7ead7 100%)',
-        borderBottom: '1px solid rgba(166,106,31,0.12)',
-        padding: '26px 20px 18px',
-      }}>
-        <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-          <div>
-            <div style={{ width: 44, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, marginBottom: 12 }} />
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.5rem, 3.4vw, 2.18rem)', marginBottom: 7 }}>红黑榜事件簿</h1>
-            <p style={{ color: 'rgba(71,85,105,0.80)', fontSize: '0.92rem' }}>
-              这里排的是“发生过的事”，不是给某个人盖棺定论。
+      <ReputationHubShell active="rankings" cityTitle={cityReputationLabel} cityHref={cityReputationHref}>
+        <section style={rankHeroStyle}>
+          <ReputationPanel style={rankHeroCopyStyle}>
+            <ReputationBadge tone="dark">灵契口碑主入口</ReputationBadge>
+            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2.35rem, 5vw, 3.2rem)', lineHeight: 1.05 }}>
+              红黑榜
+            </h1>
+            <p style={{ margin: 0, maxWidth: 760, color: 'rgba(31,41,55,0.78)', lineHeight: 1.65, fontSize: 16, fontWeight: 600 }}>
+              夸人、避雷、吐槽、记录一段具体经历。先写事实和证据，再由审核把它沉淀成对象档案、城市口碑和角色点评。
             </p>
-          </div>
-          {auth && (
-            <Link to="/wallet" style={{
-              padding: '12px 20px', borderRadius: 10,
-              border: '1px solid rgba(201,146,46,0.25)', background: 'rgba(201,146,46,0.06)',
-              color: balance === null ? 'rgba(71,85,105,0.68)' : GOLD,
-              textDecoration: 'none', fontWeight: 600, fontSize: '0.88rem',
-              display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
-            }}>
-              <span>💰</span>
-              {walletLoading ? '...' : <>契约币 {balance || 0}</>}
-            </Link>
-          )}
-        </div>
-      </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <ReputationButton to="/rankings/new">发布评价</ReputationButton>
+              <ReputationButton to={cityReputationHref} tone="light">{cityReputationLabel}</ReputationButton>
+              <ReputationButton to="/scripts" tone="light">角色点评</ReputationButton>
+              {auth && (
+                <Link to="/wallet" style={walletChipStyle}>
+                  {walletLoading ? '契约币 ...' : `契约币 ${balance || 0}`}
+                </Link>
+              )}
+            </div>
+          </ReputationPanel>
 
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '16px 20px 80px' }}>
+          <ReputationPanel style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
+            <h2 style={{ margin: 0, fontSize: 15 }}>榜单展示</h2>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={() => setBoardMode('reputation')} style={hubToggleStyle(boardMode === 'reputation', '#275389')}>口碑榜 · 一号一票</button>
+              <button onClick={() => setBoardMode('money')} style={hubToggleStyle(boardMode === 'money', GOLD)}>真金榜 · 打榜值</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <ReputationStat value={rankedItems.reduce((sum, item) => sum + boostAmount(item), 0)} label="打榜值" tone="gold" />
+              <ReputationStat value={rankedItems.reduce((sum, item) => sum + boardRankScore(item, 'reputation'), 0)} label="口碑值" tone="blue" />
+              <ReputationStat value={rankedItems.reduce((sum, item) => sum + reputationParticipation(item), 0)} label="参与人数" tone="green" />
+              <ReputationStat value="30天" label="黑榜公开期" tone="red" />
+            </div>
+          </ReputationPanel>
+        </section>
+
+        <div style={{ display: 'grid', gap: 14 }}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -1381,40 +1436,6 @@ export default function Rankings() {
             {tabBtn('red', '红', '#8f4c43')}
             {tabBtn('black', '黑', '#475569')}
             {tabBtn('white', '白', '#b8860b')}
-          </div>
-          <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: '#f8fafc', border: '1px solid rgba(71,85,105,0.12)', borderRadius: 12 }}>
-            <button
-              onClick={() => setBoardMode('reputation')}
-              style={{
-                padding: '8px 14px',
-                borderRadius: 9,
-                border: 'none',
-                background: boardMode === 'reputation' ? '#ffffff' : 'transparent',
-                color: boardMode === 'reputation' ? '#1f2937' : 'rgba(71,85,105,0.68)',
-                boxShadow: boardMode === 'reputation' ? '0 4px 12px rgba(15,23,42,0.08)' : 'none',
-                fontWeight: 900,
-                cursor: 'pointer',
-                fontSize: '0.8rem',
-              }}
-            >
-              口碑榜
-            </button>
-            <button
-              onClick={() => setBoardMode('money')}
-              style={{
-                padding: '8px 14px',
-                borderRadius: 9,
-                border: 'none',
-                background: boardMode === 'money' ? '#ffffff' : 'transparent',
-                color: boardMode === 'money' ? GOLD : 'rgba(71,85,105,0.68)',
-                boxShadow: boardMode === 'money' ? '0 4px 12px rgba(166,106,31,0.12)' : 'none',
-                fontWeight: 900,
-                cursor: 'pointer',
-                fontSize: '0.8rem',
-              }}
-            >
-              真金榜
-            </button>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 300px' }}>
             <FilterPill active={subjectTab === 'all'} onClick={() => setSubjectTab('all')}>全部</FilterPill>
@@ -1511,7 +1532,7 @@ export default function Rankings() {
         )}
 
         {!loading && !error && rankedItems.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 520px), 1fr))', gap: 24, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 360px), 1fr))', gap: 14, alignItems: 'start' }}>
             {rankedItems.map((item, idx) => {
               const accentColor = item.type === 'red' ? '#b91c1c' : item.type === 'black' ? BLK : GOLD;
               const subtleAccentBg = item.type === 'red' ? 'rgba(185,28,28,0.08)' : item.type === 'black' ? 'rgba(148,163,184,0.10)' : 'rgba(166,106,31,0.10)';
@@ -1921,7 +1942,8 @@ export default function Rankings() {
         <p style={{ margin: '18px 0 0', padding: '14px 16px', borderRadius: 12, border: '1px solid #fde68a', backgroundColor: 'rgba(255,255,255,0.68)', color: '#4b5563', lineHeight: 1.7, fontSize: 14 }}>
           {RANKINGS_RETENTION_NOTE}
         </p>
-      </div>
+        </div>
+      </ReputationHubShell>
 
       {/* Free Vote Modal */}
       {voteModal && (
