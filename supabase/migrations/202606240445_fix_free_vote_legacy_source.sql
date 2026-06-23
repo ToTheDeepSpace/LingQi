@@ -1,5 +1,5 @@
--- Treat legacy votes with NULL source as free votes so one-account-one-vote
--- does not leak a database unique-constraint error to users.
+-- Treat any existing one-account-one-vote record as the user's free vote,
+-- so old vote rows do not leak a database unique-constraint error to users.
 
 CREATE OR REPLACE FUNCTION public.lc_apply_ranking_vote(
   p_ranking_id uuid,
@@ -73,7 +73,6 @@ BEGIN
     FROM public.lc_votes v
     WHERE v.ranking_id = p_ranking_id
       AND v.voter_id = p_voter_id
-      AND COALESCE(v.source, 'free_vote') = 'free_vote'
     FOR UPDATE;
 
   IF FOUND AND existing_vote.vote_type = p_vote_type THEN
@@ -212,7 +211,6 @@ BEGIN
     FROM public.lc_votes v
     WHERE v.ranking_id = p_ranking_id
       AND v.voter_id = p_voter_id
-      AND COALESCE(v.source, 'free_vote') = 'free_vote'
     FOR UPDATE;
 
   IF NOT FOUND THEN
