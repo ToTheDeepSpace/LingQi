@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { generatedAvatarDataUrl } from '../lib/avatar';
+import { cityReputationTitle } from '../lib/reputationNaming';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -109,16 +110,17 @@ export default function ReputationDossier() {
 
   const recommendedRoles = useMemo(() => (data?.role_preferences || []).filter(item => item.is_recommended), [data]);
   const availableSlots = useMemo(() => (data?.availability || []).filter(item => !item.is_booked).slice(0, 6), [data]);
+  const cityReputationHref = city ? `/reputation/city?city=${encodeURIComponent(city)}` : '/reputation/city';
 
   if (!subjectName || !subjectType) {
-    return <main style={pageStyle}><div style={emptyStyle}>缺少档案对象。请从城市口碑榜进入。</div></main>;
+    return <main style={pageStyle}><div style={emptyStyle}>缺少档案对象。请从城市口碑进入。</div></main>;
   }
 
   return (
     <main style={pageStyle}>
       <section className="reputation-dossier-hero" style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '42px 20px 30px' }}>
         <div style={{ maxWidth: 1080, margin: '0 auto' }}>
-          <Link to="/reputation/city" style={topLink}>返回城市口碑榜</Link>
+          <Link to={cityReputationHref} style={topLink}>返回{cityReputationTitle(city)}</Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 20 }}>
             <img className="reputation-dossier-avatar" src={data?.profile?.avatar || generatedAvatarDataUrl(subjectName, `${subjectType}:${subjectName}:${city}`)} alt="" style={{ width: 84, height: 84, borderRadius: 18, objectFit: 'cover', border: '1px solid rgba(166,106,31,0.20)', background: '#fffaf2' }} />
             <div style={{ minWidth: 0 }}>

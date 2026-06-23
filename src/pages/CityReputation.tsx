@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import CitySearchSelect from '../components/CitySearchSelect';
 import InfoTip from '../components/InfoTip';
+import { cityReputationTitle } from '../lib/reputationNaming';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -47,7 +48,9 @@ function dossierUrl(item: ReputationItem) {
 }
 
 export default function CityReputation() {
-  const [city, setCity] = useState('all');
+  const [searchParams] = useSearchParams();
+  const initialCity = (searchParams.get('city') || '').trim();
+  const [city, setCity] = useState(initialCity || 'all');
   const [subjectType, setSubjectType] = useState('all');
   const [sort, setSort] = useState<SortKey>('composite');
   const [items, setItems] = useState<ReputationItem[]>([]);
@@ -55,6 +58,7 @@ export default function CityReputation() {
   const [error, setError] = useState('');
 
   const requestKey = useMemo(() => `${city}|${subjectType}|${sort}`, [city, subjectType, sort]);
+  const pageTitle = cityReputationTitle(city);
   const loading = loadedKey !== requestKey;
 
   useEffect(() => {
@@ -92,7 +96,7 @@ export default function CityReputation() {
           <Link to="/rankings" style={topLink}>返回红黑榜事件榜</Link>
           <p style={{ margin: '18px 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>城市口碑百科</p>
           <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            城市口碑榜
+            {pageTitle}
             <InfoTip>这里不是单条红黑榜，而是把玩家遇到的事件沉淀成城市里的 DM、店家、剧本和角色参考。打榜值代表真金白银支持强度，口碑值代表多人认可和信息质量。</InfoTip>
           </h1>
         </div>

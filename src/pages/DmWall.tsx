@@ -298,7 +298,7 @@ export default function DmWall() {
           />
           <EntityFilterSwitch value={entityType} onChange={setEntityType} />
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索 DM / 店家名称" style={{ ...inputStyle, minWidth: 180, flex: '1 1 220px' }} />
-          <Link to="/reputation/city" style={ghostButton}>看城市口碑榜</Link>
+          <Link to="/reputation/city" style={ghostButton}>看城市口碑</Link>
         </div>
 
         {message && (

@@ -195,7 +195,7 @@ export default function Home() {
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <p style={{ fontSize: '1rem', color: MUTED, lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
-            先记录玩家遇到的具体事件，再沉淀成爱D墙、店家档案、城市口碑榜和对象档案。<br />
+            先记录玩家遇到的具体事件，再沉淀成爱D墙、店家档案、城市口碑和对象档案。<br />
             每条公开记录都经过人工审核，黑榜公开期结束后，也可以去标识化沉淀为共性问题和社交礼仪。
           </p>
 
@@ -220,7 +220,7 @@ export default function Home() {
               进入事件榜
             </Link>
             <Link to="/dm-wall" style={homeReputationGhostLink}>爱D墙 / 店家</Link>
-            <Link to="/reputation/city" style={homeReputationGhostLink}>城市口碑榜</Link>
+            <Link to="/reputation/city" style={homeReputationGhostLink}>城市口碑</Link>
           </div>
         </div>
       </section>

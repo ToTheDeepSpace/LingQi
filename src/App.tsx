@@ -147,7 +147,7 @@ function SiteFooter() {
             <FooterLink to="/commissions">委托需求墙</FooterLink>
             <FooterLink to="/carpools">拼车区</FooterLink>
             <FooterLink to="/rankings">红黑白榜</FooterLink>
-            <FooterLink to="/reputation/city">城市口碑榜</FooterLink>
+            <FooterLink to="/reputation/city">城市口碑</FooterLink>
             <FooterLink to="/dm-wall">爱D墙 / 店家</FooterLink>
             <FooterLink to="/scripts">剧本口碑</FooterLink>
             <FooterLink to="/guides">攻略交易</FooterLink>

@@ -9,6 +9,14 @@ import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import { createDecipheriv, createHash, createSign, createVerify, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { sanitizeUploadedImageFile } from './uploadSecurity.js';
+import {
+  buildLingqiCosObjectKey,
+  createTencentCosUploadTransport,
+  getLingqiCosUploadConfig,
+  normalizeUploadRelativePath,
+  saveLingqiSanitizedUploadImage,
+} from './uploadStorage.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -97,10 +105,32 @@ type TencentCloudSdk = {
 const useTencentPg = Boolean(process.env.DATABASE_URL || process.env.PGHOST);
 const supabase = useTencentPg ? createTencentPgClient() : createClient(SUPABASE_URL, SUPABASE_KEY);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const LOCAL_UPLOAD_ROOT = process.env.LOCAL_UPLOAD_ROOT || `${process.cwd()}/public/uploads`;
+const LINGQI_COS_UPLOAD_CONFIG = getLingqiCosUploadConfig(process.env);
+const LINGQI_COS_UPLOAD_TRANSPORT = LINGQI_COS_UPLOAD_CONFIG ? createTencentCosUploadTransport(LINGQI_COS_UPLOAD_CONFIG) : null;
 
 const app = express();
 app.use(cors());
-app.use('/uploads', express.static(process.env.LOCAL_UPLOAD_ROOT || `${process.cwd()}/public/uploads`));
+app.get(/^\/uploads\/lc-portfolio\/(.+)$/, async (req, res, next) => {
+  if (!LINGQI_COS_UPLOAD_CONFIG || !LINGQI_COS_UPLOAD_TRANSPORT?.getObject) return next();
+  try {
+    const rawRelativePath = String((req.params as Record<string, string>)['0'] || '');
+    const bucketPath = normalizeUploadRelativePath(`lc-portfolio/${rawRelativePath}`);
+    if (!bucketPath) return res.status(400).json(err(new Error('图片路径不合法')));
+
+    const object = await LINGQI_COS_UPLOAD_TRANSPORT.getObject(buildLingqiCosObjectKey(LINGQI_COS_UPLOAD_CONFIG, bucketPath));
+    if (object.status === 404) return next();
+    if (!object.ok) throw new Error(`COS 图片读取失败：${object.status}`);
+
+    res.setHeader('Content-Type', object.contentType || 'image/jpeg');
+    res.setHeader('Cache-Control', object.cacheControl || 'public, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(object.body);
+  } catch (e) {
+    next(e);
+  }
+});
+app.use('/uploads', express.static(LOCAL_UPLOAD_ROOT));
 app.use(express.json({
   limit: '25mb',
   verify: (req, _res, buf) => {
@@ -329,16 +359,6 @@ function sanitizeUploadScope(scope: unknown) {
   if (!raw) return 'general';
   const safe = raw.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-').slice(0, 40);
   return safe || 'general';
-}
-
-function safeFileExt(filename: string, mimetype: string) {
-  const raw = filename.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
-  if (raw) return raw.slice(0, 12);
-  if (mimetype === 'application/pdf') return 'pdf';
-  if (mimetype.includes('png')) return 'png';
-  if (mimetype.includes('webp')) return 'webp';
-  if (mimetype.includes('jpeg') || mimetype.includes('jpg')) return 'jpg';
-  return 'bin';
 }
 
 function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefined) {
@@ -4793,20 +4813,26 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
     const file = req.file;
     if (!file) return res.status(400).json(err(new Error('请选择文件')));
 
-    const ext = safeFileExt(file.originalname, file.mimetype);
+    const image = await sanitizeUploadedImageFile({ buffer: file.buffer, mimetype: file.mimetype });
     const scope = sanitizeUploadScope(req.body?.scope);
     const digest = createHash('sha256').update(file.buffer).digest('hex').slice(0, 16);
-    const path = `${getReq(req, 'creatorId')}/${scope}/${Date.now()}-${digest}.${ext}`;
-
-    const { error } = await supabase.storage.from('lc-portfolio').upload(path, file.buffer, {
-      contentType: file.mimetype,
-      upsert: false,
+    const result = await saveLingqiSanitizedUploadImage(image, `${getReq(req, 'creatorId')}/${scope}`, {
+      env: process.env,
+      localUploadRoot: LOCAL_UPLOAD_ROOT,
+      siteUrl: LINGQI_SITE_URL,
+      randomId: () => `${Date.now()}-${digest}`,
+      cosTransport: LINGQI_COS_UPLOAD_TRANSPORT,
     });
 
-    if (error) throw error;
-
-    const { data: urlData } = supabase.storage.from('lc-portfolio').getPublicUrl(path);
-    res.json(ok({ url: urlData.publicUrl, path, name: file.originalname, type: file.mimetype, size: file.size }));
+    res.json(ok({
+      url: result.url,
+      path: result.relativePath,
+      name: file.originalname,
+      type: image.contentType,
+      size: image.buffer.length,
+      width: image.width,
+      height: image.height,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

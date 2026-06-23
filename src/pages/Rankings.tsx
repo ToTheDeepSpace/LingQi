@@ -13,6 +13,7 @@ import {
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal, { type ReportTargetType } from '../components/ReportModal';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
+import { cityReputationTitle } from '../lib/reputationNaming';
 
 const API = '/api';
 const C = '#f6efe4';
@@ -654,6 +655,9 @@ export default function Rankings() {
       return false;
     }
   });
+  const concreteCityForReputation = city !== 'all' && city !== 'preferred' ? city : '';
+  const cityReputationHref = concreteCityForReputation ? `/reputation/city?city=${encodeURIComponent(concreteCityForReputation)}` : '/reputation/city';
+  const cityReputationLabel = cityReputationTitle(concreteCityForReputation);
   const commentDraftKey = commentModal ? `lc:draft:ranking-comment:${commentModal.rankingId}` : 'lc:draft:ranking-comment:none';
   const commentDraftValue = useMemo<RankingCommentDraft>(() => ({ content: commentText }), [commentText]);
   const commentDraft = useDraftAutosave<RankingCommentDraft>({
@@ -1435,9 +1439,9 @@ export default function Rankings() {
             style={{ padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 800, fontSize: '0.86rem', textDecoration: 'none', flexShrink: 0 }}>
             + 发布
           </Link>
-          <Link to="/reputation/city"
+          <Link to={cityReputationHref}
             style={{ padding: '9px 12px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.18)', color: 'rgba(71,85,105,0.72)', background: '#fffaf2', fontWeight: 800, fontSize: '0.78rem', textDecoration: 'none', flexShrink: 0 }}>
-            城市口碑榜
+            {cityReputationLabel}
           </Link>
           <Link to="/dm-wall"
             style={{ padding: '9px 12px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.18)', color: 'rgba(71,85,105,0.72)', background: '#fffaf2', fontWeight: 800, fontSize: '0.78rem', textDecoration: 'none', flexShrink: 0 }}>
