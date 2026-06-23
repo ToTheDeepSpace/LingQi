@@ -4,8 +4,11 @@ import { Link } from 'react-router-dom';
 import { isTokenExpired } from '../lib/authSession';
 
 const API = '/api';
-const C = '#0F1117';
-const C2 = '#1A1D27';
+const BG = '#FFFDF8';
+const SURFACE = '#FFFFFF';
+const INK = '#1F2937';
+const MUTED = 'rgba(31,41,55,0.62)';
+const LINE = 'rgba(31,41,55,0.10)';
 const GOLD = '#d9a857';
 
 function getToken() {
@@ -381,10 +384,11 @@ function summarizePublicReviewPayload(payload?: Record<string, unknown> | null) 
 }
 
 const card: React.CSSProperties = {
-  backgroundColor: 'rgba(255,255,255,0.04)',
-  border: '1px solid rgba(201,146,46,0.15)',
-  borderRadius: 14,
+  backgroundColor: SURFACE,
+  border: `1px solid ${LINE}`,
+  borderRadius: 12,
   padding: '16px 20px',
+  boxShadow: '0 12px 28px rgba(31,41,55,0.05)',
 };
 
 function ModerationPrecheckBadge({ value }: { value?: ModerationPrecheck | null }) {
@@ -399,7 +403,7 @@ function ModerationPrecheckBadge({ value }: { value?: ModerationPrecheck | null 
       <strong>本地预审：{label}</strong>
       {typeof value.risk_score === 'number' ? ` · 风险 ${value.risk_score}` : ''}
       {labels.length > 0 ? ` · ${labels.join(' / ')}` : ''}
-      {value.summary ? <div style={{ color: 'rgba(226,232,240,0.78)' }}>{value.summary}</div> : null}
+      {value.summary ? <div style={{ color: MUTED }}>{value.summary}</div> : null}
     </div>
   );
 }
@@ -853,23 +857,23 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   const activeProfiles = profiles.filter(p => p.is_visible || p.is_banned);
 
   if (!authed) return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Link to="/" style={{ textDecoration: 'none', fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '2.5rem', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <Link to="/" style={{ textDecoration: 'none', fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '2.35rem', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             灵契
           </Link>
-          <p style={{ color: 'rgba(186,207,231,0.65)', fontSize: '0.875rem', marginTop: 8 }}>管理后台</p>
+          <p style={{ color: MUTED, fontSize: '0.875rem', marginTop: 8 }}>管理后台</p>
         </div>
-        <div style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,146,46,0.15)', borderRadius: 20, padding: '32px 28px' }}>
+        <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(217,168,87,0.26)', borderRadius: 16, padding: '30px 28px', boxShadow: '0 24px 60px rgba(31,41,55,0.08)' }}>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 24px' }} />
-          <h2 style={{ textAlign: 'center', fontWeight: 700, marginBottom: 24, color: 'rgba(186,207,231,0.8)' }}>管理员登录</h2>
+          <h2 style={{ textAlign: 'center', fontWeight: 800, marginBottom: 24, color: INK }}>管理员登录</h2>
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && login()}
             placeholder="管理密码"
-            style={{ width: '100%', padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', marginBottom: 16 }} />
+            style={{ width: '100%', padding: '12px 16px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', marginBottom: 16 }} />
           <button onClick={login}
-            style={{ width: '100%', padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 700, fontSize: '0.9rem' }}>
+            style={{ width: '100%', padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer', background: INK, color: BG, fontWeight: 800, fontSize: '0.9rem' }}>
             登录
           </button>
           {error && <p style={{ textAlign: 'center', color: '#f87171', fontSize: '0.82rem', marginTop: 12 }}>{error}</p>}
@@ -879,97 +883,109 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   );
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1, padding: '10px 8px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, transition: 'all 0.2s',
-    background: active ? `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)` : 'transparent',
-    color: active ? C : 'rgba(186,207,231,0.5)',
+    flex: '0 0 auto',
+    padding: '9px 12px',
+    borderRadius: 10,
+    border: active ? `1px solid ${INK}` : `1px solid ${LINE}`,
+    cursor: 'pointer',
+    fontSize: '0.82rem',
+    fontWeight: 700,
+    transition: 'all 0.2s',
+    background: active ? INK : SURFACE,
+    color: active ? BG : MUTED,
+    boxShadow: active ? '0 8px 18px rgba(31,41,55,0.12)' : 'none',
+    whiteSpace: 'nowrap',
   });
 
+  const statCards = [
+    { label: '待审核创作者', value: pendingProfiles.length, color: '#b91c1c' },
+    { label: '账号', value: activeProfiles.length, color: '#047857' },
+    { label: '联系申请', value: requests.length, color: '#8a5a19' },
+    { label: '充值', value: transactions.length, color: '#15803d' },
+    { label: '委托需求', value: commissions.length, color: '#b45309' },
+    { label: '拼车', value: carpools.length, color: '#0f766e' },
+    { label: '剧本库', value: scriptContributions.length, color: '#a16207' },
+    { label: '未认证档案', value: dmDossiers.length, color: '#be185d' },
+    { label: '举报', value: reports.length, color: '#dc2626' },
+    { label: '站内信', value: siteMessages.length, color: '#0369a1' },
+    { label: '安全日志', value: securityEvents.length, color: '#c2410c' },
+    { label: '红黑榜', value: rankings.length, color: '#7c3aed' },
+    { label: '已发布榜单', value: approvedRankings.length, color: '#2563eb' },
+    { label: '公开内容', value: publicReviews.length, color: '#ca8a04' },
+    { label: '攻略', value: guides.length, color: '#be123c' },
+    { label: '提现', value: guideWithdrawals.length, color: '#047857' },
+    { label: '评论', value: comments.length, color: '#0284c7' },
+    { label: '相关方', value: claims.length, color: '#ea580c' },
+    { label: '认证', value: certs.length, color: '#2563eb' },
+  ];
+
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: '#fff' }}>
-      <div style={{ backgroundColor: C2, borderBottom: '1px solid rgba(201,146,46,0.12)', padding: '24px 20px' }}>
-        <div style={{ maxWidth: 980, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', color: INK }}>
+      <div style={{ background: 'linear-gradient(180deg, #FFF8E8 0%, #FFFDF8 100%)', borderBottom: '1px solid rgba(217,168,87,0.18)', padding: '22px 40px' }}>
+        <div className="admin-header-inner" style={{ maxWidth: 1360, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
           <div>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>灵契管理后台</h1>
-            <p style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.65)' }}>主页、红黑榜、评论、相关方申请审核</p>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: 'rgba(217,168,87,0.14)', color: '#8a5a19', fontSize: '0.72rem', fontWeight: 800, marginBottom: 8 }}>
+              超管审核台
+            </div>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.85rem', marginBottom: 4, letterSpacing: 0 }}>灵契管理后台</h1>
+            <p style={{ fontSize: '0.84rem', color: MUTED }}>审核队列、公开内容、账号治理和安全记录集中处理</p>
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <Link to="/" style={{ fontSize: '0.82rem', color: 'rgba(186,207,231,0.65)', textDecoration: 'none' }}>返回首页</Link>
+            <Link to="/" style={{ fontSize: '0.82rem', color: MUTED, textDecoration: 'none', fontWeight: 700 }}>返回首页</Link>
             <button onClick={logout}
-              style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid rgba(201,146,46,0.2)', background: 'none', color: 'rgba(186,207,231,0.5)', cursor: 'pointer', fontSize: '0.82rem' }}>
+              style={{ padding: '7px 16px', borderRadius: 8, border: `1px solid ${LINE}`, background: SURFACE, color: MUTED, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700 }}>
               退出
             </button>
           </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 980, margin: '0 auto', padding: '28px 20px 80px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginBottom: 28 }}>
-          {[
-            { label: '待审核创作者', value: pendingProfiles.length, color: '#fb7185' },
-            { label: '账号', value: activeProfiles.length, color: '#34d399' },
-            { label: '联系申请', value: requests.length, color: GOLD },
-            { label: '充值', value: transactions.length, color: '#22c55e' },
-            { label: '委托需求', value: commissions.length, color: '#fbbf24' },
-            { label: '拼车', value: carpools.length, color: '#14b8a6' },
-            { label: '剧本库', value: scriptContributions.length, color: '#f59e0b' },
-            { label: '未认证档案', value: dmDossiers.length, color: '#f472b6' },
-            { label: '举报', value: reports.length, color: '#f87171' },
-            { label: '站内信', value: siteMessages.length, color: '#38bdf8' },
-            { label: '安全日志', value: securityEvents.length, color: '#fb923c' },
-            { label: '红黑榜', value: rankings.length, color: '#a78bfa' },
-            { label: '已发布榜单', value: approvedRankings.length, color: '#60a5fa' },
-            { label: '公开内容', value: publicReviews.length, color: '#facc15' },
-            { label: '攻略', value: guides.length, color: '#fb7185' },
-            { label: '提现', value: guideWithdrawals.length, color: '#34d399' },
-            { label: '评论', value: comments.length, color: '#38bdf8' },
-            { label: '相关方', value: claims.length, color: '#f97316' },
-            { label: '认证', value: certs.length, color: '#3b82f6' },
-          ].map(({ label, value, color }) => (
-            <div key={label} style={{ ...card, textAlign: 'center' }}>
-              <div style={{ fontSize: '1.8rem', fontWeight: 900, color, marginBottom: 4 }}>{value}</div>
-              <div style={{ fontSize: '0.75rem', color: 'rgba(186,207,231,0.55)' }}>{label}</div>
+      <div className="admin-page-body" style={{ maxWidth: 1360, margin: '0 auto', padding: '28px 40px 40px' }}>
+        <div className="admin-main-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: 20, alignItems: 'start' }}>
+          <section style={{ minWidth: 0, display: 'grid', gap: 16 }}>
+            <div style={{ ...card, padding: '16px 18px' }}>
+              <div style={{ fontWeight: 900, fontSize: '1.02rem', marginBottom: 4 }}>待审核队列</div>
+              <div style={{ color: MUTED, fontSize: '0.82rem' }}>按类型切换处理，内容和证据优先显示，统计缩到右侧。</div>
             </div>
-          ))}
-        </div>
 
-        <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(201,146,46,0.1)', borderRadius: 14, marginBottom: 20 }}>
-          <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>待审核 {pendingProfiles.length > 0 && `(${pendingProfiles.length})`}</button>
-          <button style={tabStyle(tab === 'active')} onClick={() => setTab('active')}>账号 ({activeProfiles.length})</button>
-          <button style={tabStyle(tab === 'requests')} onClick={() => setTab('requests')}>联系 {requests.length > 0 && `(${requests.length})`}</button>
-          <button style={tabStyle(tab === 'wallet')} onClick={() => setTab('wallet')}>充值 {transactions.length > 0 && `(${transactions.length})`}</button>
-          <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
-          <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
-          <button style={tabStyle(tab === 'scriptContributions')} onClick={() => setTab('scriptContributions')}>剧本库 {scriptContributions.length > 0 && `(${scriptContributions.length})`}</button>
-          <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>未认证档案 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
-          <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
-          <button style={tabStyle(tab === 'messages')} onClick={() => setTab('messages')}>站内信 {siteMessages.length > 0 && `(${siteMessages.length})`}</button>
-          <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
-          <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
-          <button style={tabStyle(tab === 'publishedRankings')} onClick={() => setTab('publishedRankings')}>已发布 ({approvedRankings.length})</button>
-          <button style={tabStyle(tab === 'publicReviews')} onClick={() => setTab('publicReviews')}>公开内容 {publicReviews.length > 0 && `(${publicReviews.length})`}</button>
-          <button style={tabStyle(tab === 'guides')} onClick={() => setTab('guides')}>攻略 {guides.length > 0 && `(${guides.length})`}</button>
-          <button style={tabStyle(tab === 'guideWithdrawals')} onClick={() => setTab('guideWithdrawals')}>提现 {guideWithdrawals.length > 0 && `(${guideWithdrawals.length})`}</button>
-          <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
-          <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
-          <button style={tabStyle(tab === 'certs')} onClick={() => setTab('certs')}>认证审核 {certs.length > 0 && `(${certs.length})`}</button>
-        </div>
+            <div className="admin-tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: 8, backgroundColor: 'rgba(255,255,255,0.72)', border: `1px solid ${LINE}`, borderRadius: 14, boxShadow: '0 8px 22px rgba(31,41,55,0.04)' }}>
+              <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>待审核 {pendingProfiles.length > 0 && `(${pendingProfiles.length})`}</button>
+              <button style={tabStyle(tab === 'active')} onClick={() => setTab('active')}>账号 ({activeProfiles.length})</button>
+              <button style={tabStyle(tab === 'requests')} onClick={() => setTab('requests')}>联系 {requests.length > 0 && `(${requests.length})`}</button>
+              <button style={tabStyle(tab === 'wallet')} onClick={() => setTab('wallet')}>充值 {transactions.length > 0 && `(${transactions.length})`}</button>
+              <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
+              <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
+              <button style={tabStyle(tab === 'scriptContributions')} onClick={() => setTab('scriptContributions')}>剧本库 {scriptContributions.length > 0 && `(${scriptContributions.length})`}</button>
+              <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>未认证档案 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
+              <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
+              <button style={tabStyle(tab === 'messages')} onClick={() => setTab('messages')}>站内信 {siteMessages.length > 0 && `(${siteMessages.length})`}</button>
+              <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
+              <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
+              <button style={tabStyle(tab === 'publishedRankings')} onClick={() => setTab('publishedRankings')}>已发布 ({approvedRankings.length})</button>
+              <button style={tabStyle(tab === 'publicReviews')} onClick={() => setTab('publicReviews')}>公开内容 {publicReviews.length > 0 && `(${publicReviews.length})`}</button>
+              <button style={tabStyle(tab === 'guides')} onClick={() => setTab('guides')}>攻略 {guides.length > 0 && `(${guides.length})`}</button>
+              <button style={tabStyle(tab === 'guideWithdrawals')} onClick={() => setTab('guideWithdrawals')}>提现 {guideWithdrawals.length > 0 && `(${guideWithdrawals.length})`}</button>
+              <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
+              <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
+              <button style={tabStyle(tab === 'certs')} onClick={() => setTab('certs')}>认证审核 {certs.length > 0 && `(${certs.length})`}</button>
+            </div>
 
-        {error && <p style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: 16 }}>{error}</p>}
+            {error && <p style={{ color: '#b91c1c', fontSize: '0.85rem', margin: 0 }}>{error}</p>}
 
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '80px 0' }}>
-            <div style={{ width: 36, height: 36, border: '2px solid rgba(201,146,46,0.3)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
-            <p style={{ color: 'rgba(186,207,231,0.65)' }}>加载中...</p>
-          </div>
-        ) : (
-          <>
+            {loading ? (
+              <div style={{ ...card, textAlign: 'center', padding: '72px 0' }}>
+                <div style={{ width: 36, height: 36, border: '2px solid rgba(201,146,46,0.3)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+                <p style={{ color: MUTED }}>加载中...</p>
+              </div>
+            ) : (
+              <>
             {tab === 'pending' && (
               <ListEmpty empty={pendingProfiles.length === 0} text="没有待审核的创作者">
                 {pendingProfiles.map(p => (
                   <Row key={p.id}>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 4 }}>{p.display_name}</div>
-                      <div style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.65)' }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.role_type && ` · ${p.role_type}`}</div>
+                      <div style={{ fontSize: '0.78rem', color: MUTED }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.role_type && ` · ${p.role_type}`}</div>
                     </div>
                     <Actions>
                       <ActionButton kind="ok" onClick={() => approveProfile(p.id)}>通过</ActionButton>
@@ -988,13 +1004,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{p.display_name}</span>
                         {p.is_realname && <span style={{ fontSize: '0.72rem', color: GOLD }}>⭐ 实名</span>}
-                        {p.is_banned && <span style={{ fontSize: '0.72rem', color: '#f87171' }}>已限制</span>}
+                        {p.is_banned && <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>已限制</span>}
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.65)' }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.banned_at ? ` · 限制于 ${p.banned_at.slice(0, 10)}` : ''}</div>
+                      <div style={{ fontSize: '0.78rem', color: MUTED }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.banned_at ? ` · 限制于 ${p.banned_at.slice(0, 10)}` : ''}</div>
                       {p.ban_reason && <Proof>限制原因：{p.ban_reason}</Proof>}
                     </div>
                     <Actions>
-                      <Link to={`/explore/${p.id}`} target="_blank" style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(201,146,46,0.2)', color: GOLD, fontSize: '0.82rem', textDecoration: 'none', fontWeight: 600 }}>主页</Link>
+                      <Link to={`/explore/${p.id}`} target="_blank" style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(217,168,87,0.30)', background: '#fff8e8', color: '#8a5a19', fontSize: '0.82rem', textDecoration: 'none', fontWeight: 700 }}>主页</Link>
                       <ActionButton onClick={() => toggleRealname(p.id, !p.is_realname)}>{p.is_realname ? '取消实名' : '设为实名'}</ActionButton>
                       {p.is_banned
                         ? <ActionButton kind="ok" onClick={() => unbanProfile(p.id)}>解除限制</ActionButton>
@@ -1293,7 +1309,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <ModerationPrecheckBadge value={item.moderation_precheck} />
                         <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
                           {contributionRoles.map((role, index) => (
-                            <div key={`${role.role_name || 'role'}-${index}`} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(201,146,46,0.12)', background: 'rgba(255,255,255,0.03)' }}>
+                            <div key={`${role.role_name || 'role'}-${index}`} style={{ padding: '8px 10px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fffdf8' }}>
                               <Meta>
                                 {role.role_name || `角色 ${index + 1}`}
                                 {role.gender ? ` · ${role.gender}` : ' · 性别未定义'}
@@ -1546,74 +1562,91 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 ))}
               </ListEmpty>
             )}
-          </>
-        )}
+              </>
+            )}
+          </section>
+
+          <aside className="admin-stats" style={{ position: 'sticky', top: 18, display: 'grid', gap: 14 }}>
+            <div style={{ ...card, padding: '16px 18px' }}>
+              <div style={{ fontWeight: 900, fontSize: '1rem', marginBottom: 4 }}>数据概览</div>
+              <div style={{ color: MUTED, fontSize: '0.8rem', lineHeight: 1.7 }}>右侧只放辅助判断，左侧保留审核主动作。</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {statCards.map(({ label, value, color }) => (
+                <div key={label} style={{ ...card, padding: '13px 14px', minHeight: 72 }}>
+                  <div style={{ fontSize: '1.55rem', fontWeight: 900, color, lineHeight: 1 }}>{value}</div>
+                  <div style={{ fontSize: '0.72rem', color: MUTED, marginTop: 8, lineHeight: 1.35 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          </aside>
+        </div>
       </div>
 
       {rankingEdit && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
-          <div style={{ backgroundColor: C2, border: '1px solid rgba(201,146,46,0.2)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
-            <h3 style={{ fontWeight: 800, fontSize: '1.05rem', marginBottom: 8, color: 'rgba(186,207,231,0.92)' }}>编辑榜单记录</h3>
-            <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.55)', lineHeight: 1.7, marginBottom: 18 }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
+          <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(217,168,87,0.24)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 28px 80px rgba(31,41,55,0.22)' }}>
+            <h3 style={{ fontWeight: 800, fontSize: '1.05rem', marginBottom: 8, color: INK }}>编辑榜单记录</h3>
+            <p style={{ fontSize: '0.8rem', color: MUTED, lineHeight: 1.7, marginBottom: 18 }}>
               保存后会写入防篡改审计链，前台审计记录会展示原版、编辑版和变更时间。
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
               <label style={{ display: 'block' }}>
-                <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>榜单类型</span>
+                <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginBottom: 6 }}>榜单类型</span>
                 <select value={rankingEdit.form.type} onChange={e => updateRankingEditForm({ type: e.target.value as RankingEditForm['type'] })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }}>
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, outline: 'none' }}>
                   <option value="red">红榜</option>
                   <option value="black">黑榜</option>
                   <option value="white">白榜</option>
                 </select>
               </label>
               <label style={{ display: 'block' }}>
-                <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>对象分类</span>
+                <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginBottom: 6 }}>对象分类</span>
                 <select value={rankingEdit.form.subject_type} onChange={e => updateRankingEditForm({ subject_type: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }}>
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, outline: 'none' }}>
                   {Object.entries(SUBJECT_LABEL).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </select>
               </label>
               <label style={{ display: 'block' }}>
-                <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>所在城市</span>
+                <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginBottom: 6 }}>所在城市</span>
                 <input value={rankingEdit.form.subject_city} onChange={e => updateRankingEditForm({ subject_city: e.target.value })}
                   placeholder="例：上海"
-                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }} />
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, outline: 'none' }} />
               </label>
             </div>
 
             <label style={{ display: 'block', marginBottom: 12 }}>
-              <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>对象名称</span>
+              <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginBottom: 6 }}>对象名称</span>
               <input value={rankingEdit.form.subject_name} onChange={e => updateRankingEditForm({ subject_name: e.target.value })}
-                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }} />
+                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, outline: 'none' }} />
             </label>
 
             <label style={{ display: 'block', marginBottom: 12 }}>
-              <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>社交主页链接</span>
+              <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginBottom: 6 }}>社交主页链接</span>
               <input value={rankingEdit.form.subject_url} onChange={e => updateRankingEditForm({ subject_url: e.target.value })}
                 placeholder="可留空"
-                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none' }} />
+                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, outline: 'none' }} />
             </label>
 
             <label style={{ display: 'block' }}>
-              <span style={{ display: 'block', fontSize: '0.76rem', color: 'rgba(186,207,231,0.62)', marginBottom: 6 }}>正文内容</span>
+              <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginBottom: 6 }}>正文内容</span>
               <textarea value={rankingEdit.form.content} onChange={e => updateRankingEditForm({ content: e.target.value })}
                 rows={8}
-                style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', outline: 'none', lineHeight: 1.7 }} />
+                style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, outline: 'none', lineHeight: 1.7 }} />
             </label>
 
-            {rankingEdit.error && <p style={{ color: '#f87171', fontSize: '0.82rem', marginTop: 12 }}>{rankingEdit.error}</p>}
+            {rankingEdit.error && <p style={{ color: '#b91c1c', fontSize: '0.82rem', marginTop: 12 }}>{rankingEdit.error}</p>}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
               <button onClick={() => setRankingEdit(null)}
-                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: 'rgba(186,207,231,0.6)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: `1px solid ${LINE}`, background: SURFACE, color: MUTED, cursor: 'pointer', fontWeight: 700, fontSize: '0.875rem' }}>
                 取消
               </button>
               <button onClick={saveRankingEdit} disabled={rankingEdit.saving}
-                style={{ flex: 1.4, padding: '10px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, cursor: rankingEdit.saving ? 'not-allowed' : 'pointer', fontWeight: 800, fontSize: '0.875rem', opacity: rankingEdit.saving ? 0.6 : 1 }}>
+                style={{ flex: 1.4, padding: '10px', borderRadius: 10, border: 'none', background: INK, color: BG, cursor: rankingEdit.saving ? 'not-allowed' : 'pointer', fontWeight: 800, fontSize: '0.875rem', opacity: rankingEdit.saving ? 0.6 : 1 }}>
                 {rankingEdit.saving ? '保存中...' : '保存并留痕'}
               </button>
             </div>
@@ -1622,20 +1655,20 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       )}
 
       {rejectModal.open && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
-          <div style={{ backgroundColor: C2, border: '1px solid rgba(201,146,46,0.2)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420 }}>
-            <h3 style={{ fontWeight: 700, fontSize: '1rem', marginBottom: 8, color: 'rgba(186,207,231,0.9)' }}>填写拒绝原因</h3>
-            <p style={{ fontSize: '0.8rem', color: 'rgba(186,207,231,0.5)', marginBottom: 16 }}>原因可不填，主要给自己留审核记录。</p>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
+          <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(217,168,87,0.24)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 28px 80px rgba(31,41,55,0.22)' }}>
+            <h3 style={{ fontWeight: 800, fontSize: '1rem', marginBottom: 8, color: INK }}>填写拒绝原因</h3>
+            <p style={{ fontSize: '0.8rem', color: MUTED, marginBottom: 16 }}>原因可不填，主要给自己留审核记录。</p>
             <textarea value={rejectModal.reason} onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}
               placeholder="请说明拒绝原因（选填）..." rows={4}
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)', backgroundColor: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: '0.875rem', boxSizing: 'border-box', resize: 'none', outline: 'none' }} />
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, fontSize: '0.875rem', boxSizing: 'border-box', resize: 'none', outline: 'none' }} />
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button onClick={() => setRejectModal({ open: false, id: '', reason: '', type: 'profile' })}
-                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: 'rgba(186,207,231,0.6)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: `1px solid ${LINE}`, background: SURFACE, color: MUTED, cursor: 'pointer', fontWeight: 700, fontSize: '0.875rem' }}>
                 取消
               </button>
               <button onClick={confirmReject}
-                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.12)', color: '#f87171', cursor: 'pointer', fontWeight: 700, fontSize: '0.875rem' }}>
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(185,28,28,0.20)', background: '#fef2f2', color: '#b91c1c', cursor: 'pointer', fontWeight: 800, fontSize: '0.875rem' }}>
                 确认拒绝
               </button>
             </div>
@@ -1643,21 +1676,54 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         </div>
       )}
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 980px) {
+          .admin-main-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .admin-stats {
+            position: static !important;
+          }
+        }
+        @media (max-width: 720px) {
+          .admin-header-inner {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+          }
+          .admin-page-body {
+            padding: 20px !important;
+          }
+          .admin-tabs {
+            flex-wrap: nowrap !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+          }
+          .admin-row {
+            flex-direction: column !important;
+            gap: 12px !important;
+          }
+          .admin-actions {
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            width: 100% !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
 
 function Row({ children, accent }: { children: React.ReactNode; accent?: string }) {
   return (
-    <div style={{ ...card, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderLeft: accent ? `3px solid ${accent}` : card.border }}>
+    <div className="admin-row" style={{ ...card, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderLeft: accent ? `3px solid ${accent}` : card.border }}>
       {children}
     </div>
   );
 }
 
 function Actions({ children, vertical }: { children: React.ReactNode; vertical?: boolean }) {
-  return <div style={{ display: 'flex', flexDirection: vertical ? 'column' : 'row', gap: 8, flexShrink: 0 }}>{children}</div>;
+  return <div className="admin-actions" style={{ display: 'flex', flexDirection: vertical ? 'column' : 'row', gap: 8, flexShrink: 0 }}>{children}</div>;
 }
 
 function ActionButton({ children, onClick, kind, disabled }: { children: React.ReactNode; onClick: () => void; kind?: 'ok' | 'bad'; disabled?: boolean }) {
@@ -1665,7 +1731,7 @@ function ActionButton({ children, onClick, kind, disabled }: { children: React.R
   const bad = kind === 'bad';
   return (
     <button onClick={onClick} disabled={disabled}
-      style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${ok ? 'rgba(52,211,153,0.3)' : bad ? 'rgba(248,113,113,0.25)' : 'rgba(201,146,46,0.2)'}`, cursor: disabled ? 'not-allowed' : 'pointer', background: ok ? 'rgba(52,211,153,0.12)' : bad ? 'rgba(248,113,113,0.08)' : 'transparent', color: ok ? '#34d399' : bad ? '#f87171' : GOLD, fontWeight: 600, fontSize: '0.82rem', opacity: disabled ? 0.5 : 1 }}>
+      style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${ok ? 'rgba(22,101,52,0.22)' : bad ? 'rgba(185,28,28,0.20)' : 'rgba(217,168,87,0.30)'}`, cursor: disabled ? 'not-allowed' : 'pointer', background: ok ? 'rgba(240,253,244,0.95)' : bad ? 'rgba(254,242,242,0.95)' : '#fff8e8', color: ok ? '#166534' : bad ? '#b91c1c' : '#8a5a19', fontWeight: 700, fontSize: '0.82rem', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap' }}>
       {children}
     </button>
   );
@@ -1673,9 +1739,9 @@ function ActionButton({ children, onClick, kind, disabled }: { children: React.R
 
 function ListEmpty({ empty, text, children }: { empty: boolean; text: string; children: React.ReactNode }) {
   if (empty) return (
-    <div style={{ textAlign: 'center', padding: '80px 0' }}>
-      <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>✅</div>
-      <p style={{ color: 'rgba(186,207,231,0.65)' }}>{text}</p>
+    <div style={{ ...card, textAlign: 'center', padding: '64px 0' }}>
+      <div style={{ fontSize: 40, marginBottom: 14, opacity: 0.45 }}>✓</div>
+      <p style={{ color: MUTED, margin: 0 }}>{text}</p>
     </div>
   );
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>;
@@ -1684,20 +1750,20 @@ function ListEmpty({ empty, text, children }: { empty: boolean; text: string; ch
 function TitleLine({ title, pill }: { title: string; pill: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-      <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{title}</span>
-      <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', background: 'rgba(201,146,46,0.08)', color: GOLD, border: '1px solid rgba(201,146,46,0.2)' }}>{pill}</span>
+      <span style={{ fontWeight: 800, fontSize: '0.95rem', color: INK }}>{title}</span>
+      <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', background: '#fff8e8', color: '#8a5a19', border: '1px solid rgba(217,168,87,0.26)' }}>{pill}</span>
     </div>
   );
 }
 
 function Meta({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: '0.78rem', color: 'rgba(186,207,231,0.55)', marginBottom: 8 }}>{children}</div>;
+  return <div style={{ fontSize: '0.78rem', color: MUTED, marginBottom: 8, lineHeight: 1.55 }}>{children}</div>;
 }
 
 function ContentBox({ children }: { children: React.ReactNode }) {
-  return <div style={{ padding: '10px 14px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(201,146,46,0.1)', borderRadius: 8, fontSize: '0.82rem', color: 'rgba(186,207,231,0.7)', lineHeight: 1.7, marginTop: 8 }}>{children}</div>;
+  return <div style={{ padding: '10px 14px', backgroundColor: '#fffdf8', border: `1px solid ${LINE}`, borderRadius: 8, fontSize: '0.82rem', color: 'rgba(31,41,55,0.78)', lineHeight: 1.7, marginTop: 8 }}>{children}</div>;
 }
 
 function Proof({ children }: { children: React.ReactNode }) {
-  return <div style={{ marginTop: 8, padding: '8px 12px', backgroundColor: 'rgba(201,146,46,0.06)', border: '1px solid rgba(201,146,46,0.15)', borderRadius: 8, fontSize: '0.78rem', color: 'rgba(186,207,231,0.65)' }}>{children}</div>;
+  return <div style={{ marginTop: 8, padding: '8px 12px', backgroundColor: '#fff8e8', border: '1px solid rgba(217,168,87,0.24)', borderRadius: 8, fontSize: '0.78rem', color: '#8a5a19', lineHeight: 1.55 }}>{children}</div>;
 }
