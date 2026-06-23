@@ -7632,6 +7632,7 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       type, subject_name: subjectName, subject_type: subjectType, subject_city: subjectCity || null,
       subject_url: subjectUrl || null, content,
       author_name: profile.display_name, poster_id: posterId,
+      status: 'pending',
       initial_amount: amount, payment_proof: paymentProof || null,
       is_realname: !!profile.is_realname, real_name: null,
       files: files || [],
