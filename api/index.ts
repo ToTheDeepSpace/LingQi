@@ -7901,7 +7901,22 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       p_voter_name: profile.display_name,
       p_voter_is_realname: !!profile.is_realname,
     });
-    if (voteErr) return res.status(rankingVoteRpcStatus(voteErr.message || '')).json(err(new Error(voteErr.message || '投票失败')));
+    if (voteErr) {
+      const message = voteErr.message || '';
+      if (message.includes('duplicate key') || message.includes('lc_votes_ranking_voter')) {
+        const { data: existingVote } = await supabase.from('lc_votes')
+          .select('id, vote_type, created_at')
+          .eq('ranking_id', req.params.id)
+          .eq('voter_id', profile.id)
+          .maybeSingle();
+        const myVote = existingVote ? serializeMyVote(existingVote as RankingVoteRow) : null;
+        return res.status(409).json({
+          ...err(new Error('你已经投过票了，请刷新后撤销或改票')),
+          data: { myVote },
+        });
+      }
+      return res.status(rankingVoteRpcStatus(message)).json(err(new Error(message || '投票失败')));
+    }
 
     const row = firstRpcRow<RankingVoteRpcResult>(data);
     if (!row || !row.vote_id || !row.vote_type || !row.vote_created_at) throw new Error('投票结果为空');
