@@ -5,6 +5,7 @@ import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal from '../components/ReportModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import { normalizeServiceCategory, primaryDisplayIdentityRole, serviceCategoryLabel } from '../lib/serviceCategories';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API  = '/api';
@@ -169,9 +170,12 @@ export default function CreatorProfile() {
     creator.sexual_orientation && creator.sexual_orientation !== '不公开' ? `取向：${creator.sexual_orientation}` : '',
     ...preferredStoryLines.map(line => `吃${line}`),
   ].filter(Boolean);
-  const displayRole = creator.verified_dm && (!creator.role_type || creator.role_type === 'player')
-    ? 'dm'
-    : creator.role_type || identityRoles[0] || '';
+  const displayRole = primaryDisplayIdentityRole(
+    creator.role_type,
+    identityRoles,
+    !!creator.verified_dm,
+    !!creator.verified_shop,
+  );
   const rolePreferences = [...(creator.role_preferences || [])].sort((a, b) => {
     const recDiff = Number(!!b.is_recommended) - Number(!!a.is_recommended);
     if (recDiff !== 0) return recDiff;
@@ -430,6 +434,11 @@ export default function CreatorProfile() {
                     }}>
                       <div>
                         <span style={{ fontWeight: 600, fontSize: '0.925rem' }}>{s.service_type}</span>
+                        {normalizeServiceCategory(s.service_type) !== 'custom' && (
+                          <span style={{ marginLeft: 8, padding: '3px 8px', borderRadius: 999, background: 'rgba(39,83,137,0.09)', color: '#275389', fontSize: '0.72rem', fontWeight: 850 }}>
+                            {serviceCategoryLabel(s.service_type)}
+                          </span>
+                        )}
                         {s.duration && <span style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.62)', marginLeft: 8 }}>· {s.duration}</span>}
                         {s.description && <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.62)', marginTop: 4 }}>{s.description}</p>}
                       </div>

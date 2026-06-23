@@ -6,6 +6,7 @@ import InfoTip from '../components/InfoTip';
 import { getJsonCached } from '../lib/apiCache';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { creatorEntryPath } from '../lib/authSession';
+import { primaryDisplayIdentityRole } from '../lib/serviceCategories';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -359,9 +360,12 @@ function SearchableCitySelect({
 }
 
 function CreatorCard({ creator }: { creator: Creator }) {
-  const displayRole = creator.verified_dm && (!creator.role_type || creator.role_type === 'player')
-    ? 'dm'
-    : creator.role_type || creator.identity_roles?.[0] || '';
+  const displayRole = primaryDisplayIdentityRole(
+    creator.role_type,
+    creator.identity_roles,
+    !!creator.verified_dm,
+    !!creator.verified_shop,
+  );
   const role = ROLE_LABEL[displayRole] || displayRole || '灵契师';
   const tags = Array.isArray(creator.tags) ? creator.tags : [];
   const travelStatus = creator.travel_status;

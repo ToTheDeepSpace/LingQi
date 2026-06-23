@@ -7,6 +7,7 @@ import InfoTip from '../components/InfoTip';
 import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { isTokenExpired, readStoredCreatorAuth } from '../lib/authSession';
+import { SERVICE_CATEGORY_OPTIONS, normalizeServiceCategory, serviceCategoryLabel } from '../lib/serviceCategories';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePreference, ScriptCatalogItem } from '../types';
 
@@ -1482,6 +1483,11 @@ export default function Dashboard() {
                   <div key={s.id} style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
                       <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{s.service_type}</span>
+                      {normalizeServiceCategory(s.service_type) !== 'custom' && (
+                        <span style={{ marginLeft: 8, padding: '3px 8px', borderRadius: 999, background: 'rgba(39,83,137,0.09)', color: '#275389', fontSize: '0.72rem', fontWeight: 850 }}>
+                          {serviceCategoryLabel(s.service_type)}
+                        </span>
+                      )}
                       {s.duration && <span style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.62)', marginLeft: 8 }}>· {s.duration}</span>}
                       {s.description && <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.62)', marginTop: 4 }}>{s.description}</p>}
                     </div>
@@ -1503,13 +1509,20 @@ export default function Dashboard() {
                     />
                   </div>
                   <div className="service-add-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) minmax(100px, 0.55fr) minmax(130px, 0.7fr)', gap: 12, marginBottom: 12 }}>
-                    <input type="text" value={newSvc.service_type} onChange={e => setNewSvc({ ...newSvc, service_type: e.target.value })}
-                      placeholder="服务类型" style={inputStyle} />
+                    <select value={newSvc.service_type} onChange={e => setNewSvc({ ...newSvc, service_type: e.target.value })} style={inputStyle}>
+                      <option value="">选择服务类目</option>
+                      {SERVICE_CATEGORY_OPTIONS.map(option => (
+                        <option key={option.key} value={option.label}>{option.label}（{option.examples}）</option>
+                      ))}
+                    </select>
                     <input type="number" value={newSvc.price} onChange={e => setNewSvc({ ...newSvc, price: e.target.value })}
                       placeholder="价格（元）" style={inputStyle} />
                     <input type="text" value={newSvc.duration} onChange={e => setNewSvc({ ...newSvc, duration: e.target.value })}
                       placeholder="时长（如：2小时）" style={inputStyle} />
                   </div>
+                  <textarea value={newSvc.description} onChange={e => setNewSvc({ ...newSvc, description: e.target.value })}
+                    placeholder="服务说明：例如可拍什么风格、是否可跟车、交付多少张图、是否可异地等"
+                    style={{ ...inputStyle, minHeight: 82, resize: 'vertical', marginBottom: 12 }} />
                   <button onClick={addService}
                     style={{ padding: '10px 24px', borderRadius: 10, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: INK, fontWeight: 700, fontSize: '0.875rem' }}>
                     添加

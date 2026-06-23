@@ -17,6 +17,10 @@ import {
   normalizeUploadRelativePath,
   saveLingqiSanitizedUploadImage,
 } from './uploadStorage.js';
+import {
+  identityRolesFromServices,
+  mergeIdentityRoles,
+} from '../src/lib/serviceCategories.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -333,6 +337,23 @@ function profileIdentityPatch(profile: Record<string, unknown> | null | undefine
     identity_roles: identityRoles,
     role_type: currentRoleType || identityRoles[0] || 'player',
   };
+}
+
+async function addProfileIdentityRoles(profileId: string, additions: string[]) {
+  const normalizedAdditions = additions.map(normalizeProfileIdentityRole).filter(Boolean);
+  if (normalizedAdditions.length === 0) return;
+  const { data: profile, error: profileErr } = await supabase
+    .from('lc_profiles')
+    .select('role, role_type, identity_roles, verified_dm, verified_shop')
+    .eq('id', profileId)
+    .maybeSingle();
+  if (profileErr) throw profileErr;
+  const patch = profileIdentityPatch(profile || {}, normalizedAdditions);
+  const { error: updateErr } = await supabase.from('lc_profiles').update({
+    ...patch,
+    updated_at: new Date().toISOString(),
+  }).eq('id', profileId);
+  if (updateErr) throw updateErr;
 }
 
 function profileAuthRole(profile: Record<string, unknown> | null | undefined) {
@@ -1664,6 +1685,9 @@ async function applyPublicReview(review: PublicReviewRecord) {
       description: payload.description || null,
     });
     if (insertErr) throw insertErr;
+    if (typeof payload.creator_id === 'string') {
+      await addProfileIdentityRoles(payload.creator_id, identityRolesFromServices([payload.service_type]));
+    }
     return;
   }
   if (review.target_type === 'portfolio_create') {
@@ -4324,13 +4348,20 @@ app.get('/api/lc/creators', async (req, res) => {
 
     const { data: serviceRows, error: serviceErr } = await supabase
       .from('lc_services')
-      .select('creator_id')
+      .select('creator_id, service_type')
       .eq('is_active', true);
     if (serviceErr) throw serviceErr;
 
     const serviceCreatorIds = Array.from(new Set((serviceRows || [])
       .map((row: { creator_id?: string | null }) => row.creator_id)
       .filter((id): id is string => Boolean(id))));
+    const serviceTypesByCreator = new Map<string, string[]>();
+    for (const row of (serviceRows || []) as Array<{ creator_id?: string | null; service_type?: string | null }>) {
+      if (!row.creator_id) continue;
+      const current = serviceTypesByCreator.get(row.creator_id) || [];
+      current.push(row.service_type || '');
+      serviceTypesByCreator.set(row.creator_id, current);
+    }
 
     if (serviceCreatorIds.length === 0) {
       return res.json(ok({
@@ -4359,7 +4390,13 @@ app.get('/api/lc/creators', async (req, res) => {
     const pagedItems = visibleProfiles.slice(offset, offset + limit);
 
     res.json(ok({
-      items: pagedItems.map(profile => sanitizeProfile(profile)),
+      items: pagedItems.map(profile => {
+        const serviceRoles = identityRolesFromServices(serviceTypesByCreator.get(String(profile.id)) || []);
+        return sanitizeProfile({
+          ...profile,
+          identity_roles: mergeIdentityRoles(profile.identity_roles, serviceRoles),
+        });
+      }),
       total,
       page,
       totalPages: Math.max(1, Math.ceil(total / limit)),
@@ -4385,9 +4422,11 @@ app.get('/api/lc/creators/:id', async (req, res) => {
 
     const hasPendingShopCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'shop');
     const hasPendingDmCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'dm');
+    const serviceRoles = identityRolesFromServices((services || []).map((service: { service_type?: string | null }) => service.service_type || ''));
 
     res.json(ok({
       ...profilePayload,
+      identity_roles: mergeIdentityRoles(profilePayload.identity_roles, serviceRoles),
       services: services || [],
       portfolio: portfolio || [],
       role_preferences: rolePreferences || [],
