@@ -428,16 +428,17 @@ const card: React.CSSProperties = {
 function ModerationPrecheckBadge({ value }: { value?: ModerationPrecheck | null }) {
   if (!value) return null;
   const decision = value.decision || 'pass';
-  const color = decision === 'block' ? '#fca5a5' : decision === 'review' ? '#fbbf24' : '#86efac';
-  const bg = decision === 'block' ? 'rgba(127,29,29,0.22)' : decision === 'review' ? 'rgba(146,95,24,0.18)' : 'rgba(22,101,52,0.16)';
+  const color = decision === 'block' ? '#991b1b' : decision === 'review' ? '#7c2d12' : '#166534';
+  const borderColor = decision === 'block' ? 'rgba(185,28,28,0.32)' : decision === 'review' ? 'rgba(194,65,12,0.32)' : 'rgba(22,101,52,0.24)';
+  const bg = decision === 'block' ? '#fef2f2' : decision === 'review' ? '#fff7ed' : '#f0fdf4';
   const label = decision === 'block' ? '建议拦截' : decision === 'review' ? '需关注' : '通过';
   const labels = Array.isArray(value.risk_labels) ? value.risk_labels : [];
   return (
-    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, border: `1px solid ${color}44`, background: bg, color, fontSize: '0.76rem', lineHeight: 1.6 }}>
+    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, border: `1px solid ${borderColor}`, background: bg, color, fontSize: '0.76rem', lineHeight: 1.6 }}>
       <strong>本地预审：{label}</strong>
       {typeof value.risk_score === 'number' ? ` · 风险 ${value.risk_score}` : ''}
       {labels.length > 0 ? ` · ${labels.join(' / ')}` : ''}
-      {value.summary ? <div style={{ color: MUTED }}>{value.summary}</div> : null}
+      {value.summary ? <div style={{ color: 'rgba(71,85,105,0.88)' }}>{value.summary}</div> : null}
     </div>
   );
 }
