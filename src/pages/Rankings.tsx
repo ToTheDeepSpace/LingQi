@@ -344,11 +344,11 @@ function negativeBoostAmount(item: Ranking) {
 }
 
 function agreeCount(item: Ranking) {
-  return item.agree_count ?? (item.type === 'black' ? item.likes || 0 : 0);
+  return item.agree_count ?? 0;
 }
 
 function opposeCount(item: Ranking) {
-  return item.oppose_count ?? item.dislikes ?? 0;
+  return item.oppose_count ?? 0;
 }
 
 function applyMetricPatch(item: Ranking, data: Partial<Ranking>) {

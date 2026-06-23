@@ -2588,17 +2588,12 @@ function metricNumber(value: unknown, fallback = 0) {
 
 function rankingMetrics(row: Record<string, unknown>): RankingMetrics {
   const legacyLikes = metricNumber(row.likes);
-  const legacyDislikes = metricNumber(row.dislikes);
   const boostAmount = row.boost_amount === undefined || row.boost_amount === null
     ? (row.type === 'black' ? 0 : legacyLikes)
     : metricNumber(row.boost_amount);
   const negativeBoostAmount = metricNumber(row.negative_boost_amount);
-  const agreeCount = row.agree_count === undefined || row.agree_count === null
-    ? (row.type === 'black' ? legacyLikes : 0)
-    : metricNumber(row.agree_count);
-  const opposeCount = row.oppose_count === undefined || row.oppose_count === null
-    ? legacyDislikes
-    : metricNumber(row.oppose_count);
+  const agreeCount = metricNumber(row.agree_count);
+  const opposeCount = metricNumber(row.oppose_count);
   const joys = metricNumber(row.joys);
 
   return {
@@ -7908,6 +7903,7 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
           .select('id, vote_type, created_at')
           .eq('ranking_id', req.params.id)
           .eq('voter_id', profile.id)
+          .eq('source', 'free_vote')
           .maybeSingle();
         const myVote = existingVote ? serializeMyVote(existingVote as RankingVoteRow) : null;
         return res.status(409).json({
