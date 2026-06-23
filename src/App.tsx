@@ -64,6 +64,7 @@ function AppLayout() {
           <Route path="/admin" element={<Admin />} />
           <Route path="/moderation" element={<CommunityModeration />} />
           <Route path="/rankings" element={<Rankings />} />
+          <Route path="/city" element={<CityReputation />} />
           <Route path="/reputation/city" element={<CityReputation />} />
           <Route path="/reputation/dossier" element={<ReputationDossier />} />
           <Route path="/dm-wall" element={<DmWall />} />

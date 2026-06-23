@@ -39,6 +39,7 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/admin': pageLoaders.admin,
   '/moderation': pageLoaders.moderation,
   '/rankings': pageLoaders.rankings,
+  '/city': pageLoaders.cityReputation,
   '/reputation/city': pageLoaders.cityReputation,
   '/reputation/dossier': pageLoaders.reputationDossier,
   '/dm-wall': pageLoaders.dmWall,

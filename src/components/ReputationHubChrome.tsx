@@ -12,20 +12,35 @@ type ShellProps = {
   active: ReputationHubActive;
   cityTitle?: string;
   cityHref?: string;
+  currentLabel?: string;
+  actions?: React.ReactNode;
   children: React.ReactNode;
 };
 
-export function ReputationHubShell({ active, cityTitle = '城市口碑', cityHref = '/reputation/city', children }: ShellProps) {
+export function ReputationHubShell({
+  active,
+  cityTitle = '城市口碑',
+  cityHref = '/reputation/city',
+  currentLabel,
+  actions,
+  children,
+}: ShellProps) {
+  const label = currentLabel || (active === 'rankings' ? '红黑榜' : active === 'roles' ? '角色点评' : cityTitle);
   return (
     <main style={pageStyle}>
       <section style={shellStyle}>
         <div style={subnavStyle}>
+          <div style={brandCrumbStyle}>
+            <strong style={brandStyle}>灵契</strong>
+            <span style={slashStyle}>/</span>
+            <span style={currentStyle}>{label}</span>
+          </div>
           <div style={subnavLeftStyle}>
-            <SubnavLink active={active === 'rankings'} to="/rankings">事件榜</SubnavLink>
+            <SubnavLink active={active === 'rankings'} to="/rankings">红黑榜</SubnavLink>
             <SubnavLink active={active === 'roles'} to="/scripts">角色点评</SubnavLink>
             <SubnavLink active={active === 'city'} to={cityHref}>{cityTitle}</SubnavLink>
           </div>
-          <Link to={cityHref} style={cityChipStyle}>📍 {cityTitle}</Link>
+          {actions && <div style={actionStyle}>{actions}</div>}
         </div>
         <div style={mainStyle}>{children}</div>
       </section>
@@ -100,12 +115,26 @@ function SubnavLink({ active, to, children }: { active: boolean; to: string; chi
 }
 
 const pageStyle: React.CSSProperties = { minHeight: '100vh', background: '#fffdf8', color: INK };
-const shellStyle: React.CSSProperties = { maxWidth: 1440, margin: '0 auto', background: '#fffdf8' };
-const subnavStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px clamp(14px, 3vw, 26px) 0', flexWrap: 'wrap' };
+const shellStyle: React.CSSProperties = { maxWidth: 1440, margin: '0 auto', background: '#fffdf8', padding: '16px clamp(12px, 2vw, 20px) 28px' };
+const subnavStyle: React.CSSProperties = {
+  minHeight: 54,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 14,
+  padding: '8px 12px',
+  flexWrap: 'wrap',
+  borderRadius: 12,
+  border: '1px solid rgba(31,41,55,0.08)',
+  background: '#fff',
+};
+const brandCrumbStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 34, whiteSpace: 'nowrap' };
+const brandStyle: React.CSSProperties = { fontFamily: 'var(--font-serif)', fontSize: 19, color: INK, lineHeight: 1 };
+const slashStyle: React.CSSProperties = { color: 'rgba(31,41,55,0.36)', fontWeight: 900 };
+const currentStyle: React.CSSProperties = { color: BLUE, fontSize: 13, fontWeight: 950 };
 const subnavLeftStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const subnavItemStyle: React.CSSProperties = { minHeight: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, border: '1px solid', padding: '0 12px', textDecoration: 'none', fontSize: 12, fontWeight: 900 };
-const cityChipStyle: React.CSSProperties = { minHeight: 36, display: 'inline-flex', alignItems: 'center', borderRadius: 999, border: '1px solid rgba(166,106,31,0.14)', padding: '0 12px', background: '#fff', color: '#8a5a19', textDecoration: 'none', fontSize: 12, fontWeight: 900 };
-const mainStyle: React.CSSProperties = { padding: 'clamp(14px, 3vw, 26px)', display: 'grid', gap: 18 };
+const actionStyle: React.CSSProperties = { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
+const mainStyle: React.CSSProperties = { paddingTop: 12, display: 'grid', gap: 12 };
 const badgeStyle: React.CSSProperties = { width: 'fit-content', display: 'inline-flex', alignItems: 'center', borderRadius: 999, border: '1px solid', padding: '8px 12px', fontSize: 12, fontWeight: 900, lineHeight: 1 };
 const buttonStyle: React.CSSProperties = { minHeight: 42, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: '1px solid', padding: '0 16px', textDecoration: 'none', fontSize: 13, fontWeight: 900 };
 const statStyle: React.CSSProperties = { minHeight: 94, borderRadius: 10, border: '1px solid rgba(31,41,55,0.06)', padding: 16, display: 'grid', alignContent: 'start', gap: 7 };

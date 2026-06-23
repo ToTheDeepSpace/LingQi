@@ -12,7 +12,7 @@ import {
 } from '../lib/postLoginFlow';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal, { type ReportTargetType } from '../components/ReportModal';
-import { ReputationBadge, ReputationButton, ReputationHubShell, ReputationPanel, ReputationStat } from '../components/ReputationHubChrome';
+import { ReputationButton, ReputationHubShell } from '../components/ReputationHubChrome';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import { cityReputationTitle } from '../lib/reputationNaming';
 
@@ -37,7 +37,6 @@ const TAB_HINT: Record<'red' | 'white' | 'black', string> = {
   white: '白榜：免费发帖，适合记录事实、补充线索、普通提醒，先留下公开记录。',
   black: '黑榜：记录违约、失联、骚扰、欺诈、严重服务不符等负面事件，公开期 30 天。',
 };
-const RANKINGS_RETENTION_NOTE = '黑榜 30 天公开期不是删除记录，而是把“持续公开挂人”和“长期行业学习”分开：公开期结束后，必要记录仍可用于争议处理和安全审计，后续也会优先做去标识化的共性问题总结。欢迎投资机构、沉浸式娱乐从业者、店家、DM、委托师和技术合作者提供样本、规则建议与共建资源。';
 
 type AuthSession = { token: string; displayName: string; userId?: string; city?: string | null; availableCities: string[] };
 
@@ -149,11 +148,11 @@ type AuditModal = { item: Ranking; loading: boolean; error: string; data?: Audit
 type BoardMode = 'reputation' | 'money';
 
 const card: React.CSSProperties = {
-  background: 'linear-gradient(135deg, #fffdf8 0%, #fbf4e8 100%)',
-  border: '1px solid rgba(166,106,31,0.18)',
-  borderRadius: 18,
-  padding: '22px 24px',
-  boxShadow: '0 12px 34px rgba(138,106,58,0.10)',
+  background: '#fff',
+  border: '1px solid rgba(31,41,55,0.08)',
+  borderRadius: 12,
+  padding: '18px 18px',
+  boxShadow: 'none',
 };
 
 const cityPanelScroll: React.CSSProperties = {
@@ -170,50 +169,94 @@ const inputStyle: React.CSSProperties = {
   fontSize: '0.875rem', boxSizing: 'border-box',
 };
 
-const rankHeroStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
-  gap: 18,
-  alignItems: 'stretch',
-};
-
-const rankHeroCopyStyle: React.CSSProperties = {
-  display: 'grid',
-  gap: 16,
-  alignContent: 'center',
-  background: 'linear-gradient(135deg, #fff8e8 0%, #eef6ff 100%)',
-  borderColor: 'rgba(166,106,31,0.13)',
-  overflow: 'hidden',
-};
-
 const walletChipStyle: React.CSSProperties = {
-  minHeight: 42,
+  minHeight: 34,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  borderRadius: 8,
+  borderRadius: 999,
   border: '1px solid rgba(217,168,87,0.28)',
   background: '#fff8e8',
   color: GOLD,
-  padding: '0 14px',
+  padding: '0 12px',
   textDecoration: 'none',
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 900,
 };
 
 function hubToggleStyle(active: boolean, color: string): React.CSSProperties {
   return {
-    minHeight: 38,
+    minHeight: 34,
     borderRadius: 999,
     border: `1px solid ${active ? color : 'rgba(31,41,55,0.10)'}`,
-    background: active ? color : '#fff',
-    color: active ? '#fff' : 'rgba(31,41,55,0.72)',
+    background: active ? color : (color === GOLD ? '#fff8e8' : '#fff'),
+    color: active ? '#fff' : (color === GOLD ? GOLD : 'rgba(31,41,55,0.72)'),
     padding: '0 12px',
     fontSize: 12,
     fontWeight: 900,
     cursor: 'pointer',
   };
 }
+
+const compactHeroStyle: React.CSSProperties = {
+  minHeight: 88,
+  borderRadius: 12,
+  border: '1px solid rgba(31,41,55,0.08)',
+  background: '#fff',
+  padding: '18px 18px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  flexWrap: 'wrap',
+};
+
+const compactTitleStyle: React.CSSProperties = {
+  margin: 0,
+  fontFamily: 'var(--font-serif)',
+  fontSize: 'clamp(1.9rem, 3.2vw, 2.45rem)',
+  lineHeight: 1.05,
+  letterSpacing: 0,
+};
+
+const compactLeadStyle: React.CSSProperties = {
+  margin: '6px 0 0',
+  color: 'rgba(31,41,55,0.72)',
+  lineHeight: 1.55,
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const filterBarStyle: React.CSSProperties = {
+  minHeight: 54,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 16,
+  flexWrap: 'wrap',
+  padding: '10px 12px',
+  borderRadius: 10,
+  background: '#f8fafc',
+  border: '1px solid rgba(31,41,55,0.06)',
+};
+
+const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
+const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 360px), 1fr))', gap: 12, alignItems: 'start' };
+const chipRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
+const metricChipStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  minHeight: 30,
+  padding: '0 11px',
+  borderRadius: 999,
+  border: '1px solid rgba(31,41,55,0.10)',
+  background: '#fff',
+  color: '#275389',
+  fontSize: 12,
+  fontWeight: 900,
+};
+const goldMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: '#fff8e8', color: GOLD, borderColor: 'rgba(217,168,87,0.30)' };
+const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 10, borderTop: '1px solid rgba(31,41,55,0.06)' };
+const compactActionButtonStyle: React.CSSProperties = { border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.66)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 0', fontWeight: 800 };
 
 function getAuth(): AuthSession | null {
   const data = readStoredCreatorAuth();
@@ -423,57 +466,6 @@ function formatAuditValue(field: string, value: unknown) {
   return JSON.stringify(value);
 }
 
-function paidBattleButtonStyle(direction: 'boost' | 'negative_boost', active: boolean): React.CSSProperties {
-  const isNegative = direction === 'negative_boost';
-  return {
-    minHeight: 54,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: isNegative ? 'flex-end' : 'flex-start',
-    gap: 10,
-    padding: '10px 28px',
-    border: 'none',
-    background: isNegative
-      ? (active
-        ? 'linear-gradient(90deg, #9aa2ad 0%, #3f4652 100%)'
-        : 'linear-gradient(90deg, #eef1f5 0%, #d8dde5 100%)')
-      : (active
-        ? 'linear-gradient(90deg, #f4ddd6 0%, #c98b80 100%)'
-        : 'linear-gradient(90deg, #fff8f5 0%, #f3e3de 100%)'),
-    color: active ? (isNegative ? '#fffdf8' : '#8f3732') : 'rgba(71,85,105,0.58)',
-    cursor: 'pointer',
-    fontSize: '1.12rem',
-    fontWeight: 950,
-    textAlign: isNegative ? 'right' : 'left',
-    letterSpacing: 0,
-    transition: 'transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease',
-    boxShadow: isNegative
-      ? 'inset 0 1px 0 rgba(255,255,255,0.12)'
-      : 'inset 0 1px 0 rgba(255,255,255,0.86)',
-  };
-}
-
-function freeActionButtonStyle(active: boolean, tone: 'agree' | 'oppose' | 'joy'): React.CSSProperties {
-  const toneColor = tone === 'oppose' ? '#303846' : tone === 'agree' ? '#8f3732' : '#8a5a18';
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: tone === 'agree' ? 'flex-start' : tone === 'oppose' ? 'flex-end' : 'center',
-    gap: 5,
-    flex: '1 1 0',
-    minWidth: 0,
-    minHeight: 28,
-    padding: '2px 0',
-    border: 'none',
-    background: 'transparent',
-    color: active ? toneColor : 'rgba(71,85,105,0.72)',
-    cursor: 'pointer',
-    fontSize: '0.78rem',
-    fontWeight: active ? 900 : 780,
-    transition: 'transform 0.16s ease, color 0.16s ease',
-  };
-}
-
 function paidBoostBreakdown(item: Ranking) {
   const total = boostAmount(item);
   const initial = Math.max(0, Math.trunc(Number(item.initial_amount || 0)));
@@ -481,19 +473,6 @@ function paidBoostBreakdown(item: Ranking) {
     total,
     initial,
     paid: Math.max(0, total - initial),
-  };
-}
-
-function reputationSegments(item: Ranking) {
-  const agree = agreeCount(item);
-  const absurd = item.joys || 0;
-  const oppose = opposeCount(item);
-  const total = agree + absurd + oppose;
-  if (total <= 0) return { agree: 33.34, absurd: 33.33, oppose: 33.33 };
-  return {
-    agree: (agree / total) * 100,
-    absurd: (absurd / total) * 100,
-    oppose: (oppose / total) * 100,
   };
 }
 
@@ -1261,11 +1240,17 @@ export default function Rankings() {
   const tabBtn = (t: 'red' | 'black' | 'white', label: string, color: string) => (
     <button onClick={() => setTab(t)}
       style={{
-        flex: 1, padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer',
-        fontWeight: 700, fontSize: '1rem', transition: 'all 0.2s',
-        background: tab === t ? `${color}18` : 'transparent',
-        color: tab === t ? color : 'rgba(71,85,105,0.70)',
-        boxShadow: tab === t ? `inset 0 0 0 1px ${color}36` : 'none',
+        minHeight: 34,
+        padding: '0 13px',
+        borderRadius: 999,
+        border: tab === t ? `1px solid ${color}` : '1px solid rgba(31,41,55,0.12)',
+        cursor: 'pointer',
+        fontWeight: 900,
+        fontSize: 12,
+        transition: 'all 0.2s',
+        background: tab === t ? color : (t === 'white' ? '#fff8e8' : '#fff'),
+        color: tab === t ? '#fff' : (t === 'white' ? GOLD : 'rgba(31,41,55,0.74)'),
+        whiteSpace: 'nowrap',
       }}>{label}</button>
   );
 
@@ -1382,94 +1367,63 @@ export default function Rankings() {
           </div>
         </div>
       )}
-      <ReputationHubShell active="rankings" cityTitle={cityReputationLabel} cityHref={cityReputationHref}>
-        <section style={rankHeroStyle}>
-          <ReputationPanel style={rankHeroCopyStyle}>
-            <ReputationBadge tone="dark">灵契口碑主入口</ReputationBadge>
-            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2.35rem, 5vw, 3.2rem)', lineHeight: 1.05 }}>
-              红黑榜
-            </h1>
-            <p style={{ margin: 0, maxWidth: 760, color: 'rgba(31,41,55,0.78)', lineHeight: 1.65, fontSize: 16, fontWeight: 600 }}>
-              夸人、避雷、吐槽、记录一段具体经历。先写事实和证据，再由审核把它沉淀成对象档案、城市口碑和角色点评。
-            </p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <ReputationButton to="/rankings/new">发布评价</ReputationButton>
-              <ReputationButton to={cityReputationHref} tone="light">{cityReputationLabel}</ReputationButton>
-              <ReputationButton to="/scripts" tone="light">角色点评</ReputationButton>
-              {auth && (
-                <Link to="/wallet" style={walletChipStyle}>
-                  {walletLoading ? '契约币 ...' : `契约币 ${balance || 0}`}
-                </Link>
-              )}
-            </div>
-          </ReputationPanel>
-
-          <ReputationPanel style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
-            <h2 style={{ margin: 0, fontSize: 15 }}>榜单展示</h2>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button onClick={() => setBoardMode('reputation')} style={hubToggleStyle(boardMode === 'reputation', '#275389')}>口碑榜 · 一号一票</button>
-              <button onClick={() => setBoardMode('money')} style={hubToggleStyle(boardMode === 'money', GOLD)}>真金榜 · 打榜值</button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-              <ReputationStat value={rankedItems.reduce((sum, item) => sum + boostAmount(item), 0)} label="打榜值" tone="gold" />
-              <ReputationStat value={rankedItems.reduce((sum, item) => sum + boardRankScore(item, 'reputation'), 0)} label="口碑值" tone="blue" />
-              <ReputationStat value={rankedItems.reduce((sum, item) => sum + reputationParticipation(item), 0)} label="参与人数" tone="green" />
-              <ReputationStat value="30天" label="黑榜公开期" tone="red" />
-            </div>
-          </ReputationPanel>
+      <ReputationHubShell
+        active="rankings"
+        cityTitle={cityReputationLabel}
+        cityHref={cityReputationHref}
+        currentLabel="红黑榜"
+        actions={(
+          <>
+            {auth && (
+              <Link to="/wallet" style={walletChipStyle}>
+                {walletLoading ? '契约币 ...' : `契约币 ${balance || 0}`}
+              </Link>
+            )}
+            <ReputationButton to="/rankings/new">发布评价</ReputationButton>
+          </>
+        )}
+      >
+        <section style={compactHeroStyle}>
+          <div>
+            <h1 style={compactTitleStyle}>灵契·红黑榜</h1>
+            <p style={compactLeadStyle}>拒绝上传任何个人隐私。先写事实、凭证和公共影响，再进入人工审核。</p>
+          </div>
+          <div style={filterGroupStyle}>
+            <button onClick={() => setBoardMode('reputation')} style={hubToggleStyle(boardMode === 'reputation', '#275389')}>口碑榜</button>
+            <button onClick={() => setBoardMode('money')} style={hubToggleStyle(boardMode === 'money', GOLD)}>真金榜</button>
+            <ReputationButton to="/rankings/new">发布评价</ReputationButton>
+          </div>
         </section>
 
-        <div style={{ display: 'grid', gap: 14 }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 10,
-          flexWrap: 'wrap',
-          padding: 10,
-          borderRadius: 16,
-          background: '#fffdf8',
-          border: '1px solid rgba(166,106,31,0.16)',
-          boxShadow: '0 8px 20px rgba(102,70,30,0.05)',
-        }}>
-          <div style={{ width: 'min(100%, 316px)', display: 'flex', gap: 4, padding: 4, backgroundColor: '#fffaf2', border: '1px solid rgba(166,106,31,0.12)', borderRadius: 12 }}>
-            {tabBtn('red', '红', '#8f4c43')}
-            {tabBtn('black', '黑', '#475569')}
-            {tabBtn('white', '白', '#b8860b')}
+        <section style={filterBarStyle}>
+          <div style={filterGroupStyle}>
+            {tabBtn('red', '红', '#9a3412')}
+            {tabBtn('white', '白', '#d9a857')}
+            {tabBtn('black', '黑', '#1f2937')}
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 300px' }}>
-            <FilterPill active={subjectTab === 'all'} onClick={() => setSubjectTab('all')}>全部</FilterPill>
+          <div style={filterGroupStyle}>
+            <CityFilter
+              city={city}
+              preferredCities={preferredCities}
+              open={cityOpen}
+              query={cityQuery}
+              options={cityOptions}
+              onToggle={() => setCityOpen(v => !v)}
+              onQuery={setCityQuery}
+              onSelect={setCityAndClose}
+              onClose={() => setCityOpen(false)}
+            />
+            <FilterPill active={subjectTab === 'all'} onClick={() => setSubjectTab('all')}>全部对象</FilterPill>
             {SUBJECT_TYPES.map(st => (
               <FilterPill key={st} active={subjectTab === st} onClick={() => setSubjectTab(st)}>
                 {SUBJECT_LABEL[st]}
               </FilterPill>
             ))}
           </div>
-          <CityFilter
-            city={city}
-            preferredCities={preferredCities}
-            open={cityOpen}
-            query={cityQuery}
-            options={cityOptions}
-            onToggle={() => setCityOpen(v => !v)}
-            onQuery={setCityQuery}
-            onSelect={setCityAndClose}
-            onClose={() => setCityOpen(false)}
-          />
-          <Link to="/rankings/new"
-            style={{ padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: C, fontWeight: 800, fontSize: '0.86rem', textDecoration: 'none', flexShrink: 0 }}>
-            + 发布
-          </Link>
-          <Link to={cityReputationHref}
-            style={{ padding: '9px 12px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.18)', color: 'rgba(71,85,105,0.72)', background: '#fffaf2', fontWeight: 800, fontSize: '0.78rem', textDecoration: 'none', flexShrink: 0 }}>
-            {cityReputationLabel}
-          </Link>
-          <Link to="/dm-wall"
-            style={{ padding: '9px 12px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.18)', color: 'rgba(71,85,105,0.72)', background: '#fffaf2', fontWeight: 800, fontSize: '0.78rem', textDecoration: 'none', flexShrink: 0 }}>
-            爱D墙 / 店家
-          </Link>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        </section>
+
+        <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.7 }}>
             {TAB_HINT[tab]} {boardMode === 'reputation'
               ? '口碑榜按一人一票的同意、反对和欢乐参与排序，优先看真实人数。'
@@ -1532,7 +1486,7 @@ export default function Rankings() {
         )}
 
         {!loading && !error && rankedItems.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 360px), 1fr))', gap: 14, alignItems: 'start' }}>
+          <div style={rankingGridStyle}>
             {rankedItems.map((item, idx) => {
               const accentColor = item.type === 'red' ? '#b91c1c' : item.type === 'black' ? BLK : GOLD;
               const subtleAccentBg = item.type === 'red' ? 'rgba(185,28,28,0.08)' : item.type === 'black' ? 'rgba(148,163,184,0.10)' : 'rgba(166,106,31,0.10)';
@@ -1549,7 +1503,6 @@ export default function Rankings() {
               const left = daysLeft(item);
               const myVote = item.my_vote || null;
               const boostStats = paidBoostBreakdown(item);
-              const reputation = reputationSegments(item);
               const kind = eventKindCopy(item.type);
               const heading = eventTitle(item.content);
               const summary = eventSummary(item.content);
@@ -1586,8 +1539,8 @@ export default function Rankings() {
                       background: '#626b78',
                     }} />
                   )}
-                  <div style={{ marginBottom: 22 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 26 }}>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
                       <span style={{
                         padding: '4px 12px',
                         borderRadius: 999,
@@ -1622,9 +1575,9 @@ export default function Rankings() {
                     </div>
                     {summary && (
                       <p style={{
-                        fontSize: 'clamp(1rem, 2vw, 1.2rem)',
+                        fontSize: '0.96rem',
                         color: 'rgba(31,41,55,0.92)',
-                        lineHeight: 1.78,
+                        lineHeight: 1.7,
                         margin: '0',
                         fontWeight: 650,
                         whiteSpace: 'pre-wrap',
@@ -1677,6 +1630,13 @@ export default function Rankings() {
                     </div>
                   </div>
 
+                  <div style={{ ...chipRowStyle, marginBottom: 12 }}>
+                    <span style={goldMetricChipStyle}>{boostStats.total} 打榜值</span>
+                    <span style={metricChipStyle}>{negativeBoostAmount(item)} 踩榜值</span>
+                    <span style={metricChipStyle}>{reputationParticipation(item)} 人参与</span>
+                    <span style={metricChipStyle}>评论 {comments.length}</span>
+                  </div>
+
                   {item.files && item.files.length > 0 && (() => {
                     const pdfFiles = item.files.filter(f => {
                       if (f.type && (f.type.includes('pdf') || f.type === 'application/pdf')) return true;
@@ -1701,103 +1661,59 @@ export default function Rankings() {
                     );
                   })()}
 
-                  <div style={{ display: 'grid', gap: 14, marginBottom: 14 }}>
-                    <div style={{ display: 'grid', gap: 7 }}>
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'minmax(0, 1fr) 1px minmax(0, 1fr)',
-                        overflow: 'hidden',
-                        borderRadius: 999,
-                        border: '1px solid #e6d6b7',
-                        background: '#fffaf2',
-                        boxShadow: '0 10px 20px rgba(71,85,105,0.08)',
-                      }}>
-                        <button onClick={() => openPaidBoostModal(item.id, 'boost')}
-                          aria-label={`给事件「${heading}」打榜`}
-                          style={paidBattleButtonStyle('boost', boostStats.total > 0)}>
-                          打榜 {boostStats.total}
-                        </button>
-                        <div style={{ background: 'linear-gradient(180deg, rgba(166,106,31,0.12), rgba(166,106,31,0.30), rgba(166,106,31,0.12))' }} />
-                        <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
-                          aria-label={`给事件「${heading}」踩榜`}
-                          style={paidBattleButtonStyle('negative_boost', negativeBoostAmount(item) > 0)}>
-                          踩榜 {negativeBoostAmount(item)}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleBoosts(item.id)}
-                        style={{
-                          justifySelf: 'center',
-                          border: 'none',
-                          background: 'transparent',
-                          color: 'rgba(71,85,105,0.58)',
-                          cursor: 'pointer',
+                  <div style={{ ...compactActionRowStyle, marginBottom: 14 }}>
+                    <button onClick={() => openPaidBoostModal(item.id, 'boost')}
+                      aria-label={`给事件「${heading}」打榜`}
+                      style={{ ...compactActionButtonStyle, color: boostStats.total > 0 ? GOLD : 'rgba(71,85,105,0.66)' }}>
+                      打榜 {boostStats.total}
+                    </button>
+                    <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
+                      aria-label={`给事件「${heading}」踩榜`}
+                      style={{ ...compactActionButtonStyle, color: negativeBoostAmount(item) > 0 ? '#475569' : 'rgba(71,85,105,0.66)' }}>
+                      踩榜 {negativeBoostAmount(item)}
+                    </button>
+                    <button onClick={() => openVoteModal(item.id, 'like')}
+                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'like' ? '#8f3732' : 'rgba(71,85,105,0.66)' }}>
+                      {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}
+                    </button>
+                    <button onClick={() => openVoteModal(item.id, 'joy')}
+                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'joy' ? GOLD : 'rgba(71,85,105,0.66)' }}>
+                      欢乐 {item.joys || 0}
+                    </button>
+                    <button onClick={() => openVoteModal(item.id, 'dislike')}
+                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'dislike' ? '#303846' : 'rgba(71,85,105,0.66)' }}>
+                      {myVote?.vote_type === 'dislike' ? '已反对' : '反对'} {opposeCount(item)}
+                    </button>
+                    <button type="button" onClick={() => toggleBoosts(item.id)} style={compactActionButtonStyle}>
+                      {showBoosts ? '收起打榜记录' : '打榜记录'}
+                    </button>
+                  </div>
+
+                  {showBoosts && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, paddingBottom: 12 }}>
+                      {boosts.length === 0 ? (
+                        <span style={{ fontSize: '0.74rem', color: 'rgba(71,85,105,0.48)' }}>暂无真金白银记录</span>
+                      ) : boosts.map(record => (
+                        <span key={record.id} style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '4px 9px',
+                          borderRadius: 999,
+                          border: record.direction === 'negative_boost' ? '1px solid rgba(48,56,70,0.18)' : '1px solid rgba(143,55,50,0.18)',
+                          background: record.direction === 'negative_boost' ? 'rgba(71,85,105,0.07)' : 'rgba(201,120,112,0.10)',
+                          color: record.direction === 'negative_boost' ? '#303846' : '#8f3732',
                           fontSize: '0.72rem',
                           fontWeight: 850,
-                          padding: '2px 8px',
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
-                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.58)')}
-                      >
-                        {showBoosts ? '收起真金白银记录' : '谁打榜 / 踩榜'}
-                      </button>
-                      {showBoosts && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center', paddingBottom: 2 }}>
-                          {boosts.length === 0 ? (
-                            <span style={{ fontSize: '0.74rem', color: 'rgba(71,85,105,0.48)' }}>暂无真金白银记录</span>
-                          ) : boosts.map(record => (
-                            <span key={record.id} style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                              padding: '4px 9px',
-                              borderRadius: 999,
-                              border: record.direction === 'negative_boost' ? '1px solid rgba(48,56,70,0.18)' : '1px solid rgba(143,55,50,0.18)',
-                              background: record.direction === 'negative_boost' ? 'rgba(71,85,105,0.07)' : 'rgba(201,120,112,0.10)',
-                              color: record.direction === 'negative_boost' ? '#303846' : '#8f3732',
-                              fontSize: '0.72rem',
-                              fontWeight: 850,
-                            }}>
-                              {record.direction === 'negative_boost' ? '踩榜' : (record.is_initial ? '初始' : '打榜')} {record.amount}
-                              <span style={{ color: 'rgba(71,85,105,0.58)', fontWeight: 750 }}>
-                                · {record.contributor_is_realname ? `⭐ ${record.contributor_name}` : record.contributor_name}
-                              </span>
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                        }}>
+                          {record.direction === 'negative_boost' ? '踩榜' : (record.is_initial ? '初始' : '打榜')} {record.amount}
+                          <span style={{ color: 'rgba(71,85,105,0.58)', fontWeight: 750 }}>
+                            · {record.contributor_is_realname ? `⭐ ${record.contributor_name}` : record.contributor_name}
+                          </span>
+                        </span>
+                      ))}
                     </div>
-                    <div style={{ display: 'grid', gap: 9 }}>
-                      <div aria-hidden="true" style={{
-                        display: 'flex',
-                        height: 24,
-                        overflow: 'hidden',
-                        borderRadius: 999,
-                        border: '1px solid #edf0f3',
-                        background: '#f8fafc',
-                      }}>
-                        <div style={{ width: `${reputation.agree}%`, background: 'linear-gradient(90deg, #f6ddd8 0%, #c97870 100%)' }} />
-                        <div style={{ width: `${reputation.absurd}%`, background: 'linear-gradient(90deg, #fbf0cf 0%, #d7aa3f 100%)' }} />
-                        <div style={{ width: `${reputation.oppose}%`, background: reputation.oppose > 0 ? 'linear-gradient(90deg, #9aa2ad 0%, #3f4652 100%)' : '#eef1f5' }} />
-                      </div>
-                      <div style={{ display: 'flex', gap: 7 }}>
-                      <button onClick={() => openVoteModal(item.id, 'like')}
-                        style={freeActionButtonStyle(myVote?.vote_type === 'like', 'agree')}>
-                        <span>👍</span><span>{myVote?.vote_type === 'like' ? '已同意' : '同意'}</span><strong>{agreeCount(item)}</strong>
-                      </button>
-                      <button onClick={() => openVoteModal(item.id, 'joy')}
-                        style={freeActionButtonStyle(myVote?.vote_type === 'joy', 'joy')}>
-                        <span style={{ display: 'inline-flex', transform: 'rotate(-45deg)', transformOrigin: 'center' }}>😂</span>
-                        <span>{myVote?.vote_type === 'joy' ? '已欢乐' : '欢乐'}</span><strong>{item.joys || 0}</strong>
-                      </button>
-                      <button onClick={() => openVoteModal(item.id, 'dislike')}
-                        style={freeActionButtonStyle(myVote?.vote_type === 'dislike', 'oppose')}>
-                        <span>{myVote?.vote_type === 'dislike' ? '已反对' : '反对'}</span><strong>{opposeCount(item)}</strong><span>👎</span>
-                      </button>
-                      </div>
-                    </div>
-                  </div>
+                  )}
 
                   {pinnedComments.length > 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
@@ -1835,7 +1751,7 @@ export default function Rankings() {
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 10, borderTop: '1px solid rgba(201,146,46,0.08)', flexWrap: 'wrap' }}>
+                  <div style={compactActionRowStyle}>
                     <button onClick={() => toggleComments(item.id)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
@@ -1939,9 +1855,6 @@ export default function Rankings() {
             })}
           </div>
         )}
-        <p style={{ margin: '18px 0 0', padding: '14px 16px', borderRadius: 12, border: '1px solid #fde68a', backgroundColor: 'rgba(255,255,255,0.68)', color: '#4b5563', lineHeight: 1.7, fontSize: 14 }}>
-          {RANKINGS_RETENTION_NOTE}
-        </p>
         </div>
       </ReputationHubShell>
 

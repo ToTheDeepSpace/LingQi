@@ -2,24 +2,33 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import CitySearchSelect from '../components/CitySearchSelect';
-import InfoTip from '../components/InfoTip';
-import { ReputationAdCard, ReputationBadge, ReputationHubShell, ReputationPanel, ReputationStat } from '../components/ReputationHubChrome';
+import { ReputationButton, ReputationHubShell } from '../components/ReputationHubChrome';
 import { cityReputationTitle } from '../lib/reputationNaming';
 
 const API = '/api';
 const GOLD = '#a66a1f';
 const INK = '#1f2937';
+const BLUE = '#275389';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 const SUBJECT_LABEL: Record<string, string> = {
-  creator: '委托师',
-  dm: 'DM / 卡司',
+  creator: '灵契师',
+  dm: '卡司',
   store: '店家',
   takeaway: '外卖',
   player: '玩家',
+  script_role: '角色',
 };
 
-type SortKey = 'composite' | 'praise' | 'people' | 'new';
+const CITY_SUBJECT_FILTERS = [
+  { value: 'all', label: '全部' },
+  { value: 'dm', label: '卡司' },
+  { value: 'store', label: '店家' },
+  { value: 'takeaway', label: '外卖' },
+  { value: 'script_role', label: '角色' },
+] as const;
+
+type SortKey = 'composite' | 'people' | 'new';
 
 type ReputationItem = {
   key: string;
@@ -45,6 +54,17 @@ function dossierUrl(item: ReputationItem) {
   });
   if (item.subject_city) params.set('city', item.subject_city);
   return `/reputation/dossier?${params}`;
+}
+
+function sortLabel(sort: SortKey) {
+  if (sort === 'people') return '参与人数';
+  if (sort === 'new') return '新晋';
+  return '口碑值';
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return '暂无更新';
+  return value.slice(0, 10);
 }
 
 export default function CityReputation() {
@@ -92,131 +112,163 @@ export default function CityReputation() {
   }, [city, subjectType, sort, requestKey]);
 
   return (
-    <ReputationHubShell active="city" cityTitle={pageTitle} cityHref={cityHref}>
+    <ReputationHubShell
+      active="city"
+      cityTitle={pageTitle}
+      cityHref={cityHref}
+      currentLabel={pageTitle}
+      actions={<ReputationButton to="/rankings/new">发布城市口碑</ReputationButton>}
+    >
       <section style={cityHeroStyle}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
-          <div>
-            <ReputationBadge>{city === 'all' ? '城市口碑' : city}</ReputationBadge>
-            <h1 style={{ margin: '14px 0 10px', fontFamily: 'var(--font-serif)', fontSize: 'clamp(2.2rem, 5vw, 3rem)', lineHeight: 1.08 }}>
-              {pageTitle}
-              <InfoTip>这里不是单条红黑榜，而是把玩家遇到的事件沉淀成城市里的 DM、店家、剧本和角色参考。打榜值代表真金白银支持强度，口碑值代表多人认可和信息质量。</InfoTip>
-            </h1>
-            <p style={{ margin: 0, maxWidth: 720, color: MUTED, lineHeight: 1.75, fontSize: 15, fontWeight: 600 }}>
-              同一个城市里，店家、卡司、灵契师、玩家、外卖和剧本角色的口碑会自然连在一起。这里展示城市维度的对象档案，不替代红黑榜事件主榜。
-            </p>
-          </div>
-          <ReputationAdCard />
+        <div>
+          <p style={eyebrowStyle}>{city === 'all' ? '城市口碑' : city}</p>
+          <h1 style={titleStyle}>{pageTitle}</h1>
+          <p style={leadStyle}>
+            城市页聚合店家、卡司、外卖和角色的对象档案，不替代红黑榜事件主榜。
+          </p>
         </div>
+        <aside style={adInlineStyle}>
+          <strong>广告位招租</strong>
+          <ReputationButton to="/contact" tone="gold">联系投放</ReputationButton>
+        </aside>
+      </section>
 
-        <div style={cityFilterStyle}>
-          <CitySearchSelect
-            value={city}
-            onChange={setCity}
-            allowAll
-            allowCustom
-            style={{ minWidth: 190, flex: '1 1 190px' }}
-          />
-          <select value={subjectType} onChange={e => setSubjectType(e.target.value)} style={inputStyle}>
-            <option value="all">全部对象</option>
-            {Object.entries(SUBJECT_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-          <Segment active={sort === 'composite'} onClick={() => setSort('composite')}>综合榜</Segment>
-          <Segment active={sort === 'praise'} onClick={() => setSort('praise')}>打榜排行</Segment>
-          <Segment active={sort === 'people'} onClick={() => setSort('people')}>人气榜</Segment>
-          <Segment active={sort === 'new'} onClick={() => setSort('new')}>新晋榜</Segment>
-          <Link to="/dm-wall" style={ghostButton}>爱D墙 / 店家</Link>
+      <section style={cityFilterStyle}>
+        <CitySearchSelect
+          value={city}
+          onChange={setCity}
+          allowAll
+          allowCustom
+          style={{ minWidth: 190, flex: '1 1 190px' }}
+        />
+        <div style={filterGroupStyle}>
+          {CITY_SUBJECT_FILTERS.map(item => (
+            <Segment key={item.value} active={subjectType === item.value} onClick={() => setSubjectType(item.value)}>
+              {item.label}
+            </Segment>
+          ))}
+        </div>
+        <div style={filterGroupStyle}>
+          <Segment active={sort === 'composite'} onClick={() => setSort('composite')}>口碑值</Segment>
+          <Segment active={sort === 'people'} onClick={() => setSort('people')}>参与人数</Segment>
+          <Segment active={sort === 'new'} onClick={() => setSort('new')}>新晋</Segment>
         </div>
       </section>
 
-      <section style={cityBodyStyle}>
-        <ReputationPanel style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-            <h2 style={{ margin: 0, fontSize: 20 }}>{city === 'all' ? '城市对象档案' : `${city}对象档案`}</h2>
-            <ReputationBadge tone="gold">{sort === 'praise' ? '按打榜值排序' : sort === 'people' ? '按打榜人数排序' : sort === 'new' ? '按新晋排序' : '按口碑值排序'}</ReputationBadge>
-          </div>
+      <section style={contentSectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>{city === 'all' ? '城市对象档案' : `${city}对象档案`}</h2>
+          <span style={sortBadgeStyle}>按{sortLabel(sort)}排序</span>
+        </div>
+
         {loading ? (
-          <p style={{ color: MUTED, padding: '36px 0' }}>加载中...</p>
+          <p style={{ color: MUTED, padding: '36px 0', margin: 0 }}>加载中...</p>
         ) : error ? (
           <div style={emptyStyle}>{error}</div>
         ) : items.length === 0 ? (
           <div style={emptyStyle}>当前城市暂无可聚合的对象档案。先去红黑榜发布事件，或去爱D墙创建 DM / 店家档案。</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+          <div style={cityGridStyle}>
             {items.map((item, index) => (
-              <article key={item.key} style={cardStyle}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
-                  <div>
-                    <span style={rankBadge}>#{index + 1}</span>
-                    <h2 style={{ margin: '8px 0 6px', fontSize: 19 }}>{item.subject_name}</h2>
-                    <p style={{ margin: 0, color: MUTED, fontSize: 14 }}>
-                      {SUBJECT_LABEL[item.subject_type] || item.subject_type}{item.subject_city ? ` · ${item.subject_city}` : ''}
+              <article key={item.key} className="content-card" style={cardStyle}>
+                <div style={cardHeaderStyle}>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={rankBadgeStyle}>#{index + 1}</span>
+                    <h2 style={cardTitleStyle}>{item.subject_name}</h2>
+                    <p style={cardMetaStyle}>
+                      {SUBJECT_LABEL[item.subject_type] || item.subject_type}
+                      {item.subject_city ? ` · ${item.subject_city}` : ''}
                     </p>
                   </div>
-                  <span style={typeBadge}>{item.black_count > 0 ? '含争议记录' : '正向沉淀'}</span>
+                  <span style={typeBadgeStyle}>{item.black_count > 0 ? '含争议记录' : '正向沉淀'}</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
-                  <Metric label="打榜值" value={item.praise_value} />
-                  <Metric label="口碑值" value={item.reputation_value} />
-                  <Metric label="打榜人数" value={item.praise_people} />
+
+                <div style={metricRowStyle}>
+                  <span style={goldMetricChipStyle}>{item.praise_value} 打榜值</span>
+                  <span style={metricChipStyle}>{item.reputation_value} 口碑值</span>
+                  <span style={metricChipStyle}>{item.praise_people} 人参与</span>
                 </div>
-                <p style={{ margin: '0 0 10px', color: MUTED, fontSize: 13, lineHeight: 1.7 }}>
+
+                <p style={eventLineStyle}>
                   {item.event_count} 条事件 · 红 {item.red_count} · 白 {item.white_count} · 黑 {item.black_count} · 评论 {item.comment_count}
                 </p>
+
                 {item.tags && item.tags.length > 0 && (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                    {item.tags.map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
+                  <div style={tagRowStyle}>
+                    {item.tags.slice(0, 4).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
                   </div>
                 )}
-                <Link to={dossierUrl(item)} style={primaryButton}>查看档案</Link>
+
+                <div style={cardFooterStyle}>
+                  <span style={{ color: 'rgba(71,85,105,0.48)', fontSize: 12 }}>{formatDate(item.latest_at)}</span>
+                  <Link to={dossierUrl(item)} style={primaryButtonStyle}>查看档案</Link>
+                </div>
               </article>
             ))}
           </div>
         )}
-        </ReputationPanel>
-        <aside style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
-          <ReputationPanel>
-            <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>城市趋势</h2>
-            <div style={{ display: 'grid', gap: 10 }}>
-              <ReputationStat label="聚合对象" value={items.length} tone="blue" />
-              <ReputationStat label="事件总数" value={items.reduce((sum, item) => sum + item.event_count, 0)} tone="gold" />
-              <ReputationStat label="打榜人数" value={items.reduce((sum, item) => sum + item.praise_people, 0)} tone="green" />
-              <ReputationStat label="含争议记录" value={items.filter(item => item.black_count > 0).length} tone="red" />
-            </div>
-          </ReputationPanel>
-          <section style={ruleCardStyle}>
-            <h2 style={{ margin: '0 0 10px', color: '#d9a857', fontSize: 16 }}>审核规则</h2>
-            <p style={{ margin: 0, color: 'rgba(255,253,248,0.82)', lineHeight: 1.7, fontSize: 13 }}>
-              红黑榜事件必须有证据，涉及第三方信息要打码；相关方回应、评论和举报都会留存记录。
-            </p>
-          </section>
-        </aside>
       </section>
     </ReputationHubShell>
   );
 }
 
 function Segment({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button onClick={onClick} style={{ ...ghostButton, background: active ? 'rgba(166,106,31,0.12)' : '#fffaf2', borderColor: active ? 'rgba(166,106,31,0.42)' : 'rgba(166,106,31,0.22)' }}>{children}</button>;
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ borderRadius: 10, background: '#fffaf2', border: '1px solid rgba(166,106,31,0.12)', padding: '9px 8px' }}>
-      <div style={{ color: GOLD, fontSize: 20, fontWeight: 950 }}>{value}</div>
-      <div style={{ color: 'rgba(71,85,105,0.62)', fontSize: 12, fontWeight: 800 }}>{label}</div>
-    </div>
+    <button onClick={onClick} style={segmentStyle(active)}>
+      {children}
+    </button>
   );
 }
 
-const inputStyle: React.CSSProperties = { boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(166,106,31,0.20)', background: '#fff', color: INK, outline: 'none', fontSize: 14 };
-const ghostButton: React.CSSProperties = { border: '1px solid rgba(166,106,31,0.22)', borderRadius: 10, background: '#fffaf2', color: GOLD, padding: '9px 13px', fontWeight: 800, cursor: 'pointer', textDecoration: 'none', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
-const primaryButton: React.CSSProperties = { border: 'none', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: '#fffdf8', padding: '10px 14px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
-const cardStyle: React.CSSProperties = { padding: 16, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)' };
-const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 14, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };
-const rankBadge: React.CSSProperties = { display: 'inline-flex', borderRadius: 999, padding: '3px 9px', background: 'rgba(166,106,31,0.10)', color: GOLD, fontSize: 12, fontWeight: 950 };
-const typeBadge: React.CSSProperties = { display: 'inline-flex', borderRadius: 999, padding: '3px 9px', background: 'rgba(239,246,255,0.88)', color: '#275389', fontSize: 12, fontWeight: 900 };
-const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.88)', color: '#275389', fontSize: 12, fontWeight: 800 };
-const cityHeroStyle: React.CSSProperties = { padding: 24, borderRadius: 14, background: 'linear-gradient(135deg, #eef6ff 0%, #fff8e8 100%)', border: '1px solid rgba(39,83,137,0.12)', display: 'grid', gap: 18 };
-const cityFilterStyle: React.CSSProperties = { display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', padding: 12, borderRadius: 10, background: 'rgba(255,255,255,0.72)', border: '1px solid rgba(31,41,55,0.07)' };
-const cityBodyStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 18, alignItems: 'start' };
-const ruleCardStyle: React.CSSProperties = { borderRadius: 14, border: '1px solid rgba(217,168,87,0.24)', background: '#1f2937', padding: 18 };
+function segmentStyle(active: boolean): React.CSSProperties {
+  return {
+    minHeight: 34,
+    borderRadius: 999,
+    border: active ? `1px solid ${BLUE}` : '1px solid rgba(31,41,55,0.10)',
+    background: active ? BLUE : '#fff',
+    color: active ? '#fff' : 'rgba(31,41,55,0.72)',
+    padding: '0 12px',
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  };
+}
+
+const cityHeroStyle: React.CSSProperties = {
+  minHeight: 88,
+  borderRadius: 12,
+  border: '1px solid rgba(31,41,55,0.08)',
+  background: '#fff',
+  padding: '18px 18px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  flexWrap: 'wrap',
+};
+const eyebrowStyle: React.CSSProperties = { margin: '0 0 5px', color: GOLD, fontSize: 12, fontWeight: 950 };
+const titleStyle: React.CSSProperties = { margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.9rem, 3.2vw, 2.45rem)', lineHeight: 1.05, letterSpacing: 0 };
+const leadStyle: React.CSSProperties = { margin: '6px 0 0', color: 'rgba(31,41,55,0.72)', lineHeight: 1.55, fontSize: 14, fontWeight: 700 };
+const adInlineStyle: React.CSSProperties = { minHeight: 54, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', borderRadius: 12, border: '1px solid rgba(217,168,87,0.26)', background: INK, color: '#d9a857', padding: '10px 12px' };
+const cityFilterStyle: React.CSSProperties = { minHeight: 54, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', padding: '10px 12px', borderRadius: 10, background: '#f8fafc', border: '1px solid rgba(31,41,55,0.06)' };
+const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
+const contentSectionStyle: React.CSSProperties = { display: 'grid', gap: 12 };
+const sectionHeaderStyle: React.CSSProperties = { minHeight: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+const sortBadgeStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', minHeight: 30, padding: '0 11px', borderRadius: 999, background: '#fff8e8', border: '1px solid rgba(217,168,87,0.30)', color: GOLD, fontSize: 12, fontWeight: 900 };
+const cityGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 12, alignItems: 'start' };
+const cardStyle: React.CSSProperties = { minHeight: 218, display: 'grid', gap: 12, alignContent: 'start', padding: 18, borderRadius: 12, border: '1px solid rgba(31,41,55,0.08)', background: '#fff', boxShadow: 'none' };
+const cardHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 };
+const rankBadgeStyle: React.CSSProperties = { display: 'inline-flex', borderRadius: 999, padding: '3px 9px', background: 'rgba(166,106,31,0.10)', color: GOLD, fontSize: 12, fontWeight: 950 };
+const cardTitleStyle: React.CSSProperties = { margin: '8px 0 6px', fontSize: 18, lineHeight: 1.25, color: INK };
+const cardMetaStyle: React.CSSProperties = { margin: 0, color: MUTED, fontSize: 13, fontWeight: 760 };
+const typeBadgeStyle: React.CSSProperties = { display: 'inline-flex', flexShrink: 0, borderRadius: 999, padding: '4px 9px', background: 'rgba(239,246,255,0.88)', color: BLUE, fontSize: 12, fontWeight: 900 };
+const metricRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
+const metricChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', minHeight: 30, padding: '0 11px', borderRadius: 999, border: '1px solid rgba(31,41,55,0.10)', background: '#fff', color: BLUE, fontSize: 12, fontWeight: 900 };
+const goldMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: '#fff8e8', color: GOLD, borderColor: 'rgba(217,168,87,0.30)' };
+const eventLineStyle: React.CSSProperties = { margin: 0, color: MUTED, fontSize: 13, lineHeight: 1.7 };
+const tagRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' };
+const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.88)', color: BLUE, fontSize: 12, fontWeight: 800 };
+const cardFooterStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid rgba(31,41,55,0.06)' };
+const primaryButtonStyle: React.CSSProperties = { minHeight: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, background: BLUE, color: '#fff', padding: '0 12px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', fontSize: 12 };
+const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 12, border: '1px dashed rgba(31,41,55,0.14)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };
