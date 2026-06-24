@@ -371,7 +371,7 @@ function certificationTypeLabel(type: string) {
 
 function publicReviewTypeLabel(type: string) {
   if (type === 'profile_update') return '主页资料';
-  if (type === 'service_create') return '服务项目';
+  if (type === 'service_create') return '服务上线';
   if (type === 'portfolio_create') return '作品图片';
   if (type === 'availability_create') return '公开档期';
   if (type === 'tag_create') return '公开标签';

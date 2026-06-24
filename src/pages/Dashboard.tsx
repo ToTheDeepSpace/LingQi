@@ -203,6 +203,11 @@ type ServiceDraft = {
   description: string;
 };
 
+type ServiceSetupDraft = {
+  current: ServiceDraft;
+  pending: ServiceDraft[];
+};
+
 type AvailabilityImportDraft = {
   city: string;
   location: string;
@@ -231,6 +236,29 @@ const labelStyle: React.CSSProperties = {
 
 function formatDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function dateKeyAfterDays(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return formatDateKey(date);
+}
+
+function blankServiceDraft(): ServiceDraft {
+  return { service_type: '', price: '', duration: '', description: '' };
+}
+
+function sanitizeIntegerInput(value: string, maxLength = 6) {
+  return value.replace(/[^\d]/g, '').slice(0, maxLength);
+}
+
+function serviceDraftKey(item: ServiceDraft) {
+  return [
+    item.service_type.trim(),
+    item.price.trim(),
+    item.duration.trim(),
+    item.description.trim(),
+  ].join('|').replace(/\s+/g, ' ').toLowerCase();
 }
 
 function recentlyVerifiedAt(value?: string | null) {
@@ -405,9 +433,13 @@ export default function Dashboard() {
   const [loading, setLoading]   = useState(true);
 
   const [form, setForm] = useState<ProfileForm>(() => blankProfileForm());
-  const [newSvc, setNewSvc] = useState<ServiceDraft>({ service_type: '', price: '', duration: '', description: '' });
+  const [newSvc, setNewSvc] = useState<ServiceDraft>(() => blankServiceDraft());
+  const [pendingServices, setPendingServices] = useState<ServiceDraft[]>([]);
+  const [submittingServices, setSubmittingServices] = useState(false);
   const [availDates, setAvailDates] = useState<string[]>([]);
   const [availItems, setAvailItems] = useState<Availability[]>([]);
+  const [selectedAvailDates, setSelectedAvailDates] = useState<string[]>([]);
+  const [submittingAvailability, setSubmittingAvailability] = useState(false);
   const [availCity, setAvailCity] = useState('');
   const [availLocation, setAvailLocation] = useState('');
   const [syncingJzg, setSyncingJzg] = useState(false);
@@ -437,8 +469,12 @@ export default function Dashboard() {
   const token = getToken();
 
   const applyAvailability = (items: Availability[]) => {
-    setAvailItems(items || []);
-    setAvailDates((items || []).filter(a => !a.is_booked).map(a => a.date));
+    const nextItems = items || [];
+    const approvedDates = Array.from(new Set(nextItems.filter(a => !a.is_booked).map(a => a.date)));
+    const blockedDates = new Set(nextItems.map(a => a.date));
+    setAvailItems(nextItems);
+    setAvailDates(approvedDates);
+    setSelectedAvailDates(prev => prev.filter(date => !blockedDates.has(date)));
   };
 
   useEffect(() => {
@@ -453,7 +489,7 @@ export default function Dashboard() {
 
     Promise.all([
       fetch(`${API}/lc/creators/${data.id}`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
-      fetch(`${API}/lc/creators/${data.id}/availability`).then(r => r.json()),
+      fetch(`${API}/lc/creators/${data.id}/availability?from=${dateKeyAfterDays(0)}&to=${dateKeyAfterDays(120)}`).then(r => r.json()),
       fetch(`${API}/lc/rankings/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/commissions/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/carpools/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
@@ -512,18 +548,35 @@ export default function Dashboard() {
       setRoleDraft(data.roleDraft || blankRolePreferenceDraft());
     },
   });
-  const serviceDraft = useDraftAutosave<ServiceDraft>({
+  const serviceDraftValue = useMemo<ServiceSetupDraft>(() => ({
+    current: newSvc,
+    pending: pendingServices,
+  }), [newSvc, pendingServices]);
+  const serviceDraft = useDraftAutosave<ServiceSetupDraft>({
     key: 'lc:draft:dashboard:service',
-    version: 1,
+    version: 2,
     enabled: !!creator,
-    value: newSvc,
-    shouldSave: data => !!(data.service_type.trim() || data.price.trim() || data.duration.trim() || data.description.trim()),
-    onRestore: data => setNewSvc({
-      service_type: data.service_type || '',
-      price: data.price || '',
-      duration: data.duration || '',
-      description: data.description || '',
-    }),
+    value: serviceDraftValue,
+    shouldSave: data => {
+      const current = data.current || blankServiceDraft();
+      return (data.pending || []).length > 0
+        || !!(current.service_type.trim() || current.price.trim() || current.duration.trim() || current.description.trim());
+    },
+    onRestore: data => {
+      const current = data.current || blankServiceDraft();
+      setNewSvc({
+        service_type: current.service_type || '',
+        price: sanitizeIntegerInput(current.price || ''),
+        duration: current.duration || '',
+        description: current.description || '',
+      });
+      setPendingServices((data.pending || []).map(item => ({
+        service_type: item.service_type || '',
+        price: sanitizeIntegerInput(item.price || ''),
+        duration: item.duration || '',
+        description: item.description || '',
+      })).filter(item => item.service_type && item.price));
+    },
   });
   const availabilityImportDraftValue = useMemo<AvailabilityImportDraft>(() => ({
     city: availCity,
@@ -820,7 +873,7 @@ export default function Dashboard() {
 
   const refreshAvailability = async () => {
     if (!creator) return;
-    const r = await fetch(`${API}/lc/creators/${creator.id}/availability`);
+    const r = await fetch(`${API}/lc/creators/${creator.id}/availability?from=${dateKeyAfterDays(0)}&to=${dateKeyAfterDays(120)}`);
     const d = await r.json();
     if (d.success) applyAvailability(d.data || []);
   };
@@ -888,22 +941,70 @@ export default function Dashboard() {
     }
   };
 
-  const addService = async () => {
-    if (!creator || !newSvc.service_type || !newSvc.price) return;
-    setError('');
-    const r = await fetch(`${API}/lc/services`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ creatorId: creator.id, serviceType: newSvc.service_type, price: parseFloat(newSvc.price), duration: newSvc.duration, description: newSvc.description }),
-    });
-    const d = await r.json();
-    if (d.success) {
-      serviceDraft.clearDraft();
-      setNewSvc({ service_type: '', price: '', duration: '', description: '' });
-      setMsg(d.data?.message || '服务已提交审核，通过后才会公开展示');
-      setTimeout(() => setMsg(''), 3000);
+  const addServiceDraft = () => {
+    const next: ServiceDraft = {
+      service_type: newSvc.service_type.trim(),
+      price: sanitizeIntegerInput(newSvc.price),
+      duration: newSvc.duration.trim(),
+      description: newSvc.description.trim(),
+    };
+    if (!next.service_type || !next.price) {
+      setError('请先选择服务类目并填写纯数字价格');
+      return;
     }
-    else setError(d.error || '添加失败');
+    if (Number.parseInt(next.price, 10) <= 0) {
+      setError('价格必须大于 0');
+      return;
+    }
+    const nextKey = serviceDraftKey(next);
+    const duplicated = pendingServices.some(item => serviceDraftKey(item) === nextKey)
+      || services.some(item => serviceDraftKey({
+        service_type: item.service_type || '',
+        price: String(item.price ?? ''),
+        duration: item.duration || '',
+        description: item.description || '',
+      }) === nextKey);
+    if (duplicated) {
+      setError('这项服务已经添加过了');
+      return;
+    }
+    setError('');
+    setPendingServices(prev => [...prev, next]);
+    setNewSvc(blankServiceDraft());
+    setMsg('已加入上线清单，确认无误后再统一提交审核');
+    setTimeout(() => setMsg(''), 2500);
+  };
+
+  const submitServicesForReview = async () => {
+    if (!creator) return;
+    if (pendingServices.length === 0) {
+      setError('请先把服务加入上线清单');
+      return;
+    }
+    setSubmittingServices(true);
+    setError('');
+    try {
+      const r = await fetch(`${API}/lc/services`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ creatorId: creator.id, services: pendingServices }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        serviceDraft.clearDraft();
+        setPendingServices([]);
+        setNewSvc(blankServiceDraft());
+        setMsg(d.data?.message || '服务上线清单已提交审核，通过后才会公开展示');
+        setTimeout(() => setMsg(''), 3000);
+      } else {
+        const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败');
+        setError(msg);
+      }
+    } catch {
+      setError('网络错误，请重试');
+    } finally {
+      setSubmittingServices(false);
+    }
   };
 
   const deleteService = async (id: string) => {
@@ -991,35 +1092,77 @@ export default function Dashboard() {
     }
   };
 
-  const toggleDate = async (date: Date) => {
+  const deleteAvailabilityItem = async (item: Availability) => {
+    if (!creator) return;
+    const r = await fetch(`${API}/lc/availability/${item.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json();
+    if (d.success) {
+      setAvailDates(prev => prev.filter(ds => ds !== item.date));
+      setAvailItems(prev => prev.filter(a => a.id !== item.id));
+    } else {
+      const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '删除失败');
+      setError(msg);
+    }
+  };
+
+  const toggleDate = (date: Date) => {
     if (!creator) return;
     const dateStr = formatDateKey(date);
-    const isSet = availDates.includes(dateStr);
-    if (isSet) {
-      const item = availItems.find(a => !a.is_booked && a.date === dateStr);
-      if (item) {
-        const r = await fetch(`${API}/lc/availability/${item.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-        const d = await r.json();
-        if (d.success) {
-          setAvailDates(availDates.filter(ds => ds !== dateStr));
-          setAvailItems(availItems.filter(a => a.id !== item.id));
-        }
-      }
-    } else {
+    if (busyDateSet.has(dateStr)) {
+      setMsg('这天已经被剧司辰档期标记为忙碌，不会作为可预约日期展示');
+      setTimeout(() => setMsg(''), 2600);
+      return;
+    }
+    if (availDates.includes(dateStr)) {
+      setMsg('这天已经公开可约；如果要取消，请点下方已公开日期旁边的 ×');
+      setTimeout(() => setMsg(''), 2600);
+      return;
+    }
+    setSelectedAvailDates(prev => (
+      prev.includes(dateStr)
+        ? prev.filter(ds => ds !== dateStr)
+        : [...prev, dateStr].sort()
+    ));
+  };
+
+  const submitSelectedAvailability = async () => {
+    if (!creator) return;
+    if (selectedAvailDates.length === 0) {
+      setError('请先在日历里选择要提交的可约日期');
+      return;
+    }
+    setSubmittingAvailability(true);
+    setError('');
+    try {
       const r = await fetch(`${API}/lc/availability`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          creatorId: creator.id, date: dateStr, startTime: '09:00', endTime: '22:00',
+          creatorId: creator.id,
+          dates: selectedAvailDates,
+          startTime: '09:00',
+          endTime: '22:00',
           city: availCity || form.city || null,
           location: availLocation || null,
         }),
       });
       const d = await r.json();
       if (d.success) {
-        setMsg(d.data?.message || '档期已提交审核，通过后才会公开展示');
+        setSelectedAvailDates([]);
+        await refreshAvailability();
+        const skipped = Array.isArray(d.data?.skipped_dates) && d.data.skipped_dates.length > 0
+          ? `；已跳过重复日期：${d.data.skipped_dates.join('、')}`
+          : '';
+        setMsg(`${d.data?.message || '选中档期已提交审核，通过后才会公开展示'}${skipped}`);
         setTimeout(() => setMsg(''), 3000);
+      } else {
+        const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败');
+        setError(msg);
       }
+    } catch {
+      setError('网络错误，请重试');
+    } finally {
+      setSubmittingAvailability(false);
     }
   };
 
@@ -1072,7 +1215,9 @@ export default function Dashboard() {
   const passwordExpanded = contactVerified && (showPasswordForm || !creator.has_password);
   const availableItems = availItems.filter(item => !item.is_booked);
   const busyItems = availItems.filter(item => item.is_booked);
+  const availableDateSet = new Set(availableItems.map(item => item.date));
   const busyDateSet = new Set(busyItems.map(item => item.date));
+  const selectedAvailDateSet = new Set(selectedAvailDates);
   const profileCompletion = getProfileCompletion(form, services, portfolio, rolePreferences);
   const pendingItems = [
     !creator.is_visible,
@@ -1082,6 +1227,7 @@ export default function Dashboard() {
   ].filter(Boolean).length;
   const currentDashboardLabel = DASHBOARD_LABELS[activeSection];
   const roleBasedServiceSelected = services.some(service => ['creator', 'dm'].includes(normalizeServiceCategory(service.service_type)))
+    || pendingServices.some(service => ['creator', 'dm'].includes(normalizeServiceCategory(service.service_type)))
     || ['creator', 'dm'].includes(normalizeServiceCategory(newSvc.service_type));
 
   return (
@@ -1875,7 +2021,7 @@ export default function Dashboard() {
                         <option key={option.key} value={option.label}>{option.label}（{option.examples}）</option>
                       ))}
                     </select>
-                    <input type="number" value={newSvc.price} onChange={e => setNewSvc({ ...newSvc, price: e.target.value })}
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={newSvc.price} onChange={e => setNewSvc({ ...newSvc, price: sanitizeIntegerInput(e.target.value) })}
                       placeholder="价格（元）" style={inputStyle} />
                     <input type="text" value={newSvc.duration} onChange={e => setNewSvc({ ...newSvc, duration: e.target.value })}
                       placeholder="时长（如：2小时）" style={inputStyle} />
@@ -1883,10 +2029,37 @@ export default function Dashboard() {
                   <textarea value={newSvc.description} onChange={e => setNewSvc({ ...newSvc, description: e.target.value })}
                     placeholder="服务说明：例如可拍什么风格、是否可跟车、交付多少张图、是否可异地等"
                     style={{ ...inputStyle, minHeight: 82, resize: 'vertical', marginBottom: 12 }} />
-                  <button onClick={addService}
-                    style={{ padding: '10px 24px', borderRadius: 10, border: 'none', cursor: 'pointer', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: INK, fontWeight: 700, fontSize: '0.875rem' }}>
-                    添加
+                  <button onClick={addServiceDraft}
+                    style={{ padding: '10px 24px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.28)', cursor: 'pointer', background: 'rgba(255,250,242,0.92)', color: '#925f18', fontWeight: 800, fontSize: '0.875rem' }}>
+                    加入上线清单
                   </button>
+                  {pendingServices.length > 0 && (
+                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(201,146,46,0.14)' }}>
+                      <p style={{ fontWeight: 800, fontSize: '0.86rem', color: INK, marginBottom: 10 }}>待提交上线清单</p>
+                      <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+                        {pendingServices.map((item, index) => (
+                          <div key={`${serviceDraftKey(item)}-${index}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '9px 10px', borderRadius: 10, background: 'rgba(255,250,242,0.9)', border: '1px solid rgba(201,146,46,0.16)' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ fontWeight: 800, fontSize: '0.84rem', color: INK }}>{item.service_type} · ¥{item.price}</p>
+                              {(item.duration || item.description) && (
+                                <p style={{ fontSize: '0.76rem', color: 'rgba(71,85,105,0.62)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {[item.duration, item.description].filter(Boolean).join(' · ')}
+                                </p>
+                              )}
+                            </div>
+                            <button onClick={() => setPendingServices(prev => prev.filter((_, itemIndex) => itemIndex !== index))}
+                              style={{ flex: '0 0 auto', background: 'transparent', border: 'none', color: 'rgba(146,95,24,0.74)', cursor: 'pointer', fontWeight: 800, fontSize: '0.78rem' }}>
+                              移除
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={submitServicesForReview} disabled={submittingServices}
+                        style={{ padding: '10px 24px', borderRadius: 10, border: 'none', cursor: submittingServices ? 'not-allowed' : 'pointer', background: submittingServices ? 'rgba(201,146,46,0.34)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: INK, fontWeight: 850, fontSize: '0.875rem' }}>
+                        {submittingServices ? '提交中...' : '提交服务上线审核'}
+                      </button>
+                    </div>
+                  )}
                 </div>
                   </>
                 )}
@@ -1911,24 +2084,51 @@ export default function Dashboard() {
                     <input value={availCity} onChange={e => setAvailCity(e.target.value)} placeholder="这批档期所在城市（默认用常驻城市）" style={inputStyle} />
                     <input value={availLocation} onChange={e => setAvailLocation(e.target.value)} placeholder="地点补充，如展会/区县/可商量" style={inputStyle} />
                   </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12, fontSize: '0.76rem', color: 'rgba(71,85,105,0.66)' }}>
+                    <span style={{ padding: '4px 9px', borderRadius: 999, background: 'rgba(201,146,46,0.16)', border: '1px solid rgba(201,146,46,0.24)', color: '#925f18', fontWeight: 800 }}>已公开可约</span>
+                    <span style={{ padding: '4px 9px', borderRadius: 999, background: 'rgba(22,163,74,0.12)', border: '1px solid rgba(22,163,74,0.22)', color: '#15803d', fontWeight: 800 }}>本次选中</span>
+                    <span style={{ padding: '4px 9px', borderRadius: 999, background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.18)', color: '#1d4ed8', fontWeight: 800 }}>剧司辰忙碌</span>
+                    <span>一次可选择多个日期，再统一提交审核。</span>
+                  </div>
                   <div style={{ maxWidth: 400 }}>
                     <Calendar
                       onClickDay={toggleDate}
                       tileClassName={({ date }) => {
                         const ds = formatDateKey(date);
-                        if (availDates.includes(ds)) return 'avail-tile';
                         if (busyDateSet.has(ds)) return 'busy-tile';
+                        if (availableDateSet.has(ds)) return 'avail-tile';
+                        if (selectedAvailDateSet.has(ds)) return 'draft-avail-tile';
                         return '';
                       }}
                       className="dark-cal"
                       minDate={new Date()}
                     />
                   </div>
+                  {selectedAvailDates.length > 0 && (
+                    <div style={{ marginTop: 16, padding: 12, borderRadius: 12, background: 'rgba(240,253,244,0.75)', border: '1px solid rgba(22,163,74,0.18)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+                        <p style={{ fontWeight: 850, fontSize: '0.86rem', color: '#166534' }}>本次选中 {selectedAvailDates.length} 天</p>
+                        <button onClick={submitSelectedAvailability} disabled={submittingAvailability}
+                          style={{ padding: '9px 16px', borderRadius: 10, border: 'none', cursor: submittingAvailability ? 'not-allowed' : 'pointer', background: submittingAvailability ? 'rgba(34,197,94,0.24)' : '#16a34a', color: '#fff', fontWeight: 850, fontSize: '0.82rem' }}>
+                          {submittingAvailability ? '提交中...' : '提交选中档期审核'}
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {selectedAvailDates.map(date => (
+                          <span key={date} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, fontSize: '0.76rem', background: 'rgba(255,255,255,0.82)', border: '1px solid rgba(22,163,74,0.22)', color: '#15803d', fontWeight: 750 }}>
+                            {date}
+                            <button onClick={() => setSelectedAvailDates(prev => prev.filter(item => item !== date))}
+                              style={{ background: 'none', border: 'none', color: 'rgba(21,128,61,0.66)', cursor: 'pointer', padding: 0, lineHeight: 1 }}>✕</button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div style={{ marginTop: 20, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {availableItems.map(item => (
                       <span key={item.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, fontSize: '0.78rem', background: 'rgba(201,146,46,0.1)', border: '1px solid rgba(201,146,46,0.25)', color: '#925f18' }}>
                         {item.date}{item.city ? ` · ${item.city}` : ''}{item.location ? ` · ${item.location}` : ''}{item.source === 'screenshot' ? ' · 截图导入' : ''}
-                        <button onClick={() => toggleDate(new Date(item.date + 'T00:00:00'))}
+                        <button onClick={() => deleteAvailabilityItem(item)}
                           style={{ background: 'none', border: 'none', color: 'rgba(146,95,24,0.62)', cursor: 'pointer', padding: 0, lineHeight: 1 }}>✕</button>
                       </span>
                     ))}
@@ -2793,7 +2993,7 @@ export default function Dashboard() {
             gap: 10px !important;
           }
           .service-settings-grid > div:nth-child(2),
-          .service-add-grid > input:first-child {
+          .service-add-grid > select:first-child {
             grid-column: 1 / -1 !important;
           }
           .compact-status-pill {
@@ -2873,6 +3073,7 @@ export default function Dashboard() {
         .dark-cal .react-calendar__tile--now { background: rgba(201,146,46,0.12) !important; color: ${GOLD} !important; }
         .dark-cal .react-calendar__tile--active { background: rgba(201,146,46,0.12) !important; }
         .dark-cal .react-calendar__tile.avail-tile { background: rgba(201,146,46,0.2) !important; color: ${GOLD} !important; font-weight: 700 !important; border: 1px solid rgba(201,146,46,0.4) !important; }
+        .dark-cal .react-calendar__tile.draft-avail-tile { background: rgba(22,163,74,0.15) !important; color: #15803d !important; font-weight: 800 !important; border: 1px solid rgba(22,163,74,0.35) !important; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.12) !important; }
         .dark-cal .react-calendar__tile.busy-tile { background: rgba(59,130,246,0.12) !important; color: #1d4ed8 !important; font-weight: 700 !important; border: 1px solid rgba(59,130,246,0.25) !important; }
         .dark-cal .react-calendar__month-view__days__day--neighboringMonth { color: rgba(71,85,105,0.25) !important; }
         .dark-cal abbr { text-decoration: none !important; }

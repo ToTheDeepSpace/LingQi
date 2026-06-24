@@ -1630,6 +1630,90 @@ function publicReviewAcceptedResponse(review: Record<string, unknown>) {
   };
 }
 
+function objectPayload(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function payloadItems(payload: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(payload.items)
+    ? payload.items.filter(item => item && typeof item === 'object').map(item => item as Record<string, unknown>)
+    : [payload];
+}
+
+function normalizePositiveIntegerField(value: unknown, max = 999999) {
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value) || value <= 0 || value > max) return null;
+    return value;
+  }
+  const text = cleanText(value, 20);
+  if (!/^\d+$/.test(text)) return null;
+  const parsed = Number.parseInt(text, 10);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= max ? parsed : null;
+}
+
+function normalizeDateString(value: unknown) {
+  const text = cleanText(value, 20);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '';
+  const [year, month, day] = text.split('-').map(Number);
+  return buildDateString(year, month, day);
+}
+
+function addDaysToDateString(dateText: string, days: number) {
+  const base = normalizeDateString(dateText) || todayChinaDateString();
+  const [year, month, day] = base.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return buildDateString(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
+function normalizeAvailabilityDateList(input: unknown, fallback?: unknown) {
+  const raw = Array.isArray(input) ? input : [fallback];
+  const seen = new Set<string>();
+  const today = todayChinaDateString();
+  const dates: string[] = [];
+  const expiredDates: string[] = [];
+  const invalidDates: string[] = [];
+  for (const item of raw) {
+    const date = normalizeDateString(item);
+    if (!date) {
+      const text = cleanText(item, 40);
+      if (text) invalidDates.push(text);
+      continue;
+    }
+    if (date < today) {
+      expiredDates.push(date);
+      continue;
+    }
+    if (!seen.has(date)) {
+      seen.add(date);
+      dates.push(date);
+    }
+  }
+  return { dates, expiredDates, invalidDates };
+}
+
+function normalizeServiceSubmission(input: Record<string, unknown>, creatorId: string) {
+  const serviceType = cleanText(input.serviceType ?? input.service_type, 80);
+  const price = normalizePositiveIntegerField(input.price, 999999);
+  if (!serviceType || price === null) return null;
+  return {
+    creator_id: creatorId,
+    service_type: serviceType,
+    price,
+    duration: cleanText(input.duration, 120) || null,
+    description: cleanText(input.description, 1000) || null,
+  };
+}
+
 async function applyProfileUpdateReview(review: PublicReviewRecord) {
   const payload = review.payload || {};
   const profilePatch = (payload.profile_patch && typeof payload.profile_patch === 'object')
@@ -1670,23 +1754,30 @@ async function applyProfileUpdateReview(review: PublicReviewRecord) {
 }
 
 async function applyPublicReview(review: PublicReviewRecord) {
-  const payload = review.payload || {};
+  const payload = objectPayload(review.payload);
   if (review.target_type === 'profile_update') {
     await applyProfileUpdateReview(review);
     if (review.profile_id) await runReferralSideEffect('stage1-after-profile-review-approved', () => maybeAwardReferralStage1(String(review.profile_id)));
     return;
   }
   if (review.target_type === 'service_create') {
-    const { error: insertErr } = await supabase.from('lc_services').insert({
-      creator_id: payload.creator_id,
-      service_type: payload.service_type,
-      price: payload.price,
-      duration: payload.duration || null,
-      description: payload.description || null,
-    });
+    const items = payloadItems(payload);
+    const rows = items.map(item => {
+      const price = normalizePositiveIntegerField(item.price, 999999);
+      return {
+        creator_id: cleanText(item.creator_id ?? payload.creator_id, 80),
+        service_type: cleanText(item.service_type ?? item.serviceType, 80),
+        price,
+        duration: cleanText(item.duration, 120) || null,
+        description: cleanText(item.description, 1000) || null,
+      };
+    }).filter(item => item.creator_id && item.service_type && item.price !== null);
+    if (rows.length === 0) throw new Error('审核记录缺少服务项目');
+    const { error: insertErr } = await supabase.from('lc_services').insert(rows);
     if (insertErr) throw insertErr;
-    if (typeof payload.creator_id === 'string') {
-      await addProfileIdentityRoles(payload.creator_id, identityRolesFromServices([payload.service_type]));
+    const creatorIds = Array.from(new Set(rows.map(row => row.creator_id)));
+    for (const creatorId of creatorIds) {
+      await addProfileIdentityRoles(creatorId, identityRolesFromServices(rows.filter(row => row.creator_id === creatorId).map(row => row.service_type)));
     }
     return;
   }
@@ -1700,22 +1791,34 @@ async function applyPublicReview(review: PublicReviewRecord) {
     return;
   }
   if (review.target_type === 'availability_create') {
-    const items = Array.isArray(payload.items) ? payload.items as Record<string, unknown>[] : [payload];
+    const items = payloadItems(payload);
     const rows = items.map(item => ({
-      creator_id: item.creator_id,
-      date: item.date,
-      start_time: item.start_time || '09:00',
-      end_time: item.end_time || '22:00',
-      note: item.note || null,
-      city: item.city || null,
-      location: item.location || null,
+      creator_id: cleanText(item.creator_id, 80),
+      date: normalizeDateString(item.date),
+      start_time: normalizeClockTime(item.start_time, '09:00'),
+      end_time: normalizeClockTime(item.end_time, '22:00'),
+      note: cleanText(item.note, 500) || null,
+      city: cleanText(item.city, 80) || null,
+      location: cleanText(item.location, 120) || null,
       is_booked: false,
-      source: item.source || 'manual',
-      source_id: item.source_id || null,
+      source: cleanText(item.source, 40) || 'manual',
+      source_id: cleanText(item.source_id, 160) || null,
       source_payload: item.source_payload || null,
     })).filter(item => item.creator_id && item.date);
     if (rows.length === 0) throw new Error('审核记录缺少档期日期');
-    const { error: insertErr } = await supabase.from('lc_availability').insert(rows);
+    const dedupedRows = [];
+    for (const row of rows) {
+      const { data: existing, error: existingErr } = await supabase.from('lc_availability')
+        .select('id')
+        .eq('creator_id', row.creator_id)
+        .eq('date', row.date)
+        .eq('is_booked', false)
+        .maybeSingle();
+      if (existingErr) throw existingErr;
+      if (!existing) dedupedRows.push(row);
+    }
+    if (dedupedRows.length === 0) return;
+    const { error: insertErr } = await supabase.from('lc_availability').insert(dedupedRows);
     if (insertErr) throw insertErr;
     return;
   }
@@ -4514,42 +4617,86 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
 
 app.get('/api/lc/creators/:id/availability', async (req, res) => {
   try {
+    const from = normalizeDateString(req.query.from) || todayChinaDateString();
+    let to = normalizeDateString(req.query.to) || addDaysToDateString(from, 120);
+    if (to < from) to = from;
     const { data } = await supabase.from('lc_availability').select('*')
       .eq('creator_id', req.params.id)
-      .gte('date', todayChinaDateString()).order('date');
+      .gte('date', from)
+      .lte('date', to)
+      .order('date');
     res.json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.post('/api/lc/availability', authMiddleware, async (req, res) => {
   try {
-    const { creatorId, date, startTime, endTime, note, city, location } = req.body;
+    const { creatorId, date, dates: rawDates, startTime, endTime, note, city, location } = req.body;
     if (getReq(req, 'creatorId') !== creatorId) {
       return res.status(403).json(err(new Error('只能管理自己的档期')));
     }
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    const payload = {
+    const { dates, expiredDates, invalidDates } = normalizeAvailabilityDateList(rawDates, date);
+    if (dates.length === 0) {
+      const reason = expiredDates.length > 0
+        ? `这些日期已经过期，不能提交公开档期：${expiredDates.join('、')}`
+        : invalidDates.length > 0
+          ? `日期格式不正确：${invalidDates.join('、')}`
+          : '请选择要提交的可约日期';
+      return res.status(400).json(err(new Error(reason)));
+    }
+
+    const { data: existingRows, error: existingErr } = await supabase.from('lc_availability')
+      .select('date')
+      .eq('creator_id', creatorId)
+      .eq('is_booked', false)
+      .in('date', dates);
+    if (existingErr) throw existingErr;
+    const duplicateDates = new Set((existingRows || []).map((item: Record<string, unknown>) => cleanText(item.date, 20)).filter(Boolean));
+
+    const { data: pendingRows, error: pendingErr } = await supabase.from('lc_public_reviews')
+      .select('payload')
+      .eq('profile_id', creatorId)
+      .eq('target_type', 'availability_create')
+      .eq('status', 'pending')
+      .limit(500);
+    if (pendingErr && !isMissingRelation(pendingErr, 'lc_public_reviews')) throw pendingErr;
+    for (const row of (pendingRows || []) as Array<Record<string, unknown>>) {
+      const pendingPayload = objectPayload(row.payload);
+      for (const item of payloadItems(pendingPayload)) {
+        const pendingCreatorId = cleanText(item.creator_id, 80);
+        const pendingDate = normalizeDateString(item.date);
+        if (pendingCreatorId === creatorId && pendingDate && dates.includes(pendingDate)) duplicateDates.add(pendingDate);
+      }
+    }
+
+    const finalDates = dates.filter(item => !duplicateDates.has(item));
+    if (finalDates.length === 0) {
+      return res.status(409).json(err(new Error(`这些日期已经公开或正在审核：${dates.join('、')}`)));
+    }
+
+    const items = finalDates.map(dateItem => ({
       creator_id: creatorId,
-      date,
-      start_time: startTime || '09:00',
-      end_time: endTime || '22:00',
-      note: note || null,
-      city: city || null,
-      location: location || null,
+      date: dateItem,
+      start_time: normalizeClockTime(startTime, '09:00'),
+      end_time: normalizeClockTime(endTime, '22:00'),
+      note: cleanText(note, 500) || null,
+      city: cleanText(city, 80) || null,
+      location: cleanText(location, 120) || null,
       source: 'manual',
-    };
+    }));
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'availability_submit',
       targetType: 'availability',
-      texts: { date, startTime, endTime, note, city, location },
+      texts: { dates: finalDates.join('、'), startTime, endTime, note, city, location },
     });
     const review = await createPublicReview({
       targetType: 'availability_create',
       profile,
-      title: `档期：${date}`,
-      summary: `${city || '未填城市'} ${location || ''}`.trim(),
-      payload,
+      title: finalDates.length === 1 ? `档期：${finalDates[0]}` : `可约档期：${finalDates.length} 天`,
+      summary: `${cleanText(city, 80) || '未填城市'} ${cleanText(location, 120) || ''}`.trim(),
+      payload: { items },
       moderationPrecheck,
     });
     await logSecurityEvent(req, {
@@ -4558,9 +4705,13 @@ app.post('/api/lc/availability', authMiddleware, async (req, res) => {
       targetId: review?.id,
       actorId: profile.id,
       actorRole: profile.role || 'creator',
-      metadata: { date, moderation: moderationPrecheck },
+      metadata: { dates: finalDates, skipped_dates: Array.from(duplicateDates), expired_dates: expiredDates, moderation: moderationPrecheck },
     });
-    res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
+    res.json(ok({
+      ...publicReviewAcceptedResponse(review as Record<string, unknown>),
+      dates: finalDates,
+      skipped_dates: dates.filter(item => duplicateDates.has(item)),
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -4748,26 +4899,35 @@ app.post('/api/lc/services', authMiddleware, async (req, res) => {
     }
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    const parsedPrice = parseFloat(price);
-    if (!serviceType || !Number.isFinite(parsedPrice)) return res.status(400).json(err(new Error('请填写服务类型和价格')));
+    const rawServices = Array.isArray(req.body?.services)
+      ? req.body.services as unknown[]
+      : [{ serviceType, price, duration, description }];
+    const seen = new Set<string>();
+    const items = rawServices.map(item => normalizeServiceSubmission(objectPayload(item), creatorId))
+      .filter((item): item is NonNullable<ReturnType<typeof normalizeServiceSubmission>> => Boolean(item))
+      .filter(item => {
+        const key = `${item.service_type}|${item.price}|${item.duration || ''}|${item.description || ''}`.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    if (items.length === 0) return res.status(400).json(err(new Error('请填写服务类型和纯数字价格')));
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'service_submit',
       targetType: 'service',
-      texts: { serviceType, price, duration, description },
+      texts: {
+        serviceTypes: items.map(item => item.service_type).join('、'),
+        durations: items.map(item => item.duration || '').filter(Boolean).join('、'),
+        descriptions: items.map(item => item.description || '').filter(Boolean).join('\n'),
+      },
       allowContact: true,
     });
     const review = await createPublicReview({
       targetType: 'service_create',
       profile,
-      title: `服务：${cleanText(serviceType, 80)}`,
-      summary: `${parsedPrice} 元${duration ? ` · ${duration}` : ''}`,
-      payload: {
-        creator_id: creatorId,
-        service_type: serviceType,
-        price: parsedPrice,
-        duration: duration || null,
-        description: description || null,
-      },
+      title: items.length === 1 ? `服务上线：${items[0].service_type}` : `服务上线：${items.length} 项`,
+      summary: items.map(item => `${item.service_type}${item.duration ? ` · ${item.duration}` : ''}`).join('；'),
+      payload: { creator_id: creatorId, items },
       moderationPrecheck,
     });
     await logSecurityEvent(req, {
@@ -4776,9 +4936,12 @@ app.post('/api/lc/services', authMiddleware, async (req, res) => {
       targetId: review?.id,
       actorId: profile.id,
       actorRole: profile.role || 'creator',
-      metadata: { moderation: moderationPrecheck },
+      metadata: { service_count: items.length, moderation: moderationPrecheck },
     });
-    res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
+    res.json(ok({
+      ...publicReviewAcceptedResponse(review as Record<string, unknown>),
+      service_count: items.length,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
