@@ -7,6 +7,7 @@ import { getJsonCached } from '../lib/apiCache';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { creatorEntryPath } from '../lib/authSession';
 import { primaryDisplayIdentityRole } from '../lib/serviceCategories';
+import { formatTravelStatus } from '../lib/travelStatus';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -368,7 +369,7 @@ function CreatorCard({ creator }: { creator: Creator }) {
   );
   const role = ROLE_LABEL[displayRole] || displayRole || '灵契师';
   const tags = Array.isArray(creator.tags) ? creator.tags : [];
-  const travelStatus = creator.travel_status;
+  const travelStatus = creator.travel_status ? formatTravelStatus(creator.travel_status, creator.city) : '';
   const availableCities = Array.isArray(creator.available_cities) ? creator.available_cities : [];
 
   return (

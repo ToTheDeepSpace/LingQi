@@ -4447,13 +4447,16 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
     } = req.body;
     const socialSnapshots = makeSocialSnapshots(social_links);
     const rolePreferences = await sanitizeProfileRolePreferences(role_preferences);
+    const normalizedTravelStatus = travel_status === '常驻本地'
+      ? '常驻所在城市'
+      : (travel_status || '常驻所在城市');
     const profilePatch = {
       display_name, avatar, bio, tags, city, social_links, wechat,
       gender: cleanChoice(gender, PROFILE_GENDER_OPTIONS),
       sexual_orientation: cleanChoice(sexual_orientation, PROFILE_ORIENTATION_OPTIONS),
       preferred_story_lines: cleanTextArray(preferred_story_lines),
       available_cities: Array.isArray(available_cities) ? available_cities : [],
-      travel_status: travel_status || '常驻本地',
+      travel_status: normalizedTravelStatus,
       contact_unlock_enabled: !!contact_unlock_enabled,
       contact_intent_amount: Math.max(0, parseInt(contact_intent_amount || 0) || 0),
       social_snapshots: socialSnapshots,

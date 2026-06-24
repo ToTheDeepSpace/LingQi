@@ -8,6 +8,7 @@ import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { isTokenExpired, readStoredCreatorAuth } from '../lib/authSession';
 import { SERVICE_CATEGORY_OPTIONS, normalizeServiceCategory, serviceCategoryLabel } from '../lib/serviceCategories';
+import { RESIDENT_TRAVEL_STATUS, formatTravelStatus, normalizeTravelStatus } from '../lib/travelStatus';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePreference, ScriptCatalogItem, Certification } from '../types';
 
@@ -257,7 +258,7 @@ function blankProfileForm(): ProfileForm {
     douyin: '',
     xiaohongshu: '',
     available_cities: '',
-    travel_status: '常驻本地',
+    travel_status: RESIDENT_TRAVEL_STATUS,
     gender: '',
     sexual_orientation: '',
     preferred_story_lines: '',
@@ -281,7 +282,7 @@ function profileToForm(profile: Creator | null): ProfileForm {
     douyin: profile.social_links?.douyin || '',
     xiaohongshu: profile.social_links?.xiaohongshu || '',
     available_cities: (profile.available_cities || []).join(', '),
-    travel_status: profile.travel_status || '常驻本地',
+    travel_status: normalizeTravelStatus(profile.travel_status),
     contact_unlock_enabled: !!profile.contact_unlock_enabled,
     contact_intent_amount: profile.contact_intent_amount ? String(profile.contact_intent_amount) : '',
   };
@@ -1535,9 +1536,9 @@ export default function Dashboard() {
                 </div>
                 <div className="profile-grid-compact" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 0.7fr) minmax(190px, 1.2fr) minmax(150px, 0.9fr)', gap: 12, marginBottom: 16 }}>
                   <div>
-                    <label style={labelStyle}>常驻 / 流动状态</label>
+                    <label style={labelStyle}>常驻城市 / 流动状态</label>
                     <select value={form.travel_status} onChange={e => setForm({ ...form, travel_status: e.target.value })} style={inputStyle}>
-                      <option value="常驻本地">常驻本地</option>
+                      <option value={RESIDENT_TRAVEL_STATUS}>{formatTravelStatus(RESIDENT_TRAVEL_STATUS, form.city)}</option>
                       <option value="全国流动">全国流动</option>
                       <option value="巡游中">巡游中</option>
                       <option value="远程可接">远程可接</option>

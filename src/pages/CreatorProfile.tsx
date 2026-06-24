@@ -6,6 +6,7 @@ import ReportModal from '../components/ReportModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { normalizeServiceCategory, primaryDisplayIdentityRole, serviceCategoryLabel } from '../lib/serviceCategories';
+import { formatTravelStatus } from '../lib/travelStatus';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API  = '/api';
@@ -257,7 +258,7 @@ export default function CreatorProfile() {
               </p>
               <div className="creator-profile-badges" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {creator.is_realname && <Badge>⭐ 实名</Badge>}
-                {creator.travel_status && <Badge>{creator.travel_status}</Badge>}
+                {creator.travel_status && <Badge>{formatTravelStatus(creator.travel_status, creator.city)}</Badge>}
                 {creator.contact_unlock_enabled && <Badge>预约意向金 ¥{creator.contact_intent_amount || 0}</Badge>}
                 <button
                   onClick={openReport}
