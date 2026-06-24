@@ -64,8 +64,13 @@ function AppLayout() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/dashboard/profile" element={<Dashboard />} />
           <Route path="/dashboard/services" element={<Dashboard />} />
+          <Route path="/dashboard/services/works" element={<Dashboard />} />
+          <Route path="/dashboard/services/availability" element={<Dashboard />} />
+          <Route path="/dashboard/wallet" element={<Dashboard />} />
           <Route path="/dashboard/account" element={<Dashboard />} />
+          <Route path="/dashboard/certification" element={<Dashboard />} />
           <Route path="/dashboard/posts" element={<Dashboard />} />
+          <Route path="/dashboard/referrals" element={<Dashboard />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/moderation" element={<CommunityModeration />} />
           <Route path="/rankings" element={<Rankings />} />

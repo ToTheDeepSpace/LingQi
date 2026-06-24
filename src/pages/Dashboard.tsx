@@ -9,7 +9,7 @@ import { generatedAvatarDataUrl } from '../lib/avatar';
 import { isTokenExpired, readStoredCreatorAuth } from '../lib/authSession';
 import { SERVICE_CATEGORY_OPTIONS, normalizeServiceCategory, serviceCategoryLabel } from '../lib/serviceCategories';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
-import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePreference, ScriptCatalogItem } from '../types';
+import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePreference, ScriptCatalogItem, Certification } from '../types';
 
 const API  = '/api';
 const C    = '#fffdf8';
@@ -24,18 +24,43 @@ function getToken(): string {
   } catch { return ''; }
 }
 
-const DASHBOARD_NAV = [
+type DashboardSection =
+  | 'overview'
+  | 'profile'
+  | 'services'
+  | 'serviceWorks'
+  | 'serviceAvailability'
+  | 'wallet'
+  | 'account'
+  | 'identity'
+  | 'posts'
+  | 'referral';
+
+const DASHBOARD_LABELS: Record<DashboardSection, string> = {
+  overview: '总览',
+  profile: '公开资料',
+  services: '提供服务',
+  serviceWorks: '作品集',
+  serviceAvailability: '可约档期',
+  wallet: '钱包余额',
+  account: '账号安全',
+  identity: '认证身份',
+  posts: '我的发布',
+  referral: '邀请奖励',
+};
+
+const DASHBOARD_NAV: Array<{ key: DashboardSection; label: string; path: string; child?: boolean }> = [
   { key: 'overview', label: '总览', path: '/dashboard' },
   { key: 'profile', label: '公开资料', path: '/dashboard/profile' },
   { key: 'services', label: '服务与作品', path: '/dashboard/services' },
-  { key: 'wallet', label: '钱包余额', path: '/wallet' },
+  { key: 'serviceWorks', label: '作品集', path: '/dashboard/services/works', child: true },
+  { key: 'serviceAvailability', label: '可约档期', path: '/dashboard/services/availability', child: true },
+  { key: 'wallet', label: '钱包余额', path: '/dashboard/wallet' },
   { key: 'account', label: '账号安全', path: '/dashboard/account' },
-  { key: 'identity', label: '认证身份', path: '/certification' },
+  { key: 'identity', label: '认证身份', path: '/dashboard/certification' },
   { key: 'posts', label: '我的发布', path: '/dashboard/posts' },
-  { key: 'referral', label: '邀请奖励', path: '/referrals' },
+  { key: 'referral', label: '邀请奖励', path: '/dashboard/referrals' },
 ] as const;
-
-type DashboardSection = 'overview' | 'profile' | 'services' | 'account' | 'posts';
 
 type MyRanking = {
   id: string;
@@ -73,6 +98,65 @@ type MyCarpool = {
   status: 'pending' | 'approved' | 'rejected' | 'closed';
   juzhanggui_sync_status?: 'pending' | 'synced' | 'failed' | 'disabled';
   created_at: string;
+};
+
+type WalletTransaction = {
+  id: string;
+  type: 'recharge' | 'spend' | 'refund';
+  amount: number;
+  paid_amount?: number | null;
+  bonus_amount?: number | null;
+  description: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reject_reason?: string | null;
+  created_at: string;
+};
+
+type WalletDashboardData = {
+  balance: number;
+  paid_balance?: number | null;
+  bonus_balance?: number | null;
+  transactions?: WalletTransaction[];
+};
+
+type ReferralDashboardItem = {
+  id: string;
+  status: 'registered' | 'qualified' | 'converted' | 'rejected';
+  invitee: {
+    id: string;
+    display_name: string;
+    avatar?: string | null;
+  };
+  invitee_bonus_awarded_at?: string | null;
+  stage1_awarded_at?: string | null;
+  stage2_awarded_at?: string | null;
+  created_at: string;
+};
+
+type ReferralDashboardData = {
+  referral_code: string;
+  share_url: string;
+  community_role?: 'community_referrer' | 'community_observer' | 'founding_referrer' | null;
+  community_role_expires_at?: string | null;
+  stats: {
+    registered_invites: number;
+    valid_invites: number;
+    converted_invites: number;
+    invitee_bonus_count: number;
+    referrer_reward_total: number;
+    next_milestone: {
+      target: number;
+      title: string;
+      remaining: number;
+    };
+  };
+  rules: {
+    new_user_base_bonus: number;
+    invitee_extra_bonus: number;
+    referrer_stage1_bonus: number;
+    referrer_stage2_bonus: number;
+  };
+  referrals: ReferralDashboardItem[];
 };
 
 type RolePreferenceDraft = {
@@ -221,21 +305,69 @@ function shouldSaveProfileDraft(data: ProfileDraft) {
     || JSON.stringify(data.roleDraft) !== JSON.stringify(blankRolePreferenceDraft());
 }
 
-function hasServiceSetup(form: ProfileForm, services: Service[], rolePreferences: RolePreferenceDraft[]) {
+function hasServiceSetup(_form: ProfileForm, services: Service[], rolePreferences: RolePreferenceDraft[]) {
   return services.length > 0
-    || rolePreferences.length > 0
-    || !!form.available_cities.trim()
-    || !!form.wechat.trim()
-    || !!form.contact_unlock_enabled
-    || !!form.contact_intent_amount.trim();
+    || rolePreferences.length > 0;
 }
 
 function dashboardSectionFromPath(pathname: string): DashboardSection {
   if (pathname === '/dashboard/profile') return 'profile';
   if (pathname === '/dashboard/services') return 'services';
+  if (pathname === '/dashboard/services/works') return 'serviceWorks';
+  if (pathname === '/dashboard/services/availability') return 'serviceAvailability';
+  if (pathname === '/dashboard/wallet') return 'wallet';
   if (pathname === '/dashboard/account') return 'account';
+  if (pathname === '/dashboard/certification') return 'identity';
   if (pathname === '/dashboard/posts') return 'posts';
+  if (pathname === '/dashboard/referrals') return 'referral';
   return 'overview';
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}
+
+function referralRoleLabel(role?: ReferralDashboardData['community_role']) {
+  if (role === 'founding_referrer') return '创始推荐人';
+  if (role === 'community_observer') return '社区观察员';
+  if (role === 'community_referrer') return '社区推荐人';
+  return '普通用户';
+}
+
+function referralItemStatus(item: ReferralDashboardItem) {
+  if (item.stage2_awarded_at) return '已完成有效互动';
+  if (item.stage1_awarded_at) return '已完成手机号验证';
+  if (item.invitee_bonus_awarded_at) return '已注册';
+  return item.status === 'rejected' ? '已驳回' : '等待完成';
+}
+
+const CERT_TYPE_LABELS: Record<Certification['type'], string> = {
+  realname: '实名认证',
+  dm: 'DM 开本记录认证',
+  shop: '店家认证',
+};
+
+const CERT_STATUS_LABELS: Record<Certification['status'], string> = {
+  pending: '审核中',
+  approved: '已通过',
+  rejected: '未通过',
+};
+
+function certTone(status: Certification['status']): ToneName {
+  if (status === 'approved') return 'green';
+  if (status === 'rejected') return 'red';
+  return 'gold';
 }
 
 function getProfileCompletion(form: ProfileForm, services: Service[], portfolio: Portfolio[], rolePreferences: RolePreferenceDraft[]) {
@@ -294,6 +426,12 @@ export default function Dashboard() {
   const [settingPassword, setSettingPassword] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [offersServices, setOffersServices] = useState(false);
+  const [walletData, setWalletData] = useState<WalletDashboardData | null>(null);
+  const [referralData, setReferralData] = useState<ReferralDashboardData | null>(null);
+  const [certifications, setCertifications] = useState<Certification[]>([]);
+  const [moduleLoading, setModuleLoading] = useState(false);
+  const [moduleError, setModuleError] = useState('');
+  const [copiedInvite, setCopiedInvite] = useState('');
 
   const token = getToken();
 
@@ -403,6 +541,42 @@ export default function Dashboard() {
       setScreenshotText(data.text || '');
     },
   });
+
+  useEffect(() => {
+    if (!creator || !token) return;
+    if (!['wallet', 'referral', 'identity'].includes(activeSection)) return;
+    let cancelled = false;
+    const loadModule = async () => {
+      setModuleLoading(true);
+      setModuleError('');
+      try {
+        if (activeSection === 'wallet') {
+          const response = await fetch(`${API}/lc/wallet`, { headers: { Authorization: `Bearer ${token}` } });
+          const data = await response.json();
+          if (!response.ok || !data.success) throw new Error(data.error || '钱包信息加载失败');
+          if (!cancelled) setWalletData(data.data || null);
+        }
+        if (activeSection === 'referral') {
+          const response = await fetch(`${API}/lc/referrals/me`, { headers: { Authorization: `Bearer ${token}` } });
+          const data = await response.json();
+          if (!response.ok || !data.success) throw new Error(data.error || '邀请信息加载失败');
+          if (!cancelled) setReferralData(data.data || null);
+        }
+        if (activeSection === 'identity') {
+          const response = await fetch(`${API}/lc/certifications/my`, { headers: { Authorization: `Bearer ${token}` } });
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.success) throw new Error(data?.error || '认证记录加载失败');
+          if (!cancelled) setCertifications(data.data || []);
+        }
+      } catch (moduleErr) {
+        if (!cancelled) setModuleError(moduleErr instanceof Error ? moduleErr.message : '加载失败');
+      } finally {
+        if (!cancelled) setModuleLoading(false);
+      }
+    };
+    void loadModule();
+    return () => { cancelled = true; };
+  }, [activeSection, creator, token]);
 
   const selectRoleScript = (scriptId: string) => {
     const script = scripts.find(item => item.id === scriptId);
@@ -854,6 +1028,16 @@ export default function Dashboard() {
     navigate('/login');
   };
 
+  const copyInviteText = async (label: string, text: string) => {
+    try {
+      await copyTextToClipboard(text);
+      setCopiedInvite(label);
+      window.setTimeout(() => setCopiedInvite(''), 1600);
+    } catch {
+      setModuleError('复制失败，请手动选中复制');
+    }
+  };
+
   const closeOnboarding = () => {
     setShowOnboarding(false);
   };
@@ -895,6 +1079,9 @@ export default function Dashboard() {
     myCommissions.some(item => item.status === 'pending'),
     myCarpools.some(item => item.status === 'pending'),
   ].filter(Boolean).length;
+  const currentDashboardLabel = DASHBOARD_LABELS[activeSection];
+  const roleBasedServiceSelected = services.some(service => ['creator', 'dm'].includes(normalizeServiceCategory(service.service_type)))
+    || ['creator', 'dm'].includes(normalizeServiceCategory(newSvc.service_type));
 
   return (
     <div className="dashboard-page" style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
@@ -960,24 +1147,34 @@ export default function Dashboard() {
       <div className="dashboard-shell-top" style={{ padding: '18px 22px 0' }}>
         <div className="dashboard-topbar" style={{
           maxWidth: 1396,
-          minHeight: 52,
+          minHeight: 44,
           margin: '0 auto',
-          padding: '0 14px',
+          padding: '0 12px',
           borderRadius: 8,
           border: '1px solid rgba(31,41,55,0.08)',
-          background: '#ffffff',
+          background: 'rgba(255,255,255,0.86)',
           display: 'flex',
           alignItems: 'center',
-          gap: 14,
+          justifyContent: 'space-between',
+          gap: 12,
         }}>
-          <strong style={{ fontFamily: 'var(--font-serif)', fontSize: 18, fontWeight: 900, color: INK }}>灵契</strong>
-          <span style={{ flex: 1, minWidth: 0, color: '#275389', fontSize: 13, fontWeight: 900 }}>个人主页后台</span>
-          <Link to={`/explore/${creator.id}`} className="dashboard-top-action" style={{ height: 36, display: 'inline-flex', alignItems: 'center', padding: '0 14px', borderRadius: 8, background: '#275389', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 900 }}>
-            预览公开页
-          </Link>
-          <button onClick={logout} className="dashboard-top-action" style={{ height: 36, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(185,28,28,0.18)', background: '#fff1f2', color: '#b91c1c', cursor: 'pointer', fontSize: 13, fontWeight: 900 }}>
-            退出
-          </button>
+          <div className="dashboard-top-crumbs" style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', color: 'rgba(71,85,105,0.66)', fontSize: 12, fontWeight: 850 }}>
+            <strong style={{ color: INK, fontFamily: 'var(--font-serif)', fontSize: 15, fontWeight: 950 }}>灵契后台</strong>
+            <span>/</span>
+            <span>个人主页后台</span>
+            <span>/</span>
+            <span style={{ color: '#275389' }}>{currentDashboardLabel}</span>
+          </div>
+          <div className="dashboard-top-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
+            <Link to="/" className="dashboard-top-action" style={topActionStyle}>返回灵契</Link>
+            <Link to="/explore" className="dashboard-top-action" style={topActionStyle}>灵契大厅</Link>
+            <Link to={`/explore/${creator.id}`} className="dashboard-top-action dashboard-top-action-primary" style={{ ...topActionStyle, borderColor: 'rgba(39,83,137,0.16)', background: '#EEF6FF', color: '#275389' }}>
+              预览主页
+            </Link>
+            <button onClick={logout} className="dashboard-top-action" style={{ ...topActionStyle, borderColor: 'rgba(185,28,28,0.14)', color: '#b91c1c', cursor: 'pointer' }}>
+              退出
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1016,19 +1213,13 @@ export default function Dashboard() {
             </div>
             <nav className="dashboard-side-nav" style={{ display: 'grid', gap: 4, paddingTop: 8 }}>
               {DASHBOARD_NAV.map(item => {
-                const active = item.key === 'wallet'
-                  ? pathname === '/wallet'
-                  : item.key === 'identity'
-                    ? pathname === '/certification'
-                    : item.key === 'referral'
-                      ? pathname === '/referrals'
-                      : item.key === activeSection;
+                const active = item.key === activeSection;
                 return (
                   <Link key={item.key} to={item.path} className="dashboard-tab-btn" style={{
                     display: 'flex',
                     alignItems: 'center',
-                    minHeight: 38,
-                    padding: '0 10px',
+                    minHeight: item.child ? 34 : 38,
+                    padding: item.child ? '0 10px 0 22px' : '0 10px',
                     borderRadius: 8,
                     border: active ? '1px solid rgba(39,83,137,0.14)' : '1px solid transparent',
                     background: active ? '#EEF6FF' : 'transparent',
@@ -1271,7 +1462,7 @@ export default function Dashboard() {
                   <CompactStatus ok={creator.is_realname} tone={creator.is_realname ? 'gold' : 'muted'} label={creator.is_realname ? '实名已认证' : '实名未认证'}>
                     实名由后台审核，前台只显示星标和昵称，不公开真实姓名。需要认证时可提交水印身份证材料。
                   </CompactStatus>
-                  <Link to="/certification" className="inline-action-link">
+                  <Link to="/dashboard/certification" className="inline-action-link">
                     {creator.is_realname ? '查看认证' : '去认证'}
                   </Link>
                 </div>
@@ -1340,6 +1531,25 @@ export default function Dashboard() {
                   <div>
                     <label style={labelStyle}>小红书主页链接</label>
                     <input type="url" value={form.xiaohongshu} onChange={e => setForm({ ...form, xiaohongshu: e.target.value })} placeholder="https://www.xiaohongshu.com/..." style={inputStyle} />
+                  </div>
+                </div>
+                <div className="profile-grid-compact" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 0.7fr) minmax(190px, 1.2fr) minmax(150px, 0.9fr)', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={labelStyle}>常驻 / 流动状态</label>
+                    <select value={form.travel_status} onChange={e => setForm({ ...form, travel_status: e.target.value })} style={inputStyle}>
+                      <option value="常驻本地">常驻本地</option>
+                      <option value="全国流动">全国流动</option>
+                      <option value="巡游中">巡游中</option>
+                      <option value="远程可接">远程可接</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>可接城市（逗号分隔）</label>
+                    <input type="text" value={form.available_cities} onChange={e => setForm({ ...form, available_cities: e.target.value })} placeholder="北京, 上海, 杭州" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>微信（通过申请后可见）</label>
+                    <input type="text" value={form.wechat} onChange={e => setForm({ ...form, wechat: e.target.value })} placeholder="不公开展示" style={inputStyle} />
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -1439,15 +1649,14 @@ export default function Dashboard() {
                 <PageIntro
                   eyebrow="SERVICES"
                   title="服务与作品"
-                  subtitle="服务身份、可约档期和作品集集中在这里，避免大厅和个人页口径不一致。"
-                  action={<button type="button" onClick={() => setOffersServices(true)} style={darkActionStyle}>新增服务</button>}
+                  subtitle="先决定是否提供服务；作品集和可约档期已经拆到独立子页。"
                 />
                 <div className="dashboard-panel service-choice-panel" style={{ ...card, padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                     <div>
                       <p style={{ fontWeight: 900, color: INK, fontSize: '0.94rem', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         是否在灵契上提供服务
-                        <InfoTip>先决定要不要接委托；选择提供服务后，再填写城市、联系方式、角色和报价。</InfoTip>
+                        <InfoTip>选择提供服务后，再填写服务类目和报价；审核通过后会展示在灵契大厅。选择暂不提供时，本页不再显示服务表单。</InfoTip>
                       </p>
                     </div>
                     <div className="service-choice-buttons" style={{ display: 'inline-flex', gap: 6, padding: 4, borderRadius: 999, background: 'rgba(241,245,249,0.86)', border: '1px solid rgba(125,147,170,0.14)' }}>
@@ -1470,67 +1679,15 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
-                {!offersServices && (
-                  <div className="dashboard-panel" style={{ ...card, padding: '10px 12px', background: 'rgba(255,255,255,0.72)' }}>
-                    <p style={{ color: 'rgba(71,85,105,0.72)', fontSize: '0.8rem', lineHeight: 1.55, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      已选择暂不提供服务
-                      <InfoTip>当前不会引导你填写报价、可接角色或联系方式。以后想接委托时，回来切到“提供服务”再填写。</InfoTip>
-                    </p>
-                  </div>
-                )}
                 {offersServices && (
                   <>
-                <div className="dashboard-panel service-settings-panel" style={{ ...card }}>
-                  <p style={{ fontWeight: 800, color: INK, fontSize: '0.96rem', marginBottom: 12 }}>委托与服务设置</p>
-                  <div style={{ marginBottom: 12 }}>
-                    <DraftAutosaveNotice
-                      savedAt={profileDraft.savedAt}
-                      restoredAt={profileDraft.restoredAt}
-                      error={profileDraft.error}
-                      note="未保存的服务设置和角色清单会自动保存到当前浏览器。"
-                    />
-                  </div>
-                  <div className="service-settings-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 0.72fr) minmax(190px, 1.2fr) minmax(150px, 0.9fr) minmax(170px, 1fr)', gap: 12, marginBottom: 12, alignItems: 'end' }}>
-                    <div>
-                      <label style={labelStyle}>流动状态</label>
-                      <select value={form.travel_status} onChange={e => setForm({ ...form, travel_status: e.target.value })} style={inputStyle}>
-                        <option value="常驻本地">常驻本地</option>
-                        <option value="全国流动">全国流动</option>
-                        <option value="巡游中">巡游中</option>
-                        <option value="远程可接">远程可接</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={labelStyle}>可接城市（逗号分隔）</label>
-                      <input type="text" value={form.available_cities} onChange={e => setForm({ ...form, available_cities: e.target.value })} placeholder="北京, 上海, 杭州" style={inputStyle} />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>微信</label>
-                      <input type="text" value={form.wechat} onChange={e => setForm({ ...form, wechat: e.target.value })}
-                        placeholder="粉丝通过申请后可见" style={inputStyle} />
-                    </div>
-                    <div className="intent-setting-row">
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'rgba(71,85,105,0.82)', fontSize: '0.82rem', fontWeight: 850 }}>
-                        <input type="checkbox" checked={form.contact_unlock_enabled} onChange={e => setForm({ ...form, contact_unlock_enabled: e.target.checked })} />
-                        预约意向金
-                        <InfoTip>
-                          页面会写成预约意向确认，用来减少无效打扰，不写成“加微信门槛费”。
-                        </InfoTip>
-                      </label>
-                      <input type="number" value={form.contact_intent_amount} onChange={e => setForm({ ...form, contact_intent_amount: e.target.value })} placeholder="金额，0 表示不收" style={{ ...inputStyle }} />
-                    </div>
-                  </div>
-                  <button onClick={() => saveProfile()} disabled={saving}
-                    style={{
-                      padding: '10px 20px', borderRadius: 10, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-                      background: saving ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                      color: saving ? 'rgba(71,85,105,0.52)' : INK, fontWeight: 800, fontSize: '0.86rem',
-                    }}>
-                    {saving ? '保存中...' : '保存服务设置'}
-                  </button>
-                  {msg && <span style={{ marginLeft: 12, fontSize: '0.82rem', color: '#15803d', fontWeight: 700 }}>{msg}</span>}
+                <div className="dashboard-panel" style={{ ...card, background: '#EEF6FF', border: '1px solid rgba(39,83,137,0.14)' }}>
+                  <p style={{ color: '#275389', fontSize: '0.86rem', fontWeight: 850, lineHeight: 1.65 }}>
+                    服务通过人工审核后，会出现在灵契大厅；未审核通过前不会公开展示。
+                  </p>
                 </div>
 
+                {roleBasedServiceSelected && (
                 <div className="dashboard-panel role-panel" style={{ ...card }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
@@ -1636,6 +1793,18 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
+                )}
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>提供什么服务</h2>
+                    <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>选择清楚的服务类目，比大段自我介绍更容易进入大厅筛选。</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Link to="/dashboard/services/works" style={secondaryActionStyle}>作品集</Link>
+                    <Link to="/dashboard/services/availability" style={secondaryActionStyle}>可约档期</Link>
+                  </div>
+                </div>
 
                 {services.map(s => (
                   <div key={s.id} style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1657,7 +1826,7 @@ export default function Dashboard() {
                   </div>
                 ))}
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
-                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>添加服务</p>
+                  <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>新增服务</p>
                   <div style={{ marginBottom: 12 }}>
                     <DraftAutosaveNotice
                       savedAt={serviceDraft.savedAt}
@@ -1692,8 +1861,14 @@ export default function Dashboard() {
             )}
 
             {/* 档期 */}
-            {activeSection === 'services' && (
+            {activeSection === 'serviceAvailability' && (
               <div style={{ display: 'grid', gap: 16 }}>
+                <PageIntro
+                  eyebrow="AVAILABILITY"
+                  title="可约档期"
+                  subtitle="手动标记可约日期，或同步剧司辰已排档期作为忙碌时间。"
+                  action={<Link to="/dashboard/services" style={secondaryActionStyle}>返回服务</Link>}
+                />
                 <div style={card}>
                   <p style={{ fontWeight: 800, fontSize: '0.96rem', marginBottom: 12, color: INK, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     手动标记可约日期
@@ -1795,8 +1970,14 @@ export default function Dashboard() {
             )}
 
             {/* 作品集 */}
-            {activeSection === 'services' && (
+            {activeSection === 'serviceWorks' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <PageIntro
+                  eyebrow="WORKS"
+                  title="作品集"
+                  subtitle="上传公开展示作品；通过审核后才会显示在个人主页。"
+                  action={<Link to="/dashboard/services" style={secondaryActionStyle}>返回服务</Link>}
+                />
                 {portfolio.length > 0 && (
                   <div style={card}>
                     <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>已上传作品</p>
@@ -1822,6 +2003,190 @@ export default function Dashboard() {
                   </p>
                   <ImageUpload onUploaded={addPortfolio} token={token} api={API} scope="portfolio" label="上传作品并提交审核" />
                 </div>
+              </div>
+            )}
+
+            {activeSection === 'wallet' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <PageIntro
+                  eyebrow="WALLET"
+                  title="钱包余额"
+                  subtitle="契约币余额、充值币、赠币和最近流水统一放在后台里查看。"
+                  action={<Link to="/wallet" style={darkActionStyle}>充值 / 完整流水</Link>}
+                />
+                {moduleError && <ModuleNotice tone="red">{moduleError}</ModuleNotice>}
+                {moduleLoading && !walletData ? (
+                  <section style={card}><p style={{ color: MUTED, fontSize: 13, fontWeight: 750 }}>钱包信息加载中...</p></section>
+                ) : (
+                  <>
+                    <div className="dashboard-metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                      <MetricCard label="总契约币" value={`${walletData?.balance ?? 0}`} tone="gold" />
+                      <MetricCard label="充值币" value={`${walletData?.paid_balance ?? 0}`} tone="green" />
+                      <MetricCard label="赠币" value={`${walletData?.bonus_balance ?? 0}`} tone="blue" />
+                    </div>
+                    <section style={card}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                        <div>
+                          <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>最近流水</h2>
+                          <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>消费默认先扣赠币，再扣充值币。</p>
+                        </div>
+                        <Link to="/wallet" style={secondaryActionStyle}>查看全部</Link>
+                      </div>
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {(walletData?.transactions || []).slice(0, 5).map(tx => (
+                          <div key={tx.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '11px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.14)', background: '#fff' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ color: INK, fontSize: 13, fontWeight: 850, marginBottom: 3 }}>{tx.description}</p>
+                              <p style={{ color: 'rgba(71,85,105,0.56)', fontSize: 12, fontWeight: 650 }}>{tx.created_at?.slice(0, 10)} · {tx.status === 'approved' ? '已完成' : tx.status === 'pending' ? '处理中' : '未通过'}</p>
+                              {tx.reject_reason && <p style={{ color: '#b91c1c', fontSize: 12, marginTop: 3 }}>{tx.reject_reason}</p>}
+                            </div>
+                            <strong style={{ color: tx.amount >= 0 ? '#15803d' : '#b91c1c', fontSize: 14, whiteSpace: 'nowrap' }}>
+                              {tx.amount > 0 ? '+' : ''}{tx.amount}
+                            </strong>
+                          </div>
+                        ))}
+                        {(walletData?.transactions || []).length === 0 && (
+                          <p style={{ color: MUTED, fontSize: 13, fontWeight: 700, padding: '18px 0' }}>暂无交易记录</p>
+                        )}
+                      </div>
+                    </section>
+                  </>
+                )}
+              </div>
+            )}
+
+            {activeSection === 'identity' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <PageIntro
+                  eyebrow="IDENTITY"
+                  title="认证身份"
+                  subtitle="实名认证、DM 记录和店家认证都在这里看状态；材料仍走原审核流。"
+                  action={<Link to="/certification" style={darkActionStyle}>提交认证材料</Link>}
+                />
+                {moduleError && <ModuleNotice tone="red">{moduleError}</ModuleNotice>}
+                <div className="dashboard-metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                  <MetricCard label="实名状态" value={creator.is_realname ? '已认证' : '未认证'} tone={creator.is_realname ? 'green' : 'gold'} />
+                  <MetricCard label="DM 认证" value={creator.verified_dm ? '已认证' : creator.has_pending_dm_cert ? '审核中' : '未认证'} tone={creator.verified_dm ? 'green' : creator.has_pending_dm_cert ? 'gold' : 'gray'} />
+                  <MetricCard label="店家认证" value={creator.verified_shop ? '已认证' : creator.has_pending_shop_cert ? '审核中' : '未认证'} tone={creator.verified_shop ? 'green' : creator.has_pending_shop_cert ? 'gold' : 'gray'} />
+                </div>
+                <section style={card}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <div>
+                      <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>认证记录</h2>
+                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>前台只展示认证标识，不公开证件材料。</p>
+                    </div>
+                    <Link to="/certification" style={secondaryActionStyle}>上传材料</Link>
+                  </div>
+                  {moduleLoading && certifications.length === 0 ? (
+                    <p style={{ color: MUTED, fontSize: 13, fontWeight: 750 }}>认证记录加载中...</p>
+                  ) : certifications.length === 0 ? (
+                    <p style={{ color: MUTED, fontSize: 13, fontWeight: 700, padding: '18px 0' }}>暂无认证记录</p>
+                  ) : (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {certifications.map(cert => (
+                        <div key={cert.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.14)', background: '#fff' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ color: INK, fontSize: 13, fontWeight: 850, marginBottom: 3 }}>{CERT_TYPE_LABELS[cert.type]}</p>
+                            <p style={{ color: 'rgba(71,85,105,0.56)', fontSize: 12, fontWeight: 650 }}>{cert.created_at?.slice(0, 10)}</p>
+                            {cert.reject_reason && <p style={{ color: '#b91c1c', fontSize: 12, marginTop: 3 }}>原因：{cert.reject_reason}</p>}
+                          </div>
+                          <span style={{
+                            height: 26,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '0 9px',
+                            borderRadius: 999,
+                            border: `1px solid ${toneStyles[certTone(cert.status)].border}`,
+                            background: toneStyles[certTone(cert.status)].bg,
+                            color: toneStyles[certTone(cert.status)].color,
+                            fontSize: 12,
+                            fontWeight: 900,
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {CERT_STATUS_LABELS[cert.status]}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
+
+            {activeSection === 'referral' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <PageIntro
+                  eyebrow="REFERRALS"
+                  title="邀请奖励"
+                  subtitle="邀请码、邀请链接、奖励规则和邀请记录统一收在个人后台。"
+                  action={<Link to="/wallet" style={secondaryActionStyle}>契约币记录</Link>}
+                />
+                {moduleError && <ModuleNotice tone="red">{moduleError}</ModuleNotice>}
+                {moduleLoading && !referralData ? (
+                  <section style={card}><p style={{ color: MUTED, fontSize: 13, fontWeight: 750 }}>邀请信息加载中...</p></section>
+                ) : referralData ? (
+                  <>
+                    <section style={{ ...card, display: 'grid', gap: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ color: GOLD, fontSize: 11, fontWeight: 900, marginBottom: 7 }}>专属邀请码</p>
+                          <strong style={{ color: '#925f18', fontSize: 32, fontWeight: 950, lineHeight: 1 }}>{referralData.referral_code}</strong>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => copyInviteText('邀请码', referralData.referral_code)} style={secondaryActionStyle}>复制邀请码</button>
+                          <button type="button" onClick={() => copyInviteText('邀请链接', referralData.share_url)} style={primaryActionStyle}>复制链接</button>
+                        </div>
+                      </div>
+                      <div style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.14)', background: '#fff', color: 'rgba(71,85,105,0.72)', fontSize: 13, fontWeight: 700, overflowWrap: 'anywhere' }}>
+                        {referralData.share_url}
+                      </div>
+                      {copiedInvite && <p style={{ color: '#15803d', fontSize: 13, fontWeight: 800 }}>{copiedInvite}已复制</p>}
+                    </section>
+                    <div className="dashboard-metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                      <MetricCard label="已邀请注册" value={`${referralData.stats.registered_invites}`} tone="blue" />
+                      <MetricCard label="有效邀请" value={`${referralData.stats.valid_invites}`} tone="green" />
+                      <MetricCard label="完成互动" value={`${referralData.stats.converted_invites}`} tone="gold" />
+                      <MetricCard label="奖励合计" value={`${referralData.stats.referrer_reward_total}`} tone="green" />
+                    </div>
+                    <section style={card}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12 }} className="dashboard-two-col">
+                        <div>
+                          <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 8 }}>当前身份</h2>
+                          <p style={{ color: '#925f18', fontSize: 16, fontWeight: 950, marginBottom: 6 }}>{referralRoleLabel(referralData.community_role)}</p>
+                          <p style={{ color: MUTED, fontSize: 13, fontWeight: 650, lineHeight: 1.65 }}>
+                            {referralData.community_role_expires_at ? `有效期至 ${referralData.community_role_expires_at.slice(0, 10)}` : '社区荣誉不会给到审核、删除、看隐私或改余额权限。'}
+                          </p>
+                        </div>
+                        <div>
+                          <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 8 }}>下一阶段</h2>
+                          <p style={{ color: '#275389', fontSize: 16, fontWeight: 950, marginBottom: 6 }}>{referralData.stats.next_milestone.title}</p>
+                          <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>
+                            {referralData.stats.next_milestone.remaining > 0 ? `还差 ${referralData.stats.next_milestone.remaining} 个有效邀请` : '已达成当前最高里程碑'}
+                          </p>
+                        </div>
+                      </div>
+                    </section>
+                    <section style={card}>
+                      <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 12 }}>邀请记录</h2>
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {referralData.referrals.slice(0, 8).map(item => (
+                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.14)', background: '#fff' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ color: INK, fontSize: 13, fontWeight: 850, marginBottom: 3 }}>{item.invitee.display_name}</p>
+                              <p style={{ color: 'rgba(71,85,105,0.56)', fontSize: 12, fontWeight: 650 }}>{item.created_at?.slice(0, 10)} 注册</p>
+                            </div>
+                            <span style={{ color: '#925f18', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>{referralItemStatus(item)}</span>
+                          </div>
+                        ))}
+                        {referralData.referrals.length === 0 && (
+                          <p style={{ color: MUTED, fontSize: 13, fontWeight: 700, padding: '18px 0' }}>还没有邀请记录</p>
+                        )}
+                      </div>
+                    </section>
+                  </>
+                ) : (
+                  <section style={card}><p style={{ color: MUTED, fontSize: 13, fontWeight: 750 }}>暂无邀请信息</p></section>
+                )}
               </div>
             )}
 
@@ -2208,6 +2573,22 @@ export default function Dashboard() {
             padding: 8px 10px !important;
             font-size: 0.78rem !important;
           }
+          .dashboard-shell-top {
+            padding: 10px 12px 0 !important;
+          }
+          .dashboard-topbar {
+            align-items: flex-start !important;
+            flex-direction: column !important;
+            min-height: 0 !important;
+            padding: 10px !important;
+          }
+          .dashboard-top-actions {
+            width: 100% !important;
+            justify-content: flex-start !important;
+          }
+          .dashboard-top-action {
+            min-height: 32px !important;
+          }
           .dashboard-hero {
             padding: 14px 14px 12px !important;
             background: linear-gradient(145deg, #eef6ff 0%, #fffaf2 100%) !important;
@@ -2328,7 +2709,8 @@ export default function Dashboard() {
           }
           .dashboard-metric-grid,
           .dashboard-quick-grid,
-          .account-security-grid {
+          .account-security-grid,
+          .dashboard-two-col {
             grid-template-columns: 1fr !important;
           }
           .dashboard-card,
@@ -2513,6 +2895,21 @@ const miniButtonStyle: React.CSSProperties = {
   fontWeight: 800,
 };
 
+const topActionStyle: React.CSSProperties = {
+  minHeight: 30,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '0 10px',
+  borderRadius: 7,
+  border: '1px solid rgba(125,147,170,0.14)',
+  background: 'rgba(255,255,255,0.62)',
+  color: 'rgba(71,85,105,0.76)',
+  textDecoration: 'none',
+  fontSize: 12,
+  fontWeight: 850,
+};
+
 const primaryActionStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -2617,6 +3014,24 @@ function SecurityCard({ title, value, status, tone }: { title: string; value: st
         {status}
       </span>
     </section>
+  );
+}
+
+function ModuleNotice({ tone, children }: { tone: ToneName; children: React.ReactNode }) {
+  const colors = toneStyles[tone];
+  return (
+    <div style={{
+      padding: '11px 13px',
+      borderRadius: 10,
+      border: `1px solid ${colors.border}`,
+      background: colors.bg,
+      color: colors.color,
+      fontSize: 13,
+      fontWeight: 800,
+      lineHeight: 1.55,
+    }}>
+      {children}
+    </div>
   );
 }
 
