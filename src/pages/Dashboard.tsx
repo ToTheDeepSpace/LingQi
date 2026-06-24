@@ -1145,39 +1145,71 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="dashboard-shell-top" style={{ padding: '18px 22px 0' }}>
+      <nav className="dashboard-shell-top" style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        backgroundColor: 'rgba(255,253,248,0.94)',
+        borderBottom: '1px solid rgba(201,146,46,0.22)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow: '0 10px 32px rgba(31,41,55,0.06)',
+      }}>
         <div className="dashboard-topbar" style={{
-          maxWidth: 1396,
-          minHeight: 44,
+          maxWidth: 1160,
+          height: 64,
           margin: '0 auto',
-          padding: '0 12px',
-          borderRadius: 8,
-          border: '1px solid rgba(31,41,55,0.08)',
-          background: 'rgba(255,255,255,0.86)',
+          padding: '0 20px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 12,
+          gap: 16,
         }}>
-          <div className="dashboard-top-crumbs" style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', color: 'rgba(71,85,105,0.66)', fontSize: 12, fontWeight: 850 }}>
-            <strong style={{ color: INK, fontFamily: 'var(--font-serif)', fontSize: 15, fontWeight: 950 }}>灵契后台</strong>
-            <span>/</span>
-            <span>个人主页后台</span>
-            <span>/</span>
-            <span style={{ color: '#275389' }}>{currentDashboardLabel}</span>
+          <Link to="/" aria-label="灵契首页" className="dashboard-brand-link" style={dashboardBrandLinkStyle}>
+            <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.12rem', lineHeight: 1.05 }}>
+              灵契
+              <span style={{ marginLeft: 5, fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(146,95,24,0.58)', fontFamily: 'var(--font-sans)', WebkitTextFillColor: 'rgba(146,95,24,0.58)' }}>
+                Lingqi
+              </span>
+            </span>
+          </Link>
+          <div className="dashboard-public-links" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 6,
+            minWidth: 0,
+            flex: '1 1 auto',
+            flexWrap: 'nowrap',
+            whiteSpace: 'nowrap',
+          }}>
+            {[
+              { to: '/explore', label: '浏览灵契师' },
+              { to: '/commissions', label: '委托需求' },
+              { to: '/carpools', label: '拼车区' },
+              { to: '/rankings', label: '红黑榜' },
+              { to: '/scripts', label: '角色点评' },
+              { to: '/guides', label: '攻略交易' },
+            ].map(item => (
+              <Link key={item.to} to={item.to} className="dashboard-public-link" style={dashboardPublicNavLinkStyle}>
+                {item.label}
+              </Link>
+            ))}
+            <span className="dashboard-module-chip" style={dashboardIdentityChipStyle}>后台：{currentDashboardLabel}</span>
           </div>
           <div className="dashboard-top-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
-            <Link to="/" className="dashboard-top-action" style={topActionStyle}>返回灵契</Link>
-            <Link to="/explore" className="dashboard-top-action" style={topActionStyle}>灵契大厅</Link>
             <Link to={`/explore/${creator.id}`} className="dashboard-top-action dashboard-top-action-primary" style={{ ...topActionStyle, borderColor: 'rgba(39,83,137,0.16)', background: '#EEF6FF', color: '#275389' }}>
               预览主页
             </Link>
+            <Link to="/dashboard/referrals" className="dashboard-top-action" style={topActionStyle}>邀请</Link>
+            <Link to="/dashboard/certification" className="dashboard-top-action" style={topActionStyle}>认证</Link>
             <button onClick={logout} className="dashboard-top-action" style={{ ...topActionStyle, borderColor: 'rgba(185,28,28,0.14)', color: '#b91c1c', cursor: 'pointer' }}>
               退出
             </button>
+            <Link to="/admin" className="dashboard-top-action" style={dashboardAdminActionStyle}>管理</Link>
           </div>
         </div>
-      </div>
+      </nav>
 
       <div className="dashboard-body" style={{ maxWidth: 1396, margin: '0 auto', padding: '14px 22px 80px' }}>
 
@@ -2575,20 +2607,40 @@ export default function Dashboard() {
             font-size: 0.78rem !important;
           }
           .dashboard-shell-top {
-            padding: 10px 12px 0 !important;
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 50 !important;
           }
           .dashboard-topbar {
-            align-items: flex-start !important;
-            flex-direction: column !important;
+            align-items: center !important;
+            flex-wrap: wrap !important;
+            height: auto !important;
             min-height: 0 !important;
-            padding: 10px !important;
+            padding: 10px 12px !important;
+            gap: 8px !important;
+          }
+          .dashboard-brand-link {
+            padding: 6px 9px !important;
+          }
+          .dashboard-public-links {
+            display: none !important;
           }
           .dashboard-top-actions {
             width: 100% !important;
             justify-content: flex-start !important;
+            flex-wrap: nowrap !important;
+            overflow-x: auto !important;
+            padding-bottom: 1px !important;
+            scrollbar-width: none !important;
+          }
+          .dashboard-top-actions::-webkit-scrollbar {
+            display: none !important;
           }
           .dashboard-top-action {
             min-height: 32px !important;
+            flex: 0 0 auto !important;
+            padding: 0 10px !important;
+            font-size: 0.78rem !important;
           }
           .dashboard-hero {
             padding: 14px 14px 12px !important;
@@ -2664,7 +2716,7 @@ export default function Dashboard() {
             max-width: none !important;
             min-height: 0 !important;
             position: sticky !important;
-            top: 0 !important;
+            top: 86px !important;
             z-index: 20 !important;
             display: block !important;
             gap: 8px !important;
@@ -2896,19 +2948,64 @@ const miniButtonStyle: React.CSSProperties = {
   fontWeight: 800,
 };
 
+const dashboardBrandLinkStyle: React.CSSProperties = {
+  textDecoration: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+  flex: '0 0 auto',
+  minWidth: 0,
+  padding: '7px 10px',
+  borderRadius: 12,
+  border: '1px solid rgba(201,146,46,0.18)',
+  background: 'rgba(255,250,242,0.72)',
+  color: INK,
+};
+
+const dashboardPublicNavLinkStyle: React.CSSProperties = {
+  textDecoration: 'none',
+  padding: '8px 14px',
+  borderRadius: 8,
+  fontSize: '0.875rem',
+  color: MUTED,
+  fontWeight: 650,
+};
+
+const dashboardIdentityChipStyle: React.CSSProperties = {
+  maxWidth: 150,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  padding: '6px 10px',
+  borderRadius: 8,
+  border: '1px solid rgba(125,147,170,0.22)',
+  background: 'rgba(239,246,255,0.78)',
+  color: '#275389',
+  fontSize: '0.76rem',
+  fontWeight: 800,
+};
+
 const topActionStyle: React.CSSProperties = {
-  minHeight: 30,
+  minHeight: 36,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  padding: '0 10px',
-  borderRadius: 7,
-  border: '1px solid rgba(125,147,170,0.14)',
-  background: 'rgba(255,255,255,0.62)',
-  color: 'rgba(71,85,105,0.76)',
+  padding: '0 12px',
+  borderRadius: 8,
+  border: '1px solid rgba(201,146,46,0.15)',
+  background: 'transparent',
+  color: MUTED,
   textDecoration: 'none',
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 850,
+};
+
+const dashboardAdminActionStyle: React.CSSProperties = {
+  ...topActionStyle,
+  marginLeft: 4,
+  border: '1px solid rgba(217,168,87,0.75)',
+  background: 'linear-gradient(135deg, #f4c873 0%, #d9a857 100%)',
+  color: '#0F1117',
+  fontWeight: 900,
 };
 
 const primaryActionStyle: React.CSSProperties = {
