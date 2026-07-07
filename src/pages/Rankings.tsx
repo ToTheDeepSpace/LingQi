@@ -1404,7 +1404,7 @@ export default function Rankings() {
         <section style={compactHeroStyle}>
           <div>
             <h1 style={compactTitleStyle}>灵契·红黑榜</h1>
-            <p style={compactLeadStyle}>红黑榜是评分榜的事件媒介。免费态度票看真实人数，真金打榜看契约币加权；两套数据分开判断。</p>
+            <p style={compactLeadStyle}>红黑榜是评分榜的事件媒介。口碑票看真实人数，真金打榜看契约币加权；两套数据分开判断。</p>
           </div>
           <div style={filterGroupStyle}>
             <button onClick={() => setBoardMode('reputation')} style={hubToggleStyle(boardMode === 'reputation', '#275389')}>口碑榜</button>
@@ -1444,7 +1444,7 @@ export default function Rankings() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.7 }}>
             {TAB_HINT[tab]} {boardMode === 'reputation'
-              ? '口碑榜按免费态度票排序，优先看一人一票的真实参与人数。'
+              ? '口碑榜按口碑票排序，优先看一人一票的真实参与人数。'
               : '真金榜按付费打榜和踩榜排序，只代表契约币加权热度。'}
           </span>
           {tab === 'black' && (
@@ -1465,7 +1465,7 @@ export default function Rankings() {
               lineHeight: 1.7,
               maxWidth: 860,
             }}>
-              主帖必须附带证据；涉及第三方隐私的信息请先打码。免费态度票一人一票，可改票；真金打榜和踩榜按实际契约币金额累计，影响热度，不代表平台事实裁判。发布者对事实、证据、隐私打码和言论后果负责。
+              主帖必须附带证据；涉及第三方隐私的信息请先打码。口碑票一人一票，可改票；真金打榜和踩榜按实际契约币金额累计，影响热度，不代表平台事实裁判。发布者对事实、证据、隐私打码和言论后果负责。
             </div>
           </details>
         </div>
@@ -1651,7 +1651,7 @@ export default function Rankings() {
                   <div style={{ ...chipRowStyle, marginBottom: 12 }}>
                     <span style={goldMetricChipStyle}>真金打榜 {boostStats.total}</span>
                     <span style={slateMetricChipStyle}>真金踩榜 {negativeBoostAmount(item)}</span>
-                    <span style={greenMetricChipStyle}>免费态度 {reputationParticipation(item)} 人</span>
+                    <span style={greenMetricChipStyle}>口碑票 {reputationParticipation(item)} 人</span>
                     <span style={metricChipStyle}>评论 {comments.length}</span>
                   </div>
 
@@ -1703,7 +1703,7 @@ export default function Rankings() {
                     </div>
                     <div style={freeVoteZoneStyle}>
                       <div style={voteZoneTitleStyle}>
-                        <span style={{ ...voteZoneKickerStyle, color: '#275389' }}>免费态度票</span>
+                        <span style={{ ...voteZoneKickerStyle, color: '#275389' }}>口碑票</span>
                         <span style={voteZoneHintStyle}>登录后一人一票，可改票，优先反映真实参与人数。</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -1904,13 +1904,13 @@ export default function Rankings() {
                     : <>已投过：{existingVoteCopy.icon} {existingVoteCopy.label}</>}
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-                  每个账号对同一条内容只能保留一个免费态度。当前账号：<strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong>。
+                  每个账号对同一条内容只能保留一张口碑票。当前账号：<strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong>。
                 </p>
                 <div style={{ border: '1px solid rgba(166,106,31,0.16)', background: '#fffaf2', borderRadius: 12, padding: '12px 14px', marginBottom: 14, color: 'rgba(71,85,105,0.78)', fontSize: '0.82rem', lineHeight: 1.7 }}>
                   {isChangingVote
                     ? <>{existingVoteCopy.label}和{requestedVoteCopy?.label}互改免费，只调整公开态度方向。</>
                     : canCancelExistingVote
-                      ? <>24 小时内可以撤销。免费态度撤销不涉及退币。截止：{voteDeadlineText(existingMyVote)}</>
+                      ? <>24 小时内可以撤销。口碑票撤销不涉及退币。截止：{voteDeadlineText(existingMyVote)}</>
                       : <>这票已经超过 24 小时撤销期，只保留公开态度记录。</>}
                 </div>
                 {isChangingVote && voteCommentField}
@@ -1939,7 +1939,7 @@ export default function Rankings() {
                   {requestedVoteCopy?.icon} {requestedVoteCopy?.label} · 免费
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份表达态度。免费态度一人一票，可以顺带写一条免费评论。
+                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投口碑票。一人一票，可以顺带写一条评论。
                 </p>
                 {voteCommentField}
                 {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}

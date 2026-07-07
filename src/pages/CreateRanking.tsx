@@ -227,7 +227,7 @@ export default function CreateRanking() {
             <h1 className="ranking-new-title">发布红黑榜</h1>
             <Link to="/wallet" className="ranking-new-coin"><span>◉</span> 契约币 {balance ?? '...'}</Link>
           </div>
-          <p className="ranking-new-subtitle">免费态度一人一票 · 真实口碑 · {publishCostText}</p>
+          <p className="ranking-new-subtitle">口碑票一人一票 · 真实口碑 · {publishCostText}</p>
         </div>
       </header>
 
@@ -530,7 +530,7 @@ function RankingRulesNotice({ type, accepted, onAcceptedChange }: { type: Rankin
         <RuleLine><strong>写什么</strong> — {typeTip}</RuleLine>
         <RuleLine><strong>上传证据</strong> — 红榜、黑榜建议上传证据；白榜可选，涉及具体人或店时建议附材料。</RuleLine>
         <RuleLine><strong>保护隐私</strong> — 聊天记录、订单、群聊、照片等第三方信息请先打码，否则可能被驳回。</RuleLine>
-        <RuleLine><strong>一人一票</strong> — 同一账号对同一帖只保留一个免费态度；打榜、踩榜按契约币金额累计，禁止多号刷票或重复提交同一事件。</RuleLine>
+        <RuleLine><strong>口碑票</strong> — 同一账号对同一帖只保留一张口碑票；打榜、踩榜按契约币金额累计，禁止多号刷票或重复提交同一事件。</RuleLine>
         <RuleLine><strong>审核边界</strong> — 审核通过仅代表符合展示规则，不代表平台已核实全部陈述。</RuleLine>
         <RuleLine><strong>相关方回应</strong> — 回应不是删帖入口；先发普通评论，通过后再提交关系材料申请置顶。</RuleLine>
         <RuleLine><strong>黑榜期限</strong> — 黑榜默认公开展示 30 天后进入已过期记录，后续可去标识化沉淀为共性问题和礼仪建议。</RuleLine>
