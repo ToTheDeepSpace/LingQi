@@ -424,7 +424,7 @@ export default function Login() {
         ? '重设登录密码'
         : '创建灵契账号';
   const subtitle = step === 'account'
-    ? '先输入手机号或邮箱，已有账号走密码，新账号再验证注册。'
+    ? '用手机号或邮箱继续。老用户直接登录，新用户按提示注册。'
     : step === 'password'
       ? '这个账号已经注册，直接用密码登录。'
       : step === 'reset'
@@ -464,7 +464,7 @@ export default function Login() {
           </div>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 32px' }} />
           <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: MUTED, lineHeight: 2 }}>
-            输入账号先判断<br />已有账号直接登录<br />新账号再验证注册
+            手机号或邮箱继续<br />老用户直接登录<br />新用户按提示注册
           </p>
         </div>
       </div>
