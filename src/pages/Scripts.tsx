@@ -54,7 +54,7 @@ function roleKindLabel(role: ScriptRoleCatalogItem) {
   if (role.role_kind === 'dm') return 'DM';
   if (role.role_kind === 'field_control') return '场控';
   if (role.role_kind === 'npc') return 'NPC';
-  if (role.role_kind === 'assistant') return '助演';
+  if (role.role_kind === 'assistant') return '演绎协作';
   if (role.role_kind === 'actor') return '演绎角色';
   return role.role_kind || '演绎角色';
 }
@@ -240,7 +240,7 @@ export default function Scripts() {
             角色点评
           </h1>
           <p style={{ margin: 0, maxWidth: 760, color: 'rgba(31,41,55,0.76)', lineHeight: 1.65, fontSize: 15, fontWeight: 600 }}>
-            剧本里的玩家角色、DM、场控、NPC、助演都可以评分，也都可以被打 tag。评分写理由，tag 让社区慢慢把共识投出来。
+            剧本里的玩家角色、DM、场控、NPC 等都可以评分，也都可以被打 tag。评分写理由，tag 让社区慢慢把共识投出来。
           </p>
         </ReputationPanel>
         <aside style={searchCardStyle}>

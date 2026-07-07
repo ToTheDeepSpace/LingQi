@@ -124,7 +124,7 @@ export default function ReputationDossier() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 20 }}>
             <img className="reputation-dossier-avatar" src={data?.profile?.avatar || generatedAvatarDataUrl(subjectName, `${subjectType}:${subjectName}:${city}`)} alt="" style={{ width: 84, height: 84, borderRadius: 18, objectFit: 'cover', border: '1px solid rgba(166,106,31,0.20)', background: '#fffaf2' }} />
             <div style={{ minWidth: 0 }}>
-              <p style={{ margin: '0 0 6px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>{subjectType === 'dm' ? '爱D墙' : '对象档案'}</p>
+              <p style={{ margin: '0 0 6px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>{subjectType === 'dm' ? '卡司档案' : '对象档案'}</p>
               <h1 className="reputation-dossier-title" style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3rem)', lineHeight: 1.15, overflowWrap: 'anywhere' }}>{subjectName}</h1>
               <p style={{ margin: '8px 0 0', color: MUTED }}>
                 {SUBJECT_LABEL[subjectType] || subjectType}{city ? ` · ${city}` : ''}{data?.profile?.verified_dm ? ' · 已认证 DM' : ''}
@@ -183,14 +183,14 @@ export default function ReputationDossier() {
 
               <aside className="reputation-dossier-side" style={{ display: 'grid', gap: 14, minWidth: 0 }}>
                 <section className="reputation-dossier-card" style={cardStyle}>
-                  <h2 style={sectionTitle}>{subjectType === 'dm' ? '爱D墙信息' : '档案信息'}</h2>
+                  <h2 style={sectionTitle}>{subjectType === 'dm' ? '卡司档案信息' : '档案信息'}</h2>
                   {data.profile ? (
                     <>
                       {data.profile.bio && <p style={{ color: MUTED, lineHeight: 1.7, margin: '0 0 10px' }}>{data.profile.bio}</p>}
                       <Link to={`/explore/${data.profile.id}`} style={primaryButton}>查看灵契主页</Link>
                     </>
                   ) : (
-                    <p style={{ color: MUTED, lineHeight: 1.7, margin: 0 }}>这个对象暂未认领主页，后续可以通过爱D墙或身份认证绑定。</p>
+                    <p style={{ color: MUTED, lineHeight: 1.7, margin: 0 }}>这个对象暂未认领主页，后续可以通过卡司评分或身份认证绑定。</p>
                   )}
                   {data.subject_url && <a href={normalizeExternalUrl(data.subject_url)} target="_blank" rel="noreferrer" style={{ ...ghostButton, marginTop: 10 }}>外部主页</a>}
                 </section>

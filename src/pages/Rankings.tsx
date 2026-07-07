@@ -255,8 +255,26 @@ const metricChipStyle: React.CSSProperties = {
   fontWeight: 900,
 };
 const goldMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: '#fff8e8', color: GOLD, borderColor: 'rgba(217,168,87,0.30)' };
+const slateMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: 'rgba(71,85,105,0.07)', color: '#475569', borderColor: 'rgba(71,85,105,0.18)' };
+const greenMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: 'rgba(240,253,244,0.82)', color: '#166534', borderColor: 'rgba(22,101,52,0.16)' };
 const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 10, borderTop: '1px solid rgba(31,41,55,0.06)' };
 const compactActionButtonStyle: React.CSSProperties = { border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.66)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 0', fontWeight: 800 };
+const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, marginBottom: 14 };
+const paidVoteZoneStyle: React.CSSProperties = {
+  borderRadius: 10,
+  border: '1px solid rgba(166,106,31,0.22)',
+  background: 'linear-gradient(135deg, rgba(255,248,232,0.96) 0%, rgba(255,253,248,0.94) 100%)',
+  padding: '10px 12px',
+};
+const freeVoteZoneStyle: React.CSSProperties = {
+  borderRadius: 10,
+  border: '1px solid rgba(39,83,137,0.16)',
+  background: 'linear-gradient(135deg, rgba(238,246,255,0.92) 0%, rgba(255,255,255,0.94) 100%)',
+  padding: '10px 12px',
+};
+const voteZoneTitleStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 };
+const voteZoneKickerStyle: React.CSSProperties = { fontSize: '0.68rem', fontWeight: 950, letterSpacing: '0.12em', textTransform: 'uppercase' };
+const voteZoneHintStyle: React.CSSProperties = { color: 'rgba(71,85,105,0.64)', fontSize: '0.72rem', lineHeight: 1.45, fontWeight: 700 };
 
 function getAuth(): AuthSession | null {
   const data = readStoredCreatorAuth();
@@ -1386,7 +1404,7 @@ export default function Rankings() {
         <section style={compactHeroStyle}>
           <div>
             <h1 style={compactTitleStyle}>灵契·红黑榜</h1>
-            <p style={compactLeadStyle}>拒绝上传任何个人隐私。先写事实、凭证和公共影响，再进入人工审核。</p>
+            <p style={compactLeadStyle}>红黑榜是评分榜的事件媒介。免费态度票看真实人数，真金打榜看契约币加权；两套数据分开判断。</p>
           </div>
           <div style={filterGroupStyle}>
             <button onClick={() => setBoardMode('reputation')} style={hubToggleStyle(boardMode === 'reputation', '#275389')}>口碑榜</button>
@@ -1426,8 +1444,8 @@ export default function Rankings() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.7 }}>
             {TAB_HINT[tab]} {boardMode === 'reputation'
-              ? '口碑榜按一人一票的同意、反对和欢乐参与排序，优先看真实人数。'
-              : '真金榜按打榜值和踩榜值排序，优先看真金白银投入。'}
+              ? '口碑榜按免费态度票排序，优先看一人一票的真实参与人数。'
+              : '真金榜按付费打榜和踩榜排序，只代表契约币加权热度。'}
           </span>
           {tab === 'black' && (
             <span style={{ display: 'inline-flex', gap: 6 }}>
@@ -1447,7 +1465,7 @@ export default function Rankings() {
               lineHeight: 1.7,
               maxWidth: 860,
             }}>
-              主帖必须附带证据；涉及第三方隐私的信息请先打码；免费态度一人一票，打榜和踩榜按实际契约币金额累计。发布者对事实、证据、隐私打码和言论后果负责。
+              主帖必须附带证据；涉及第三方隐私的信息请先打码。免费态度票一人一票，可改票；真金打榜和踩榜按实际契约币金额累计，影响热度，不代表平台事实裁判。发布者对事实、证据、隐私打码和言论后果负责。
             </div>
           </details>
         </div>
@@ -1631,9 +1649,9 @@ export default function Rankings() {
                   </div>
 
                   <div style={{ ...chipRowStyle, marginBottom: 12 }}>
-                    <span style={goldMetricChipStyle}>{boostStats.total} 打榜值</span>
-                    <span style={metricChipStyle}>{negativeBoostAmount(item)} 踩榜值</span>
-                    <span style={metricChipStyle}>{reputationParticipation(item)} 人参与</span>
+                    <span style={goldMetricChipStyle}>真金打榜 {boostStats.total}</span>
+                    <span style={slateMetricChipStyle}>真金踩榜 {negativeBoostAmount(item)}</span>
+                    <span style={greenMetricChipStyle}>免费态度 {reputationParticipation(item)} 人</span>
                     <span style={metricChipStyle}>评论 {comments.length}</span>
                   </div>
 
@@ -1661,32 +1679,48 @@ export default function Rankings() {
                     );
                   })()}
 
-                  <div style={{ ...compactActionRowStyle, marginBottom: 14 }}>
-                    <button onClick={() => openPaidBoostModal(item.id, 'boost')}
-                      aria-label={`给事件「${heading}」打榜`}
-                      style={{ ...compactActionButtonStyle, color: boostStats.total > 0 ? GOLD : 'rgba(71,85,105,0.66)' }}>
-                      打榜 {boostStats.total}
-                    </button>
-                    <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
-                      aria-label={`给事件「${heading}」踩榜`}
-                      style={{ ...compactActionButtonStyle, color: negativeBoostAmount(item) > 0 ? '#475569' : 'rgba(71,85,105,0.66)' }}>
-                      踩榜 {negativeBoostAmount(item)}
-                    </button>
-                    <button onClick={() => openVoteModal(item.id, 'like')}
-                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'like' ? '#8f3732' : 'rgba(71,85,105,0.66)' }}>
-                      {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}
-                    </button>
-                    <button onClick={() => openVoteModal(item.id, 'joy')}
-                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'joy' ? GOLD : 'rgba(71,85,105,0.66)' }}>
-                      欢乐 {item.joys || 0}
-                    </button>
-                    <button onClick={() => openVoteModal(item.id, 'dislike')}
-                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'dislike' ? '#303846' : 'rgba(71,85,105,0.66)' }}>
-                      {myVote?.vote_type === 'dislike' ? '已反对' : '反对'} {opposeCount(item)}
-                    </button>
-                    <button type="button" onClick={() => toggleBoosts(item.id)} style={compactActionButtonStyle}>
-                      {showBoosts ? '收起打榜记录' : '打榜记录'}
-                    </button>
+                  <div style={voteZoneGridStyle}>
+                    <div style={paidVoteZoneStyle}>
+                      <div style={voteZoneTitleStyle}>
+                        <span style={{ ...voteZoneKickerStyle, color: GOLD }}>真金打榜</span>
+                        <span style={voteZoneHintStyle}>契约币累计，影响热度和真金榜，不等于事实结论。</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <button onClick={() => openPaidBoostModal(item.id, 'boost')}
+                          aria-label={`给事件「${heading}」打榜`}
+                          style={{ ...compactActionButtonStyle, color: boostStats.total > 0 ? GOLD : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
+                          打榜 {boostStats.total}
+                        </button>
+                        <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
+                          aria-label={`给事件「${heading}」踩榜`}
+                          style={{ ...compactActionButtonStyle, color: negativeBoostAmount(item) > 0 ? '#475569' : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
+                          踩榜 {negativeBoostAmount(item)}
+                        </button>
+                        <button type="button" onClick={() => toggleBoosts(item.id)} style={{ ...compactActionButtonStyle, marginLeft: 'auto' }}>
+                          {showBoosts ? '收起记录' : '打榜记录'}
+                        </button>
+                      </div>
+                    </div>
+                    <div style={freeVoteZoneStyle}>
+                      <div style={voteZoneTitleStyle}>
+                        <span style={{ ...voteZoneKickerStyle, color: '#275389' }}>免费态度票</span>
+                        <span style={voteZoneHintStyle}>登录后一人一票，可改票，优先反映真实参与人数。</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <button onClick={() => openVoteModal(item.id, 'like')}
+                          style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'like' ? '#8f3732' : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
+                          {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}
+                        </button>
+                        <button onClick={() => openVoteModal(item.id, 'joy')}
+                          style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'joy' ? GOLD : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
+                          欢乐 {item.joys || 0}
+                        </button>
+                        <button onClick={() => openVoteModal(item.id, 'dislike')}
+                          style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'dislike' ? '#303846' : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
+                          {myVote?.vote_type === 'dislike' ? '已反对' : '反对'} {opposeCount(item)}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   {showBoosts && (

@@ -2097,7 +2097,7 @@ function roleKindLabel(kindInput: unknown) {
   if (kind === 'dm') return 'DM';
   if (kind === 'field_control') return '场控';
   if (kind === 'npc') return 'NPC';
-  if (kind === 'assistant') return '助演';
+  if (kind === 'assistant') return '演绎协作';
   if (kind === 'actor') return '演绎角色';
   return kind || '角色';
 }
@@ -7073,7 +7073,7 @@ app.put('/api/lc/admin/dm-dossiers/:id/approve', authMiddleware, adminMiddleware
   try {
     const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
     const { data: dossier, error: findErr } = await supabase.from('lc_dm_dossiers').select('*').eq('id', req.params.id).single();
-    if (findErr && isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('爱D墙数据表尚未初始化')));
+    if (findErr && isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('卡司评分数据表尚未初始化')));
     if (findErr) throw findErr;
     if (!dossier) return res.status(404).json(err(new Error('档案不存在')));
 
@@ -7106,9 +7106,9 @@ app.put('/api/lc/admin/dm-dossiers/:id/approve', authMiddleware, adminMiddleware
 
 app.put('/api/lc/admin/dm-dossiers/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const rejectReason = cleanText(req.body?.rejectReason, 500) || '不符合爱D墙公开规则';
+    const rejectReason = cleanText(req.body?.rejectReason, 500) || '不符合卡司评分公开规则';
     const { data: dossier, error: findErr } = await supabase.from('lc_dm_dossiers').select('*').eq('id', req.params.id).single();
-    if (findErr && isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('爱D墙数据表尚未初始化')));
+    if (findErr && isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('卡司评分数据表尚未初始化')));
     if (findErr) throw findErr;
     if (!dossier) return res.status(404).json(err(new Error('档案不存在')));
 
@@ -7611,7 +7611,7 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
       claim_status: 'unclaimed',
     }).select('id').single();
     if (insErr) {
-      if (isMissingRelation(insErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('爱D墙数据表尚未初始化')));
+      if (isMissingRelation(insErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('卡司评分数据表尚未初始化')));
       throw insErr;
     }
 
@@ -7637,7 +7637,7 @@ app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, async (req, res) => {
       .eq('id', req.params.id)
       .single();
     if (findErr) {
-      if (isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('爱D墙数据表尚未初始化')));
+      if (isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('卡司评分数据表尚未初始化')));
       throw findErr;
     }
     if (!dossier || dossier.status !== 'approved') return res.status(404).json(err(new Error('档案不存在或尚未公开')));

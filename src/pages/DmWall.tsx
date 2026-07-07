@@ -79,13 +79,13 @@ const ENTITY_COPY: Record<DossierEntityType, {
 };
 
 const ENTITY_FILTERS: { value: EntityFilter; label: string; helper: string }[] = [
-  { value: 'all', label: '全部档案', helper: '爱D和店家一起看' },
-  { value: 'dm', label: '爱D档案', helper: 'DM / 卡司' },
+  { value: 'all', label: '全部档案', helper: '卡司和店家一起看' },
+  { value: 'dm', label: '卡司档案', helper: 'DM / 卡司' },
   { value: 'store', label: '店家档案', helper: '城市店铺' },
 ];
 
 const ENTITY_FORM_TYPES: { value: DossierEntityType; label: string; helper: string }[] = [
-  { value: 'dm', label: '爱D档案', helper: '给 DM / 卡司建档' },
+  { value: 'dm', label: '卡司档案', helper: '给 DM / 卡司建档' },
   { value: 'store', label: '店家档案', helper: '给城市店家建档' },
 ];
 
@@ -168,13 +168,13 @@ export default function DmWall() {
           setItems(d.data || []);
         } else {
           setItems([]);
-          setMessage({ text: d.error || '爱D墙加载失败', ok: false });
+          setMessage({ text: d.error || '卡司评分加载失败', ok: false });
         }
       })
       .catch(error => {
         if (error?.name !== 'AbortError') {
           setItems([]);
-          setMessage({ text: '网络错误，爱D墙暂时加载失败', ok: false });
+          setMessage({ text: '网络错误，卡司评分暂时加载失败', ok: false });
         }
       })
       .finally(() => {
@@ -276,7 +276,7 @@ export default function DmWall() {
         <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
           <div style={{ maxWidth: 760 }}>
             <p style={{ margin: '0 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>未认证档案墙</p>
-            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>爱D墙 / 店家档案</h1>
+            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>卡司评分 / 店家档案</h1>
             <p style={{ margin: '14px 0 0', color: MUTED, lineHeight: 1.8 }}>
               玩家可以先为还没入驻灵契的 DM 和店家建档，补充主页、城市、工作地点或店铺位置；本人或店家入驻后可认领自己的档案，逐步沉淀成城市新人入门时能看懂的口碑百科。
             </p>

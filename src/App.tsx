@@ -145,7 +145,7 @@ function SiteFooter() {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.35rem', color: '#1f2937', marginBottom: 10 }}>灵契</div>
             <p style={{ fontSize: '0.86rem', lineHeight: 1.8, margin: 0, maxWidth: 320 }}>
-              与虚拟人之灵签订契约，让其附身一段时间。这里连接委托人、灵契师与完成降临所需的配套服务。
+              致力于成为沉浸式娱乐领域最可信的卡司评分榜。从 DM 开始，记录真实口碑。
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
               <FooterBadge>人工审核</FooterBadge>
@@ -154,12 +154,11 @@ function SiteFooter() {
             </div>
           </div>
           <FooterColumn title="主要入口">
-            <FooterLink to="/explore">浏览灵契师</FooterLink>
+            <FooterLink to="/dm-wall">卡司评分</FooterLink>
             <FooterLink to="/commissions">委托需求墙</FooterLink>
             <FooterLink to="/carpools">拼车区</FooterLink>
-            <FooterLink to="/rankings">红黑白榜</FooterLink>
+            <FooterLink to="/rankings">红黑榜事件</FooterLink>
             <FooterLink to="/reputation/city">城市口碑</FooterLink>
-            <FooterLink to="/dm-wall">爱D墙 / 店家</FooterLink>
             <FooterLink to="/scripts">角色点评</FooterLink>
             <FooterLink to="/guides">攻略交易</FooterLink>
             <FooterLink to="/wallet">我的契约币</FooterLink>

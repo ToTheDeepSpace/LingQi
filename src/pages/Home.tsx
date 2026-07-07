@@ -3,27 +3,27 @@ import type React from 'react';
 import { creatorEntryPath } from '../lib/authSession';
 
 const classes = [
-  { icon: '🌙', role: '灵契师',   sub: 'LINGQI-SHI',    desc: '与虚拟人签订契约，让其借由自身短暂降临现实。展示作品与口碑，让委托人一眼找到你。', accent: '#a78bfa' },
-  { icon: '✨', role: '委托人',   sub: 'PATRON',         desc: '为一次陪伴、一场相遇、一个心愿发起委托，找到能够承接这份灵契的人。', accent: '#e879f9' },
-  { icon: '🛠️', role: '配套服务', sub: 'SUPPORT GUILD',  desc: '让每一次灵契更完整的幕后力量：摄影师定格瞬间、妆造师雕琢形态、服装商提供华服、道具师定制专属道具。', accent: '#38bdf8' },
+  { icon: '🎭', role: 'DM 评分', sub: 'DM RATINGS', desc: '带本节奏、演绎表现、控场能力、沟通边界和复盘反馈，都应该留下可追溯的口碑。', accent: '#a78bfa' },
+  { icon: '📍', role: '城市与店铺', sub: 'CITY / STORE', desc: '按城市、店铺和剧本线索查卡司评价，找到真实发生过的体验记录。', accent: '#38bdf8' },
+  { icon: '🧾', role: '红黑榜事件', sub: 'EVENT RECORDS', desc: '红黑榜承接具体事件，先记录事实、凭证和回应，再沉淀为卡司评分的一部分。', accent: '#e879f9' },
 ];
 
 const features = [
-  { icon: '🔮', title: '找到对的那个灵契师',   desc: '不再靠转发、靠缘分。按角色、风格、档期筛选，看口碑，直接预约。让委托从"到处问"变成"来这里找"。' },
-  { icon: '🪪', title: '灵契师的全部，一个主页', desc: '作品集、开本记录、可约档期、联系方式——分享一个链接，就是你的完整名片。' },
-  { icon: '🎭', title: '配套一站到位',          desc: '约定灵契师的同时，顺手预约摄影师、妆造师——好不容易委托了，何不一步到位。' },
+  { icon: '🔎', title: '查卡司口碑', desc: '先从 DM 开始，逐步沉淀 NPC、场控等沉浸式娱乐参与者的评分与评价。' },
+  { icon: '🧭', title: '按城市和店铺看', desc: '同一个 DM 在不同城市、不同店铺、不同剧本里的表现，可以被放回真实场景里理解。' },
+  { icon: '🛡️', title: '评价要有治理', desc: '评分、事件、回应和举报都进入审核机制，平台记录口碑，不做脱离证据的审判。' },
 ];
 
 const steps = [
-  { n: '01', title: '描述你的委托', desc: '写下你想见到的角色、场景与情绪，让灵契师了解你的期待' },
-  { n: '02', title: '寻找你的灵契师', desc: '浏览灵契师主页，查看作品与口碑，找到那个能将角色真实带来的人' },
-  { n: '03', title: '见证一次降临', desc: '与灵契师、摄影师、妆造师一起，完成这场跨越次元的相遇' },
+  { n: '01', title: '搜索 DM / 店铺', desc: '从城市、店铺、剧本或名字进入，找到你关心的卡司口碑。' },
+  { n: '02', title: '查看评分和事件', desc: '评分看长期口碑，红黑榜看具体事件，相关方回应一起保留。' },
+  { n: '03', title: '留下真实记录', desc: '写清楚发生了什么、在哪里发生、为什么推荐或避雷。' },
 ];
 
-const playerPraise = [
-  { n: '01', title: '愿意把时间交给故事', desc: '认真赴约、认真倾听、认真进入角色，本身就是一种很稀缺的温柔。' },
-  { n: '02', title: '愿意照顾同桌体验', desc: '好的玩家不只是想赢，也会接住别人的表达、保护秘密、让每个人都有戏。' },
-  { n: '03', title: '愿意在虚构里练习真实', desc: '我们在剧本里经历误会、选择、告别和和解，也会把这些带回现实生活。' },
+const trustRules = [
+  { n: '01', title: '真实体验', desc: '评价要来自实际开本、实际接触或具体事件，不写空泛标签。' },
+  { n: '02', title: '可追溯上下文', desc: '尽量记录城市、店铺、剧本、时间和角色关系，让后来的玩家能判断参考价值。' },
+  { n: '03', title: '允许回应和修正', desc: '相关方可以回应，记录也可以随时间更新，口碑不是一次性判决。' },
 ];
 
 const C = '#fffdf8';
@@ -79,56 +79,58 @@ export default function Home() {
 
           <div className="home-hero-badge">
             <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: GOLD }} />
-            灵契师与委托人的连接之所
+            沉浸式娱乐 · 卡司评分榜
           </div>
 
           <h1 className="home-hero-title">
-            让虚拟人<br />
-            短暂降临现实<br />
-            <span className="gradient-text-gold">此之谓灵契</span>
+            灵契<br />
+            致力于成为<br />
+            沉浸式娱乐领域<br />
+            最可信的<br />
+            <span className="gradient-text-gold">卡司评分榜</span>
           </h1>
 
           <p className="home-hero-lead">
-            灵契师，是与虚拟人签订契约的人：让角色借由自己附身片刻，陪委托人走过一段真实时间。
+            从 DM 开始，记录真实口碑。
           </p>
           <p className="home-hero-subcopy">
-            灵契，是这份契约，也是这场降临。这里会成为委托人寻找灵契师时首先想到的地方。
+            查各地各店 DM 评分，看红黑榜事件，也把 NPC、场控等卡司体验沉淀下来。
           </p>
 
           <div className="home-entry-grid">
-            <Link to="/explore" className="btn-gold home-entry-link">
-              浏览灵契师
+            <Link to="/dm-wall" className="btn-gold home-entry-link">
+              查卡司评分
             </Link>
-            <Link to={entryPath} className="btn-glass home-entry-link">
-              灵契师入驻
+            <Link to="/rankings/new" className="btn-glass home-entry-link">
+              记录一次口碑
             </Link>
             <Link to="/rankings" className="home-entry-link home-entry-red">
-              红黑榜口碑
+              红黑榜事件
             </Link>
-            <Link to="/carpools" className="home-entry-link home-entry-blue">
-              拼车区
+            <Link to="/reputation/city" className="home-entry-link home-entry-blue">
+              城市口碑
             </Link>
           </div>
 
           <p className="home-hero-note">
-            注册即用 · 发布内容人工审核 · 认真玩本的人值得被看见
+            注册即用 · 发布内容人工审核 · 具体事件沉淀为长期口碑
           </p>
         </div>
       </section>
 
-      {/* ───────────── 夸一夸来玩本的人 ───────────── */}
+      {/* ───────────── 可信口碑怎么来 ───────────── */}
       <section style={{ backgroundColor: '#f8fbff', padding: '5rem 1.25rem' }}>
         <div style={{ maxWidth: 920, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 38 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(39,83,137,0.62)', marginBottom: 12 }}>写给玩家</p>
-            <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.7rem, 4vw, 2.5rem)', marginBottom: 16, color: INK }}>认真玩本的人，值得被看见</h2>
+            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(39,83,137,0.62)', marginBottom: 12 }}>可信口碑</p>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.7rem, 4vw, 2.5rem)', marginBottom: 16, color: INK }}>评分不是一句好坏</h2>
             <p style={{ color: MUTED, lineHeight: 1.9, fontSize: '1rem', maxWidth: 680, margin: '0 auto' }}>
-              能坐下来听一个故事、相信一次角色、照顾一桌人的情绪和节奏，这不是一件小事。通过剧本杀，我们认识别人，也认识更好的自己。这样的人值得被好好夸一夸。
+              灵契要记录的是可被后来者参考的真实体验：谁带的本，发生在哪里，为什么推荐，为什么避雷，相关方有没有回应。
             </p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-            {playerPraise.map(({ n, title, desc }) => (
+            {trustRules.map(({ n, title, desc }) => (
               <article key={n} style={{ background: '#fff', border: '1px solid rgba(39,83,137,0.14)', borderRadius: 16, padding: '22px 20px', boxShadow: '0 14px 32px rgba(31,41,55,0.05)' }}>
                 <div style={{ width: 38, height: 38, borderRadius: 12, background: 'rgba(238,246,255,0.95)', color: '#275389', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '0.82rem', marginBottom: 14 }}>{n}</div>
                 <h3 style={{ margin: '0 0 9px', color: INK, fontSize: '1rem', fontWeight: 800 }}>{title}</h3>
@@ -138,17 +140,17 @@ export default function Home() {
           </div>
 
           <p style={{ margin: '22px auto 0', maxWidth: 760, color: 'rgba(71,85,105,0.72)', fontSize: '0.92rem', lineHeight: 1.85, textAlign: 'center' }}>
-            灵契希望记录的不只是推荐和避坑，也包括玩家之间慢慢长出来的默契：守时、守密、有边界感、会沟通、愿意共情。这些礼仪从剧本杀开始，也可以回到所有真实社交里。
+            评分榜看长期趋势，红黑榜承接具体事件。两者放在一起，才有机会把群聊里的碎片口碑沉淀成行业可查的档案。
           </p>
         </div>
       </section>
 
-      {/* ───────────── 这里能找到谁 ───────────── */}
+      {/* ───────────── 这里能查什么 ───────────── */}
       <section style={{ backgroundColor: C, padding: '5rem 1.25rem' }}>
         <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
 
-          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.7)', marginBottom: 12 }}>灵契师名片</p>
-          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>这里能找到谁</h2>
+          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.7)', marginBottom: 12 }}>评分对象</p>
+          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>卡司评分榜，先从 DM 开始</h2>
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
@@ -171,7 +173,7 @@ export default function Home() {
         <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
 
           <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.65)', marginBottom: 12 }}>为什么选择灵契</p>
-          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16, color: WARM_TEXT }}>不只是个人主页</h2>
+          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16, color: WARM_TEXT }}>把零散口碑沉淀成评分榜</h2>
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 32 }}>
@@ -195,7 +197,7 @@ export default function Home() {
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <p style={{ fontSize: '1rem', color: MUTED, lineHeight: 1.85, maxWidth: 600, margin: '0 auto 36px' }}>
-            先记录玩家遇到的具体事件，再沉淀成爱D墙、店家档案、城市口碑和对象档案。<br />
+            先记录玩家遇到的具体事件，再沉淀成卡司档案、店家档案、城市口碑和对象档案。<br />
             每条公开记录都经过人工审核，黑榜公开期结束后，也可以去标识化沉淀为共性问题和社交礼仪。
           </p>
 
@@ -204,7 +206,7 @@ export default function Home() {
               { icon: '🏪', label: '店家事件', desc: '店面环境、服务质量、管理水平' },
               { icon: '🥡', label: '外卖榜', desc: '出餐速度、包装份量、踩雷记录' },
               { icon: '🎭', label: '玩家事件', desc: '素质、迟到率、历史评价' },
-              { icon: '🎬', label: '爱D墙 / 店家档案', desc: 'DM 与店家的未认证档案' },
+              { icon: '🎬', label: '卡司档案 / 店家档案', desc: 'DM 与店家的未认证档案' },
               { icon: '🌙', label: '城市榜单', desc: '打榜值、口碑值、打榜人数' },
             ].map(({ icon, label, desc }) => (
               <div key={label} style={{ padding: '22px 16px', borderRadius: 14, border: '1px solid rgba(192,57,43,0.18)', background: 'linear-gradient(180deg, rgba(254,242,242,0.9), rgba(255,255,255,0.92))', textAlign: 'center', boxShadow: '0 10px 28px rgba(31,41,55,0.05)' }}>
@@ -219,18 +221,18 @@ export default function Home() {
             <Link to="/rankings" style={homeReputationPrimaryLink}>
               进入事件榜
             </Link>
-            <Link to="/dm-wall" style={homeReputationGhostLink}>爱D墙 / 店家</Link>
+            <Link to="/dm-wall" style={homeReputationGhostLink}>卡司评分 / 店家</Link>
             <Link to="/reputation/city" style={homeReputationGhostLink}>城市口碑</Link>
           </div>
         </div>
       </section>
 
-      {/* ───────────── 三步完成委托 ───────────── */}
+      {/* ───────────── 三步留下口碑 ───────────── */}
       <section style={{ backgroundColor: C2, padding: '5rem 1.25rem' }}>
         <div style={{ maxWidth: 800, margin: '0 auto', textAlign: 'center' }}>
 
-          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.7)', marginBottom: 12 }}>委托流程</p>
-          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>三步，完成你的委托</h2>
+          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.7)', marginBottom: 12 }}>使用方式</p>
+          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16 }}>三步，留下可查的口碑</h2>
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 32 }}>
@@ -249,10 +251,10 @@ export default function Home() {
       <section style={{ padding: '5rem 1.25rem', background: `linear-gradient(135deg, #eef6ff 0%, ${C} 50%, #fff7ed 100%)`, position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 50% 100%, rgba(201,146,46,0.16) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ position: 'relative', maxWidth: 560, margin: '0 auto', textAlign: 'center' }}>
-          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 3rem)', marginBottom: 16, lineHeight: 1.2 }}>开始你的灵契之旅</h2>
-          <p style={{ color: MUTED, fontSize: '1.05rem', marginBottom: 36, lineHeight: 1.8 }}>无论你是委托人，还是灵契师——这里都为这场契约留好了入口。</p>
-          <Link to="/explore" className="btn-gold" style={{ display: 'inline-block', padding: '14px 48px', fontSize: '1rem', fontWeight: 600 }}>
-            浏览灵契师
+          <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 3rem)', marginBottom: 16, lineHeight: 1.2 }}>让真实口碑有地方沉淀</h2>
+          <p style={{ color: MUTED, fontSize: '1.05rem', marginBottom: 36, lineHeight: 1.8 }}>查卡司、看事件、写评价，从一次真实开本开始。</p>
+          <Link to="/rankings/new" className="btn-gold" style={{ display: 'inline-block', padding: '14px 48px', fontSize: '1rem', fontWeight: 600 }}>
+            记录一次口碑
           </Link>
         </div>
       </section>
@@ -261,10 +263,10 @@ export default function Home() {
       <footer style={{ backgroundColor: C, borderTop: '1px solid rgba(201,146,46,0.16)', padding: '2.5rem 1.25rem' }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, textAlign: 'center', color: 'rgba(71,85,105,0.66)', fontSize: '0.875rem' }}>
           <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.25rem' }}>灵契</span>
-          <span>与虚拟人签订契约，让其借由灵契师短暂附身并降临现实，此之谓灵契</span>
+          <span>致力于成为沉浸式娱乐领域最可信的卡司评分榜</span>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <Link to="/explore" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>浏览灵契师</Link>
-            <Link to="/commissions" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>委托需求</Link>
+            <Link to="/dm-wall" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>卡司评分</Link>
+            <Link to="/reputation/city" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>城市口碑</Link>
             <Link to="/rankings" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>红黑榜</Link>
             <Link to={entryPath} style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>入驻</Link>
           </div>

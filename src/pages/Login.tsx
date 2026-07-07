@@ -464,7 +464,9 @@ export default function Login() {
           </div>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 32px' }} />
           <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: MUTED, lineHeight: 2 }}>
-            从 DM 开始<br />记录剧本杀参与者的<br />真实口碑
+            致力于成为沉浸式娱乐领域<br />
+            最可信的 <span style={{ color: GOLD, fontWeight: 900 }}>卡司评分榜</span><br />
+            从 DM 开始，记录真实口碑
           </p>
         </div>
       </div>

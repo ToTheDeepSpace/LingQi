@@ -166,7 +166,7 @@ export default function CityReputation() {
         ) : error ? (
           <div style={emptyStyle}>{error}</div>
         ) : items.length === 0 ? (
-          <div style={emptyStyle}>当前城市暂无可聚合的对象档案。先去红黑榜发布事件，或去爱D墙创建 DM / 店家档案。</div>
+          <div style={emptyStyle}>当前城市暂无可聚合的对象档案。先去红黑榜发布事件，或去卡司评分创建 DM / 店家档案。</div>
         ) : (
           <div style={cityGridStyle}>
             {items.map((item, index) => (

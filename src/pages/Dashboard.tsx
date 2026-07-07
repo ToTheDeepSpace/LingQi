@@ -1330,7 +1330,7 @@ export default function Dashboard() {
             whiteSpace: 'nowrap',
           }}>
             {[
-              { to: '/explore', label: '浏览灵契师' },
+              { to: '/dm-wall', label: '卡司评分' },
               { to: '/commissions', label: '委托需求' },
               { to: '/carpools', label: '拼车区' },
               { to: '/rankings', label: '红黑榜' },

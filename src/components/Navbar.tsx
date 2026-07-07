@@ -163,7 +163,7 @@ export default function Navbar() {
           flexWrap: 'nowrap',
           whiteSpace: 'nowrap',
         }}>
-          <NavLink to="/explore">浏览灵契师</NavLink>
+          <NavLink to="/dm-wall">卡司评分</NavLink>
           <NavLink to="/commissions">委托需求</NavLink>
           <NavLink to="/carpools">拼车区</NavLink>
           <NavLink to="/rankings">红黑榜</NavLink>
@@ -260,7 +260,7 @@ export default function Navbar() {
           padding: '12px 20px 16px',
           boxShadow: '0 18px 36px rgba(31,41,55,0.08)',
         }}>
-          <MobileLink to="/explore" onClick={() => setMenuOpen(false)}>浏览灵契师</MobileLink>
+          <MobileLink to="/dm-wall" onClick={() => setMenuOpen(false)}>卡司评分</MobileLink>
           <MobileLink to="/commissions" onClick={() => setMenuOpen(false)}>委托需求</MobileLink>
           <MobileLink to="/carpools" onClick={() => setMenuOpen(false)}>拼车区</MobileLink>
           <MobileLink to="/rankings" onClick={() => setMenuOpen(false)}>红黑榜</MobileLink>
