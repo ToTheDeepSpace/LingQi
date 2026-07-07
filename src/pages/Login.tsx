@@ -464,7 +464,7 @@ export default function Login() {
           </div>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 32px' }} />
           <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: MUTED, lineHeight: 2 }}>
-            手机号或邮箱继续<br />老用户直接登录<br />新用户按提示注册
+            从 DM 开始<br />记录剧本杀参与者的<br />真实口碑
           </p>
         </div>
       </div>
