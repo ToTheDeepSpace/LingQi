@@ -479,6 +479,46 @@ const card: React.CSSProperties = {
   boxShadow: '0 12px 28px rgba(31,41,55,0.05)',
 };
 
+const MODERATION_RISK_LABELS: Record<string, string> = {
+  identity_number: '疑似身份证号',
+  doxxing_or_privacy: '隐私泄露风险',
+  illegal_or_crime: '违法犯罪风险',
+  minor_high_risk: '未成年人高风险',
+  phone_or_contact: '包含手机号或联系方式',
+  wechat_or_qq: '包含微信或QQ',
+  abuse_or_attack: '辱骂或人身攻击',
+  rumor_or_defamation_risk: '传闻或诽谤风险',
+  sexual_content: '性相关内容风险',
+  image_needs_manual_review: '图片需要人工查看',
+  suspected_automation: '疑似脚本批量提交',
+  submitted_too_fast: '提交速度异常',
+  duplicate_content_recently_seen: '近期出现重复文本',
+  high_account_velocity: '账号提交过于频繁',
+  high_ip_velocity: '同一网络提交过于频繁',
+};
+
+function moderationRiskLabel(value: string) {
+  return MODERATION_RISK_LABELS[value] || '其他需要人工确认的风险项';
+}
+
+function normalizeAdminUrl(value?: string | null, allowUploadPath = false) {
+  const raw = value?.trim() || '';
+  if (!raw || ['?', '？', '-', '—', '无', '暂无', '没有', '待补'].includes(raw)) return null;
+  if (allowUploadPath && /^\/uploads\//i.test(raw)) return raw;
+  const candidate = /^https?:\/\//i.test(raw)
+    ? raw
+    : /^(?:www\.)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/:?#]|$)/.test(raw)
+      ? `https://${raw}`
+      : '';
+  if (!candidate) return null;
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function ModerationPrecheckBadge({ value }: { value?: ModerationPrecheck | null }) {
   if (!value) return null;
   const decision = value.decision || 'pass';
@@ -486,7 +526,7 @@ function ModerationPrecheckBadge({ value }: { value?: ModerationPrecheck | null 
   const borderColor = decision === 'block' ? 'rgba(185,28,28,0.32)' : decision === 'review' ? 'rgba(194,65,12,0.32)' : 'rgba(22,101,52,0.24)';
   const bg = decision === 'block' ? '#fef2f2' : decision === 'review' ? '#fff7ed' : '#f0fdf4';
   const label = decision === 'block' ? '建议拦截' : decision === 'review' ? '需关注' : '通过';
-  const labels = Array.isArray(value.risk_labels) ? value.risk_labels : [];
+  const labels = Array.isArray(value.risk_labels) ? value.risk_labels.map(moderationRiskLabel) : [];
   return (
     <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, border: `1px solid ${borderColor}`, background: bg, color, fontSize: '0.76rem', lineHeight: 1.6 }}>
       <strong>本地预审：{label}</strong>
@@ -1646,17 +1686,23 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {dmDossiers.map(item => {
                   const entityType = item.entity_type === 'store' ? 'store' : 'dm';
                   const entityLabel = entityType === 'store' ? '店家' : 'DM';
+                  const profileHref = normalizeAdminUrl(item.profile_url);
                   return (
                   <Row key={item.id} accent={entityType === 'store' ? '#38bdf8' : '#f472b6'}>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <TitleLine title={item.dm_name} pill={item.status === 'pending' ? `${entityLabel}建档` : `${entityLabel}认领`} />
-                      <Meta>
-                        {item.city || '未知城市'}
-                        {item.workplace ? ` · ${item.workplace}` : ''}
-                        {item.submitted_by_name ? ` · 提交人：${item.submitted_by_name}` : ''}
-                        {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
-                      </Meta>
-                      {item.profile_url && <Meta>主页：{item.profile_url}</Meta>}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', columnGap: 20, borderTop: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, marginTop: 12 }}>
+                        <AdminDetail label="档案类型" value={entityLabel} />
+                        <AdminDetail label="城市" value={item.city || '未填写'} />
+                        <AdminDetail label={entityType === 'store' ? '地址 / 商圈' : '常驻店家 / 工作地点'} value={item.workplace || '未填写'} />
+                        <AdminDetail label="提交人" value={item.submitted_by_name || '未知账号'} />
+                        <AdminDetail label="提交时间" value={item.created_at ? item.created_at.slice(0, 19).replace('T', ' ') : '未知'} />
+                        <AdminDetail label="个人主页">
+                          {profileHref
+                            ? <a href={profileHref} target="_blank" rel="noreferrer" style={{ color: '#275389', fontWeight: 900, textDecoration: 'none', overflowWrap: 'anywhere' }}>打开个人主页</a>
+                            : <span>未提供</span>}
+                        </AdminDetail>
+                      </div>
                       {item.claim_status === 'pending' && (
                         <Proof>
                           认领申请：{item.claimed_by || '未知账号'}
@@ -1664,17 +1710,14 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         </Proof>
                       )}
                       <ModerationPrecheckBadge value={item.moderation_precheck} />
-                      {item.note && <ContentBox>{item.note}</ContentBox>}
-                      {item.tags && item.tags.length > 0 && <Meta>标签：{item.tags.join(' / ')}</Meta>}
-                      {item.photo_url && (
-                        <a href={item.photo_url} target="_blank" rel="noreferrer"
-                          style={{ display: 'inline-flex', marginTop: 10, color: GOLD, fontSize: '0.78rem', fontWeight: 800, textDecoration: 'none' }}>
-                          查看照片
-                        </a>
-                      )}
+                      <AdminPhotoPreview url={item.photo_url} />
+                      <div style={{ marginTop: 14, fontSize: '0.82rem', fontWeight: 900, color: INK }}>补充说明</div>
+                      {item.note ? <ContentBox>{item.note}</ContentBox> : <Meta>未填写补充说明</Meta>}
+                      <div style={{ marginTop: 12, fontSize: '0.82rem', fontWeight: 900, color: INK }}>标签</div>
+                      {item.tags && item.tags.length > 0 ? <TagCloud tags={item.tags} /> : <Meta>未填写标签</Meta>}
                       {item.status === 'pending' && entityType === 'dm' && (
-                        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-                          <div style={{ fontSize: '0.78rem', fontWeight: 900, color: INK }}>相似DM候选</div>
+                        <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${LINE}`, display: 'grid', gap: 8 }}>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 900, color: INK }}>相似DM候选</div>
                           {(item.similar_candidates || []).length === 0 ? (
                             <Meta>库内未找到明显相似的姓名、城市和店家组合。</Meta>
                           ) : (item.similar_candidates || []).map(candidate => (
@@ -1705,7 +1748,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               <ListEmpty empty={dmRatings.length === 0} text="暂无待审核DM评分">
                 {dmRatings.map(item => {
                   const abuse = item.anti_abuse || {};
-                  const abuseLabels = Array.isArray(abuse.risk_labels) ? abuse.risk_labels : [];
+                  const abuseLabels = Array.isArray(abuse.risk_labels) ? abuse.risk_labels.map(moderationRiskLabel) : [];
                   return (
                     <Row key={item.id} accent="#fb923c">
                       <div style={{ minWidth: 0, flex: 1 }}>
@@ -2113,6 +2156,38 @@ function ActionButton({ children, onClick, kind, disabled }: { children: React.R
   );
 }
 
+function AdminDetail({ label, value, children }: { label: string; value?: string; children?: React.ReactNode }) {
+  return (
+    <div style={{ minWidth: 0, padding: '10px 0' }}>
+      <div style={{ color: MUTED, fontSize: '0.72rem', fontWeight: 800, marginBottom: 4 }}>{label}</div>
+      <div style={{ color: INK, fontSize: '0.9rem', fontWeight: 850, lineHeight: 1.55, overflowWrap: 'anywhere' }}>{children || value || '未填写'}</div>
+    </div>
+  );
+}
+
+function AdminPhotoPreview({ url }: { url?: string | null }) {
+  const [failed, setFailed] = useState(false);
+  const source = normalizeAdminUrl(url, true);
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: '0.82rem', fontWeight: 900, color: INK, marginBottom: 8 }}>照片资料</div>
+      {!source ? (
+        <div style={{ color: MUTED, fontSize: '0.84rem', fontWeight: 750 }}>未提供照片</div>
+      ) : failed ? (
+        <div style={{ padding: '10px 12px', border: '1px solid rgba(185,28,28,0.18)', background: '#fef2f2', color: '#991b1b', borderRadius: 8, fontSize: '0.8rem', fontWeight: 800 }}>
+          图片链接已失效或无法加载，请核对原地址。
+          <a href={source} target="_blank" rel="noreferrer" style={{ marginLeft: 8, color: '#991b1b' }}>打开原地址</a>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+          <img src={source} alt="待审核档案照片" onError={() => setFailed(true)} style={{ width: 180, maxWidth: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fffdf8' }} />
+          <a href={source} target="_blank" rel="noreferrer" style={{ color: '#275389', fontSize: '0.82rem', fontWeight: 900, textDecoration: 'none' }}>打开原图</a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ListEmpty({ empty, text, children }: { empty: boolean; text: string; children: React.ReactNode }) {
   if (empty) return (
     <div style={{ ...card, textAlign: 'center', padding: '64px 0' }}>
@@ -2126,7 +2201,7 @@ function ListEmpty({ empty, text, children }: { empty: boolean; text: string; ch
 function TitleLine({ title, pill }: { title: string; pill: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-      <span style={{ fontWeight: 800, fontSize: '0.95rem', color: INK }}>{title}</span>
+      <span style={{ fontWeight: 900, fontSize: '1.05rem', color: INK }}>{title}</span>
       <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', background: '#fff8e8', color: '#8a5a19', border: '1px solid rgba(217,168,87,0.26)' }}>{pill}</span>
     </div>
   );

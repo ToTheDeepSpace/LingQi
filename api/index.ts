@@ -1456,6 +1456,31 @@ function cleanText(value: unknown, max = 1200) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+const OPTIONAL_URL_PLACEHOLDERS = new Set(['?', '？', '-', '—', '无', '没有', '暂无', '待补', '不填']);
+
+function normalizeOptionalPublicUrl(value: unknown, max: number, allowUploadPath = false) {
+  const raw = cleanText(value, max);
+  if (!raw || OPTIONAL_URL_PLACEHOLDERS.has(raw)) return '';
+  if (allowUploadPath && /^\/uploads\/[A-Za-z0-9%_./-]+(?:\?[^\s]*)?$/i.test(raw)) return raw;
+  const candidate = /^https?:\/\//i.test(raw)
+    ? raw
+    : /^(?:www\.)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/:?#]|$)/.test(raw)
+      ? `https://${raw}`
+      : '';
+  if (!candidate) return '';
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+function isOptionalUrlPlaceholder(value: unknown) {
+  const raw = cleanText(value, 800);
+  return !raw || OPTIONAL_URL_PLACEHOLDERS.has(raw);
+}
+
 type ModerationPrecheckDecision = 'pass' | 'review' | 'block';
 type ModerationPrecheckMatch = {
   label: string;
@@ -7964,22 +7989,24 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     const dmName = cleanText(req.body?.dmName ?? req.body?.dm_name ?? req.body?.name, 80);
     const city = cleanText(req.body?.city, 80);
     const workplace = cleanText(req.body?.workplace, 160);
-    const profileUrl = cleanText(req.body?.profileUrl ?? req.body?.profile_url, 600);
+    const rawProfileUrl = req.body?.profileUrl ?? req.body?.profile_url;
+    const profileUrl = normalizeOptionalPublicUrl(rawProfileUrl, 600);
     const note = cleanText(req.body?.note, 600);
     const tags = cleanTextArray(req.body?.tags, 10, 18);
     const rawFiles = Array.isArray(req.body?.photoFiles ?? req.body?.photo_files) ? (req.body?.photoFiles ?? req.body?.photo_files) : [];
     const photoFiles = rawFiles.slice(0, 4).map((file: Record<string, unknown>) => ({
       name: cleanText(file.name, 120) || `${entityLabel} 照片`,
-      url: cleanText(file.url, 800),
+      url: normalizeOptionalPublicUrl(file.url, 800, true),
       type: cleanText(file.type, 80) || null,
     })).filter((file: { url: string }) => file.url);
-    const photoUrl = cleanText(req.body?.photoUrl ?? req.body?.photo_url, 800) || photoFiles[0]?.url || '';
+    const rawPhotoUrl = req.body?.photoUrl ?? req.body?.photo_url;
+    const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true) || photoFiles[0]?.url || '';
 
     if (!dmName) return res.status(400).json(err(new Error(`请填写${entityLabel}名称`)));
     if (!city) return res.status(400).json(err(new Error('请选择城市')));
     if (!workplace) return res.status(400).json(err(new Error(entityType === 'store' ? '请填写店家地址、商圈或常驻位置' : '请填写工作地点或常驻店家')));
-    if (entityType === 'dm' && !profileUrl) return res.status(400).json(err(new Error('请填写 DM 个人主页链接')));
-    if (entityType === 'dm' && !photoUrl) return res.status(400).json(err(new Error('请上传一张 DM 照片')));
+    if (!isOptionalUrlPlaceholder(rawProfileUrl) && !profileUrl) return res.status(400).json(err(new Error('个人主页链接格式不正确，不填写时请直接留空')));
+    if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) return res.status(400).json(err(new Error('照片链接格式不正确，也可以直接使用上传按钮')));
 
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: entityType === 'store' ? 'store_dossier_submit' : 'dm_dossier_submit',
@@ -7993,8 +8020,8 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
       dm_name: dmName,
       city,
       workplace,
-      profile_url: profileUrl,
-      photo_url: photoUrl,
+      profile_url: profileUrl || null,
+      photo_url: photoUrl || null,
       photo_files: photoFiles,
       note,
       tags,
@@ -8087,11 +8114,15 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
       dmName = cleanText(newDm.dmName ?? newDm.dm_name ?? newDm.name, 80);
       const city = cleanText(newDm.city, 80);
       const workplace = cleanText(newDm.workplace, 160) || storeName;
-      const profileUrl = cleanText(newDm.profileUrl ?? newDm.profile_url, 600);
-      const photoUrl = cleanText(newDm.photoUrl ?? newDm.photo_url, 800);
+      const rawProfileUrl = newDm.profileUrl ?? newDm.profile_url;
+      const rawPhotoUrl = newDm.photoUrl ?? newDm.photo_url;
+      const profileUrl = normalizeOptionalPublicUrl(rawProfileUrl, 600);
+      const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true);
       const photoFiles = photoUrl ? [{ name: `${dmName || 'DM'}照片`, url: photoUrl, type: 'image/jpeg' }] : [];
       if (!dmName) return res.status(400).json(err(new Error('请填写DM名称')));
       if (!city) return res.status(400).json(err(new Error('请填写DM所在城市')));
+      if (!isOptionalUrlPlaceholder(rawProfileUrl) && !profileUrl) return res.status(400).json(err(new Error('个人主页链接格式不正确，不填写时请直接留空')));
+      if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) return res.status(400).json(err(new Error('照片链接格式不正确，也可以直接使用上传按钮')));
       const dmPrecheck = runLocalModerationPrecheck({
         scene: 'dm_dossier_submit_with_rating',
         targetType: 'dm_dossier',
