@@ -153,8 +153,8 @@ type BoardMode = 'reputation' | 'money';
 const card: React.CSSProperties = {
   background: '#fff',
   border: '1px solid rgba(31,41,55,0.08)',
-  borderRadius: 12,
-  padding: '18px 18px',
+  borderRadius: 8,
+  padding: 14,
   boxShadow: 'none',
 };
 
@@ -243,18 +243,18 @@ const filterBarStyle: React.CSSProperties = {
 };
 
 const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
-const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 360px), 1fr))', gap: 12, alignItems: 'start' };
-const chipRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
+const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 10, alignItems: 'start' };
+const chipRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' };
 const metricChipStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  minHeight: 30,
-  padding: '0 11px',
+  minHeight: 24,
+  padding: '0 8px',
   borderRadius: 999,
   border: '1px solid rgba(31,41,55,0.10)',
   background: '#fff',
   color: '#275389',
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 900,
 };
 const goldMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: '#fff8e8', color: GOLD, borderColor: 'rgba(217,168,87,0.30)' };
@@ -262,20 +262,20 @@ const slateMetricChipStyle: React.CSSProperties = { ...metricChipStyle, backgrou
 const greenMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: 'rgba(240,253,244,0.82)', color: '#166534', borderColor: 'rgba(22,101,52,0.16)' };
 const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 10, borderTop: '1px solid rgba(31,41,55,0.06)' };
 const compactActionButtonStyle: React.CSSProperties = { border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.66)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 0', fontWeight: 800 };
-const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, marginBottom: 14 };
+const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 10 };
 const paidVoteZoneStyle: React.CSSProperties = {
-  borderRadius: 10,
+  borderRadius: 8,
   border: '1px solid rgba(166,106,31,0.22)',
   background: 'linear-gradient(135deg, rgba(255,248,232,0.96) 0%, rgba(255,253,248,0.94) 100%)',
-  padding: '10px 12px',
+  padding: '8px 10px',
 };
 const freeVoteZoneStyle: React.CSSProperties = {
-  borderRadius: 10,
+  borderRadius: 8,
   border: '1px solid rgba(39,83,137,0.16)',
   background: 'linear-gradient(135deg, rgba(238,246,255,0.92) 0%, rgba(255,255,255,0.94) 100%)',
-  padding: '10px 12px',
+  padding: '8px 10px',
 };
-const voteZoneTitleStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 };
+const voteZoneTitleStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 6 };
 const voteZoneKickerStyle: React.CSSProperties = { fontSize: '0.68rem', fontWeight: 950, letterSpacing: '0.12em', textTransform: 'uppercase' };
 const voteZoneHintStyle: React.CSSProperties = { color: 'rgba(71,85,105,0.64)', fontSize: '0.72rem', lineHeight: 1.45, fontWeight: 700 };
 
@@ -1538,8 +1538,8 @@ export default function Rankings() {
                     ...card,
                     position: 'relative',
                     overflow: 'hidden',
-                    paddingLeft: 22,
-                    paddingRight: 22,
+                    paddingLeft: 16,
+                    paddingRight: 16,
                     borderColor: subtleAccentBorder,
                   }}>
                   {(item.type === 'red' || item.type === 'white') && (
@@ -1548,7 +1548,7 @@ export default function Rankings() {
                       left: 0,
                       top: 0,
                       bottom: 0,
-                      width: 8,
+                      width: 5,
                       background: item.type === 'red' ? '#d5a29a' : '#d9b56d',
                     }} />
                   )}
@@ -1558,49 +1558,50 @@ export default function Rankings() {
                       right: 0,
                       top: 0,
                       bottom: 0,
-                      width: 8,
+                      width: 5,
                       background: '#626b78',
                     }} />
                   )}
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 9 }}>
                       <span style={{
-                        padding: '4px 12px',
+                        padding: '2px 8px',
                         borderRadius: 999,
                         background: kind.bg,
                         border: `1px solid ${kind.border}`,
                         color: kind.color,
-                        fontSize: '0.76rem',
+                        fontSize: '0.68rem',
                         fontWeight: 950,
                         whiteSpace: 'nowrap',
                       }}>{kind.label}</span>
-                      <span style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.78rem', fontWeight: 760, lineHeight: 1.7 }}>
-                        涉及对象：
-                        <Link to={dossierUrl(item)}
-                          style={{ color: 'rgba(31,41,55,0.78)', fontWeight: 850, textDecoration: 'none' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
-                          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(31,41,55,0.78)')}>
-                          {item.subject_name}
-                        </Link>
-                        {' · '}{SUBJECT_LABEL[item.subject_type] || item.subject_type}
-                        {item.subject_city ? ` · ${item.subject_city}` : ''}
-                      </span>
                       <span style={{
-                        padding: '2px 8px',
+                        padding: '1px 7px',
                         borderRadius: 999,
                         background: subtleAccentBg,
                         border: `1px solid ${subtleAccentBorder}`,
                         color: accentColor,
-                        fontSize: '0.68rem',
+                        fontSize: '0.64rem',
                         fontWeight: 900,
                         marginLeft: 'auto',
                       }}>{boardMode === 'reputation' ? '口碑' : '真金'} #{idx + 1} · {currentBoardScore}</span>
                     </div>
+                    <div style={{ marginBottom: summary ? 8 : 0 }}>
+                      <span style={{ display: 'block', color: 'rgba(71,85,105,0.54)', fontSize: '0.64rem', fontWeight: 850, marginBottom: 2 }}>涉及对象</span>
+                      <Link to={dossierUrl(item)}
+                        style={{ display: 'inline', color: 'rgba(31,41,55,0.94)', fontSize: '1.12rem', lineHeight: 1.3, fontWeight: 950, textDecoration: 'none', overflowWrap: 'anywhere' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(31,41,55,0.94)')}>
+                        {item.subject_name}
+                      </Link>
+                      <span style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.7rem', fontWeight: 760 }}>
+                        {' · '}{SUBJECT_LABEL[item.subject_type] || item.subject_type}{item.subject_city ? ` · ${item.subject_city}` : ''}
+                      </span>
+                    </div>
                     {summary && (
                       <p style={{
-                        fontSize: '0.96rem',
+                        fontSize: '0.9rem',
                         color: 'rgba(31,41,55,0.92)',
-                        lineHeight: 1.7,
+                        lineHeight: 1.6,
                         margin: '0',
                         fontWeight: 650,
                         whiteSpace: 'pre-wrap',
@@ -1608,7 +1609,7 @@ export default function Rankings() {
                         {renderContent(summary)}
                       </p>
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 8 }}>
                       {item.subject_url && (
                         <a href={normalizeUrl(item.subject_url)} target="_blank" rel="noreferrer"
                           style={{ fontSize: '0.72rem', color: GOLD, textDecoration: 'none' }}>社交主页 ↗</a>
@@ -1629,18 +1630,13 @@ export default function Rankings() {
                         </span>
                       )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
                       <span style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 5,
-                        padding: '3px 9px',
-                        borderRadius: 999,
-                        background: 'rgba(166,106,31,0.08)',
-                        border: '1px solid rgba(166,106,31,0.14)',
-                        color: 'rgba(71,85,105,0.86)',
-                        fontSize: '0.74rem',
-                        fontWeight: 800,
+                        color: 'rgba(71,85,105,0.64)',
+                        fontSize: '0.7rem',
+                        fontWeight: 760,
                         }}>
                         发布人 {renderName(item.author_name, item.is_realname)}
                       </span>
@@ -1653,7 +1649,7 @@ export default function Rankings() {
                     </div>
                   </div>
 
-                  <div style={{ ...chipRowStyle, marginBottom: 12 }}>
+                  <div style={{ ...chipRowStyle, marginBottom: 8 }}>
                     <span style={goldMetricChipStyle}>真金打榜 {boostStats.total}</span>
                     <span style={slateMetricChipStyle}>真金踩榜 {negativeBoostAmount(item)}</span>
                     <span style={greenMetricChipStyle}>口碑票 {reputationParticipation(item)} 人</span>
