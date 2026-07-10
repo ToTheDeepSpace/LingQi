@@ -24,5 +24,5 @@ git push "$SERVER_REMOTE" "$BRANCH"
 
 ssh -i "$SSH_KEY" "$SERVER_HOST" "systemctl is-active lingqi.service"
 
-curl -fsS https://lingqi.jusichen.com/api/health >/dev/null
-echo "LingQi deployed to https://lingqi.jusichen.com"
+curl -fsS https://jumulu.jusichen.com/api/health >/dev/null
+echo "剧幕录已部署至 https://jumulu.jusichen.com"

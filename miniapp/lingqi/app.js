@@ -1,6 +1,6 @@
 App({
   globalData: {
-    apiBase: 'https://lingqi.jusichen.com/api'
+    apiBase: 'https://jumulu.jusichen.com/api'
   },
 
   onLaunch() {

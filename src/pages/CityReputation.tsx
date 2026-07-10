@@ -12,7 +12,7 @@ const BLUE = '#275389';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 const SUBJECT_LABEL: Record<string, string> = {
-  creator: '灵契师',
+  creator: '服务者',
   dm: '卡司',
   store: '店家',
   takeaway: '外卖',

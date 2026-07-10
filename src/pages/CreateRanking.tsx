@@ -466,7 +466,7 @@ export default function CreateRanking() {
                       )}
                     </section>
                   ) : (
-                    <Input label="对象名称 *" value={subjectName} onChange={setSubjectName} placeholder="外卖店 / 人名 / 灵契师名" />
+                    <Input label="对象名称 *" value={subjectName} onChange={setSubjectName} placeholder="外卖店 / 人名 / 服务者名" />
                   )}
                   <CityPicker
                     selectedProvince={selectedProvince}

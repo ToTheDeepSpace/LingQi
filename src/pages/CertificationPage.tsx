@@ -15,7 +15,7 @@ type AuthSession = { token: string; id: string };
 type CertificationType = 'realname' | 'dm' | 'shop';
 type CertFile = { name: string; url: string; type?: string; size?: number; watermark?: string };
 
-const REALNAME_WATERMARK_TEXT = '仅用于灵契实名认证';
+const REALNAME_WATERMARK_TEXT = '仅用于剧幕录实名认证';
 const certTypeMeta: Record<CertificationType, {
   label: string;
   shortLabel: string;
@@ -31,7 +31,7 @@ const certTypeMeta: Record<CertificationType, {
     title: '实名认证',
     uploadLabel: '上传身份证照片',
     descriptionLabel: '补充说明（可选）',
-    placeholder: '例如：用于灵契实名认证审核。前台只展示实名标识，不公开证件信息。',
+    placeholder: '例如：用于剧幕录实名认证审核。前台只展示实名标识，不公开证件信息。',
     accent: GOLD,
   },
   dm: {

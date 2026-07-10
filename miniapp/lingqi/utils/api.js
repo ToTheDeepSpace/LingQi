@@ -1,4 +1,4 @@
-const API_BASE = 'https://lingqi.jusichen.com/api';
+const API_BASE = 'https://jumulu.jusichen.com/api';
 
 function getAuth() {
   return wx.getStorageSync('lc_auth') || null;

@@ -3,6 +3,7 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import BrandLogo from '../components/BrandLogo';
 import InfoTip from '../components/InfoTip';
 import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
@@ -1258,7 +1259,7 @@ export default function Dashboard() {
           }}>
             <p style={{ color: '#925f18', fontWeight: 900, fontSize: '0.78rem', marginBottom: 8 }}>新手教程</p>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.4rem', color: INK, marginBottom: 10 }}>
-              先认识一下灵契
+              先认识一下剧幕录
             </h2>
             <p style={{ color: MUTED, fontSize: '0.88rem', lineHeight: 1.75, marginBottom: 14 }}>
               你已经有登录账号了。登录账号是手机号或邮箱；昵称只是公开展示名，先进来，再慢慢补头像、昵称和主页资料。
@@ -1270,7 +1271,7 @@ export default function Dashboard() {
                 ['打榜与投票', '契约币表达支持或反对强度；同意、反对、离谱这类态度投票单独保留。'],
                 ['讨论圈内行为', '比如睡车、加戏、拒绝边界等，可以通过投票和口碑记录形成共识。'],
                 ['设置个人主页', '头像、昵称、常用城市先补上；公开资料提交后会进入审核。'],
-                ['成为灵契师', '只有填写并通过服务审核的人，才会出现在灵契师大厅。'],
+                ['成为服务者', '只有填写并通过服务审核的人，才会出现在服务大厅。'],
               ].map(([title, desc]) => (
                 <div key={title} className="onboarding-item" style={{ padding: '11px 12px', borderRadius: 12, background: 'rgba(239,246,255,0.78)', border: '1px solid rgba(125,147,170,0.14)' }}>
                   <p style={{ color: INK, fontWeight: 900, fontSize: '0.86rem', marginBottom: 4 }}>{title}</p>
@@ -1313,13 +1314,8 @@ export default function Dashboard() {
           justifyContent: 'space-between',
           gap: 16,
         }}>
-          <Link to="/" aria-label="灵契首页" className="dashboard-brand-link" style={dashboardBrandLinkStyle}>
-            <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.12rem', lineHeight: 1.05 }}>
-              灵契
-              <span style={{ marginLeft: 5, fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(146,95,24,0.58)', fontFamily: 'var(--font-sans)', WebkitTextFillColor: 'rgba(146,95,24,0.58)' }}>
-                Lingqi
-              </span>
-            </span>
+          <Link to="/" aria-label="剧幕录首页" className="dashboard-brand-link" style={dashboardBrandLinkStyle}>
+            <BrandLogo />
           </Link>
           <div className="dashboard-public-links" style={{
             display: 'flex',
@@ -1479,7 +1475,7 @@ export default function Dashboard() {
                       <p style={{ color: INK, fontWeight: 900, fontSize: '0.92rem', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         账号互通
                         <InfoTip>
-                          小程序微信登录、邮箱验证和手机号验证会进入同一个灵契账号。设置密码后，可用手机号或邮箱加密码登录。
+                          小程序微信登录、邮箱验证和手机号验证会进入同一个剧幕录账号。设置密码后，可用手机号或邮箱加密码登录。
                         </InfoTip>
                       </p>
                     </div>
@@ -1836,8 +1832,8 @@ export default function Dashboard() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                     <div>
                       <p style={{ fontWeight: 900, color: INK, fontSize: '0.94rem', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        是否在灵契上提供服务
-                        <InfoTip>选择提供服务后，再填写服务类目和报价；审核通过后会展示在灵契大厅。选择暂不提供时，本页不再显示服务表单。</InfoTip>
+                        是否在剧幕录上提供服务
+                        <InfoTip>选择提供服务后，再填写服务类目和报价；审核通过后会展示在服务大厅。选择暂不提供时，本页不再显示服务表单。</InfoTip>
                       </p>
                     </div>
                     <div className="service-choice-buttons" style={{ display: 'inline-flex', gap: 6, padding: 4, borderRadius: 999, background: 'rgba(241,245,249,0.86)', border: '1px solid rgba(125,147,170,0.14)' }}>
@@ -1864,7 +1860,7 @@ export default function Dashboard() {
                   <>
                 <div className="dashboard-panel" style={{ ...card, background: '#EEF6FF', border: '1px solid rgba(39,83,137,0.14)' }}>
                   <p style={{ color: '#275389', fontSize: '0.86rem', fontWeight: 850, lineHeight: 1.65 }}>
-                    服务通过人工审核后，会出现在灵契大厅；未审核通过前不会公开展示。
+                    服务通过人工审核后，会出现在服务大厅；未审核通过前不会公开展示。
                   </p>
                 </div>
 

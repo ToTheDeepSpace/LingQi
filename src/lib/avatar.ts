@@ -19,7 +19,7 @@ function hashSeed(input: string) {
 }
 
 export function avatarInitials(name?: string | null) {
-  const clean = (name || '灵契师').trim();
+  const clean = (name || '服务者').trim();
   const chars = Array.from(clean.replace(/\s+/g, ''));
   if (chars.length === 0) return '灵';
   const first = chars[0];

@@ -28,7 +28,7 @@ const inputStyle: React.CSSProperties = {
 };
 
 const TARGET_LABEL: Record<string, string> = {
-  creator: '灵契师',
+  creator: '服务者',
   photographer: '摄影师',
   makeup: '妆造师',
   costume: '服装商',
@@ -252,14 +252,14 @@ export default function Commissions() {
             委托需求墙
           </h1>
           <p style={{ color: MUTED, fontSize: '1rem', lineHeight: 1.8, maxWidth: 680 }}>
-            委托人可以在这里写下想见的角色、日期和地点。也可以只留一段愿望，等待合适的灵契师回应。
+            委托人可以在这里写下想见的角色、日期和地点。也可以只留一段愿望，等待合适的服务者回应。
           </p>
           <div style={{ marginTop: 22, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <Link to="/commissions/new" className="btn-gold" style={{ padding: '10px 22px', textDecoration: 'none', fontSize: '0.92rem' }}>
               发布委托需求
             </Link>
             <Link to="/explore" style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.32)', color: '#925f18', background: 'rgba(255,255,255,0.72)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 700 }}>
-              找灵契师
+              找服务者
             </Link>
           </div>
         </div>
@@ -321,7 +321,7 @@ export default function Commissions() {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 22 }}>
           {[
             ['all', '全部'],
-            ['creator', '灵契师'],
+            ['creator', '服务者'],
             ['photographer', '摄影师'],
             ['makeup', '妆造师'],
             ['costume', '服装商'],

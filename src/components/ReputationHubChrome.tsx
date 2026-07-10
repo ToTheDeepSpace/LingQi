@@ -31,7 +31,7 @@ export function ReputationHubShell({
       <section style={shellStyle}>
         <div style={subnavStyle}>
           <div style={brandCrumbStyle}>
-            <strong style={brandStyle}>灵契</strong>
+            <strong style={brandStyle}>剧幕录</strong>
             <span style={slashStyle}>/</span>
             <span style={currentStyle}>{label}</span>
           </div>

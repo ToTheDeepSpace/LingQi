@@ -8,7 +8,7 @@
     "pages/mine/mine"
   ],
   "window": {
-    "navigationBarTitleText": "灵契",
+    "navigationBarTitleText": "剧幕录",
     "navigationBarBackgroundColor": "#fffaf2",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#fffdf8"

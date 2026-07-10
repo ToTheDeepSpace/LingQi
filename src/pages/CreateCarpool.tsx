@@ -815,7 +815,7 @@ export default function CreateCarpool() {
               </Section>
 
               <Section title="联系补充">
-                <Input label="联系补充" value={contactNote} onChange={setContactNote} placeholder="例：加微信备注灵契拼车 / 先站内申请" />
+                <Input label="联系补充" value={contactNote} onChange={setContactNote} placeholder="例：加微信备注剧幕录拼车 / 先站内申请" />
               </Section>
             </div>
           )}

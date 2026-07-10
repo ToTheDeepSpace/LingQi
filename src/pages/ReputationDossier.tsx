@@ -187,7 +187,7 @@ export default function ReputationDossier() {
                   {data.profile ? (
                     <>
                       {data.profile.bio && <p style={{ color: MUTED, lineHeight: 1.7, margin: '0 0 10px' }}>{data.profile.bio}</p>}
-                      <Link to={`/explore/${data.profile.id}`} style={primaryButton}>查看灵契主页</Link>
+                      <Link to={`/explore/${data.profile.id}`} style={primaryButton}>查看公开主页</Link>
                     </>
                   ) : (
                     <p style={{ color: MUTED, lineHeight: 1.7, margin: 0 }}>这个对象暂未认领主页，后续可以通过卡司评分或身份认证绑定。</p>

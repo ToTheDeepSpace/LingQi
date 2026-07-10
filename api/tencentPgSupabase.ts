@@ -576,7 +576,7 @@ class LocalStorageBucket {
   }
 
   getPublicUrl(objectPath: string) {
-    const site = (process.env.LINGQI_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://lingqi.jusichen.com').replace(/\/$/, '');
+    const site = (process.env.LINGQI_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://jumulu.jusichen.com').replace(/\/$/, '');
     const safeBucket = this.safePart(this.bucket);
     const safePath = objectPath.split('/').map(part => this.safePart(part)).join('/');
     return { data: { publicUrl: `${site}/uploads/${safeBucket}/${safePath}` } };

@@ -7,13 +7,13 @@ import {
   serviceCategoryLabel,
 } from '../src/lib/serviceCategories.js';
 
-test('normalizes service names into LingQi hall identity categories', () => {
+test('normalizes service names into service hall identity categories', () => {
   assert.equal(normalizeServiceCategory('摄影服务'), 'photographer');
   assert.equal(normalizeServiceCategory('约拍跟拍'), 'photographer');
   assert.equal(normalizeServiceCategory('妆造'), 'makeup');
   assert.equal(normalizeServiceCategory('服装租赁'), 'costume');
   assert.equal(normalizeServiceCategory('道具定制'), 'prop');
-  assert.equal(normalizeServiceCategory('角色陪伴'), 'creator');
+  assert.equal(normalizeServiceCategory('角色委托'), 'creator');
   assert.equal(normalizeServiceCategory('自由DM'), 'dm');
 });
 

@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// 灵契 API — Vercel Serverless
+// 剧幕录 API
 import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
@@ -76,7 +76,7 @@ const TENCENT_SES_FROM_EMAIL = process.env.TENCENT_SES_FROM_EMAIL || 'no-reply@m
 const TENCENT_SES_REPLY_TO = process.env.TENCENT_SES_REPLY_TO || 'basara-twenty@foxmail.com';
 const TENCENT_SES_TEMPLATE_ID = process.env.TENCENT_SES_TEMPLATE_ID || '';
 const TENCENT_SES_ALLOW_SIMPLE = process.env.TENCENT_SES_ALLOW_SIMPLE === 'true';
-const LINGQI_SITE_URL = (process.env.LINGQI_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://lingqi.jusichen.com').replace(/\/$/, '');
+const LINGQI_SITE_URL = (process.env.LINGQI_SITE_URL || process.env.PUBLIC_SITE_URL || 'https://jumulu.jusichen.com').replace(/\/$/, '');
 const WECHAT_OPEN_APP_ID = process.env.WECHAT_OPEN_APP_ID || '';
 const WECHAT_OPEN_APP_SECRET = process.env.WECHAT_OPEN_APP_SECRET || '';
 const LINGQI_WECHAT_MINI_APP_ID = process.env.LINGQI_WECHAT_MINI_APP_ID || process.env.WECHAT_MINI_APP_ID || '';
@@ -467,7 +467,7 @@ function makeSocialSnapshots(socialLinks: Record<string, string> | null | undefi
       url: url.trim(),
       platform,
       title: `${platform}主页`,
-      description: '已添加到灵契主页，后续可接入真实网页快照服务。',
+      description: '已添加到公开主页，后续可接入真实网页快照服务。',
       captured_at: new Date().toISOString(),
     };
     return acc;
@@ -1013,7 +1013,7 @@ async function sendTencentEmailCode(email: string, code: string) {
     FromEmailAddress: TENCENT_SES_FROM_EMAIL,
     ReplyToAddresses: TENCENT_SES_REPLY_TO,
     Destination: [email],
-    Subject: '灵契邮箱验证码',
+    Subject: '剧幕录邮箱验证码',
     TriggerType: 1,
   };
 
@@ -1023,12 +1023,12 @@ async function sendTencentEmailCode(email: string, code: string) {
       TemplateData: JSON.stringify({
         code,
         ttl: String(EMAIL_CODE_TTL_MINUTES),
-        product: '灵契',
+        product: '剧幕录',
       }),
     };
   } else {
-    const text = `您的灵契验证码是：${code}。${EMAIL_CODE_TTL_MINUTES} 分钟内有效。若非本人操作，请忽略本邮件。`;
-    const html = `<html><body><p>您的灵契验证码是：</p><p style="font-size:24px;font-weight:700;letter-spacing:4px;">${code}</p><p>${EMAIL_CODE_TTL_MINUTES} 分钟内有效。若非本人操作，请忽略本邮件。</p></body></html>`;
+    const text = `您的剧幕录验证码是：${code}。${EMAIL_CODE_TTL_MINUTES} 分钟内有效。若非本人操作，请忽略本邮件。`;
+    const html = `<html><body><p>您的剧幕录验证码是：</p><p style="font-size:24px;font-weight:700;letter-spacing:4px;">${code}</p><p>${EMAIL_CODE_TTL_MINUTES} 分钟内有效。若非本人操作，请忽略本邮件。</p></body></html>`;
     params.Simple = {
       Text: Buffer.from(text, 'utf8').toString('base64'),
       Html: Buffer.from(html, 'utf8').toString('base64'),
@@ -1275,7 +1275,7 @@ function formatWechatPayTimeExpire(date: Date) {
 }
 
 function makeAlipayPayUrl(outTradeNo: string, amount: number) {
-  const subject = `灵契契约币充值 ${amount}`;
+  const subject = `剧幕录契约币充值 ${amount}`;
   const params: Record<string, string> = {
     app_id: ALIPAY_APP_ID,
     method: 'alipay.trade.page.pay',
@@ -1383,7 +1383,7 @@ async function wechatPayRequest<T>(method: 'GET' | 'POST', pathWithQuery: string
       Authorization: signWechatPayRequest(method, pathWithQuery, body),
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      'User-Agent': 'LingQi/1.0',
+      'User-Agent': 'Jumulu/1.0',
     },
     body: body || undefined,
   });
@@ -1405,7 +1405,7 @@ async function wechatPayRequest<T>(method: 'GET' | 'POST', pathWithQuery: string
 }
 
 function makeWechatPayDescription(amount: number) {
-  return `灵契契约币充值 ${amount}`;
+  return `剧幕录契约币充值 ${amount}`;
 }
 
 async function createWechatPayNativeOrder(outTradeNo: string, amount: number, expiresAt = makePaymentExpiresAt()) {
@@ -2129,7 +2129,7 @@ type ProfileRolePreferenceDraft = {
 
 const SCRIPT_CONTRIBUTION_REWARD = 5;
 const CERTIFICATION_TYPES = ['realname', 'dm', 'shop'];
-const REALNAME_WATERMARK_TEXT = '仅用于灵契实名认证';
+const REALNAME_WATERMARK_TEXT = '仅用于剧幕录实名认证';
 
 function cleanChoice(value: unknown, allowed: string[]) {
   const text = cleanText(value, 40);
@@ -3332,7 +3332,7 @@ function formatCarpoolSubsidy(carpool: Record<string, unknown>) {
 
 function buildJuzhangguiScheduleNote(carpool: Record<string, unknown>) {
   const lines = [
-    `来源：灵契拼车区`,
+    `来源：剧幕录拼车区`,
     `拼车ID：${carpool.id}`,
     `标题：${carpool.title || ''}`,
     `城市：${carpool.city || ''}`,
@@ -3367,7 +3367,7 @@ async function syncCarpoolToJuzhanggui(carpool: Record<string, unknown>) {
       startTime: normalizeClockTime(carpool.start_time, '19:30'),
       neededCount: Number(carpool.needed_count || 0) || 0,
       storeName: cleanText(carpool.store_name, 100),
-      customerName: `灵契拼车 · ${cleanText(carpool.poster_name, 40) || '车头'}`,
+      customerName: `剧幕录拼车 · ${cleanText(carpool.poster_name, 40) || '车头'}`,
       note: buildJuzhangguiScheduleNote(carpool),
     }),
   });
@@ -3558,7 +3558,7 @@ function rankingVoteRpcStatus(message: string) {
 }
 
 // --- 健康检查 ---
-app.get('/api/health', (_req, res) => res.json(ok({ status: '灵契 running' })));
+app.get('/api/health', (_req, res) => res.json(ok({ status: '剧幕录服务正常' })));
 
 app.get('/api/wechat/mp/events', (req, res) => {
   const configError = getWechatMpConfigError();
@@ -3920,7 +3920,7 @@ app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
     if (!current) return res.status(404).json(err(new Error('当前账号不存在')));
     if (current.is_banned) return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
     if (existing && existing.id !== creatorId) {
-      return res.status(409).json(err(new Error('该手机号已绑定其他灵契账号，请先用该手机号登录或联系客服合并账号')));
+      return res.status(409).json(err(new Error('该手机号已绑定其他剧幕录账号，请先用该手机号登录或联系客服合并账号')));
     }
 
     const patch = {
@@ -4398,7 +4398,7 @@ app.get('/api/lc/referrals/resolve/:code', async (req, res) => {
     if (!owner) return res.json(ok(null));
     res.json(ok({
       referral_code: normalizeReferralCode(owner.referral_code),
-      display_name: owner.display_name || '灵契用户',
+      display_name: owner.display_name || '受邀用户',
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -4441,7 +4441,7 @@ app.get('/api/lc/referrals/me', authMiddleware, async (req, res) => {
         status: row.status,
         invitee: {
           id: row.invitee_id,
-          display_name: invitee?.display_name || '灵契新用户',
+          display_name: invitee?.display_name || '新用户',
           avatar: invitee?.avatar || null,
         },
         invitee_bonus_awarded_at: row.invitee_bonus_awarded_at || null,
@@ -4820,7 +4820,7 @@ app.post('/api/lc/availability/sync-juzhanggui', authMiddleware, async (req, res
         matched: false,
         imported: 0,
         updated: [],
-        message: '没有在剧司辰卡司表里找到同手机号或同昵称的卡司。请先在剧司辰卡司档案里补齐手机号，或把卡司名改成灵契昵称。',
+        message: '没有在剧司辰卡司表里找到同手机号或同昵称的卡司。请先在剧司辰卡司档案里补齐手机号，或把卡司名改成剧幕录昵称。',
       }));
     }
 
@@ -8138,7 +8138,7 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
       reputation_events: rankingRows.map(publicRankingPayload),
       ratings: rows.map(row => ({
         id: row.id,
-        profile_name: row.profile_name || '灵契玩家',
+        profile_name: row.profile_name || '匿名玩家',
         script_id: row.script_id,
         script_name: row.script_name,
         store_id: row.store_id,
@@ -8427,7 +8427,7 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
     const { data: inserted, error: insertErr } = await supabase.from('lc_dm_ratings').insert({
       dm_dossier_id: dmId,
       profile_id: profile.id,
-      profile_name: profile.display_name || '灵契玩家',
+      profile_name: profile.display_name || '匿名玩家',
       script_id: scriptId || null,
       script_name: scriptName,
       script_key: scriptKey,
@@ -10519,7 +10519,7 @@ app.post('/api/lc/certifications', authMiddleware, async (req, res) => {
     if (files.length > 6) return res.status(400).json(err(new Error('认证材料最多上传 6 张')));
     if (type === 'realname') {
       const hasWatermark = files.every((file: Record<string, unknown>) => file?.watermark === REALNAME_WATERMARK_TEXT);
-      if (!hasWatermark) return res.status(400).json(err(new Error('实名认证材料必须先加“仅用于灵契实名认证”水印')));
+      if (!hasWatermark) return res.status(400).json(err(new Error('实名认证材料必须先加“仅用于剧幕录实名认证”水印')));
     }
     const totalBytes = JSON.stringify(files).length;
     if (totalBytes > 18 * 1024 * 1024) return res.status(413).json(err(new Error('认证材料太大，请压缩后上传')));

@@ -20,7 +20,7 @@ const FILTERS = [
   { key: 'all', label: '全部' },
   { key: 'player', label: '玩家' },
   { key: 'dm', label: 'DM' },
-  { key: 'creator', label: '灵契师' },
+  { key: 'creator', label: '服务者' },
   { key: 'photographer', label: '摄影师' },
   { key: 'makeup', label: '妆造师' },
   { key: 'costume', label: '服装商' },
@@ -32,7 +32,7 @@ const ROLE_LABEL: Record<string, string> = {
   dm: 'DM',
   shop: '店家',
   store: '店家',
-  creator: '灵契师',
+  creator: '服务者',
   photographer: '摄影师',
   makeup: '妆造师',
   costume: '服装商',
@@ -131,7 +131,7 @@ export default function Explore() {
             <div style={{ maxWidth: 690 }}>
               <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.85rem, 4vw, 2.75rem)', marginBottom: 10, color: PAPER }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  灵契师主页
+                  服务主页
                   <InfoTip>这里只展示已经提交并通过服务审核的人。查看主页、档期、可接城市和社交展示；想要指定角色或日期，也可以先去委托需求墙挂一段愿望。</InfoTip>
                 </span>
               </h1>
@@ -139,7 +139,7 @@ export default function Explore() {
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <Link to="/commissions" style={secondaryAction}>委托需求墙</Link>
               <Link to={entryPath} className="btn-gold" style={{ padding: '10px 20px', textDecoration: 'none', fontSize: '0.9rem' }}>
-                入驻灵契
+                创建服务主页
               </Link>
             </div>
           </div>
@@ -191,7 +191,7 @@ export default function Explore() {
           <div style={stateWrap}>
             <div style={{ fontSize: 34, marginBottom: 14, color: GOLD }}>✦</div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', fontWeight: 900, color: PAPER, marginBottom: 8 }}>
-              灵契师主页暂时没连上
+              服务主页暂时没连上
             </h2>
             <p style={{ color: PAPER_DIM, lineHeight: 1.8, marginBottom: 18 }}>
               可能是网络或服务接口短暂波动。你可以刷新重试，或者先去委托需求墙挂一条需求。
@@ -207,7 +207,7 @@ export default function Explore() {
         {loading && !error && (
           <div style={stateWrap}>
             <div style={{ width: 40, height: 40, border: '2px solid rgba(217,168,87,0.26)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 20px', animation: 'spin 0.8s linear infinite' }} />
-            <p style={{ color: PAPER_DIM }}>正在召唤灵契师...</p>
+            <p style={{ color: PAPER_DIM }}>正在召唤服务者...</p>
           </div>
         )}
 
@@ -216,7 +216,7 @@ export default function Explore() {
             <div style={{ maxWidth: 580, margin: '0 auto', textAlign: 'center' }}>
               <div style={{ fontSize: 42, marginBottom: 16, color: GOLD }}>✦</div>
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.35rem', fontWeight: 900, color: PAPER, marginBottom: 10 }}>
-                {city !== 'all' ? `${city} 暂无公开主页` : filter === 'all' ? '还在等待第一批灵契师' : '这个身份暂时没有公开主页'}
+                {city !== 'all' ? `${city} 暂无公开主页` : filter === 'all' ? '还在等待第一批服务者' : '这个身份暂时没有公开主页'}
               </h2>
               <p style={{ color: PAPER_DIM, lineHeight: 1.8, marginBottom: 22 }}>
                 可以先发布一条委托需求，让合适的人来回应你；也可以自己入驻，提交服务并通过审核后再出现在这里。
@@ -367,7 +367,7 @@ function CreatorCard({ creator }: { creator: Creator }) {
     !!creator.verified_dm,
     !!creator.verified_shop,
   );
-  const role = ROLE_LABEL[displayRole] || displayRole || '灵契师';
+  const role = ROLE_LABEL[displayRole] || displayRole || '服务者';
   const tags = Array.isArray(creator.tags) ? creator.tags : [];
   const travelStatus = creator.travel_status ? formatTravelStatus(creator.travel_status, creator.city) : '';
   const availableCities = Array.isArray(creator.available_cities) ? creator.available_cities : [];

@@ -1,4 +1,4 @@
-/* 灵契 — 金生水设计系统 */
+/* 剧幕录 — 金生水设计系统 */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
@@ -102,7 +102,7 @@ body {
 
 /* ============ 首页首屏入口 ============ */
 .home-hero {
-  min-height: calc(100svh - 64px);
+  min-height: calc(100svh - 152px);
   background: linear-gradient(180deg, #fffdf8 0%, #f7fbff 100%);
   display: flex;
   flex-direction: column;
@@ -122,6 +122,23 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.home-brand-lockup {
+  max-width: 520px;
+  margin: 0 auto clamp(12px, 2.2svh, 20px);
 }
 
 .home-hero-badge {
@@ -239,6 +256,10 @@ body {
     padding: 5px 12px;
   }
 
+  .home-brand-lockup {
+    max-width: 340px;
+  }
+
   .home-entry-grid {
     gap: 8px;
   }
@@ -256,8 +277,9 @@ body {
 }
 
 @media (max-height: 680px) {
-  .home-hero-title {
-    font-size: clamp(1.9rem, 7.8vmin, 3.5rem);
+  .home-brand-lockup {
+    max-width: 400px;
+    margin-bottom: 10px;
   }
 
   .home-hero-lead,

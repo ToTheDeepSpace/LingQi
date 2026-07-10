@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import { isTokenExpired } from '../lib/authSession';
+import BrandLogo from '../components/BrandLogo';
 
 const API = '/api';
 const BG = '#FFFDF8';
@@ -1268,8 +1269,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     <div style={{ backgroundColor: BG, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Link to="/" style={{ textDecoration: 'none', fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '2.35rem', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            灵契
+          <Link to="/" aria-label="剧幕录首页" style={{ display: 'inline-flex', textDecoration: 'none' }}>
+            <BrandLogo />
           </Link>
           <p style={{ color: MUTED, fontSize: '0.875rem', marginTop: 8 }}>管理后台</p>
         </div>
@@ -1336,7 +1337,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: 'rgba(217,168,87,0.14)', color: '#8a5a19', fontSize: '0.72rem', fontWeight: 800, marginBottom: 8 }}>
               超管审核台
             </div>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.85rem', marginBottom: 4, letterSpacing: 0 }}>灵契管理后台</h1>
+            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.85rem', marginBottom: 4, letterSpacing: 0 }}>剧幕录管理后台</h1>
             <p style={{ fontSize: '0.84rem', color: MUTED }}>审核队列、公开内容、账号治理和安全记录集中处理</p>
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -1752,7 +1753,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <TitleLine title={item.script_name || '未命名剧本'} pill="剧本库维护" />
                         <Meta>
                           提交人：{item.profile_name || item.profile_id || '未知用户'}
-                          {` · 奖励：${item.reward_amount || 0} 灵契币`}
+                          {` · 奖励：${item.reward_amount || 0} 契约币`}
                           {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
                         </Meta>
                         <Meta>基础有效维护：剧本名 + 角色名 + 角色性别；作品资料和 tag 作为补充。</Meta>
@@ -2080,7 +2081,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         {c.created_at ? ` · ${c.created_at.slice(0, 10)}` : ''}
                       </Meta>
                       {c.description && <ContentBox>{c.description}</ContentBox>}
-                      {c.type === 'realname' && <Meta>身份证材料应已带“仅用于灵契实名认证”水印；审核通过后只给前台实名标识，不公开证件。</Meta>}
+                      {c.type === 'realname' && <Meta>身份证材料应已带“仅用于剧幕录实名认证”水印；审核通过后只给前台实名标识，不公开证件。</Meta>}
                       {c.files && c.files.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                           {c.files.map((f, i) => (

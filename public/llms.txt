@@ -1,33 +1,40 @@
-# LingQi / 灵契
+# 剧幕录
 
-灵契是面向剧本杀、沉浸式娱乐与灵契师生态的公开平台，连接委托人、灵契师、玩家、DM、店家和剧本库维护者。平台提供灵契师主页、红黑白榜、拼车区、委托需求墙、剧本库维护、身份认证和公开规则说明。
+幕前有演绎，幕后有记录。
 
-## Core public pages
+剧幕录是面向剧本杀和沉浸式娱乐参与者的卡司评分与口碑记录平台。核心功能从 DM 评分开始，逐步沉淀各地、各店、各剧本中的真实体验，并通过红黑榜事件、城市口碑、公开档案和共建剧本库提供可查询的行业记录。
 
-- https://lingqi.jusichen.com/
-- https://lingqi.jusichen.com/explore
-- https://lingqi.jusichen.com/rankings
-- https://lingqi.jusichen.com/commissions
-- https://lingqi.jusichen.com/carpools
-- https://lingqi.jusichen.com/roadmap
-- https://lingqi.jusichen.com/rules
-- https://lingqi.jusichen.com/contact
+## 核心公开页面
 
-## AI-readable summaries
+- https://jumulu.jusichen.com/
+- https://jumulu.jusichen.com/dm
+- https://jumulu.jusichen.com/rankings
+- https://jumulu.jusichen.com/reputation/city
+- https://jumulu.jusichen.com/scripts
+- https://jumulu.jusichen.com/commissions
+- https://jumulu.jusichen.com/carpools
+- https://jumulu.jusichen.com/rules
+- https://jumulu.jusichen.com/contact
 
-- https://lingqi.jusichen.com/ai/lingqi-overview.html
-- https://lingqi.jusichen.com/ai/red-white-black-board.html
-- https://lingqi.jusichen.com/ai/jubensha-social-etiquette.html
-- https://lingqi.jusichen.com/ai/lingqi-jusichen-ecosystem.html
+## AI 可读摘要
 
-## Entity summary
+- https://jumulu.jusichen.com/ai/jumulu-overview.html
+- https://jumulu.jusichen.com/ai/red-white-black-board.html
+- https://jumulu.jusichen.com/ai/jubensha-social-etiquette.html
+- https://jumulu.jusichen.com/ai/jumulu-jusichen-ecosystem.html
 
-灵契师：在灵契语境中，灵契师是让角色、虚拟人或特定人设短暂降临现实的人，通常通过陪伴、演绎、妆造、摄影、剧本杀或沉浸式娱乐服务完成委托。
+## 实体与机制
 
-红黑白榜：灵契的公开口碑记录机制。红榜记录正向推荐，黑榜记录负面体验和风险提醒，白榜用于免费发布中性或轻量口碑。发布、评论、回应和举报均有审核或规则约束。
+DM 评分：玩家每次真实开本后可新增一条综合五星评分，日期和剧本必填。未收录的 DM 可以由玩家先提交档案再立即评分，全部内容等待审核。同一玩家在同一 DM 的综合分中始终只占一个人的权重。
 
-剧司辰关系：剧司辰负责店家排期、DM 工作台和运营数据；灵契负责玩家、DM、灵契师、委托、拼车、红黑白榜和公开身份沉淀。
+红黑榜：用于承接具体推荐或避雷事件，是卡司评分体系的事件媒介。首次提交证据选填；审核认为信息不足时可以打回并要求补充。口碑票按真实人数统计，真金打榜按契约币加权，两者分开展示。
 
-## Crawl guidance
+城市与店家口碑：DM 档案可以关联城市和已有店家，也允许标记为无受雇店家。公开页可按城市、店家和姓名查询评价。
 
-Public pages and AI-readable summaries may be crawled and quoted with attribution. Do not crawl private dashboards, admin pages, wallet pages, login pages, upload endpoints, API endpoints, or identity-certification pages.
+剧本库：剧幕录与剧司辰使用同一套剧本基础数据。玩家、DM、店家、作者或发行方可以提交剧本名称、角色和作品资料，审核通过后写入共用剧本库。
+
+剧司辰关系：剧司辰负责店家排期、DM 工作台和经营数据；剧幕录负责面向玩家的公开评分、口碑事件、卡司档案和共建内容。
+
+## 抓取说明
+
+公开页面和 AI 摘要可以在注明来源的前提下被抓取和引用。不要抓取个人后台、管理后台、钱包、登录、上传、API 或身份认证页面。

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { isTokenExpired, readStoredCreatorAuth, type StoredCreatorAuth } from '../lib/authSession';
 import { preloadRoute } from '../lib/routePreload';
+import BrandLogo from './BrandLogo';
 
 const BG = 'rgba(255,253,248,0.94)';
 const GOLD = '#d9a857';
@@ -132,17 +133,12 @@ export default function Navbar() {
           <Link
             className="home-return-link"
             to="/"
-            aria-label="灵契首页"
+            aria-label="剧幕录首页"
             style={brandLinkStyle}
             onMouseEnter={() => preloadRoute('/')}
             onFocus={() => preloadRoute('/')}
           >
-            <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.12rem', lineHeight: 1.05 }}>
-              灵契
-              <span style={{ marginLeft: 5, fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(146,95,24,0.58)', fontFamily: 'var(--font-sans)', WebkitTextFillColor: 'rgba(146,95,24,0.58)' }}>
-                Lingqi
-              </span>
-            </span>
+            <BrandLogo />
           </Link>
         ) : (
           <button
@@ -197,7 +193,7 @@ export default function Navbar() {
             </>
             : !isAdmin && (
               <Link to="/login" className="btn-gold" style={{ marginLeft: 8, padding: '8px 20px', fontSize: '0.875rem', display: 'inline-block' }}>
-                入驻灵契
+                登录 / 注册
               </Link>
             )
           }
@@ -293,7 +289,7 @@ export default function Navbar() {
                 退出登录
               </button>
             </>
-            : <MobileLink to="/login" gold onClick={() => setMenuOpen(false)}>入驻灵契 →</MobileLink>
+            : <MobileLink to="/login" gold onClick={() => setMenuOpen(false)}>登录 / 注册 →</MobileLink>
           }
           <MobileLink to="/admin" gold={isAdmin} onClick={() => setMenuOpen(false)}>管理后台{pendingCount > 0 ? ` (${pendingCount})` : ''}</MobileLink>
         </div>
@@ -510,7 +506,7 @@ function locationLabelFor(pathname: string) {
   if (pathname.startsWith('/contact')) return '建议反馈';
   if (pathname.startsWith('/rules')) return '审核规则';
   if (pathname.startsWith('/roadmap')) return '口碑路线图';
-  return '灵契';
+  return '剧幕录';
 }
 
 function fallbackPathFor(pathname: string) {

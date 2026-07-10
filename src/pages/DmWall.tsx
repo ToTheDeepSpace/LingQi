@@ -412,7 +412,7 @@ export default function DmWall() {
                     {kind === 'dm' && <Link to={`/dm/rate?dmId=${encodeURIComponent(item.id)}`} style={ghostButton}>给TA评分</Link>}
                     {item.profile_url && <a href={normalizeUrl(item.profile_url)} target="_blank" rel="noreferrer" style={ghostButton}>{kind === 'store' ? '店铺主页' : '个人主页'}</a>}
                     {item.claim_status === 'approved' && item.claimed_by
-                      ? (kind === 'dm' ? <Link to={`/explore/${item.claimed_by}`} style={ghostButton}>灵契主页</Link> : <span style={ghostStatic}>已绑定店家账号</span>)
+                      ? (kind === 'dm' ? <Link to={`/explore/${item.claimed_by}`} style={ghostButton}>公开主页</Link> : <span style={ghostStatic}>已绑定店家账号</span>)
                       : null}
                   </div>
                 </article>

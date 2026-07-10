@@ -39,7 +39,7 @@ export default function Roadmap() {
       <section style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(217,168,87,0.18)', padding: '56px 20px 42px' }}>
         <div style={{ maxWidth: 1040, margin: '0 auto' }}>
           <Link to="/rankings" style={{ color: '#275389', textDecoration: 'none', fontSize: '0.84rem', fontWeight: 800 }}>返回红黑白榜</Link>
-          <p style={{ margin: '24px 0 8px', color: '#92400e', fontSize: 13, fontWeight: 900, letterSpacing: 0 }}>灵契发展预期</p>
+          <p style={{ margin: '24px 0 8px', color: '#92400e', fontSize: 13, fontWeight: 900, letterSpacing: 0 }}>剧幕录发展预期</p>
           <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontWeight: 950, fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>
             AI 先做辅助，不做裁判
           </h1>

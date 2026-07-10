@@ -18,7 +18,7 @@ type StoreOption = LibraryOption & { linkedStoreId?: string | null };
 
 function getAuth(): AuthSession | null {
   const data = readStoredCreatorAuth();
-  return data?.token ? { token: data.token, displayName: data.display_name || '灵契玩家' } : null;
+  return data?.token ? { token: data.token, displayName: data.display_name || '匿名玩家' } : null;
 }
 
 function responseError(value: unknown, fallback: string) {

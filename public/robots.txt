@@ -37,5 +37,5 @@ Disallow: /rankings/new
 Disallow: /commissions/new
 Disallow: /carpools/new
 
-Sitemap: https://lingqi.jusichen.com/sitemap.xml
-# LLM guide: https://lingqi.jusichen.com/llms.txt
+Sitemap: https://jumulu.jusichen.com/sitemap.xml
+# LLM guide: https://jumulu.jusichen.com/llms.txt

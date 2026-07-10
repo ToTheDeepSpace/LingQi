@@ -8,7 +8,7 @@ export type ServiceCategoryOption = {
 };
 
 export const SERVICE_CATEGORY_OPTIONS: ServiceCategoryOption[] = [
-  { key: 'creator', label: '灵契委托师', examples: '角色委托 / 串场 NPC / 沉浸互动', identityRole: 'creator' },
+  { key: 'creator', label: '角色委托师', examples: '角色委托 / 串场 NPC / 沉浸互动', identityRole: 'creator' },
   { key: 'dm', label: '自由 DM', examples: '带本 / 测本 / 店家临时用工', identityRole: 'dm' },
   { key: 'photographer', label: '摄影师', examples: '约拍 / 跟拍 / 出片', identityRole: 'photographer' },
   { key: 'makeup', label: '妆造师', examples: '妆造 / 发型 / 造型', identityRole: 'makeup' },
@@ -23,7 +23,7 @@ const CATEGORY_KEYWORDS: Array<{ key: ServiceCategory; words: string[] }> = [
   { key: 'costume', words: ['服装', '租衣', '衣服', '角色服', '华服', 'cos服'] },
   { key: 'prop', words: ['道具', '小物', '伴手礼', '手作', '定制'] },
   { key: 'dm', words: ['自由dm', 'dm', '带本', '测本', '主持', '开本'] },
-  { key: 'creator', words: ['灵契', '委托', '陪伴', '角色陪伴', '串场', 'npc'] },
+  { key: 'creator', words: ['角色委托', '委托', '沉浸互动', '串场', 'npc'] },
 ];
 
 export function normalizeServiceCategory(value: unknown): ServiceCategory {

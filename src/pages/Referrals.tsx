@@ -170,8 +170,8 @@ export default function Referrals() {
     }
     try {
       await navigator.share({
-        title: '灵契邀请',
-        text: `来灵契看看，邀请码 ${data.referral_code}`,
+        title: '剧幕录邀请',
+        text: `来剧幕录看看，邀请码 ${data.referral_code}`,
         url: data.share_url,
       });
     } catch {
@@ -188,7 +188,7 @@ export default function Referrals() {
           <div>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.55rem', marginBottom: 6 }}>我的邀请</h1>
             <p style={{ color: MUTED, fontSize: '0.86rem', lineHeight: 1.7, maxWidth: 620 }}>
-              邀请新朋友来到灵契，双方都拿契约币；邀请人还会随有效邀请获得社区荣誉。
+              邀请新朋友来到剧幕录，双方都拿契约币；邀请人还会随有效邀请获得社区荣誉。
             </p>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -237,7 +237,7 @@ export default function Referrals() {
 
               <div style={{ ...cardStyle, display: 'grid', justifyItems: 'center', alignContent: 'center', gap: 12 }}>
                 {qrUrl ? (
-                  <img src={qrUrl} alt="灵契邀请二维码" style={{ width: 220, maxWidth: '100%', borderRadius: 12, border: '1px solid rgba(201,146,46,0.18)', background: '#fff' }} />
+                  <img src={qrUrl} alt="剧幕录邀请二维码" style={{ width: 220, maxWidth: '100%', borderRadius: 12, border: '1px solid rgba(201,146,46,0.18)', background: '#fff' }} />
                 ) : (
                   <div style={{ width: 220, aspectRatio: '1 / 1', borderRadius: 12, border: '1px dashed rgba(201,146,46,0.32)', display: 'grid', placeItems: 'center', color: MUTED, fontSize: '0.84rem', textAlign: 'center', padding: 20 }}>
                     二维码生成中

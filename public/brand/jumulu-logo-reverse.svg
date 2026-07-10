@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="160" viewBox="0 0 760 160" role="img" aria-labelledby="title desc">
+  <title id="title">剧幕录反白标志</title>
+  <desc id="desc">剧幕录在深色背景上的横版标志。</desc>
+  <rect width="760" height="160" fill="#1F2937"/>
+  <g transform="translate(20 20)">
+    <path fill="#FFFDF8" d="M12 12 52 33v15H40v24h12v15l-40 21V12Z"/>
+    <path fill="#D9A857" d="m108 12-40 21v15h12v24H68v15l40 21V12Z"/>
+  </g>
+  <text x="170" y="82" fill="#FFFDF8" font-family="Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="64" font-weight="900">剧幕录</text>
+  <text x="174" y="119" fill="#D1D5DB" font-family="Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="500">幕前有演绎，幕后有记录。</text>
+</svg>

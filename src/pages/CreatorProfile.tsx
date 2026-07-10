@@ -18,7 +18,7 @@ const MUTED = 'rgba(71,85,105,0.76)';
 
 const ROLE_LABEL: Record<string, string> = {
   player: '玩家', dm: 'DM', shop: '店家', store: '店家',
-  creator: '灵契师', coser: 'Coser', photographer: '摄影师', makeup: '妆造师',
+  creator: '服务者', coser: 'Coser', photographer: '摄影师', makeup: '妆造师',
   costume: '服装商', prop: '道具师',
 };
 
@@ -154,7 +154,7 @@ export default function CreatorProfile() {
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 56, marginBottom: 20, opacity: 0.3 }}>🌊</div>
         <p style={{ color: MUTED, marginBottom: 20 }}>创作者不存在</p>
-        <Link to="/explore" style={{ color: GOLD, fontSize: '0.875rem', textDecoration: 'underline' }}>返回灵契师主页</Link>
+        <Link to="/explore" style={{ color: GOLD, fontSize: '0.875rem', textDecoration: 'underline' }}>返回服务主页</Link>
       </div>
     </div>
   );
@@ -203,7 +203,7 @@ export default function CreatorProfile() {
           <Link to="/explore" className="creator-profile-back-link" style={{ color: 'rgba(39,83,137,0.78)', fontSize: '0.875rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}
             onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
             onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>
-            ← 返回灵契师主页
+            ← 返回服务主页
           </Link>
           <div className="creator-profile-identity" style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
             <div className="creator-profile-avatar" style={{
@@ -279,7 +279,7 @@ export default function CreatorProfile() {
 
             {/* 简介卡 */}
             <div className="creator-profile-card" style={card}>
-              <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: INK }}>灵契师档案</h3>
+              <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 12, color: INK }}>服务者档案</h3>
               {creator.bio && (
                 <p style={{ fontSize: '0.875rem', color: MUTED, lineHeight: 1.8, marginBottom: profileTags.length ? 16 : 0 }}>
                   {creator.bio}

@@ -61,7 +61,7 @@ export function getLingqiCosUploadConfig(env: UploadEnv = process.env): CosUploa
   const uploadPrefix = trimSlashes(cleanEnv(env.LINGQI_COS_UPLOAD_PREFIX || 'lingqi/uploads'));
   const values = [secretId, secretKey, bucket, region];
   if (values.every(Boolean)) return { secretId, secretKey, bucket, region, uploadPrefix };
-  if (values.some(Boolean)) throw new Error('灵契 COS 上传配置不完整，请检查 LINGQI_COS_SECRET_ID / KEY / BUCKET / REGION');
+  if (values.some(Boolean)) throw new Error('剧幕录 COS 上传配置不完整，请检查 LINGQI_COS_SECRET_ID / KEY / BUCKET / REGION');
   return null;
 }
 

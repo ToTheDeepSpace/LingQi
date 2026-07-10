@@ -218,7 +218,7 @@ export default function CreateCommission() {
           <div style={{ display: 'grid', gap: 16 }}>
             <div>
               <label style={labelStyle}>标题</label>
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="例如：6月1日想约一位能出芙莉莲的灵契师" style={inputStyle} />
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="例如：6月1日想约一位能出芙莉莲的服务者" style={inputStyle} />
             </div>
 
             <div>
@@ -249,7 +249,7 @@ export default function CreateCommission() {
               <div>
                 <label style={labelStyle}>想找谁</label>
                 <select value={targetType} onChange={e => setTargetType(e.target.value)} style={inputStyle}>
-                  <option value="creator">灵契师</option>
+                  <option value="creator">服务者</option>
                   <option value="photographer">摄影师</option>
                   <option value="makeup">妆造师</option>
                   <option value="costume">服装商</option>

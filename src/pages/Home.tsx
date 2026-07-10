@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import type React from 'react';
-import { creatorEntryPath } from '../lib/authSession';
+import BrandLogo from '../components/BrandLogo';
 
 const classes = [
   { icon: '🎭', role: 'DM 评分', sub: 'DM RATINGS', desc: '带本节奏、演绎表现、控场能力、沟通边界和复盘反馈，都应该留下可追溯的口碑。', accent: '#a78bfa' },
@@ -63,8 +63,6 @@ const homeReputationGhostLink: React.CSSProperties = {
 };
 
 export default function Home() {
-  const entryPath = creatorEntryPath();
-
   return (
     <div style={{ backgroundColor: C, color: INK }}>
 
@@ -77,24 +75,19 @@ export default function Home() {
 
         <div className="home-hero-inner">
 
+          <h1 className="sr-only">剧幕录</h1>
+          <BrandLogo variant="lockup" className="home-brand-lockup" />
+
           <div className="home-hero-badge">
             <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: GOLD }} />
             沉浸式娱乐 · 卡司评分榜
           </div>
 
-          <h1 className="home-hero-title">
-            灵契<br />
-            致力于成为<br />
-            沉浸式娱乐领域<br />
-            最可信的<br />
-            <span className="gradient-text-gold">卡司评分榜</span>
-          </h1>
-
           <p className="home-hero-lead">
-            从 DM 开始，记录真实口碑。
+            致力于成为沉浸式娱乐领域最可信的卡司评分榜
           </p>
           <p className="home-hero-subcopy">
-            查各地各店 DM 评分，看红黑榜事件，也把 NPC、场控等卡司体验沉淀下来。
+            从 DM 开始，查各地各店口碑，记录每一次真实开本体验。
           </p>
 
           <div className="home-entry-grid">
@@ -119,13 +112,13 @@ export default function Home() {
       </section>
 
       {/* ───────────── 可信口碑怎么来 ───────────── */}
-      <section style={{ backgroundColor: '#f8fbff', padding: '5rem 1.25rem' }}>
+      <section style={{ backgroundColor: '#f8fbff', padding: '4rem 1.25rem 5rem' }}>
         <div style={{ maxWidth: 920, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 38 }}>
             <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(39,83,137,0.62)', marginBottom: 12 }}>可信口碑</p>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.7rem, 4vw, 2.5rem)', marginBottom: 16, color: INK }}>评分不是一句好坏</h2>
             <p style={{ color: MUTED, lineHeight: 1.9, fontSize: '1rem', maxWidth: 680, margin: '0 auto' }}>
-              灵契要记录的是可被后来者参考的真实体验：谁带的本，发生在哪里，为什么推荐，为什么避雷，相关方有没有回应。
+              剧幕录要记录的是可被后来者参考的真实体验：谁带的本，发生在哪里，为什么推荐，为什么避雷，相关方有没有回应。
             </p>
           </div>
 
@@ -168,11 +161,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ───────────── 为什么选灵契 ───────────── */}
+      {/* ───────────── 为什么选剧幕录 ───────────── */}
       <section style={{ padding: '5rem 1.25rem', background: `linear-gradient(180deg, ${C} 0%, ${WARM_BG} 18%, #eef6ff 68%, ${C} 100%)` }}>
         <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
 
-          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.65)', marginBottom: 12 }}>为什么选择灵契</p>
+          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.25em', textTransform: 'uppercase', color: 'rgba(201,146,46,0.65)', marginBottom: 12 }}>为什么选择剧幕录</p>
           <h2 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', marginBottom: 16, color: WARM_TEXT }}>把零散口碑沉淀成评分榜</h2>
           <div className="gold-line" style={{ margin: '0 auto 48px' }} />
 
@@ -259,19 +252,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ───────────── Footer ───────────── */}
-      <footer style={{ backgroundColor: C, borderTop: '1px solid rgba(201,146,46,0.16)', padding: '2.5rem 1.25rem' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, textAlign: 'center', color: 'rgba(71,85,105,0.66)', fontSize: '0.875rem' }}>
-          <span className="gradient-text-gold" style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.25rem' }}>灵契</span>
-          <span>致力于成为沉浸式娱乐领域最可信的卡司评分榜</span>
-          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <Link to="/dm-wall" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>卡司评分</Link>
-            <Link to="/reputation/city" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>城市口碑</Link>
-            <Link to="/rankings" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>红黑榜</Link>
-            <Link to={entryPath} style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none' }} onMouseEnter={e => (e.currentTarget.style.color = GOLD)} onMouseLeave={e => (e.currentTarget.style.color = 'rgba(39,83,137,0.78)')}>入驻</Link>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

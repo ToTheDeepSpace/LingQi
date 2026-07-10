@@ -12,6 +12,7 @@ import {
 } from '../lib/authFlow';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { getPostLoginRedirect, ONBOARDING_DISMISSED_KEY, ONBOARDING_PENDING_KEY } from '../lib/postLoginFlow';
+import BrandLogo from '../components/BrandLogo';
 
 const API = '/api';
 const C = '#fffdf8';
@@ -417,12 +418,12 @@ export default function Login() {
   };
 
   const title = step === 'account'
-    ? '进入灵契'
+    ? '进入剧幕录'
     : step === 'password'
       ? '输入密码'
       : step === 'reset'
         ? '重设登录密码'
-        : '创建灵契账号';
+        : '创建剧幕录账号';
   const subtitle = step === 'account'
     ? '用手机号或邮箱继续。老用户直接登录，新用户按提示注册。'
     : step === 'password'
@@ -437,8 +438,8 @@ export default function Login() {
       : step === 'password'
         ? '登录'
         : step === 'reset'
-          ? '重设密码并进入灵契'
-          : '注册并进入灵契';
+          ? '重设密码并进入剧幕录'
+          : '注册并进入剧幕录';
   const submitDisabled = loading || (step !== 'account' && !acceptedTerms);
 
   return (
@@ -458,14 +459,11 @@ export default function Login() {
         {[500, 360, 220].map((s) => (
           <div key={s} style={{ position: 'absolute', width: s, height: s, borderRadius: '50%', border: '1px solid rgba(201,146,46,0.08)', pointerEvents: 'none', top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }} />
         ))}
-        <div style={{ position: 'relative', textAlign: 'center', maxWidth: 300 }}>
-          <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '5rem', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: 24 }}>
-            灵契
-          </div>
+        <div style={{ position: 'relative', textAlign: 'center', width: '100%', maxWidth: 380, padding: '0 24px' }}>
+          <BrandLogo variant="lockup" style={{ maxWidth: 360, margin: '0 auto 24px' }} />
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 32px' }} />
           <p style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', color: MUTED, lineHeight: 2 }}>
-            致力于成为沉浸式娱乐领域<br />
-            最可信的 <span style={{ color: GOLD, fontWeight: 900 }}>卡司评分榜</span><br />
+            沉浸式娱乐领域最可信的卡司评分榜<br />
             从 DM 开始，记录真实口碑
           </p>
         </div>
@@ -474,8 +472,8 @@ export default function Login() {
       <div className="login-main" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--lq-login-main-padding, 40px 20px)' }}>
         <div className="login-shell" style={{ width: '100%', maxWidth: 420 }}>
           <div className="login-logo" style={{ textAlign: 'center', marginBottom: 'var(--lq-logo-margin, 28px)' }}>
-            <Link to="/" style={{ textDecoration: 'none', fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '2rem', background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              灵契
+            <Link to="/" aria-label="剧幕录首页" style={{ display: 'inline-flex', textDecoration: 'none' }}>
+              <BrandLogo />
             </Link>
           </div>
 
@@ -491,7 +489,7 @@ export default function Login() {
 
             {referralCode && (
               <div className="referral-banner" style={{ padding: '10px 12px', borderRadius: 12, marginBottom: 14, background: 'rgba(240,253,244,0.88)', border: '1px solid rgba(22,163,74,0.18)', color: '#166534', fontSize: '0.8rem', lineHeight: 1.55, fontWeight: 750 }}>
-                {referralOwner ? `${referralOwner} 邀请你加入灵契` : '已识别邀请链接'}，注册后额外赠送 10 契约币。
+                {referralOwner ? `${referralOwner} 邀请你加入剧幕录` : '已识别邀请链接'}，注册后额外赠送 10 契约币。
               </div>
             )}
 

@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router-dom';
 import type React from 'react';
 import Navbar from './components/Navbar';
+import BrandLogo from './components/BrandLogo';
 import ErrorBoundary from './components/ErrorBoundary';
 import { pageLoaders, preloadRoute } from './lib/routePreload';
 import './App.css';
@@ -148,23 +149,21 @@ function SiteFooter() {
       <div style={{ maxWidth: 1120, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
-            <strong style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.08rem', color: '#1f2937' }}>灵契</strong>
+            <BrandLogo />
             <span style={{ fontSize: '0.78rem', lineHeight: 1.6, color: 'rgba(71,85,105,0.68)' }}>
-              沉浸式娱乐领域的卡司评分榜，从 DM 开始记录真实口碑。
+              幕前有演绎，幕后有记录。
             </span>
           </div>
           <nav aria-label="页脚导航" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px 14px', flexWrap: 'wrap' }}>
             <FooterLink to="/contact">建议反馈</FooterLink>
-            <FooterLink to="/rules">审核规则</FooterLink>
             <FooterLink to="/terms">用户协议</FooterLink>
             <FooterLink to="/privacy">隐私政策</FooterLink>
-            <FooterLink to="/security-assessment">安全与合规</FooterLink>
             <FooterLink to="/business-license">经营主体</FooterLink>
             <FooterExternal href={`mailto:${CONTACT_EMAIL}`}>客服邮箱</FooterExternal>
           </nav>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(201,146,46,0.12)', fontSize: '0.72rem', color: 'rgba(71,85,105,0.54)' }}>
-          <span>© {new Date().getFullYear()} 灵契 LingQi</span>
+          <span>© {new Date().getFullYear()} 剧幕录</span>
           <span style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(39,83,137,0.72)', textDecoration: 'none', fontWeight: 700 }}>{ICP_RECORD_NO}</a>
             <a href={MPS_RECORD_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(39,83,137,0.72)', textDecoration: 'none', fontWeight: 700 }}>{MPS_RECORD_NO}</a>

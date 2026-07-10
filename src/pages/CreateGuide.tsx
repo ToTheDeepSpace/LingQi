@@ -26,7 +26,7 @@ const targetTypes = [
   ['dm_role', 'DM / 场控角色'],
   ['store', '店家'],
   ['dm', 'DM / 卡司'],
-  ['creator', '灵契师'],
+  ['creator', '服务者'],
   ['city', '城市'],
   ['carpool_leader', '车头'],
   ['other', '其他'],

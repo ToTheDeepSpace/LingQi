@@ -1341,7 +1341,7 @@ export default function Rankings() {
             </button>
             <p style={{ color: GOLD, fontWeight: 900, fontSize: '0.76rem', marginBottom: 8 }}>新手教程</p>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.36rem', marginBottom: 8 }}>
-              先看这里，灵契最热闹的是口碑
+              先看这里，剧幕录最热闹的是口碑
             </h2>
             <p style={{ color: 'rgba(71,85,105,0.74)', fontSize: '0.88rem', lineHeight: 1.75, marginBottom: 14 }}>
               你已经有登录账号了。登录账号是手机号或邮箱；昵称只是公开展示名。这里可以看红黑白榜、给剧本/角色/店家/DM/玩家沉淀口碑，也可以以后再慢慢补个人主页。
@@ -1394,7 +1394,7 @@ export default function Rankings() {
       >
         <section style={compactHeroStyle}>
           <div>
-            <h1 style={compactTitleStyle}>灵契·红黑榜</h1>
+            <h1 style={compactTitleStyle}>剧幕录·红黑榜</h1>
             <p style={compactLeadStyle}>红黑榜是评分榜的事件媒介。口碑票看真实人数，真金打榜看契约币加权；两套数据分开判断。</p>
           </div>
           <div style={filterGroupStyle}>
