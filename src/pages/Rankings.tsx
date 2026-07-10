@@ -244,40 +244,20 @@ const filterBarStyle: React.CSSProperties = {
 
 const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 10, alignItems: 'start' };
-const chipRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' };
-const metricChipStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  minHeight: 24,
-  padding: '0 8px',
-  borderRadius: 999,
-  border: '1px solid rgba(31,41,55,0.10)',
-  background: '#fff',
-  color: '#275389',
-  fontSize: 11,
-  fontWeight: 900,
-};
-const goldMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: '#fff8e8', color: GOLD, borderColor: 'rgba(217,168,87,0.30)' };
-const slateMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: 'rgba(71,85,105,0.07)', color: '#475569', borderColor: 'rgba(71,85,105,0.18)' };
-const greenMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: 'rgba(240,253,244,0.82)', color: '#166534', borderColor: 'rgba(22,101,52,0.16)' };
 const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 10, borderTop: '1px solid rgba(31,41,55,0.06)' };
 const compactActionButtonStyle: React.CSSProperties = { border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.66)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 0', fontWeight: 800 };
-const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 10 };
+const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 8 };
 const paidVoteZoneStyle: React.CSSProperties = {
-  borderRadius: 8,
-  border: '1px solid rgba(166,106,31,0.22)',
-  background: 'linear-gradient(135deg, rgba(255,248,232,0.96) 0%, rgba(255,253,248,0.94) 100%)',
-  padding: '8px 10px',
+  borderTop: '1px solid rgba(166,106,31,0.22)',
+  padding: '8px 0 4px',
 };
 const freeVoteZoneStyle: React.CSSProperties = {
-  borderRadius: 8,
-  border: '1px solid rgba(39,83,137,0.16)',
-  background: 'linear-gradient(135deg, rgba(238,246,255,0.92) 0%, rgba(255,255,255,0.94) 100%)',
-  padding: '8px 10px',
+  borderTop: '1px solid rgba(39,83,137,0.16)',
+  padding: '8px 0 4px',
 };
-const voteZoneTitleStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 6 };
-const voteZoneKickerStyle: React.CSSProperties = { fontSize: '0.68rem', fontWeight: 950, letterSpacing: '0.12em', textTransform: 'uppercase' };
-const voteZoneHintStyle: React.CSSProperties = { color: 'rgba(71,85,105,0.64)', fontSize: '0.72rem', lineHeight: 1.45, fontWeight: 700 };
+const voteZoneTitleStyle: React.CSSProperties = { display: 'flex', alignItems: 'baseline', gap: 7, flexWrap: 'wrap', marginBottom: 4 };
+const voteZoneKickerStyle: React.CSSProperties = { fontSize: '0.7rem', fontWeight: 950 };
+const voteZoneHintStyle: React.CSSProperties = { color: 'rgba(71,85,105,0.58)', fontSize: '0.68rem', lineHeight: 1.4, fontWeight: 650 };
 
 function getAuth(): AuthSession | null {
   const data = readStoredCreatorAuth();
@@ -1647,13 +1627,6 @@ export default function Rankings() {
                         <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
                       )}
                     </div>
-                  </div>
-
-                  <div style={{ ...chipRowStyle, marginBottom: 8 }}>
-                    <span style={goldMetricChipStyle}>真金打榜 {boostStats.total}</span>
-                    <span style={slateMetricChipStyle}>真金踩榜 {negativeBoostAmount(item)}</span>
-                    <span style={greenMetricChipStyle}>口碑票 {reputationParticipation(item)} 人</span>
-                    <span style={metricChipStyle}>评论 {comments.length}</span>
                   </div>
 
                   <div style={voteZoneGridStyle}>
