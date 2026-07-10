@@ -157,7 +157,6 @@ export default function DmWall() {
         note: data.note || '',
         tags: data.tags || '',
       });
-      setShowForm(true);
     },
   });
 
@@ -289,7 +288,7 @@ export default function DmWall() {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Link to="/dm/rate" style={primaryButton}>给 DM 评分</Link>
-            <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={ghostButton}>{showForm ? '收起建档' : '补充DM或店家'}</button>
+            <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={ghostButton}>{showForm ? '收起建档' : '创建档案'}</button>
           </div>
         </div>
       </section>
