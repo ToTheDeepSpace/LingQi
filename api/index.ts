@@ -5,6 +5,12 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { createTencentPgClient, tencentPgPool } from './tencentPgSupabase.js';
 import { summarizeDmRatingRows } from './dmRatingSummary.js';
+import {
+  findSharedRole,
+  findSharedScript,
+  normalizeSharedCatalog,
+  type SharedCatalogScript,
+} from './sharedScriptCatalog.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
@@ -42,6 +48,8 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const JUZHANGGUI_TENANT_ID = process.env.JUZHANGGUI_TENANT_ID || 'f0d6e011-6e75-4c14-95e9-dc61b26871e3';
+const JUZHANGGUI_API_URL = (process.env.JUZHANGGUI_API_URL || 'http://127.0.0.1:3001').replace(/\/$/, '');
+const SHARED_SCRIPT_LIBRARY_TOKEN = envValue('SHARED_SCRIPT_LIBRARY_TOKEN');
 const AUTH_CODE_PEPPER = process.env.AUTH_CODE_PEPPER || JWT_SECRET;
 const SMS_CODE_TTL_MINUTES = Number(process.env.SMS_CODE_TTL_MINUTES || 5);
 const SMS_CODE_COOLDOWN_SECONDS = Number(process.env.SMS_CODE_COOLDOWN_SECONDS || 60);
@@ -113,6 +121,62 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const LOCAL_UPLOAD_ROOT = process.env.LOCAL_UPLOAD_ROOT || `${process.cwd()}/public/uploads`;
 const LINGQI_COS_UPLOAD_CONFIG = getLingqiCosUploadConfig(process.env);
 const LINGQI_COS_UPLOAD_TRANSPORT = LINGQI_COS_UPLOAD_CONFIG ? createTencentCosUploadTransport(LINGQI_COS_UPLOAD_CONFIG) : null;
+
+let sharedScriptCatalogCache: { data: SharedCatalogScript[]; expiresAt: number } | null = null;
+let sharedScriptCatalogPromise: Promise<SharedCatalogScript[]> | null = null;
+
+async function loadSharedScriptCatalog(force = false) {
+  if (!force && sharedScriptCatalogCache && sharedScriptCatalogCache.expiresAt > Date.now()) return sharedScriptCatalogCache.data;
+  if (!force && sharedScriptCatalogPromise) return sharedScriptCatalogPromise;
+  sharedScriptCatalogPromise = (async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(`${JUZHANGGUI_API_URL}/api/shared/script-library`, { signal: controller.signal });
+      const body = await response.json() as { success?: boolean; data?: unknown; error?: unknown };
+      if (!response.ok || !body.success) throw new Error(cleanText(body.error, 300) || '剧司辰公共剧本库读取失败');
+      const data = normalizeSharedCatalog(body.data);
+      sharedScriptCatalogCache = { data, expiresAt: Date.now() + 30_000 };
+      return data;
+    } catch (error) {
+      if (sharedScriptCatalogCache?.data.length) {
+        console.error('[shared-script-library] using stale memory cache', getErrorText(error));
+        return sharedScriptCatalogCache.data;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      sharedScriptCatalogPromise = null;
+    }
+  })();
+  return sharedScriptCatalogPromise;
+}
+
+async function submitSharedScriptContribution(contribution: Record<string, unknown>, roles: CarpoolRoleDraft[], credits: Record<string, string[]>) {
+  if (!SHARED_SCRIPT_LIBRARY_TOKEN) throw new Error('共享剧本库服务密钥未配置');
+  const response = await fetch(`${JUZHANGGUI_API_URL}/api/shared/script-library/contributions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shared-Library-Token': SHARED_SCRIPT_LIBRARY_TOKEN,
+    },
+    body: JSON.stringify({
+      contributionId: cleanText(contribution.id, 120),
+      scriptId: cleanText(contribution.script_id, 80) || null,
+      legacyScriptId: cleanText(contribution.script_id, 80) || null,
+      scriptName: cleanText(contribution.script_name, 160),
+      playerRoles: roles,
+      credits,
+      contributorName: cleanText(contribution.profile_name, 80),
+    }),
+  });
+  const body = await response.json() as { success?: boolean; data?: unknown; error?: unknown };
+  if (!response.ok || !body.success) throw new Error(cleanText(body.error, 300) || '写入剧司辰公共剧本库失败');
+  const [script] = normalizeSharedCatalog([body.data]);
+  if (!script) throw new Error('剧司辰公共剧本库没有返回有效剧本');
+  sharedScriptCatalogCache = null;
+  return script;
+}
 
 const app = express();
 app.use(cors());
@@ -2088,19 +2152,6 @@ function sanitizeScriptCredits(input: unknown) {
   }, {});
 }
 
-function hasScriptCredits(input: Record<string, string[]>) {
-  return Object.values(input).some(value => Array.isArray(value) && value.length > 0);
-}
-
-function mergeScriptCredits(existing: unknown, patch: Record<string, string[]>) {
-  const current = sanitizeScriptCredits(existing);
-  for (const key of SCRIPT_CREDIT_FIELDS) {
-    const values = patch[key];
-    if (values?.length) current[key] = values;
-  }
-  return current;
-}
-
 function normalizeRoleKey(value: unknown) {
   return cleanText(value, 80).replace(/\s+/g, '').toLowerCase();
 }
@@ -2154,18 +2205,6 @@ function roleSummary(roles: CarpoolRoleDraft[], status: CarpoolRoleStatus) {
     .join('、');
 }
 
-function existingScriptRoles(script: Record<string, unknown> | null | undefined): CarpoolRoleDraft[] {
-  const roleRows = Array.isArray(script?.script_player_roles) ? script.script_player_roles as Record<string, unknown>[] : [];
-  return roleRows.map(role => ({
-    role_name: cleanText(role.role_name, 80),
-    gender: cleanText(role.gender, 20) || null,
-    tags: cleanTextArray(role.tags),
-    status: 'needed' as CarpoolRoleStatus,
-    player_name: null,
-    player_gender: null,
-  })).filter(role => role.role_name);
-}
-
 type RatingSummary = { avg: number | null; count: number };
 type ScriptRoleSource = 'player' | 'actor';
 type ScriptRoleEntity = {
@@ -2201,11 +2240,6 @@ function roleKindLabel(kindInput: unknown) {
   return kind || '角色';
 }
 
-function scriptRoleTargetId(source: ScriptRoleSource, idInput: unknown) {
-  const id = cleanText(idInput, 80);
-  return id ? `${source}:${id}` : '';
-}
-
 function buildRatingMap(rows: Record<string, unknown>[] | null | undefined, idField = 'target_id') {
   const buckets = new Map<string, number[]>();
   for (const row of rows || []) {
@@ -2219,7 +2253,24 @@ function buildRatingMap(rows: Record<string, unknown>[] | null | undefined, idFi
 }
 
 async function getScriptRoleEntity(targetIdInput: unknown): Promise<ScriptRoleEntity | null> {
-  const targetId = cleanText(targetIdInput, 120);
+  const targetId = cleanText(targetIdInput, 160);
+  if (targetId.startsWith('shared:')) {
+    const found = findSharedRole(await loadSharedScriptCatalog(), targetId);
+    if (!found) return null;
+    const { script, role } = found;
+    const targetTitle = `${script.name} · ${role.role_name} · ${roleKindLabel(role.role_kind)}`;
+    return {
+      targetId,
+      scriptId: script.id,
+      scriptName: script.name,
+      roleId: role.id,
+      roleName: role.role_name,
+      roleGender: role.gender || null,
+      roleKind: role.role_kind,
+      roleSource: role.role_source,
+      targetTitle,
+    };
+  }
   const [source, roleId] = targetId.split(':');
   if ((source !== 'player' && source !== 'actor') || !uuidText(roleId)) return null;
 
@@ -2281,21 +2332,19 @@ async function sanitizeProfileRolePreferences(input: unknown): Promise<ProfileRo
     .filter(Boolean)));
   if (scriptIds.length === 0) return [];
 
-  const { data: scripts, error: scriptsErr } = await supabase.from('scripts')
-    .select('id, name, script_player_roles(role_name, gender, tags)')
-    .eq('tenant_id', JUZHANGGUI_TENANT_ID)
-    .in('id', scriptIds);
-  if (scriptsErr && isMissingRelation(scriptsErr, 'scripts')) return [];
-  if (scriptsErr) throw scriptsErr;
-
-  const scriptMap = new Map<string, { id: string; name: string; roles: CarpoolRoleDraft[] }>((scripts || []).map(script => {
-    const row = script as Record<string, unknown>;
-    return [String(row.id), {
-      id: String(row.id),
-      name: cleanText(row.name, 120),
-      roles: existingScriptRoles(row),
-    }];
-  }));
+  const catalog = await loadSharedScriptCatalog();
+  const scriptMap = new Map<string, { id: string; name: string; roles: CarpoolRoleDraft[] }>(catalog
+    .filter(script => scriptIds.includes(script.id))
+    .map(script => [script.id, {
+      id: script.id,
+      name: script.name,
+      roles: script.player_roles.map(role => ({
+        role_name: role.role_name,
+        gender: role.gender || '',
+        tags: role.tags || [],
+        status: 'needed' as const,
+      })),
+    }]));
   const seen = new Map<string, ProfileRolePreferenceDraft>();
 
   source.slice(0, 50).forEach((raw, index) => {
@@ -2363,72 +2412,37 @@ async function getActiveStore(storeIdInput: unknown) {
 async function ensureSharedScriptForCarpool(scriptIdInput: unknown, scriptNameInput: unknown, rolesInput: CarpoolRoleDraft[]) {
   const requestedScriptId = cleanText(scriptIdInput, 80);
   const requestedScriptName = cleanText(scriptNameInput, 100);
-  let script: Record<string, unknown> | null = null;
-
-  if (requestedScriptId) {
-    const { data, error: byIdErr } = await supabase.from('scripts')
-      .select('id, name, script_player_roles(role_name, gender, tags)')
-      .eq('tenant_id', JUZHANGGUI_TENANT_ID)
-      .eq('id', requestedScriptId)
-      .maybeSingle();
-    if (byIdErr) throw byIdErr;
-    script = (data as Record<string, unknown> | null) || null;
-  }
-
-  if (!script && requestedScriptName) {
-    const { data, error: byNameErr } = await supabase.from('scripts')
-      .select('id, name, script_player_roles(role_name, gender, tags)')
-      .eq('tenant_id', JUZHANGGUI_TENANT_ID)
-      .eq('name', requestedScriptName)
-      .maybeSingle();
-    if (byNameErr) throw byNameErr;
-    script = (data as Record<string, unknown> | null) || null;
-  }
-
+  const script = findSharedScript(await loadSharedScriptCatalog(), requestedScriptId, requestedScriptName);
   if (!script) {
     if (!requestedScriptName) throw new Error('请填写本名');
-    const { data: created, error: createErr } = await supabase.from('scripts').insert({
-      name: requestedScriptName,
-      duration_minutes: 240,
-      min_duration_hours: 4,
-      max_duration_hours: 4,
-      tenant_id: JUZHANGGUI_TENANT_ID,
-    }).select('id, name').single();
-    if (createErr) throw createErr;
-    script = (created as Record<string, unknown>) || null;
+    return {
+      scriptId: null,
+      scriptName: requestedScriptName,
+      scriptRoles: rolesInput,
+    };
   }
 
-  const existingRoles = existingScriptRoles(script);
-  const roles = rolesInput.length > 0 ? rolesInput : existingRoles;
-  const known = new Set(existingRoles.map(role => normalizeRoleKey(role.role_name)));
-  const missingRoles = roles
-    .filter(role => role.role_name && !known.has(normalizeRoleKey(role.role_name)))
-    .map(role => ({
-      script_id: script?.id,
-      role_name: role.role_name,
-      gender: role.gender || '',
-      tags: role.tags || [],
-    }));
-
-  if (missingRoles.length > 0) {
-    const { error: roleErr } = await supabase.from('script_player_roles').insert(missingRoles);
-    if (roleErr) throw roleErr;
-  }
-  for (const role of roles) {
-    const patch: Record<string, unknown> = {};
-    if (role.gender) patch.gender = role.gender;
-    if (role.tags?.length) patch.tags = role.tags;
-    if (Object.keys(patch).length === 0) continue;
-    await supabase.from('script_player_roles')
-      .update(patch)
-      .eq('script_id', script?.id)
-      .eq('role_name', role.role_name);
-  }
-
-  const finalRoles = roles.length > 0 ? roles : existingRoles;
+  const catalogRoles: CarpoolRoleDraft[] = script.player_roles.map(role => ({
+    role_name: role.role_name,
+    gender: role.gender || '',
+    tags: role.tags || [],
+    status: 'needed',
+  }));
+  const catalogByName = new Map(catalogRoles.map(role => [normalizeRoleKey(role.role_name), role]));
+  const finalRoles = rolesInput.length > 0
+    ? rolesInput.map(role => {
+        const catalogRole = catalogByName.get(normalizeRoleKey(role.role_name));
+        return {
+          ...catalogRole,
+          ...role,
+          gender: role.gender || catalogRole?.gender || '',
+          tags: Array.from(new Set([...(catalogRole?.tags || []), ...(role.tags || [])])).slice(0, 8),
+        };
+      })
+    : catalogRoles;
   return {
-    scriptId: script?.id ? String(script.id) : null,
-    scriptName: cleanText(script?.name, 100) || requestedScriptName,
+    scriptId: script.id,
+    scriptName: script.name,
     scriptRoles: finalRoles,
   };
 }
@@ -2436,34 +2450,13 @@ async function ensureSharedScriptForCarpool(scriptIdInput: unknown, scriptNameIn
 async function applyScriptContribution(contribution: Record<string, unknown>) {
   const roles = sanitizeCarpoolRoles(contribution.player_roles);
   const creditsPatch = sanitizeScriptCredits(contribution.credits_patch);
-  const shared = await ensureSharedScriptForCarpool(contribution.script_id, contribution.script_name, roles);
-  if (shared.scriptId) {
-    for (const role of roles) {
-      const patch: Record<string, unknown> = {};
-      if (role.gender) patch.gender = role.gender;
-      if (role.tags?.length) patch.tags = role.tags;
-      if (Object.keys(patch).length === 0) continue;
-      await supabase.from('script_player_roles')
-        .update(patch)
-        .eq('script_id', shared.scriptId)
-        .eq('role_name', role.role_name);
-    }
-    if (hasScriptCredits(creditsPatch)) {
-      const { data: script, error: scriptErr } = await supabase.from('scripts')
-        .select('credits')
-        .eq('tenant_id', JUZHANGGUI_TENANT_ID)
-        .eq('id', shared.scriptId)
-        .maybeSingle();
-      if (scriptErr) throw scriptErr;
-      const nextCredits = mergeScriptCredits(script?.credits, creditsPatch);
-      const { error: updateErr } = await supabase.from('scripts')
-        .update({ credits: nextCredits })
-        .eq('tenant_id', JUZHANGGUI_TENANT_ID)
-        .eq('id', shared.scriptId);
-      if (updateErr) throw updateErr;
-    }
-  }
-  return { ...shared, creditsPatch };
+  const script = await submitSharedScriptContribution(contribution, roles, creditsPatch);
+  return {
+    scriptId: script.id,
+    scriptName: script.name,
+    scriptRoles: script.player_roles,
+    creditsPatch,
+  };
 }
 
 async function attachCarpoolApplications(carpools: Record<string, unknown>[]) {
@@ -3330,87 +3323,34 @@ async function syncCarpoolToJuzhanggui(carpool: Record<string, unknown>) {
   if (carpool.juzhanggui_schedule_id) {
     return { ok: true, scheduleId: String(carpool.juzhanggui_schedule_id), reused: true };
   }
-
-  const scriptName = cleanText(carpool.script_name, 100);
-  if (!scriptName) throw new Error('缺少剧本名，无法同步剧司辰');
-
-  let scriptId = cleanText(carpool.script_id, 80) || null;
-  if (!scriptId) {
-    const { data: existingScript, error: scriptQueryErr } = await supabase.from('scripts')
-      .select('id')
-      .eq('tenant_id', JUZHANGGUI_TENANT_ID)
-      .eq('name', scriptName)
-      .maybeSingle();
-    if (scriptQueryErr) throw scriptQueryErr;
-    scriptId = existingScript?.id;
-  }
-  if (!scriptId) {
-    const { data: script, error: scriptErr } = await supabase.from('scripts').insert({
-      name: scriptName,
-      duration_minutes: 240,
-      min_duration_hours: 4,
-      max_duration_hours: 4,
-      tenant_id: JUZHANGGUI_TENANT_ID,
-    }).select('id').single();
-    if (scriptErr) throw scriptErr;
-    scriptId = script?.id;
-  }
-
-  const roles = sanitizeCarpoolRoles(carpool.script_roles, cleanText(carpool.role_name, 80), cleanText(carpool.role_note, 200));
-  if (scriptId && roles.length > 0) {
-    for (const role of roles) {
-      const { data: existingRole } = await supabase.from('script_player_roles')
-        .select('id')
-        .eq('script_id', scriptId)
-        .eq('role_name', role.role_name)
-        .maybeSingle();
-      if (!existingRole) {
-        await supabase.from('script_player_roles').insert({ script_id: scriptId, role_name: role.role_name, gender: role.gender || '', tags: role.tags || [] });
-      } else if (role.tags?.length) {
-        await supabase.from('script_player_roles')
-          .update({ tags: role.tags })
-          .eq('id', existingRole.id);
-      }
-    }
-  }
-
-  const roomName = cleanText(carpool.store_name, 100) || `灵契拼车-${cleanText(carpool.city, 40) || '待定城市'}`;
-  const { data: existingRoom, error: roomQueryErr } = await supabase.from('rooms')
-    .select('id')
-    .eq('tenant_id', JUZHANGGUI_TENANT_ID)
-    .eq('name', roomName)
-    .maybeSingle();
-  if (roomQueryErr) throw roomQueryErr;
-
-  let roomId = existingRoom?.id;
-  if (!roomId) {
-    const { data: room, error: roomErr } = await supabase.from('rooms').insert({
-      name: roomName,
-      capacity: Number(carpool.needed_count || 0) || 0,
-      tenant_id: JUZHANGGUI_TENANT_ID,
-      status: 'active',
-    }).select('id').single();
-    if (roomErr) throw roomErr;
-    roomId = room?.id;
-  }
-
-  const startTime = normalizeClockTime(carpool.start_time, '19:30');
-  const endTime = addHoursToClock(startTime, 4);
-  const { data: schedule, error: scheduleErr } = await supabase.from('schedules').insert({
-    script_id: scriptId,
-    room_id: roomId || null,
-    scheduled_date: carpool.event_date,
-    start_time: startTime,
-    end_time: endTime,
-    status: 'pending',
-    player_count: Number(carpool.needed_count || 0) || 0,
-    customer_name: `灵契拼车 · ${cleanText(carpool.poster_name, 40) || '车头'}`,
-    note: buildJuzhangguiScheduleNote(carpool),
-    tenant_id: JUZHANGGUI_TENANT_ID,
-  }).select('id').single();
-  if (scheduleErr) throw scheduleErr;
-
-  return { ok: true, scheduleId: schedule?.id || null, reused: false };
+  if (!SHARED_SCRIPT_LIBRARY_TOKEN) throw new Error('共享剧本库服务密钥未配置');
+  const response = await fetch(`${JUZHANGGUI_API_URL}/api/shared/script-library/carpool-sync`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shared-Library-Token': SHARED_SCRIPT_LIBRARY_TOKEN,
+    },
+    body: JSON.stringify({
+      carpoolId: cleanText(carpool.id, 120),
+      scriptId: cleanText(carpool.script_id, 80) || null,
+      scriptName: cleanText(carpool.script_name, 160),
+      scriptRoles: sanitizeCarpoolRoles(carpool.script_roles, cleanText(carpool.role_name, 80), cleanText(carpool.role_note, 200)),
+      city: cleanText(carpool.city, 40),
+      eventDate: cleanText(carpool.event_date, 20),
+      startTime: normalizeClockTime(carpool.start_time, '19:30'),
+      neededCount: Number(carpool.needed_count || 0) || 0,
+      storeName: cleanText(carpool.store_name, 100),
+      customerName: `灵契拼车 · ${cleanText(carpool.poster_name, 40) || '车头'}`,
+      note: buildJuzhangguiScheduleNote(carpool),
+    }),
+  });
+  const body = await response.json() as { success?: boolean; data?: Record<string, unknown>; error?: unknown };
+  if (!response.ok || !body.success) throw new Error(cleanText(body.error, 300) || '同步剧司辰失败');
+  return {
+    ok: true,
+    scheduleId: cleanText(body.data?.scheduleId, 120) || null,
+    reused: body.data?.reused === true,
+  };
 }
 
 function todayChinaDateString() {
@@ -5210,16 +5150,10 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
     });
 
     if (scriptIdInput) {
-      const { data: scriptRow, error: scriptErr } = await supabase.from('scripts')
-        .select('id, name')
-        .eq('id', scriptIdInput)
-        .eq('tenant_id', JUZHANGGUI_TENANT_ID)
-        .maybeSingle();
-      if (scriptErr && isMissingRelation(scriptErr, 'scripts')) return res.status(503).json(err(new Error('剧本库尚未初始化')));
-      if (scriptErr) throw scriptErr;
+      const scriptRow = findSharedScript(await loadSharedScriptCatalog(), scriptIdInput);
       if (!scriptRow) return res.status(400).json(err(new Error('选择的剧本不存在')));
       scriptId = scriptRow.id;
-      scriptName = cleanText(scriptRow.name, 100);
+      scriptName = scriptRow.name;
     }
 
     const { data, error: insErr } = await supabase.from('lc_commissions').insert({
@@ -5283,13 +5217,8 @@ app.put('/api/lc/commissions/:id/close', authMiddleware, async (req, res) => {
 
 app.get('/api/lc/scripts', async (_req, res) => {
   try {
-    const { data, error: qErr } = await supabase.from('scripts')
-      .select('id, name, duration_minutes, min_duration_hours, max_duration_hours, credits, script_player_roles(id, role_name, gender, tags)')
-      .eq('tenant_id', JUZHANGGUI_TENANT_ID)
-      .order('name', { ascending: true });
-    if (qErr && isMissingRelation(qErr, 'scripts')) return res.json(ok([]));
-    if (qErr) throw qErr;
-    const scriptIds = (data || []).map((script: Record<string, unknown>) => String(script.id));
+    const data = await loadSharedScriptCatalog();
+    const scriptIds = data.map(script => script.id);
     let ratingMap = new Map<string, RatingSummary>();
     if (scriptIds.length) {
       const { data: ratings, error: ratingErr } = await supabase.from('lc_script_ratings')
@@ -5300,48 +5229,7 @@ app.get('/api/lc/scripts', async (_req, res) => {
       ratingMap = buildRatingMap(ratings as Record<string, unknown>[] | null | undefined, 'script_id');
     }
 
-    let actorRows: Record<string, unknown>[] = [];
-    if (scriptIds.length) {
-      const actorResult = await supabase.from('script_actor_roles')
-        .select('id, script_id, role_name, gender, role_kind')
-        .in('script_id', scriptIds);
-      if (actorResult.error && isMissingRelation(actorResult.error, 'script_actor_roles')) {
-        actorRows = [];
-      } else if (actorResult.error && getErrorText(actorResult.error).includes('role_kind')) {
-        const fallback = await supabase.from('script_actor_roles')
-          .select('id, script_id, role_name, gender')
-          .in('script_id', scriptIds);
-        if (fallback.error && !isMissingRelation(fallback.error, 'script_actor_roles')) throw fallback.error;
-        actorRows = (fallback.data || []) as Record<string, unknown>[];
-      } else if (actorResult.error) {
-        throw actorResult.error;
-      } else {
-        actorRows = (actorResult.data || []) as Record<string, unknown>[];
-      }
-    }
-
-    const actorRowsByScript = new Map<string, Record<string, unknown>[]>();
-    for (const role of actorRows) {
-      const scriptId = cleanText(role.script_id, 80);
-      if (!scriptId) continue;
-      const list = actorRowsByScript.get(scriptId) || [];
-      list.push(role);
-      actorRowsByScript.set(scriptId, list);
-    }
-
-    const roleTargetIds = new Set<string>();
-    for (const script of data || []) {
-      const row = script as Record<string, unknown>;
-      const playerRows = Array.isArray(row.script_player_roles) ? row.script_player_roles as Record<string, unknown>[] : [];
-      playerRows.forEach(role => {
-        const targetId = scriptRoleTargetId('player', role.id);
-        if (targetId) roleTargetIds.add(targetId);
-      });
-      (actorRowsByScript.get(String(row.id)) || []).forEach(role => {
-        const targetId = scriptRoleTargetId('actor', role.id);
-        if (targetId) roleTargetIds.add(targetId);
-      });
-    }
+    const roleTargetIds = new Set(data.flatMap(script => [...script.player_roles, ...script.actor_roles].map(role => role.target_id).filter(Boolean)));
 
     let roleRatingMap = new Map<string, RatingSummary>();
     if (roleTargetIds.size > 0) {
@@ -5354,42 +5242,29 @@ app.get('/api/lc/scripts', async (_req, res) => {
       roleRatingMap = buildRatingMap(roleRatings as Record<string, unknown>[] | null | undefined, 'target_id');
     }
 
-    res.json(ok((data || []).map((script: Record<string, unknown>) => ({
+    res.json(ok(data.map(script => ({
       id: script.id,
       name: script.name,
       duration_minutes: script.duration_minutes || null,
       min_duration_hours: script.min_duration_hours || null,
       max_duration_hours: script.max_duration_hours || null,
       credits: sanitizeScriptCredits(script.credits),
-      rating_avg: ratingMap.get(String(script.id))?.avg || null,
-      rating_count: ratingMap.get(String(script.id))?.count || 0,
-      player_roles: (Array.isArray(script.script_player_roles) ? script.script_player_roles as Record<string, unknown>[] : []).map(role => {
-        const targetId = scriptRoleTargetId('player', role.id);
-        const summary = roleRatingMap.get(targetId) || { avg: null, count: 0 };
+      rating_avg: ratingMap.get(script.id)?.avg || null,
+      rating_count: ratingMap.get(script.id)?.count || 0,
+      player_roles: script.player_roles.map(role => {
+        const summary = roleRatingMap.get(role.target_id) || { avg: null, count: 0 };
         return {
-          id: role.id,
-          target_id: targetId,
-          role_name: cleanText(role.role_name, 80),
-          gender: cleanText(role.gender, 20) || '',
-          tags: cleanTextArray(role.tags),
+          ...role,
           role_kind: 'player',
           role_source: 'player',
           rating_avg: summary.avg,
           rating_count: summary.count,
         };
-      }).filter(role => role.role_name),
-      actor_roles: (actorRowsByScript.get(String(script.id)) || []).map(role => {
-        const targetId = scriptRoleTargetId('actor', role.id);
-        const summary = roleRatingMap.get(targetId) || { avg: null, count: 0 };
-        const roleKind = cleanText(role.role_kind, 40) || 'dm';
+      }),
+      actor_roles: script.actor_roles.map(role => {
+        const summary = roleRatingMap.get(role.target_id) || { avg: null, count: 0 };
         return {
-          id: role.id,
-          target_id: targetId,
-          role_name: cleanText(role.role_name, 80),
-          gender: cleanText(role.gender, 20) || '',
-          tags: [],
-          role_kind: roleKind,
-          role_source: 'actor',
+          ...role,
           rating_avg: summary.avg,
           rating_count: summary.count,
         };
@@ -5526,8 +5401,9 @@ app.post('/api/lc/scripts/:id/ratings', authMiddleware, async (req, res) => {
     const rating = Math.round(rawRating);
     const content = cleanText(req.body?.content, 1000);
     const tags = cleanTextArray(req.body?.tags, 8, 20);
-    const { data: script } = await supabase.from('scripts').select('id,name').eq('id', scriptId).maybeSingle();
-    const scriptName = cleanText(req.body?.scriptName, 160) || script?.name || '未命名剧本';
+    const script = findSharedScript(await loadSharedScriptCatalog(), scriptId);
+    if (!script) return res.status(404).json(err(new Error('剧本不存在或尚未进入公共剧本库')));
+    const scriptName = script.name;
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'script_rating_submit',
       targetType: 'script_rating',
@@ -5758,11 +5634,16 @@ app.post('/api/lc/scripts/contributions', authMiddleware, async (req, res) => {
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
 
     const scriptId = cleanText(req.body.scriptId, 80);
-    const scriptName = cleanText(req.body.scriptName, 100);
+    let scriptName = cleanText(req.body.scriptName, 100);
     const roles = sanitizeCarpoolRoles(req.body.playerRoles ?? req.body.scriptRoles);
     const creditsPatch = sanitizeScriptCredits(req.body.creditsPatch ?? req.body.credits);
     const note = cleanText(req.body.note, 800);
     if (!scriptId && !scriptName) return res.status(400).json(err(new Error('请填写或选择剧本名')));
+    if (scriptId) {
+      const selectedScript = findSharedScript(await loadSharedScriptCatalog(), scriptId);
+      if (!selectedScript) return res.status(400).json(err(new Error('选择的剧本不存在或尚未进入公共剧本库')));
+      scriptName = selectedScript.name;
+    }
     if (roles.length === 0) return res.status(400).json(err(new Error('请至少维护一个玩家角色和角色性别')));
     if (hasMissingScriptContributionGender(roles)) return res.status(400).json(err(new Error('请给每个角色填写性别')));
     const moderationPrecheck = runLocalModerationPrecheck({
@@ -8131,10 +8012,9 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
     const scriptId = cleanText(req.body?.scriptId ?? req.body?.script_id, 120);
     let scriptName = cleanText(req.body?.scriptName ?? req.body?.script_name, 160);
     if (scriptId) {
-      const scriptResult = await supabase.from('scripts').select('id, name').eq('id', scriptId).maybeSingle();
-      if (scriptResult.error) throw scriptResult.error;
-      if (!scriptResult.data) return res.status(400).json(err(new Error('选择的剧本不存在')));
-      scriptName = cleanText(scriptResult.data.name, 160);
+      const scriptResult = findSharedScript(await loadSharedScriptCatalog(), scriptId);
+      if (!scriptResult) return res.status(400).json(err(new Error('选择的剧本不存在')));
+      scriptName = scriptResult.name;
     }
     if (!scriptName) return res.status(400).json(err(new Error('请选择或填写本次体验的剧本')));
     const scriptKey = normalizeDmLookupText(scriptName);
