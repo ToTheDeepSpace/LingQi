@@ -47,6 +47,8 @@ export default function Navbar() {
   const isShop = creatorAuth?.role === 'shop';
   const isHome = pathname === '/';
   const mobileIdentity = creatorAuth?.display_name || creatorAuth?.phone || creatorAuth?.email || (isAdmin ? '管理员' : '');
+  const currentPageLabel = locationLabelFor(pathname);
+  const adminActive = pathname.startsWith('/admin');
 
   useEffect(() => {
     const syncAuth = () => setAuthSnapshot(readAuthSnapshot());
@@ -151,8 +153,13 @@ export default function Navbar() {
           >
             <span aria-hidden="true" style={backChevronStyle}>‹</span>
             <span>返回</span>
+            <span className="hidden lg:inline" style={{ color: 'rgba(71,85,105,0.58)', fontWeight: 760 }}>· {currentPageLabel}</span>
           </button>
         )}
+
+        <span className="lg:hidden" style={mobileLocationStyle} aria-live="polite">
+          {currentPageLabel}
+        </span>
 
         {/* 桌面导航 — 右 */}
         <div className="hidden lg:flex" style={{
@@ -196,15 +203,16 @@ export default function Navbar() {
           }
           <Link to="/admin" style={{
             marginLeft: 4, padding: '6px 12px', borderRadius: 8, fontSize: '0.78rem',
-            color: isAdmin ? '#0F1117' : 'rgba(146,95,24,0.68)',
+            color: adminActive || isAdmin ? '#0F1117' : 'rgba(146,95,24,0.68)',
             textDecoration: 'none',
-            border: isAdmin ? '1px solid rgba(217,168,87,0.75)' : '1px solid rgba(201,146,46,0.15)',
-            background: isAdmin ? 'linear-gradient(135deg, #f4c873 0%, #d9a857 100%)' : 'transparent',
-            fontWeight: isAdmin ? 900 : 500,
+            border: adminActive || isAdmin ? '1px solid rgba(217,168,87,0.75)' : '1px solid rgba(201,146,46,0.15)',
+            background: adminActive || isAdmin ? 'linear-gradient(135deg, #f4c873 0%, #d9a857 100%)' : 'transparent',
+            fontWeight: adminActive || isAdmin ? 900 : 500,
             transition: 'all 0.2s',
           }}
-            onMouseEnter={e => { if (!isAdmin) { (e.currentTarget as HTMLElement).style.color = GOLD; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.4)'; } }}
-            onMouseLeave={e => { if (!isAdmin) { (e.currentTarget as HTMLElement).style.color = 'rgba(146,95,24,0.68)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.15)'; } }}>
+            aria-current={adminActive ? 'page' : undefined}
+            onMouseEnter={e => { if (!isAdmin && !adminActive) { (e.currentTarget as HTMLElement).style.color = GOLD; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.4)'; } }}
+            onMouseLeave={e => { if (!isAdmin && !adminActive) { (e.currentTarget as HTMLElement).style.color = 'rgba(146,95,24,0.68)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.15)'; } }}>
             管理{pendingCount > 0 ? `(${pendingCount})` : ''}
           </Link>
           {isAdmin && !isLoggedIn && (
@@ -345,6 +353,18 @@ const mobileLoginStyle: React.CSSProperties = {
   fontWeight: 900,
 };
 
+const mobileLocationStyle: React.CSSProperties = {
+  minWidth: 0,
+  flex: '1 1 auto',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  textAlign: 'center',
+  color: '#1f2937',
+  fontSize: '0.82rem',
+  fontWeight: 900,
+};
+
 const mobileIdentityStyle = (admin: boolean): React.CSSProperties => ({
   maxWidth: 142,
   minWidth: 0,
@@ -401,31 +421,96 @@ function MobileStatus({ children, tone }: { children: React.ReactNode; tone: 'us
 }
 
 function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const active = to === '/dm'
+    ? pathname === '/dm' || pathname === '/dm-wall' || pathname.startsWith('/dm/')
+    : isNavPathActive(pathname, to);
   return (
-    <Link to={to} style={{ textDecoration: 'none', padding: '8px 14px', borderRadius: 8, fontSize: '0.875rem', color: MUTED, transition: 'color 0.2s, background 0.2s', fontWeight: 650 }}
+    <Link to={to} aria-current={active ? 'page' : undefined} style={{
+      textDecoration: 'none',
+      padding: '8px 14px',
+      borderRadius: 8,
+      fontSize: '0.875rem',
+      color: active ? '#925f18' : MUTED,
+      background: active ? 'rgba(217,168,87,0.12)' : 'transparent',
+      boxShadow: active ? 'inset 0 -2px 0 rgba(185,130,35,0.82)' : 'none',
+      transition: 'color 0.2s, background 0.2s',
+      fontWeight: active ? 900 : 650,
+    }}
       onMouseEnter={e => { preloadRoute(to); e.currentTarget.style.color = INK; e.currentTarget.style.background = 'rgba(217,168,87,0.10)'; }}
       onFocus={() => preloadRoute(to)}
-      onMouseLeave={e => { e.currentTarget.style.color = MUTED; e.currentTarget.style.background = 'transparent'; }}>
+      onMouseLeave={e => {
+        e.currentTarget.style.color = active ? '#925f18' : MUTED;
+        e.currentTarget.style.background = active ? 'rgba(217,168,87,0.12)' : 'transparent';
+      }}>
       {children}
     </Link>
   );
 }
 
 function MobileLink({ to, children, gold, onClick }: { to: string; children: React.ReactNode; gold?: boolean; onClick: () => void }) {
+  const { pathname } = useLocation();
+  const active = isNavPathActive(pathname, to);
   return (
-    <Link to={to} onClick={onClick} style={{
+    <Link to={to} onClick={onClick} aria-current={active ? 'page' : undefined} style={{
       display: 'block', textDecoration: 'none',
-      padding: '10px 0',
+      padding: active ? '10px 10px' : '10px 0',
       fontSize: '0.9rem',
-      color: gold ? GOLD : MUTED,
+      color: active ? '#925f18' : gold ? GOLD : MUTED,
+      background: active ? 'rgba(217,168,87,0.10)' : 'transparent',
+      borderLeft: active ? '3px solid rgba(185,130,35,0.86)' : '3px solid transparent',
       borderBottom: '1px solid rgba(201,146,46,0.12)',
-      fontWeight: gold ? 600 : 400,
+      fontWeight: active ? 900 : gold ? 600 : 400,
     }}
       onTouchStart={() => preloadRoute(to)}
       onFocus={() => preloadRoute(to)}>
       {children}
     </Link>
   );
+}
+
+function isNavPathActive(pathname: string, to: string) {
+  if (to === '/dm/rate') return pathname.startsWith('/dm/rate');
+  if (to === '/dm') return pathname === '/dm' || (pathname.startsWith('/dm/') && !pathname.startsWith('/dm/rate'));
+  if (to === '/rankings') return pathname.startsWith('/rankings') || pathname.startsWith('/reputation');
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
+
+function locationLabelFor(pathname: string) {
+  if (pathname === '/') return '首页';
+  if (pathname.startsWith('/dm/rate')) return '给DM评分';
+  if (pathname.startsWith('/dm/') && pathname !== '/dm-wall') return 'DM档案';
+  if (pathname === '/dm' || pathname === '/dm-wall') return 'DM评分';
+  if (pathname.startsWith('/commissions/new')) return '发布委托';
+  if (pathname.startsWith('/commissions')) return '委托需求';
+  if (pathname.startsWith('/carpools/new')) return '发布拼车';
+  if (pathname.startsWith('/carpools')) return '拼车区';
+  if (pathname.startsWith('/rankings/new')) return '发布评价';
+  if (pathname.startsWith('/rankings')) return '红黑榜';
+  if (pathname.startsWith('/reputation/city')) return '城市口碑';
+  if (pathname.startsWith('/reputation/dossier')) return '口碑档案';
+  if (pathname.startsWith('/scripts/contribute')) return '维护剧本库';
+  if (pathname.startsWith('/scripts')) return '角色点评';
+  if (pathname.startsWith('/guides/new')) return '发布攻略';
+  if (pathname.startsWith('/guides/income')) return '创作者收入';
+  if (pathname.startsWith('/guides')) return '攻略交易';
+  if (pathname.startsWith('/dashboard/services/availability')) return '可约档期';
+  if (pathname.startsWith('/dashboard/services/works')) return '作品集';
+  if (pathname.startsWith('/dashboard/services')) return '服务管理';
+  if (pathname.startsWith('/dashboard/profile')) return '公开资料';
+  if (pathname.startsWith('/dashboard/account')) return '账号安全';
+  if (pathname.startsWith('/dashboard/posts')) return '我的发布';
+  if (pathname.startsWith('/dashboard')) return '我的主页';
+  if (pathname.startsWith('/wallet')) return '钱包';
+  if (pathname.startsWith('/referrals')) return '我的邀请';
+  if (pathname.startsWith('/certification')) return '身份认证';
+  if (pathname.startsWith('/shop/dashboard')) return '店家后台';
+  if (pathname.startsWith('/admin')) return '管理后台';
+  if (pathname.startsWith('/login')) return '登录注册';
+  if (pathname.startsWith('/contact')) return '建议反馈';
+  if (pathname.startsWith('/rules')) return '审核规则';
+  if (pathname.startsWith('/roadmap')) return '口碑路线图';
+  return '灵契';
 }
 
 function fallbackPathFor(pathname: string) {
