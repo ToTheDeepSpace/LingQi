@@ -41,6 +41,12 @@ type DmDossier = {
   claim_status?: 'unclaimed' | 'pending' | 'approved' | 'rejected';
   claimed_by?: string | null;
   created_at?: string;
+  rating_summary?: {
+    avg: number | null;
+    review_count: number;
+    player_count: number;
+    sample_status: 'insufficient' | 'stable';
+  };
 };
 
 const ENTITY_COPY: Record<DossierEntityType, {
@@ -55,7 +61,7 @@ const ENTITY_COPY: Record<DossierEntityType, {
   tagsPlaceholder: string;
 }> = {
   dm: {
-    filterLabel: 'DM 档案',
+    filterLabel: 'DM档案',
     kindLabel: 'DM',
     nameLabel: 'DM 名称 *',
     workplaceLabel: '工作地点 / 常驻店家 *',
@@ -79,13 +85,13 @@ const ENTITY_COPY: Record<DossierEntityType, {
 };
 
 const ENTITY_FILTERS: { value: EntityFilter; label: string; helper: string }[] = [
-  { value: 'all', label: '全部档案', helper: '卡司和店家一起看' },
-  { value: 'dm', label: '卡司档案', helper: 'DM / 卡司' },
+  { value: 'all', label: '全部档案', helper: 'DM和店家一起看' },
+  { value: 'dm', label: 'DM档案', helper: '剧本杀DM' },
   { value: 'store', label: '店家档案', helper: '城市店铺' },
 ];
 
 const ENTITY_FORM_TYPES: { value: DossierEntityType; label: string; helper: string }[] = [
-  { value: 'dm', label: '卡司档案', helper: '给 DM / 卡司建档' },
+  { value: 'dm', label: 'DM档案', helper: '给剧本杀DM建档' },
   { value: 'store', label: '店家档案', helper: '给城市店家建档' },
 ];
 
@@ -122,7 +128,7 @@ export default function DmWall() {
   const [items, setItems] = useState<DmDossier[]>([]);
   const [loadedKey, setLoadedKey] = useState('');
   const [city, setCity] = useState('all');
-  const [entityType, setEntityType] = useState<EntityFilter>('all');
+  const [entityType, setEntityType] = useState<EntityFilter>('dm');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<DossierDraft>({ entityType: 'dm', dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
@@ -168,13 +174,13 @@ export default function DmWall() {
           setItems(d.data || []);
         } else {
           setItems([]);
-          setMessage({ text: d.error || '卡司评分加载失败', ok: false });
+          setMessage({ text: d.error || 'DM评分加载失败', ok: false });
         }
       })
       .catch(error => {
         if (error?.name !== 'AbortError') {
           setItems([]);
-          setMessage({ text: '网络错误，卡司评分暂时加载失败', ok: false });
+          setMessage({ text: '网络错误，DM评分暂时加载失败', ok: false });
         }
       })
       .finally(() => {
@@ -275,15 +281,16 @@ export default function DmWall() {
       <section style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '44px 20px 30px' }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
           <div style={{ maxWidth: 760 }}>
-            <p style={{ margin: '0 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>未认证档案墙</p>
-            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>卡司评分 / 店家档案</h1>
+            <p style={{ margin: '0 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>剧本杀DM评分系统</p>
+            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>查 DM，评体验</h1>
             <p style={{ margin: '14px 0 0', color: MUTED, lineHeight: 1.8 }}>
-              玩家可以先为还没入驻灵契的 DM 和店家建档，补充主页、城市、工作地点或店铺位置；本人或店家入驻后可认领自己的档案，逐步沉淀成城市新人入门时能看懂的口碑百科。
+              每玩一次都可以新增一条评价。综合分按独立玩家计算，同一个人多次体验会全部展示，但不会获得更多计分权重。
             </p>
           </div>
-          <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={primaryButton}>
-            {showForm ? '收起建档' : '+ 创建未认证档案'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Link to="/dm/rate" style={primaryButton}>给 DM 评分</Link>
+            <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={ghostButton}>{showForm ? '收起建档' : '补充DM或店家'}</button>
+          </div>
         </div>
       </section>
 
@@ -370,12 +377,21 @@ export default function DmWall() {
                     {item.city || '未知城市'} · {item.workplace || (kind === 'store' ? '店铺位置待补充' : '工作地点待补充')}
                   </p>
                   {item.note && <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.78)', lineHeight: 1.7, fontSize: 14 }}>{item.note}</p>}
+                  {kind === 'dm' && item.rating_summary && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginBottom: 12 }}>
+                      <MiniStat label={item.rating_summary.sample_status === 'insufficient' && item.rating_summary.player_count > 0 ? '综合·样本少' : '综合'} value={item.rating_summary.player_count === 0 ? '暂无' : `${item.rating_summary.avg?.toFixed(1)}`} />
+                      <MiniStat label="体验" value={`${item.rating_summary.review_count}`} />
+                      <MiniStat label="玩家" value={`${item.rating_summary.player_count}`} />
+                    </div>
+                  )}
                   {item.tags && item.tags.length > 0 && (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                       {item.tags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto' }}>
+                    {kind === 'dm' && <Link to={`/dm/${item.id}`} style={primaryButton}>查看评分</Link>}
+                    {kind === 'dm' && <Link to={`/dm/rate?dmId=${encodeURIComponent(item.id)}`} style={ghostButton}>给TA评分</Link>}
                     {item.profile_url && <a href={normalizeUrl(item.profile_url)} target="_blank" rel="noreferrer" style={ghostButton}>{kind === 'store' ? '店铺主页' : '个人主页'}</a>}
                     {item.claim_status === 'approved' && item.claimed_by
                       ? (kind === 'dm' ? <Link to={`/explore/${item.claimed_by}`} style={ghostButton}>灵契主页</Link> : <span style={ghostStatic}>已绑定店家账号</span>)
@@ -390,6 +406,15 @@ export default function DmWall() {
         )}
       </section>
     </main>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ minWidth: 0, padding: '8px 6px', borderRadius: 7, background: '#fffaf2', border: '1px solid rgba(166,106,31,0.10)', textAlign: 'center' }}>
+      <div style={{ color: MUTED, fontSize: 11, fontWeight: 800 }}>{label}</div>
+      <div style={{ marginTop: 3, color: INK, fontSize: 14, fontWeight: 900 }}>{value}</div>
+    </div>
   );
 }
 

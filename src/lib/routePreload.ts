@@ -10,6 +10,8 @@ export const pageLoaders = {
   cityReputation: () => import('../pages/CityReputation'),
   reputationDossier: () => import('../pages/ReputationDossier'),
   dmWall: () => import('../pages/DmWall'),
+  dmRating: () => import('../pages/DmRating'),
+  dmProfile: () => import('../pages/DmProfile'),
   boundaryVotes: () => import('../pages/BoundaryVotes'),
   createRanking: () => import('../pages/CreateRanking'),
   commissions: () => import('../pages/Commissions'),
@@ -52,6 +54,9 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/reputation/city': pageLoaders.cityReputation,
   '/reputation/dossier': pageLoaders.reputationDossier,
   '/dm-wall': pageLoaders.dmWall,
+  '/dm': pageLoaders.dmWall,
+  '/dm/rate': pageLoaders.dmRating,
+  '/dm/:id': pageLoaders.dmProfile,
   '/boundary-votes': pageLoaders.boundaryVotes,
   '/rankings/new': pageLoaders.createRanking,
   '/commissions': pageLoaders.commissions,
@@ -82,6 +87,7 @@ const pendingRoutes = new Map<string, Promise<unknown>>();
 function routeKey(path: string) {
   const pathname = path.split('?')[0].split('#')[0];
   if (pathname.startsWith('/explore/') && pathname !== '/explore') return '/explore/:id';
+  if (pathname.startsWith('/dm/') && pathname !== '/dm/rate') return '/dm/:id';
   return pathname || '/';
 }
 

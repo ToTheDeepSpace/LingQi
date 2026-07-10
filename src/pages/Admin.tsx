@@ -282,11 +282,13 @@ type SiteMessage = {
   id: string;
   sender_id?: string | null;
   sender_name: string;
+  category?: string | null;
   subject: string;
   content: string;
   contact?: string | null;
   status: 'pending' | 'resolved';
   admin_note?: string | null;
+  moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
   updated_at?: string;
 };
@@ -320,6 +322,48 @@ type DmDossierReview = {
   claim_status: 'unclaimed' | 'pending' | 'approved' | 'rejected';
   claim_note?: string | null;
   claimed_by?: string | null;
+  moderation_precheck?: ModerationPrecheck | null;
+  similar_candidates?: Array<{
+    id: string;
+    dm_name: string;
+    city?: string | null;
+    workplace?: string | null;
+    photo_url?: string | null;
+    score: number;
+  }>;
+  created_at: string;
+};
+
+type DmRatingReview = {
+  id: string;
+  dm_dossier_id: string;
+  profile_id: string;
+  profile_name: string;
+  script_name: string;
+  store_name: string;
+  played_on: string;
+  replay_number: number;
+  rating: number;
+  content: string;
+  tags?: string[];
+  status: 'pending' | 'approved' | 'rejected' | 'hidden';
+  moderation_precheck?: ModerationPrecheck | null;
+  anti_abuse?: {
+    risk_score?: number;
+    risk_labels?: string[];
+    elapsed_ms?: number | null;
+    account_hour_count?: number;
+    account_day_count?: number;
+    ip_hour_count?: number;
+    duplicate_content_count?: number;
+  } | null;
+  dm_dossier?: {
+    id: string;
+    dm_name: string;
+    city?: string | null;
+    workplace?: string | null;
+    status?: string;
+  } | null;
   created_at: string;
 };
 
@@ -348,8 +392,8 @@ type GuideWithdrawalReview = {
   created_at: string;
 };
 
-type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'publicReview' | 'guide' | 'guideWithdrawal';
-type Tab = 'allPending' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'reports' | 'wallet' | 'certs' | 'security';
+type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'dmRating' | 'publicReview' | 'guide' | 'guideWithdrawal';
+type Tab = 'allPending' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'dmRatings' | 'reports' | 'wallet' | 'certs' | 'security';
 
 type PendingReviewItem = {
   id: string;
@@ -378,6 +422,16 @@ function publicReviewTypeLabel(type: string) {
   if (type === 'script_rating_upsert') return '剧本评分';
   if (type === 'entity_rating_upsert') return '角色评分';
   return '公开内容';
+}
+
+function siteMessageCategoryLabel(category?: string | null) {
+  if (category === 'dm_correction') return 'DM资料纠错';
+  if (category === 'appeal') return '申诉';
+  if (category === 'bug') return '故障反馈';
+  if (category === 'account') return '账号问题';
+  if (category === 'cooperation') return '合作共建';
+  if (category === 'suggestion') return '功能建议';
+  return '其他反馈';
 }
 
 function rankingTypeLabel(type: string) {
@@ -481,6 +535,7 @@ export default function Admin() {
   const [carpools, setCarpools] = useState<CarpoolReview[]>([]);
   const [scriptContributions, setScriptContributions] = useState<ScriptContributionReview[]>([]);
   const [dmDossiers, setDmDossiers] = useState<DmDossierReview[]>([]);
+  const [dmRatings, setDmRatings] = useState<DmRatingReview[]>([]);
   const [reports, setReports] = useState<ReportReview[]>([]);
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
@@ -520,6 +575,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setCarpools((d.data as { carpools: CarpoolReview[] }).carpools || []);
         setScriptContributions((d.data as { scriptContributions: ScriptContributionReview[] }).scriptContributions || []);
         setDmDossiers((d.data as { dmDossiers: DmDossierReview[] }).dmDossiers || []);
+        setDmRatings((d.data as { dmRatings: DmRatingReview[] }).dmRatings || []);
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
         setReports((d.data as { reports: ReportReview[] }).reports || []);
@@ -715,12 +771,48 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   };
 
   const approveDmDossier = async (id: string) => {
-    await fetch(`${API}/lc/admin/dm-dossiers/${id}/approve`, {
+    const response = await fetch(`${API}/lc/admin/dm-dossiers/${id}/approve`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || 'DM建档审核失败');
+      return;
+    }
     setDmDossiers(prev => prev.filter(item => item.id !== id));
+    void loadData();
+  };
+
+  const mergeDmDossier = async (sourceId: string, target: NonNullable<DmDossierReview['similar_candidates']>[number]) => {
+    if (!window.confirm(`确认把这条待审档案合并到“${target.dm_name}”吗？关联评分也会一并转移。`)) return;
+    const response = await fetch(`${API}/lc/admin/dm-dossiers/${sourceId}/merge`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetId: target.id }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || 'DM档案合并失败');
+      return;
+    }
+    setDmDossiers(prev => prev.filter(item => item.id !== sourceId));
+    void loadData();
+  };
+
+  const approveDmRating = async (id: string) => {
+    const response = await fetch(`${API}/lc/admin/dm-ratings/${id}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewNote: 'DM体验评分审核通过' }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || 'DM评分审核失败');
+      return;
+    }
+    setDmRatings(prev => prev.filter(item => item.id !== id));
     void loadData();
   };
 
@@ -848,6 +940,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     } else if (type === 'dmDossier') {
       await fetch(`${API}/lc/admin/dm-dossiers/${id}/reject`, { method: 'PUT', headers, body });
       setDmDossiers(prev => prev.filter(item => item.id !== id));
+    } else if (type === 'dmRating') {
+      await fetch(`${API}/lc/admin/dm-ratings/${id}/reject`, { method: 'PUT', headers, body });
+      setDmRatings(prev => prev.filter(item => item.id !== id));
     } else if (type === 'publicReview') {
       await fetch(`${API}/lc/admin/public-reviews/${id}/reject`, { method: 'PUT', headers, body });
       setPublicReviews(prev => prev.filter(item => item.id !== id));
@@ -879,6 +974,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setCommissions([]);
     setCarpools([]);
     setScriptContributions([]);
+    setDmDossiers([]);
+    setDmRatings([]);
     setReports([]);
     setSiteMessages([]);
     setSecurityEvents([]);
@@ -977,6 +1074,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       accent: '#be185d',
       tags: item.tags || [],
     })),
+    ...dmRatings.map(item => ({
+      id: `dm-rating-${item.id}`,
+      tab: 'dmRatings' as const,
+      category: 'DM评分',
+      title: item.dm_dossier?.dm_name || '待关联DM',
+      meta: `${item.profile_name || '未知玩家'} · ${item.script_name} · ${item.played_on} · 第${item.replay_number}刷`,
+      createdAt: item.created_at,
+      accent: '#c2410c',
+      tags: [`${item.rating}星`, item.store_name, ...(item.tags || [])].filter(Boolean).slice(0, 6),
+    })),
     ...reports.map(r => ({
       id: `report-${r.id}`,
       tab: 'reports' as const,
@@ -990,7 +1097,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     ...siteMessages.map(item => ({
       id: `message-${item.id}`,
       tab: 'messages' as const,
-      category: '站内信',
+      category: siteMessageCategoryLabel(item.category),
       title: item.subject,
       meta: `${item.sender_name || '匿名'}${item.contact ? ` · ${item.contact}` : ''}`,
       createdAt: item.created_at,
@@ -1084,7 +1191,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     { label: '委托需求', value: commissions.length, color: '#b45309' },
     { label: '拼车', value: carpools.length, color: '#0f766e' },
     { label: '剧本库', value: scriptContributions.length, color: '#a16207' },
-    { label: '未认证档案', value: dmDossiers.length, color: '#be185d' },
+    { label: 'DM建档', value: dmDossiers.length, color: '#be185d' },
+    { label: 'DM评分', value: dmRatings.length, color: '#c2410c' },
     { label: '举报', value: reports.length, color: '#dc2626' },
     { label: '站内信', value: siteMessages.length, color: '#0369a1' },
     { label: '安全日志', value: securityEvents.length, color: '#c2410c' },
@@ -1136,7 +1244,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
               <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
               <button style={tabStyle(tab === 'scriptContributions')} onClick={() => setTab('scriptContributions')}>剧本库 {scriptContributions.length > 0 && `(${scriptContributions.length})`}</button>
-              <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>未认证档案 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
+              <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>DM建档 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
+              <button style={tabStyle(tab === 'dmRatings')} onClick={() => setTab('dmRatings')}>DM评分 {dmRatings.length > 0 && `(${dmRatings.length})`}</button>
               <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
               <button style={tabStyle(tab === 'messages')} onClick={() => setTab('messages')}>站内信 {siteMessages.length > 0 && `(${siteMessages.length})`}</button>
               <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
@@ -1533,7 +1642,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
 
             {tab === 'dmDossiers' && (
-              <ListEmpty empty={dmDossiers.length === 0} text="暂无待审核未认证档案">
+              <ListEmpty empty={dmDossiers.length === 0} text="暂无待审核DM建档">
                 {dmDossiers.map(item => {
                   const entityType = item.entity_type === 'store' ? 'store' : 'dm';
                   const entityLabel = entityType === 'store' ? '店家' : 'DM';
@@ -1554,6 +1663,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           {item.claim_note ? ` · ${item.claim_note}` : ''}
                         </Proof>
                       )}
+                      <ModerationPrecheckBadge value={item.moderation_precheck} />
                       {item.note && <ContentBox>{item.note}</ContentBox>}
                       {item.tags && item.tags.length > 0 && <Meta>标签：{item.tags.join(' / ')}</Meta>}
                       {item.photo_url && (
@@ -1562,14 +1672,72 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           查看照片
                         </a>
                       )}
+                      {item.status === 'pending' && entityType === 'dm' && (
+                        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 900, color: INK }}>相似DM候选</div>
+                          {(item.similar_candidates || []).length === 0 ? (
+                            <Meta>库内未找到明显相似的姓名、城市和店家组合。</Meta>
+                          ) : (item.similar_candidates || []).map(candidate => (
+                            <div key={candidate.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 10px', border: `1px solid ${LINE}`, borderRadius: 8, background: '#fffdf8' }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: '0.82rem', fontWeight: 900 }}>{candidate.dm_name}</div>
+                                <Meta>{candidate.city || '未知城市'}{candidate.workplace ? ` · ${candidate.workplace}` : ''} · 相似度 {Math.round(candidate.score)}%</Meta>
+                              </div>
+                              <ActionButton onClick={() => mergeDmDossier(item.id, candidate)}>合并到此DM</ActionButton>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <Actions vertical>
                       <ActionButton kind="ok" onClick={() => approveDmDossier(item.id)}>
-                        {item.claim_status === 'pending' && item.status !== 'pending' ? '通过认领' : '通过公开'}
+                        {item.claim_status === 'pending' && item.status !== 'pending' ? '通过认领' : entityType === 'dm' ? '创建新DM' : '创建新店家'}
                       </ActionButton>
                       <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'dmDossier')}>拒绝</ActionButton>
                     </Actions>
                   </Row>
+                  );
+                })}
+              </ListEmpty>
+            )}
+
+            {tab === 'dmRatings' && (
+              <ListEmpty empty={dmRatings.length === 0} text="暂无待审核DM评分">
+                {dmRatings.map(item => {
+                  const abuse = item.anti_abuse || {};
+                  const abuseLabels = Array.isArray(abuse.risk_labels) ? abuse.risk_labels : [];
+                  return (
+                    <Row key={item.id} accent="#fb923c">
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <TitleLine title={item.dm_dossier?.dm_name || '待关联DM'} pill={`${item.rating} 星`} />
+                        <Meta>
+                          玩家：{item.profile_name || item.profile_id}
+                          {item.dm_dossier?.city ? ` · ${item.dm_dossier.city}` : ''}
+                          {item.dm_dossier?.workplace ? ` · ${item.dm_dossier.workplace}` : ''}
+                          {item.created_at ? ` · 提交于 ${item.created_at.slice(0, 19).replace('T', ' ')}` : ''}
+                        </Meta>
+                        <Proof>
+                          剧本：{item.script_name} · 店家：{item.store_name} · 体验日期：{item.played_on} · 第{item.replay_number}刷
+                        </Proof>
+                        <ModerationPrecheckBadge value={item.moderation_precheck} />
+                        {(typeof abuse.risk_score === 'number' || abuseLabels.length > 0) && (
+                          <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(194,65,12,0.26)', background: '#fff7ed', color: '#7c2d12', fontSize: '0.76rem', lineHeight: 1.6 }}>
+                            <strong>反刷检查：风险 {abuse.risk_score || 0}</strong>
+                            {abuseLabels.length > 0 ? ` · ${abuseLabels.join(' / ')}` : ''}
+                            <div style={{ color: 'rgba(71,85,105,0.88)' }}>
+                              账号近1小时 {abuse.account_hour_count || 0} 条 · 近24小时 {abuse.account_day_count || 0} 条 · 同IP近1小时 {abuse.ip_hour_count || 0} 条 · 重复文本 {abuse.duplicate_content_count || 0} 条
+                            </div>
+                          </div>
+                        )}
+                        <ContentBox>{item.content}</ContentBox>
+                        {item.tags && item.tags.length > 0 && <Meta>标签：{item.tags.join(' / ')}</Meta>}
+                        {item.dm_dossier?.status !== 'approved' && <Meta>这条评分关联的新DM尚未建档，请先在“DM建档”处理。</Meta>}
+                      </div>
+                      <Actions vertical>
+                        <ActionButton kind="ok" disabled={item.dm_dossier?.status !== 'approved'} onClick={() => approveDmRating(item.id)}>通过评分</ActionButton>
+                        <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'dmRating')}>拒绝</ActionButton>
+                      </Actions>
+                    </Row>
                   );
                 })}
               </ListEmpty>
@@ -1633,12 +1801,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {siteMessages.map(m => (
                   <Row key={m.id} accent="#38bdf8">
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={m.subject} pill="站内信" />
+                      <TitleLine title={m.subject} pill={siteMessageCategoryLabel(m.category)} />
                       <Meta>
                         发送人：{m.sender_name}
                         {m.contact ? ` · 联系方式：${m.contact}` : ''}
                         {m.created_at ? ` · ${m.created_at.slice(0, 19).replace('T', ' ')}` : ''}
                       </Meta>
+                      <ModerationPrecheckBadge value={m.moderation_precheck} />
                       <ContentBox>{m.content}</ContentBox>
                     </div>
                     <Actions vertical>

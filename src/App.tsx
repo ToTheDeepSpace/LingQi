@@ -17,6 +17,8 @@ const Rankings = lazy(pageLoaders.rankings);
 const CityReputation = lazy(pageLoaders.cityReputation);
 const ReputationDossier = lazy(pageLoaders.reputationDossier);
 const DmWall = lazy(pageLoaders.dmWall);
+const DmRating = lazy(pageLoaders.dmRating);
+const DmProfile = lazy(pageLoaders.dmProfile);
 const BoundaryVotes = lazy(pageLoaders.boundaryVotes);
 const CreateRanking = lazy(pageLoaders.createRanking);
 const Commissions = lazy(pageLoaders.commissions);
@@ -78,6 +80,9 @@ function AppLayout() {
           <Route path="/reputation/city" element={<CityReputation />} />
           <Route path="/reputation/dossier" element={<ReputationDossier />} />
           <Route path="/dm-wall" element={<DmWall />} />
+          <Route path="/dm" element={<DmWall />} />
+          <Route path="/dm/rate" element={<DmRating />} />
+          <Route path="/dm/:id" element={<DmProfile />} />
           <Route path="/boundary-votes" element={<BoundaryVotes />} />
           <Route path="/rankings/new" element={<CreateRanking />} />
           <Route path="/commissions" element={<Commissions />} />
@@ -154,7 +159,7 @@ function SiteFooter() {
             </div>
           </div>
           <FooterColumn title="主要入口">
-            <FooterLink to="/dm-wall">卡司评分</FooterLink>
+            <FooterLink to="/dm">DM评分</FooterLink>
             <FooterLink to="/commissions">委托需求墙</FooterLink>
             <FooterLink to="/carpools">拼车区</FooterLink>
             <FooterLink to="/rankings">红黑榜事件</FooterLink>
@@ -165,6 +170,7 @@ function SiteFooter() {
             <FooterLink to="/referrals">我的邀请</FooterLink>
           </FooterColumn>
           <FooterColumn title="发布与认证">
+            <FooterLink to="/dm/rate">给DM评分</FooterLink>
             <FooterLink to="/commissions/new">发布委托</FooterLink>
             <FooterLink to="/carpools/new">发布拼车</FooterLink>
             <FooterLink to="/rankings/new">发布口碑</FooterLink>
@@ -180,7 +186,7 @@ function SiteFooter() {
             <FooterLink to="/shop/dashboard">店家后台</FooterLink>
             <FooterLink to="/roadmap">AI 口碑路线图</FooterLink>
             <FooterExternal href="/ai/lingqi-overview.html">AI 可读说明</FooterExternal>
-            <FooterLink to="/contact">投资洽谈 / 共建合作</FooterLink>
+            <FooterLink to="/contact">建议反馈 / 共建合作</FooterLink>
             <FooterText>摄影师 / 妆造师</FooterText>
             <FooterText>服装商 / 道具师</FooterText>
             <FooterText>大陆低成本模型优先</FooterText>

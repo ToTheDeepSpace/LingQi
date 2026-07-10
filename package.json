@@ -11,6 +11,7 @@
     "deploy:tencent": "bash scripts/deploy-tencent.sh",
     "lint": "eslint .",
     "test:auth-flow": "tsc -p tsconfig.test.json && node --test dist-test/tests/authFlow.test.js",
+    "test:dm-rating": "tsc -p tsconfig.test.json && node --test dist-test/tests/dmRatingSummary.test.js",
     "preview": "vite preview",
     "start:server": "node dist-server/server/standalone.js"
   },

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
@@ -29,18 +29,21 @@ const inputStyle: React.CSSProperties = {
 };
 
 type ContactDraft = {
+  category: string;
   subject: string;
   content: string;
   contact: string;
 };
 
 function shouldSaveContactDraft(data: ContactDraft) {
-  return !!(data.subject.trim() || data.content.trim() || data.contact.trim());
+  return !!(data.subject.trim() || data.content.trim() || data.contact.trim() || data.category !== 'suggestion');
 }
 
 export default function Contact() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const auth = getAuth();
+  const [category, setCategory] = useState(searchParams.get('category') || 'suggestion');
   const [subject, setSubject] = useState('');
   const [content, setContent] = useState('');
   const [contact, setContact] = useState('');
@@ -48,13 +51,14 @@ export default function Contact() {
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
 
-  const draftValue = useMemo<ContactDraft>(() => ({ subject, content, contact }), [contact, content, subject]);
+  const draftValue = useMemo<ContactDraft>(() => ({ category, subject, content, contact }), [category, contact, content, subject]);
   const contactDraft = useDraftAutosave<ContactDraft>({
     key: 'lc:draft:contact-message',
-    version: 1,
+    version: 2,
     value: draftValue,
     shouldSave: shouldSaveContactDraft,
     onRestore: data => {
+      setCategory(data.category || 'suggestion');
       setSubject(data.subject || '');
       setContent(data.content || '');
       setContact(data.contact || '');
@@ -78,7 +82,7 @@ export default function Contact() {
       const r = await fetch(`${API}/lc/site-messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-        body: JSON.stringify({ subject: subject.trim(), content: content.trim(), contact: contact.trim() }),
+        body: JSON.stringify({ category, subject: subject.trim(), content: content.trim(), contact: contact.trim() }),
       });
       const d = await r.json();
       if (!r.ok || !d.success) {
@@ -101,17 +105,17 @@ export default function Contact() {
     <main style={{ minHeight: '100vh', background: BG, color: TEXT }}>
       <section style={{ background: `linear-gradient(135deg, ${PANEL} 0%, #eef6ff 100%)`, borderBottom: '1px solid rgba(217,168,87,0.18)', padding: '54px 20px 38px' }}>
         <div style={{ maxWidth: 860, margin: '0 auto' }}>
-          <span style={{ color: GOLD, fontSize: '0.84rem', fontWeight: 900 }}>联系与反馈</span>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 2.7rem)', margin: '18px 0 12px' }}>联系灵契</h1>
+          <span style={{ color: GOLD, fontSize: '0.84rem', fontWeight: 900 }}>建议、纠错与申诉</span>
+          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 2.7rem)', margin: '18px 0 12px' }}>建议反馈</h1>
           <p style={{ color: MUTED, lineHeight: 1.8, maxWidth: 680 }}>
-            账号、充值、发票、举报申诉、隐私请求和合作问题，都可以通过站内信或客服邮箱联系。
+            功能建议、DM资料纠错、照片或身份申诉、账号问题，都可以在这里提交。
           </p>
         </div>
       </section>
 
       <section style={{ maxWidth: 860, margin: '0 auto', padding: '28px 20px 72px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 18 }}>
         <form onSubmit={submit} style={{ background: '#fff', border: '1px solid rgba(217,168,87,0.22)', borderRadius: 16, padding: 22, boxShadow: '0 14px 34px rgba(31,41,55,0.06)' }}>
-          <h2 style={{ fontSize: '1.05rem', fontWeight: 900, marginBottom: 14 }}>站内信</h2>
+          <h2 style={{ fontSize: '1.05rem', fontWeight: 900, marginBottom: 14 }}>提交反馈</h2>
           {!auth && (
             <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(239,246,255,0.92)', color: '#275389', fontSize: '0.86rem', lineHeight: 1.7, marginBottom: 16 }}>
               站内信需要登录账号。未登录时也可以直接发送邮件到 basara-twenty@foxmail.com。
@@ -127,8 +131,20 @@ export default function Contact() {
           </div>
           <div style={{ display: 'grid', gap: 14 }}>
             <div>
+              <label style={{ display: 'block', color: MUTED, fontSize: '0.78rem', fontWeight: 800, marginBottom: 7 }}>类型</label>
+              <select value={category} onChange={e => setCategory(e.target.value)} style={inputStyle}>
+                <option value="suggestion">功能建议</option>
+                <option value="dm_correction">DM资料纠错</option>
+                <option value="appeal">照片 / 身份 / 内容申诉</option>
+                <option value="bug">故障反馈</option>
+                <option value="account">账号问题</option>
+                <option value="cooperation">合作与共建</option>
+                <option value="general">其他</option>
+              </select>
+            </div>
+            <div>
               <label style={{ display: 'block', color: MUTED, fontSize: '0.78rem', fontWeight: 800, marginBottom: 7 }}>标题</label>
-              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="例如：充值未到账 / 黑榜申诉 / 发票申请" maxLength={80} style={inputStyle} />
+              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="例如：DM资料重复 / 照片需要隐藏 / 评分页建议" maxLength={80} style={inputStyle} />
             </div>
             <div>
               <label style={{ display: 'block', color: MUTED, fontSize: '0.78rem', fontWeight: 800, marginBottom: 7 }}>内容</label>

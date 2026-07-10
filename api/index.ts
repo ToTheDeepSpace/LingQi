@@ -3,7 +3,8 @@
 import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
-import { createTencentPgClient } from './tencentPgSupabase.js';
+import { createTencentPgClient, tencentPgPool } from './tencentPgSupabase.js';
+import { summarizeDmRatingRows } from './dmRatingSummary.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
@@ -1573,6 +1574,79 @@ function runLocalModerationPrecheck(input: ModerationPrecheckInput) {
     text_hash: sha256(textForHash),
     paid_provider: 'not_enabled',
   };
+}
+
+function normalizeDmLookupText(value: unknown) {
+  return cleanText(value, 240)
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s·•・._—–/\\|,，、()（）【】-]+/g, '')
+    .replaceAll('[', '')
+    .replaceAll(']', '');
+}
+
+function dmLookupBigrams(value: string) {
+  if (value.length < 2) return value ? [value] : [];
+  return Array.from({ length: value.length - 1 }, (_, index) => value.slice(index, index + 2));
+}
+
+function dmLookupSimilarity(left: unknown, right: unknown) {
+  const a = normalizeDmLookupText(left);
+  const b = normalizeDmLookupText(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.82;
+  const leftPairs = dmLookupBigrams(a);
+  const rightPairs = dmLookupBigrams(b);
+  if (!leftPairs.length || !rightPairs.length) return 0;
+  const counts = new Map<string, number>();
+  rightPairs.forEach(pair => counts.set(pair, (counts.get(pair) || 0) + 1));
+  let overlap = 0;
+  leftPairs.forEach(pair => {
+    const count = counts.get(pair) || 0;
+    if (count > 0) {
+      overlap += 1;
+      counts.set(pair, count - 1);
+    }
+  });
+  return (2 * overlap) / (leftPairs.length + rightPairs.length);
+}
+
+function rankSimilarDmDossiers(
+  source: Record<string, unknown>,
+  candidates: Record<string, unknown>[],
+) {
+  return candidates
+    .filter(candidate => String(candidate.id || '') !== String(source.id || ''))
+    .map(candidate => {
+      const nameScore = dmLookupSimilarity(source.dm_name, candidate.dm_name);
+      const workplaceScore = dmLookupSimilarity(source.workplace, candidate.workplace);
+      const sameCity = normalizeDmLookupText(source.city) === normalizeDmLookupText(candidate.city);
+      const score = Math.round((nameScore * 70) + (workplaceScore * 18) + (sameCity ? 12 : 0));
+      return {
+        id: candidate.id,
+        dm_name: candidate.dm_name,
+        city: candidate.city,
+        workplace: candidate.workplace,
+        photo_url: candidate.photo_url,
+        score,
+      };
+    })
+    .filter(candidate => candidate.score >= 38)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+}
+
+function dmRatingContentFingerprint(value: unknown) {
+  const normalized = cleanText(value, 2400)
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, '');
+  return normalized ? sha256(normalized) : '';
+}
+
+function dmRatingIpHash(req: express.Request) {
+  return sha256(`${AUTH_CODE_PEPPER}:dm-rating:${getClientIp(req)}`);
 }
 
 type PublicReviewTargetType =
@@ -6120,18 +6194,31 @@ app.post('/api/lc/site-messages', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const allowedCategories = ['suggestion', 'dm_correction', 'appeal', 'account', 'bug', 'cooperation', 'general'];
+    const rawCategory = cleanText(req.body?.category, 40);
+    const category = allowedCategories.includes(rawCategory) ? rawCategory : 'general';
     const subject = cleanText(req.body?.subject, 80);
     const content = cleanText(req.body?.content, 2000);
     const contact = cleanText(req.body?.contact, 300);
     if (!subject || !content) return res.status(400).json(err(new Error('请填写站内信标题和内容')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'site_feedback_submit',
+      targetType: 'site_message',
+      texts: { category, subject, content, contact },
+      allowContact: true,
+    });
 
     const { data, error: insErr } = await supabase.from('lc_site_messages').insert({
       sender_id: profile.id,
       sender_name: profile.display_name,
+      category,
       subject,
       content,
       contact: contact || null,
       status: 'pending',
+      moderation_precheck: moderationPrecheck,
     }).select('id').single();
     if (insErr) {
       if (isMissingRelation(insErr, 'lc_site_messages')) return res.status(503).json(err(new Error('站内信表尚未初始化，请先执行 Supabase migration')));
@@ -6141,7 +6228,7 @@ app.post('/api/lc/site-messages', authMiddleware, async (req, res) => {
       action: 'site_message_submitted',
       targetType: 'site_message',
       targetId: data?.id,
-      metadata: { subject },
+      metadata: { category, subject, moderation: moderationPrecheck },
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -6839,7 +6926,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, publicReviewsResult, guidesResult, withdrawalsResult] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, approvedDmDossiersResult, dmRatingsResult, publicReviewsResult, guidesResult, withdrawalsResult] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -6858,14 +6945,34 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
         .order('created_at', { ascending: false })
         .limit(150),
       supabase.from('lc_dm_dossiers').select('*').or('status.eq.pending,claim_status.eq.pending').order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_dm_dossiers').select('id, dm_name, city, workplace, photo_url').eq('entity_type', 'dm').eq('status', 'approved').order('approved_at', { ascending: false }).limit(1000),
+      supabase.from('lc_dm_ratings').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
       supabase.from('lc_public_reviews').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
       supabase.from('lc_guides').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_creator_withdrawals').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
     ]);
     if (dmDossiersResult.error && !isMissingRelation(dmDossiersResult.error, 'lc_dm_dossiers')) throw dmDossiersResult.error;
+    if (approvedDmDossiersResult.error && !isMissingRelation(approvedDmDossiersResult.error, 'lc_dm_dossiers')) throw approvedDmDossiersResult.error;
+    if (dmRatingsResult.error && !isMissingRelation(dmRatingsResult.error, 'lc_dm_ratings')) throw dmRatingsResult.error;
     if (publicReviewsResult.error && !isMissingRelation(publicReviewsResult.error, 'lc_public_reviews')) throw publicReviewsResult.error;
     if (guidesResult.error && !isMissingRelation(guidesResult.error, 'lc_guides')) throw guidesResult.error;
     if (withdrawalsResult.error && !isMissingRelation(withdrawalsResult.error, 'lc_creator_withdrawals')) throw withdrawalsResult.error;
+    const approvedDmDossiers = approvedDmDossiersResult.error ? [] : (approvedDmDossiersResult.data || []) as Record<string, unknown>[];
+    const pendingDmDossiers: Record<string, unknown>[] = dmDossiersResult.error ? [] : ((dmDossiersResult.data || []) as Record<string, unknown>[]).map(dossier => ({
+      ...dossier,
+      similar_candidates: dossier.entity_type === 'dm' && dossier.status === 'pending'
+        ? rankSimilarDmDossiers(dossier, approvedDmDossiers)
+        : [],
+    }) as Record<string, unknown>);
+    const dmDossierLookup = new Map<string, Record<string, unknown>>(
+      [...approvedDmDossiers, ...pendingDmDossiers]
+        .map(dossier => [String(dossier.id || ''), dossier] as const)
+        .filter(([id]) => Boolean(id)),
+    );
+    const pendingDmRatings = dmRatingsResult.error ? [] : ((dmRatingsResult.data || []) as Record<string, unknown>[]).map(rating => ({
+      ...rating,
+      dm_dossier: dmDossierLookup.get(String(rating.dm_dossier_id || '')) || null,
+    }));
     res.json(ok({
       profiles: (profiles || []).map(profile => sanitizeProfile(profile, true)),
       contactRequests: requests || [],
@@ -6881,7 +6988,8 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       siteMessages: siteMessages || [],
       scriptContributions: scriptContributions || [],
       securityEvents: securityEvents || [],
-      dmDossiers: dmDossiersResult.error ? [] : (dmDossiersResult.data || []),
+      dmDossiers: pendingDmDossiers,
+      dmRatings: pendingDmRatings,
       publicReviews: publicReviewsResult.error ? [] : (publicReviewsResult.data || []),
       guides: guidesResult.error ? [] : (guidesResult.data || []),
       guideWithdrawals: withdrawalsResult.error ? [] : (withdrawalsResult.data || []),
@@ -7099,6 +7207,211 @@ app.put('/api/lc/admin/dm-dossiers/:id/approve', authMiddleware, adminMiddleware
       targetType: 'dm_dossier',
       targetId: req.params.id,
       metadata: { approved_status: patch.status || dossier.status, approved_claim: patch.claim_status || dossier.claim_status },
+    });
+    res.json(ok(updated));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+async function mergeDmDossierInto(sourceId: string, targetId: string, reviewerId: string | null) {
+  if (sourceId === targetId) throw new Error('不能把档案合并到自己');
+  if (useTencentPg) {
+    const client = await tencentPgPool.connect();
+    try {
+      await client.query('BEGIN');
+      const dossierResult = await client.query(
+        `select * from lc_dm_dossiers where id = any($1::uuid[]) for update`,
+        [[sourceId, targetId]],
+      );
+      const source = dossierResult.rows.find(row => String(row.id) === sourceId);
+      const target = dossierResult.rows.find(row => String(row.id) === targetId);
+      if (!source) throw new Error('待合并DM档案不存在');
+      if (!target || target.entity_type !== 'dm' || target.status !== 'approved') throw new Error('目标DM档案不存在或尚未公开');
+
+      const ratingsResult = await client.query(
+        `select * from lc_dm_ratings where dm_dossier_id = $1 for update`,
+        [sourceId],
+      );
+      let movedCount = 0;
+      let rejectedDuplicateCount = 0;
+      for (const rating of ratingsResult.rows) {
+        const duplicate = await client.query(
+          `select id from lc_dm_ratings
+           where dm_dossier_id = $1
+             and profile_id is not distinct from $2
+             and script_key = $3
+             and played_on = $4
+             and replay_number = $5
+             and status <> 'rejected'
+           limit 1`,
+          [targetId, rating.profile_id, rating.script_key, rating.played_on, rating.replay_number],
+        );
+        if (duplicate.rowCount) {
+          await client.query(
+            `update lc_dm_ratings
+             set status = 'rejected', review_note = $2, reviewed_by = $3, reviewed_at = now(), updated_at = now()
+             where id = $1`,
+            [rating.id, '合并DM档案时发现同一场体验已存在', reviewerId],
+          );
+          rejectedDuplicateCount += 1;
+        } else {
+          await client.query(
+            `update lc_dm_ratings set dm_dossier_id = $2, updated_at = now() where id = $1`,
+            [rating.id, targetId],
+          );
+          movedCount += 1;
+        }
+      }
+
+      await client.query(
+        `insert into lc_dm_aliases(dm_dossier_id, alias_name, city, workplace, source_dossier_id)
+         values ($1, $2, $3, $4, $5)
+         on conflict do nothing`,
+        [targetId, source.dm_name, source.city, source.workplace, sourceId],
+      );
+      await client.query(
+        `update lc_dm_dossiers
+         set status = 'hidden', merged_into = $2, reject_reason = $3, updated_at = now()
+         where id = $1`,
+        [sourceId, targetId, `已合并到DM档案：${target.dm_name}`],
+      );
+      await client.query('COMMIT');
+      return { source, target, movedCount, rejectedDuplicateCount };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const [{ data: source, error: sourceErr }, { data: target, error: targetErr }] = await Promise.all([
+    supabase.from('lc_dm_dossiers').select('*').eq('id', sourceId).maybeSingle(),
+    supabase.from('lc_dm_dossiers').select('*').eq('id', targetId).eq('entity_type', 'dm').eq('status', 'approved').maybeSingle(),
+  ]);
+  if (sourceErr) throw sourceErr;
+  if (targetErr) throw targetErr;
+  if (!source) throw new Error('待合并DM档案不存在');
+  if (!target) throw new Error('目标DM档案不存在或尚未公开');
+  const { data: sourceRatings, error: ratingErr } = await supabase.from('lc_dm_ratings').select('*').eq('dm_dossier_id', sourceId);
+  if (ratingErr && !isMissingRelation(ratingErr, 'lc_dm_ratings')) throw ratingErr;
+  let movedCount = 0;
+  let rejectedDuplicateCount = 0;
+  for (const rating of sourceRatings || []) {
+    const duplicate = await supabase.from('lc_dm_ratings').select('id')
+      .eq('dm_dossier_id', targetId)
+      .eq('profile_id', rating.profile_id)
+      .eq('script_key', rating.script_key)
+      .eq('played_on', rating.played_on)
+      .eq('replay_number', rating.replay_number)
+      .not('status', 'eq', 'rejected')
+      .maybeSingle();
+    if (duplicate.error) throw duplicate.error;
+    if (duplicate.data) {
+      const rejected = await supabase.from('lc_dm_ratings').update({
+        status: 'rejected',
+        review_note: '合并DM档案时发现同一场体验已存在',
+        reviewed_by: reviewerId,
+        reviewed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', rating.id);
+      if (rejected.error) throw rejected.error;
+      rejectedDuplicateCount += 1;
+    } else {
+      const moved = await supabase.from('lc_dm_ratings').update({ dm_dossier_id: targetId, updated_at: new Date().toISOString() }).eq('id', rating.id);
+      if (moved.error) throw moved.error;
+      movedCount += 1;
+    }
+  }
+  const aliasResult = await supabase.from('lc_dm_aliases').insert({
+    dm_dossier_id: targetId,
+    alias_name: source.dm_name,
+    city: source.city || null,
+    workplace: source.workplace || null,
+    source_dossier_id: sourceId,
+  });
+  if (aliasResult.error && aliasResult.error.code !== '23505') throw aliasResult.error;
+  const hiddenResult = await supabase.from('lc_dm_dossiers').update({
+    status: 'hidden',
+    merged_into: targetId,
+    reject_reason: `已合并到DM档案：${target.dm_name}`,
+    updated_at: new Date().toISOString(),
+  }).eq('id', sourceId);
+  if (hiddenResult.error) throw hiddenResult.error;
+  return { source, target, movedCount, rejectedDuplicateCount };
+}
+
+app.put('/api/lc/admin/dm-dossiers/:id/merge', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const targetId = cleanText(req.body?.targetId ?? req.body?.target_id, 120);
+    if (!targetId) return res.status(400).json(err(new Error('请选择要合并到的DM档案')));
+    const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
+    const result = await mergeDmDossierInto(req.params.id, targetId, reviewerId);
+    await logSecurityEvent(req, {
+      action: 'admin_dm_dossier_merged',
+      targetType: 'dm_dossier',
+      targetId: req.params.id,
+      metadata: { target_id: targetId, moved_ratings: result.movedCount, rejected_duplicate_ratings: result.rejectedDuplicateCount },
+    });
+    res.json(ok({
+      source_id: req.params.id,
+      target_id: targetId,
+      target_name: result.target.dm_name,
+      moved_ratings: result.movedCount,
+      rejected_duplicate_ratings: result.rejectedDuplicateCount,
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/dm-ratings/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
+    const { data: rating, error: ratingErr } = await supabase.from('lc_dm_ratings').select('*').eq('id', req.params.id).maybeSingle();
+    if (ratingErr && isMissingRelation(ratingErr, 'lc_dm_ratings')) return res.status(503).json(err(new Error('DM评分表尚未初始化')));
+    if (ratingErr) throw ratingErr;
+    if (!rating) return res.status(404).json(err(new Error('评分不存在')));
+    if (rating.status !== 'pending') return res.status(400).json(err(new Error('这条评分已经处理过了')));
+    const { data: dossier, error: dossierErr } = await supabase.from('lc_dm_dossiers').select('id, status, merged_into').eq('id', rating.dm_dossier_id).maybeSingle();
+    if (dossierErr) throw dossierErr;
+    const resolvedDmId = dossier?.status === 'hidden' && dossier?.merged_into ? dossier.merged_into : dossier?.id;
+    if (!resolvedDmId) return res.status(409).json(err(new Error('请先创建或合并这条DM档案')));
+    if (dossier?.status !== 'approved' && !dossier?.merged_into) return res.status(409).json(err(new Error('请先审核DM档案，再通过评分')));
+    const { data: updated, error: updateErr } = await supabase.from('lc_dm_ratings').update({
+      dm_dossier_id: resolvedDmId,
+      status: 'approved',
+      reviewed_by: reviewerId,
+      reviewed_at: new Date().toISOString(),
+      review_note: cleanText(req.body?.reviewNote, 500) || null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', req.params.id).eq('status', 'pending').select('*').single();
+    if (updateErr) throw updateErr;
+    await logSecurityEvent(req, {
+      action: 'admin_dm_rating_approved',
+      targetType: 'dm_rating',
+      targetId: req.params.id,
+      metadata: { dm_id: resolvedDmId, review_note: cleanText(req.body?.reviewNote, 500) || null },
+    });
+    res.json(ok(updated));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/dm-ratings/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
+    const rejectReason = cleanText(req.body?.rejectReason, 500) || '不符合DM评分公开规则';
+    const { data: updated, error: updateErr } = await supabase.from('lc_dm_ratings').update({
+      status: 'rejected',
+      reviewed_by: reviewerId,
+      reviewed_at: new Date().toISOString(),
+      review_note: rejectReason,
+      updated_at: new Date().toISOString(),
+    }).eq('id', req.params.id).eq('status', 'pending').select('*').single();
+    if (updateErr && isMissingRelation(updateErr, 'lc_dm_ratings')) return res.status(503).json(err(new Error('DM评分表尚未初始化')));
+    if (updateErr) throw updateErr;
+    await logSecurityEvent(req, {
+      action: 'admin_dm_rating_rejected',
+      targetType: 'dm_rating',
+      targetId: req.params.id,
+      metadata: { reject_reason: rejectReason },
     });
     res.json(ok(updated));
   } catch (e) { res.status(500).json(err(e)); }
@@ -7549,7 +7862,26 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       if (isMissingRelation(error, 'lc_dm_dossiers')) return res.json(ok([]));
       throw error;
     }
-    res.json(ok((data || []).map((row: Record<string, unknown>) => ({
+    const dossierRows = (data || []) as Record<string, unknown>[];
+    const dossierIds = dossierRows.map(row => String(row.id || '')).filter(Boolean);
+    let ratingRows: Record<string, unknown>[] = [];
+    if (dossierIds.length > 0) {
+      const ratingResult = await supabase.from('lc_dm_ratings')
+        .select('id, dm_dossier_id, profile_id, rating')
+        .in('dm_dossier_id', dossierIds)
+        .eq('status', 'approved')
+        .limit(5000);
+      if (ratingResult.error && !isMissingRelation(ratingResult.error, 'lc_dm_ratings')) throw ratingResult.error;
+      ratingRows = ratingResult.error ? [] : (ratingResult.data || []) as Record<string, unknown>[];
+    }
+    const ratingsByDossier = new Map<string, Record<string, unknown>[]>();
+    ratingRows.forEach(row => {
+      const key = String(row.dm_dossier_id || '');
+      const values = ratingsByDossier.get(key) || [];
+      values.push(row);
+      ratingsByDossier.set(key, values);
+    });
+    res.json(ok(dossierRows.map((row: Record<string, unknown>) => ({
       id: row.id,
       entity_type: row.entity_type || 'dm',
       dm_name: row.dm_name,
@@ -7562,7 +7894,61 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       claim_status: row.claim_status,
       claimed_by: row.claim_status === 'approved' ? row.claimed_by : null,
       created_at: row.created_at,
+      rating_summary: summarizeDmRatingRows(ratingsByDossier.get(String(row.id || '')) || []),
     }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
+  try {
+    const { data: dossier, error: dossierErr } = await supabase.from('lc_dm_dossiers')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('entity_type', 'dm')
+      .eq('status', 'approved')
+      .maybeSingle();
+    if (dossierErr && isMissingRelation(dossierErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('DM档案表尚未初始化')));
+    if (dossierErr) throw dossierErr;
+    if (!dossier) return res.status(404).json(err(new Error('DM档案不存在或尚未公开')));
+
+    const ratingResult = await supabase.from('lc_dm_ratings')
+      .select('*')
+      .eq('dm_dossier_id', req.params.id)
+      .eq('status', 'approved')
+      .order('played_on', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (ratingResult.error && !isMissingRelation(ratingResult.error, 'lc_dm_ratings')) throw ratingResult.error;
+    const rows = ratingResult.error ? [] : (ratingResult.data || []) as Record<string, unknown>[];
+    res.json(ok({
+      dossier: {
+        id: dossier.id,
+        dm_name: dossier.dm_name,
+        city: dossier.city,
+        workplace: dossier.workplace,
+        profile_url: dossier.profile_url,
+        photo_url: dossier.photo_url,
+        note: dossier.note,
+        tags: dossier.tags || [],
+        claim_status: dossier.claim_status,
+        claimed_by: dossier.claim_status === 'approved' ? dossier.claimed_by : null,
+      },
+      summary: summarizeDmRatingRows(rows),
+      ratings: rows.map(row => ({
+        id: row.id,
+        profile_name: row.profile_name || '灵契玩家',
+        script_id: row.script_id,
+        script_name: row.script_name,
+        store_id: row.store_id,
+        store_name: row.store_name,
+        played_on: row.played_on,
+        replay_number: row.replay_number,
+        rating: row.rating,
+        content: row.content,
+        tags: row.tags || [],
+        created_at: row.created_at,
+      })),
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -7595,6 +7981,13 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     if (entityType === 'dm' && !profileUrl) return res.status(400).json(err(new Error('请填写 DM 个人主页链接')));
     if (entityType === 'dm' && !photoUrl) return res.status(400).json(err(new Error('请上传一张 DM 照片')));
 
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: entityType === 'store' ? 'store_dossier_submit' : 'dm_dossier_submit',
+      targetType: 'dm_dossier',
+      texts: { dmName, city, workplace, profileUrl, note, tags: tags.join(' ') },
+      files: photoFiles,
+    });
+
     const { data, error: insErr } = await supabase.from('lc_dm_dossiers').insert({
       entity_type: entityType,
       dm_name: dmName,
@@ -7609,6 +8002,7 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
       submitted_by_name: profile.display_name,
       status: 'pending',
       claim_status: 'unclaimed',
+      moderation_precheck: moderationPrecheck,
     }).select('id').single();
     if (insErr) {
       if (isMissingRelation(insErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('卡司评分数据表尚未初始化')));
@@ -7619,9 +8013,242 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
       action: entityType === 'store' ? 'store_dossier_submitted' : 'dm_dossier_submitted',
       targetType: 'dm_dossier',
       targetId: data?.id,
-      metadata: { entity_type: entityType, dm_name: dmName, city },
+      metadata: { entity_type: entityType, dm_name: dmName, city, moderation: moderationPrecheck },
     });
     res.json(ok({ id: data?.id, entity_type: entityType, status: 'pending' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+
+    if (cleanText(req.body?.website, 200)) {
+      await logSecurityEvent(req, {
+        action: 'dm_rating_bot_honeypot_triggered',
+        targetType: 'dm_rating',
+        actorId: profile.id,
+        actorRole: profile.role || 'creator',
+      });
+      return res.status(202).json(ok({ status: 'pending', message: '已提交审核' }));
+    }
+
+    const rawRating = Number(req.body?.rating || 0);
+    if (!Number.isInteger(rawRating) || rawRating < 1 || rawRating > 5) return res.status(400).json(err(new Error('请选择 1-5 星综合评分')));
+    const rating = rawRating;
+    const playedOn = normalizeDateString(req.body?.playedOn ?? req.body?.played_on);
+    if (!playedOn) return res.status(400).json(err(new Error('请选择实际体验日期')));
+    if (playedOn > getChinaNow().date) return res.status(400).json(err(new Error('体验日期不能晚于今天')));
+    const replayNumber = Number(req.body?.replayNumber ?? req.body?.replay_number ?? 0);
+    if (!Number.isInteger(replayNumber) || replayNumber < 1 || replayNumber > 99) return res.status(400).json(err(new Error('请填写这是你第几刷')));
+    const content = cleanText(req.body?.content, 2400);
+    if (content.length < 12) return res.status(400).json(err(new Error('请至少写 12 个字说明这次体验')));
+    const tags = cleanTextArray(req.body?.tags, 8, 20);
+
+    const scriptId = cleanText(req.body?.scriptId ?? req.body?.script_id, 120);
+    let scriptName = cleanText(req.body?.scriptName ?? req.body?.script_name, 160);
+    if (scriptId) {
+      const scriptResult = await supabase.from('scripts').select('id, name').eq('id', scriptId).maybeSingle();
+      if (scriptResult.error) throw scriptResult.error;
+      if (!scriptResult.data) return res.status(400).json(err(new Error('选择的剧本不存在')));
+      scriptName = cleanText(scriptResult.data.name, 160);
+    }
+    if (!scriptName) return res.status(400).json(err(new Error('请选择或填写本次体验的剧本')));
+    const scriptKey = normalizeDmLookupText(scriptName);
+
+    const storeId = cleanText(req.body?.storeId ?? req.body?.store_id, 120);
+    let storeName = cleanText(req.body?.storeName ?? req.body?.store_name, 160);
+    if (storeId) {
+      const storeResult = await supabase.from('jzg_stores').select('id, name, city, status').eq('id', storeId).maybeSingle();
+      if (storeResult.error) throw storeResult.error;
+      if (!storeResult.data || storeResult.data.status !== 'active') return res.status(400).json(err(new Error('选择的店家不存在或不可用')));
+      storeName = cleanText(storeResult.data.name, 160);
+    }
+    if (!storeName) return res.status(400).json(err(new Error('请选择或填写本次体验的店家或场地')));
+
+    let dmId = cleanText(req.body?.dmId ?? req.body?.dm_id, 120);
+    let dmName = '';
+    let newDmCandidates: ReturnType<typeof rankSimilarDmDossiers> = [];
+    const newDm = req.body?.newDm && typeof req.body.newDm === 'object' ? req.body.newDm as Record<string, unknown> : null;
+    if (dmId) {
+      const dmResult = await supabase.from('lc_dm_dossiers')
+        .select('*')
+        .eq('id', dmId)
+        .eq('entity_type', 'dm')
+        .eq('status', 'approved')
+        .maybeSingle();
+      if (dmResult.error) throw dmResult.error;
+      if (!dmResult.data) return res.status(400).json(err(new Error('选择的DM不存在或尚未公开')));
+      dmName = cleanText(dmResult.data.dm_name, 80);
+    } else if (newDm) {
+      dmName = cleanText(newDm.dmName ?? newDm.dm_name ?? newDm.name, 80);
+      const city = cleanText(newDm.city, 80);
+      const workplace = cleanText(newDm.workplace, 160) || storeName;
+      const profileUrl = cleanText(newDm.profileUrl ?? newDm.profile_url, 600);
+      const photoUrl = cleanText(newDm.photoUrl ?? newDm.photo_url, 800);
+      const photoFiles = photoUrl ? [{ name: `${dmName || 'DM'}照片`, url: photoUrl, type: 'image/jpeg' }] : [];
+      if (!dmName) return res.status(400).json(err(new Error('请填写DM名称')));
+      if (!city) return res.status(400).json(err(new Error('请填写DM所在城市')));
+      const dmPrecheck = runLocalModerationPrecheck({
+        scene: 'dm_dossier_submit_with_rating',
+        targetType: 'dm_dossier',
+        texts: { dmName, city, workplace, profileUrl },
+        files: photoFiles,
+      });
+      const { data: insertedDm, error: dmInsertErr } = await supabase.from('lc_dm_dossiers').insert({
+        entity_type: 'dm',
+        dm_name: dmName,
+        city,
+        workplace,
+        profile_url: profileUrl || null,
+        photo_url: photoUrl || null,
+        photo_files: photoFiles,
+        note: cleanText(newDm.note, 600) || null,
+        tags: cleanTextArray(newDm.tags, 8, 18),
+        submitted_by: profile.id,
+        submitted_by_name: profile.display_name,
+        status: 'pending',
+        claim_status: 'unclaimed',
+        moderation_precheck: dmPrecheck,
+      }).select('*').single();
+      if (dmInsertErr) {
+        if (isMissingRelation(dmInsertErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('DM档案表尚未初始化')));
+        throw dmInsertErr;
+      }
+      dmId = cleanText(insertedDm.id, 120);
+      const candidatesResult = await supabase.from('lc_dm_dossiers')
+        .select('id, dm_name, city, workplace, photo_url')
+        .eq('entity_type', 'dm')
+        .eq('status', 'approved')
+        .eq('city', city)
+        .limit(500);
+      if (!candidatesResult.error) newDmCandidates = rankSimilarDmDossiers(insertedDm as Record<string, unknown>, (candidatesResult.data || []) as Record<string, unknown>[]);
+    } else {
+      return res.status(400).json(err(new Error('请选择DM，或者提交一个新的DM档案')));
+    }
+
+    const ipHash = dmRatingIpHash(req);
+    const contentFingerprint = dmRatingContentFingerprint(content);
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const [accountHour, accountDay, ipHour, sameContent, duplicateEvent] = await Promise.all([
+      supabase.from('lc_dm_ratings').select('*', { count: 'exact', head: true }).eq('profile_id', profile.id).gte('created_at', oneHourAgo),
+      supabase.from('lc_dm_ratings').select('*', { count: 'exact', head: true }).eq('profile_id', profile.id).gte('created_at', oneDayAgo),
+      supabase.from('lc_dm_ratings').select('*', { count: 'exact', head: true }).eq('submit_ip_hash', ipHash).gte('created_at', oneHourAgo),
+      supabase.from('lc_dm_ratings').select('*', { count: 'exact', head: true }).eq('content_fingerprint', contentFingerprint).gte('created_at', oneDayAgo),
+      supabase.from('lc_dm_ratings').select('id, status')
+        .eq('profile_id', profile.id)
+        .eq('dm_dossier_id', dmId)
+        .eq('script_key', scriptKey)
+        .eq('played_on', playedOn)
+        .eq('replay_number', replayNumber)
+        .not('status', 'eq', 'rejected')
+        .maybeSingle(),
+    ]);
+    if (duplicateEvent.error && !isMissingRelation(duplicateEvent.error, 'lc_dm_ratings')) throw duplicateEvent.error;
+    if (duplicateEvent.data) return res.status(409).json(err(new Error('这一场体验已经提交过评分，请不要重复提交')));
+    if ((accountHour.count || 0) >= 12 || (accountDay.count || 0) >= 40 || (ipHour.count || 0) >= 30) {
+      await logSecurityEvent(req, {
+        action: 'dm_rating_rate_limited',
+        targetType: 'dm_rating',
+        targetId: dmId,
+        actorId: profile.id,
+        actorRole: profile.role || 'creator',
+        metadata: { account_hour: accountHour.count || 0, account_day: accountDay.count || 0, ip_hour: ipHour.count || 0 },
+      });
+      return res.status(429).json(err(new Error('提交过于频繁，请稍后再试')));
+    }
+
+    const startedAt = Number((req.body?.formStartedAt ?? req.body?.form_started_at) || 0);
+    const elapsedMs = Number.isFinite(startedAt) && startedAt > 0 ? Date.now() - startedAt : null;
+    const automationLabels: string[] = [];
+    let automationScore = 0;
+    if (elapsedMs !== null && elapsedMs >= 0 && elapsedMs < 2500) {
+      automationScore += 35;
+      automationLabels.push('submitted_too_fast');
+    }
+    if ((sameContent.count || 0) > 0) {
+      automationScore += 45;
+      automationLabels.push('duplicate_content_recently_seen');
+    }
+    if ((accountHour.count || 0) >= 6) {
+      automationScore += 25;
+      automationLabels.push('high_account_velocity');
+    }
+    if ((ipHour.count || 0) >= 15) {
+      automationScore += 35;
+      automationLabels.push('high_ip_velocity');
+    }
+    const antiAbuse = {
+      version: 'dm_rating_abuse_v1',
+      risk_score: Math.min(100, automationScore),
+      risk_labels: automationLabels,
+      elapsed_ms: elapsedMs,
+      account_hour_count: accountHour.count || 0,
+      account_day_count: accountDay.count || 0,
+      ip_hour_count: ipHour.count || 0,
+      duplicate_content_count: sameContent.count || 0,
+      checked_at: new Date().toISOString(),
+    };
+    const basePrecheck = runLocalModerationPrecheck({
+      scene: 'dm_rating_submit',
+      targetType: 'dm_rating',
+      texts: { dmName, scriptName, storeName, content, tags: tags.join(' ') },
+    });
+    const moderationPrecheck = automationScore >= 40 && basePrecheck.decision === 'pass'
+      ? {
+          ...basePrecheck,
+          decision: 'review' as const,
+          risk_score: Math.max(basePrecheck.risk_score, automationScore),
+          risk_labels: Array.from(new Set([...basePrecheck.risk_labels, 'suspected_automation', ...automationLabels])),
+          summary: '自动预审发现疑似批量或脚本提交信号，需人工重点复核',
+        }
+      : basePrecheck;
+
+    const { data: inserted, error: insertErr } = await supabase.from('lc_dm_ratings').insert({
+      dm_dossier_id: dmId,
+      profile_id: profile.id,
+      profile_name: profile.display_name || '灵契玩家',
+      script_id: scriptId || null,
+      script_name: scriptName,
+      script_key: scriptKey,
+      store_id: storeId || null,
+      store_name: storeName,
+      played_on: playedOn,
+      replay_number: replayNumber,
+      rating,
+      content,
+      tags,
+      status: 'pending',
+      moderation_precheck: moderationPrecheck,
+      anti_abuse: antiAbuse,
+      content_fingerprint: contentFingerprint,
+      submit_ip_hash: ipHash,
+    }).select('id, status').single();
+    if (insertErr) {
+      if (isMissingRelation(insertErr, 'lc_dm_ratings')) return res.status(503).json(err(new Error('DM评分表尚未初始化')));
+      if (insertErr.code === '23505') return res.status(409).json(err(new Error('这一场体验已经提交过评分')));
+      throw insertErr;
+    }
+    await logSecurityEvent(req, {
+      action: 'dm_rating_submitted_for_review',
+      targetType: 'dm_rating',
+      targetId: inserted.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { dm_id: dmId, script_id: scriptId || null, played_on: playedOn, replay_number: replayNumber, moderation: moderationPrecheck, anti_abuse: antiAbuse },
+    });
+    res.json(ok({
+      id: inserted.id,
+      status: 'pending',
+      dm_id: dmId,
+      new_dm: !!newDm,
+      similar_candidates: newDmCandidates,
+      message: '评分和DM资料已提交审核，通过后公开并计入综合分',
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

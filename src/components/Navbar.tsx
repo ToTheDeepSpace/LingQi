@@ -83,6 +83,7 @@ export default function Navbar() {
           + (data.reports || []).length
           + (data.siteMessages || []).length
           + (data.scriptContributions || []).length
+          + (data.dmRatings || []).length
           + (data.guides || []).length
           + (data.guideWithdrawals || []).length;
         const dmDossierCount = (data.dmDossiers || []).length;
@@ -163,7 +164,7 @@ export default function Navbar() {
           flexWrap: 'nowrap',
           whiteSpace: 'nowrap',
         }}>
-          <NavLink to="/dm-wall">卡司评分</NavLink>
+          <NavLink to="/dm">DM评分</NavLink>
           <NavLink to="/commissions">委托需求</NavLink>
           <NavLink to="/carpools">拼车区</NavLink>
           <NavLink to="/rankings">红黑榜</NavLink>
@@ -260,7 +261,8 @@ export default function Navbar() {
           padding: '12px 20px 16px',
           boxShadow: '0 18px 36px rgba(31,41,55,0.08)',
         }}>
-          <MobileLink to="/dm-wall" onClick={() => setMenuOpen(false)}>卡司评分</MobileLink>
+          <MobileLink to="/dm" onClick={() => setMenuOpen(false)}>DM评分</MobileLink>
+          <MobileLink to="/dm/rate" onClick={() => setMenuOpen(false)}>给DM评分</MobileLink>
           <MobileLink to="/commissions" onClick={() => setMenuOpen(false)}>委托需求</MobileLink>
           <MobileLink to="/carpools" onClick={() => setMenuOpen(false)}>拼车区</MobileLink>
           <MobileLink to="/rankings" onClick={() => setMenuOpen(false)}>红黑榜</MobileLink>
@@ -427,6 +429,7 @@ function MobileLink({ to, children, gold, onClick }: { to: string; children: Rea
 }
 
 function fallbackPathFor(pathname: string) {
+  if (pathname.startsWith('/dm/rate') || (pathname.startsWith('/dm/') && pathname !== '/dm-wall')) return '/dm';
   if (pathname.startsWith('/reputation/dossier')) return '/reputation/city';
   if (pathname.startsWith('/reputation')) return '/rankings';
   if (pathname.startsWith('/explore/')) return '/explore';
