@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import CitySearchSelect from '../components/CitySearchSelect';
+import DossierClaimModal from '../components/DossierClaimModal';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
@@ -140,7 +141,7 @@ export default function DmWall() {
   const [storeOptions, setStoreOptions] = useState<DmDossier[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
-  const [claimingId, setClaimingId] = useState('');
+  const [claimTarget, setClaimTarget] = useState<{ id: string; name: string; entityType: DossierEntityType } | null>(null);
 
   const requestKey = useMemo(() => `${city}|${entityType}|${query.trim()}`, [city, entityType, query]);
   const loading = loadedKey !== requestKey;
@@ -259,39 +260,13 @@ export default function DmWall() {
     }
   };
 
-  const claim = async (item: DmDossier) => {
+  const openClaim = (item: DmDossier) => {
     const current = getAuth();
     if (!current) {
       navigate('/login');
       return;
     }
-    const kind = normalizeEntityType(item.entity_type);
-    const claimNote = window.prompt(
-      `认领「${item.dm_name}」${ENTITY_COPY[kind].kindLabel}档案，请简单写明你如何证明这是你的主页或店铺`,
-      kind === 'store' ? '我是该店家负责人，营业执照/店铺后台/实名信息可供后台核验' : '我是该 DM 本人，主页/手机号/实名信息可供后台核验',
-    );
-    if (claimNote === null) return;
-    setClaimingId(item.id);
-    setMessage(null);
-    try {
-      const r = await fetch(`${API}/lc/dm-dossiers/${item.id}/claim`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
-        body: JSON.stringify({ claimNote }),
-      });
-      const d = await r.json();
-      if (!r.ok || !d.success) {
-        const errText = typeof d.error === 'string' ? d.error : (d.error?.message || '认领失败');
-        setMessage({ text: errText, ok: false });
-        return;
-      }
-      setMessage({ text: '认领申请已提交，后台审核通过后会绑定到你的灵契主页。', ok: true });
-      loadDossiers();
-    } catch {
-      setMessage({ text: '网络错误，请稍后再试', ok: false });
-    } finally {
-      setClaimingId('');
-    }
+    setClaimTarget({ id: item.id, name: item.dm_name, entityType: normalizeEntityType(item.entity_type) });
   };
 
   return (
@@ -410,6 +385,11 @@ export default function DmWall() {
                     <span style={{ ...badgeStyle, color: item.claim_status === 'approved' ? '#15803d' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : 'rgba(166,106,31,0.10)' }}>
                       {item.claim_status === 'approved' ? '已认领' : item.claim_status === 'pending' ? '认领审核中' : '未认领'}
                     </span>
+                    {item.claim_status !== 'approved' && item.claim_status !== 'pending' && (
+                      <button type="button" onClick={() => openClaim(item)} style={claimButtonStyle}>
+                        {kind === 'store' ? '店家认领' : '本人认领'}
+                      </button>
+                    )}
                   </div>
                   <p style={{ margin: '0 0 8px', color: MUTED, lineHeight: 1.7, fontSize: 14 }}>
                     {item.city || '未知城市'} · {kind === 'dm' && item.employment_status === 'freelance' ? '无受雇店家（自由DM）' : item.workplace || (kind === 'store' ? '店铺位置待补充' : '受雇店家待补充')}
@@ -433,9 +413,7 @@ export default function DmWall() {
                     {item.profile_url && <a href={normalizeUrl(item.profile_url)} target="_blank" rel="noreferrer" style={ghostButton}>{kind === 'store' ? '店铺主页' : '个人主页'}</a>}
                     {item.claim_status === 'approved' && item.claimed_by
                       ? (kind === 'dm' ? <Link to={`/explore/${item.claimed_by}`} style={ghostButton}>灵契主页</Link> : <span style={ghostStatic}>已绑定店家账号</span>)
-                      : <button onClick={() => claim(item)} disabled={claimingId === item.id || item.claim_status === 'pending'} style={ghostButton}>
-                          {claimingId === item.id ? '提交中...' : item.claim_status === 'pending' ? '认领审核中' : kind === 'store' ? '我是店家，认领' : '我是本人，认领'}
-                        </button>}
+                      : null}
                   </div>
                 </article>
               );
@@ -443,6 +421,18 @@ export default function DmWall() {
           </div>
         )}
       </section>
+      <DossierClaimModal
+        open={!!claimTarget}
+        dossier={claimTarget}
+        token={auth?.token || ''}
+        displayName={auth?.displayName || '当前用户'}
+        onClose={() => setClaimTarget(null)}
+        onSubmitted={() => {
+          setClaimTarget(null);
+          setMessage({ text: '认领申请已提交，审核通过后会绑定到你的账号。', ok: true });
+          loadDossiers();
+        }}
+      />
     </main>
   );
 }
@@ -568,4 +558,5 @@ const formCard: React.CSSProperties = { marginBottom: 18, padding: 18, borderRad
 const cardStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', padding: 14, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)', minHeight: 0 };
 const badgeStyle: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.14)', fontSize: 12, fontWeight: 900 };
 const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.88)', color: '#275389', fontSize: 12, fontWeight: 800 };
+const claimButtonStyle: React.CSSProperties = { padding: '4px 7px', borderRadius: 5, border: '1px solid rgba(166,106,31,0.22)', background: '#fffdf8', color: '#8a5a19', fontSize: 11, fontWeight: 900, cursor: 'pointer' };
 const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 14, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };

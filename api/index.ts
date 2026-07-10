@@ -15,9 +15,18 @@ import {
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
-import { createDecipheriv, createHash, createSign, createVerify, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { createDecipheriv, createHash, createSign, createVerify, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { sanitizeUploadedImageFile } from './uploadSecurity.js';
+import {
+  MAX_DOSSIER_CLAIM_PROOFS,
+  privateClaimRootFromPublicUploadRoot,
+  publicClaimProofMetadata,
+  readDossierClaimProof,
+  removeDossierClaimProofs,
+  saveDossierClaimProofs,
+  type DossierClaimProofFile,
+} from './dossierClaimStorage.js';
 import {
   buildLingqiCosObjectKey,
   createTencentCosUploadTransport,
@@ -120,6 +129,7 @@ const useTencentPg = Boolean(process.env.DATABASE_URL || process.env.PGHOST);
 const supabase = useTencentPg ? createTencentPgClient() : createClient(SUPABASE_URL, SUPABASE_KEY);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 const LOCAL_UPLOAD_ROOT = process.env.LOCAL_UPLOAD_ROOT || `${process.cwd()}/public/uploads`;
+const PRIVATE_UPLOAD_ROOT = process.env.PRIVATE_UPLOAD_ROOT || privateClaimRootFromPublicUploadRoot(LOCAL_UPLOAD_ROOT);
 const LINGQI_COS_UPLOAD_CONFIG = getLingqiCosUploadConfig(process.env);
 const LINGQI_COS_UPLOAD_TRANSPORT = LINGQI_COS_UPLOAD_CONFIG ? createTencentCosUploadTransport(LINGQI_COS_UPLOAD_CONFIG) : null;
 
@@ -6927,7 +6937,13 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_guides').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_creator_withdrawals').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
     ]);
+    const dmClaimsResult = await supabase.from('lc_dm_dossier_claims')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(100);
     if (dmDossiersResult.error && !isMissingRelation(dmDossiersResult.error, 'lc_dm_dossiers')) throw dmDossiersResult.error;
+    if (dmClaimsResult.error && !isMissingRelation(dmClaimsResult.error, 'lc_dm_dossier_claims')) throw dmClaimsResult.error;
     if (approvedDmDossiersResult.error && !isMissingRelation(approvedDmDossiersResult.error, 'lc_dm_dossiers')) throw approvedDmDossiersResult.error;
     if (dmRatingsResult.error && !isMissingRelation(dmRatingsResult.error, 'lc_dm_ratings')) throw dmRatingsResult.error;
     if (publicReviewsResult.error && !isMissingRelation(publicReviewsResult.error, 'lc_public_reviews')) throw publicReviewsResult.error;
@@ -6935,8 +6951,26 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     if (withdrawalsResult.error && !isMissingRelation(withdrawalsResult.error, 'lc_creator_withdrawals')) throw withdrawalsResult.error;
     const approvedDossiers = approvedDmDossiersResult.error ? [] : (approvedDmDossiersResult.data || []) as Record<string, unknown>[];
     const approvedDmDossiers = approvedDossiers.filter(dossier => dossier.entity_type === 'dm');
+    const pendingClaimByDossier = new Map<string, Record<string, unknown>>();
+    if (!dmClaimsResult.error) {
+      ((dmClaimsResult.data || []) as Record<string, unknown>[]).forEach(claim => {
+        const dossierId = String(claim.dossier_id || '');
+        if (dossierId && !pendingClaimByDossier.has(dossierId)) pendingClaimByDossier.set(dossierId, claim);
+      });
+    }
     const pendingDmDossiers: Record<string, unknown>[] = dmDossiersResult.error ? [] : ((dmDossiersResult.data || []) as Record<string, unknown>[]).map(dossier => ({
       ...dossier,
+      claim_submission: pendingClaimByDossier.has(String(dossier.id || '')) ? (() => {
+        const claim = pendingClaimByDossier.get(String(dossier.id || '')) as Record<string, unknown>;
+        return {
+          id: claim.id,
+          claimant_id: claim.claimant_id,
+          proof_type: claim.proof_type,
+          claim_note: claim.claim_note,
+          proof_files: publicClaimProofMetadata(claim.proof_files),
+          created_at: claim.created_at,
+        };
+      })() : null,
       similar_candidates: dossier.entity_type === 'dm' && dossier.status === 'pending'
         ? rankSimilarDmDossiers(dossier, approvedDmDossiers)
         : [],
@@ -7163,16 +7197,23 @@ app.put('/api/lc/admin/dm-dossiers/:id/approve', authMiddleware, adminMiddleware
     if (findErr) throw findErr;
     if (!dossier) return res.status(404).json(err(new Error('档案不存在')));
 
+    if (dossier.status !== 'pending' && dossier.claim_status === 'pending') {
+      const reviewed = await finalizeDossierClaimReview({ dossierId: req.params.id, outcome: 'approved', reviewerId });
+      await logSecurityEvent(req, {
+        action: 'admin_dm_dossier_claim_approved',
+        targetType: 'dm_dossier_claim',
+        targetId: reviewed.claimId || req.params.id,
+        metadata: { dossier_id: req.params.id, entity_type: dossier.entity_type || 'dm' },
+      });
+      return res.json(ok(reviewed.dossier));
+    }
+    if (dossier.status !== 'pending') return res.status(400).json(err(new Error('这条档案审核已经处理过了')));
+
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (dossier.status === 'pending') {
-      patch.status = 'approved';
-      patch.approved_by = reviewerId;
-      patch.approved_at = new Date().toISOString();
-      patch.reject_reason = null;
-    }
-    if (dossier.claim_status === 'pending') {
-      patch.claim_status = 'approved';
-    }
+    patch.status = 'approved';
+    patch.approved_by = reviewerId;
+    patch.approved_at = new Date().toISOString();
+    patch.reject_reason = null;
 
     const { data: updated, error: updErr } = await supabase.from('lc_dm_dossiers')
       .update(patch)
@@ -7410,20 +7451,34 @@ app.put('/api/lc/admin/dm-ratings/:id/reject', authMiddleware, adminMiddleware, 
 app.put('/api/lc/admin/dm-dossiers/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const rejectReason = cleanText(req.body?.rejectReason, 500) || '不符合卡司评分公开规则';
+    const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
     const { data: dossier, error: findErr } = await supabase.from('lc_dm_dossiers').select('*').eq('id', req.params.id).single();
     if (findErr && isMissingRelation(findErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('卡司评分数据表尚未初始化')));
     if (findErr) throw findErr;
     if (!dossier) return res.status(404).json(err(new Error('档案不存在')));
 
+    if (dossier.status !== 'pending' && dossier.claim_status === 'pending') {
+      const reviewed = await finalizeDossierClaimReview({
+        dossierId: req.params.id,
+        outcome: 'rejected',
+        reviewerId,
+        rejectReason,
+      });
+      await logSecurityEvent(req, {
+        action: 'admin_dm_dossier_claim_rejected',
+        targetType: 'dm_dossier_claim',
+        targetId: reviewed.claimId || req.params.id,
+        metadata: { dossier_id: req.params.id, reason: rejectReason, entity_type: dossier.entity_type || 'dm' },
+      });
+      return res.json(ok(reviewed.dossier));
+    }
+    if (dossier.status !== 'pending') return res.status(400).json(err(new Error('这条档案审核已经处理过了')));
+
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
       reject_reason: rejectReason,
     };
-    if (dossier.status === 'pending') patch.status = 'rejected';
-    else if (dossier.claim_status === 'pending') {
-      patch.claim_status = 'rejected';
-      patch.claim_note = rejectReason;
-    }
+    patch.status = 'rejected';
 
     const { data: updated, error: updErr } = await supabase.from('lc_dm_dossiers')
       .update(patch)
@@ -8413,13 +8468,251 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, async (req, res) => {
+type DossierClaimProofType = 'social_account' | 'employment' | 'business_license' | 'store_backend' | 'other';
+
+type DossierClaimReviewOutcome = 'approved' | 'rejected';
+
+function normalizeDossierClaimProofType(entityType: 'dm' | 'store', value: unknown): DossierClaimProofType | null {
+  const proofType = cleanText(value, 40) as DossierClaimProofType;
+  const allowed = entityType === 'store'
+    ? new Set<DossierClaimProofType>(['business_license', 'store_backend', 'other'])
+    : new Set<DossierClaimProofType>(['social_account', 'employment', 'other']);
+  return allowed.has(proofType) ? proofType : null;
+}
+
+function internalClaimProofFiles(value: unknown) {
+  if (!Array.isArray(value)) return [] as DossierClaimProofFile[];
+  return value.filter(item => item && typeof item === 'object') as DossierClaimProofFile[];
+}
+
+async function createDossierClaimRecord(input: {
+  claimId: string;
+  dossierId: string;
+  claimantId: string;
+  entityType: 'dm' | 'store';
+  proofType: DossierClaimProofType;
+  claimNote: string;
+  proofFiles: DossierClaimProofFile[];
+}) {
+  if (useTencentPg) {
+    const client = await tencentPgPool.connect();
+    try {
+      await client.query('BEGIN');
+      const dossierResult = await client.query(
+        `select id, status, claim_status
+           from lc_dm_dossiers
+          where id = $1
+          for update`,
+        [input.dossierId],
+      );
+      const dossier = dossierResult.rows[0];
+      if (!dossier || dossier.status !== 'approved') throw new Error('档案不存在或尚未公开');
+      if (dossier.claim_status === 'approved') throw new Error('这个档案已经被认领');
+      if (dossier.claim_status === 'pending') throw new Error('这份档案已经有认领申请正在审核');
+
+      await client.query(
+        `insert into lc_dm_dossier_claims
+          (id, dossier_id, claimant_id, entity_type, proof_type, claim_note, proof_files, status)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, 'pending')`,
+        [input.claimId, input.dossierId, input.claimantId, input.entityType, input.proofType, input.claimNote, JSON.stringify(input.proofFiles)],
+      );
+      const updatedResult = await client.query(
+        `update lc_dm_dossiers
+            set claimed_by = $2,
+                claim_status = 'pending',
+                claim_note = $3,
+                updated_at = now()
+          where id = $1
+          returning *`,
+        [input.dossierId, input.claimantId, input.claimNote],
+      );
+      await client.query('COMMIT');
+      return updatedResult.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const { error: claimErr } = await supabase.from('lc_dm_dossier_claims').insert({
+    id: input.claimId,
+    dossier_id: input.dossierId,
+    claimant_id: input.claimantId,
+    entity_type: input.entityType,
+    proof_type: input.proofType,
+    claim_note: input.claimNote,
+    proof_files: input.proofFiles,
+    status: 'pending',
+  });
+  if (claimErr) throw claimErr;
+  const { data: updated, error: dossierErr } = await supabase.from('lc_dm_dossiers').update({
+    claimed_by: input.claimantId,
+    claim_status: 'pending',
+    claim_note: input.claimNote,
+    updated_at: new Date().toISOString(),
+  }).eq('id', input.dossierId).select('*').single();
+  if (dossierErr) {
+    await supabase.from('lc_dm_dossier_claims').delete().eq('id', input.claimId);
+    throw dossierErr;
+  }
+  return updated;
+}
+
+async function finalizeDossierClaimReview(input: {
+  dossierId: string;
+  outcome: DossierClaimReviewOutcome;
+  reviewerId: string | null;
+  rejectReason?: string;
+}) {
+  const reviewedAt = new Date().toISOString();
+  const rejectReason = input.outcome === 'rejected' ? input.rejectReason || '认领材料不足，暂未通过' : null;
+  if (useTencentPg) {
+    const client = await tencentPgPool.connect();
+    try {
+      await client.query('BEGIN');
+      const dossierResult = await client.query(
+        `select * from lc_dm_dossiers where id = $1 for update`,
+        [input.dossierId],
+      );
+      const dossier = dossierResult.rows[0];
+      if (!dossier) throw new Error('档案不存在');
+      if (dossier.claim_status !== 'pending') throw new Error('这份认领申请已经处理过了');
+      const claimResult = await client.query(
+        `select * from lc_dm_dossier_claims
+          where dossier_id = $1 and status = 'pending'
+          order by created_at desc
+          limit 1
+          for update`,
+        [input.dossierId],
+      );
+      const claim = claimResult.rows[0] || null;
+      if (claim) {
+        await client.query(
+          `update lc_dm_dossier_claims
+              set status = $2,
+                  reviewed_by = $3,
+                  reviewed_at = $4,
+                  reject_reason = $5,
+                  updated_at = $4
+            where id = $1`,
+          [claim.id, input.outcome, input.reviewerId, reviewedAt, rejectReason],
+        );
+      }
+      const updatedResult = await client.query(
+        `update lc_dm_dossiers
+            set claim_status = $2,
+                reject_reason = $3,
+                claim_note = case when $4::boolean then claim_note else coalesce($3, claim_note) end,
+                updated_at = $5
+          where id = $1
+          returning *`,
+        [input.dossierId, input.outcome, rejectReason, Boolean(claim), reviewedAt],
+      );
+      await client.query('COMMIT');
+      return { dossier: updatedResult.rows[0], claimId: claim?.id || null };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const claimResult = await supabase.from('lc_dm_dossier_claims')
+    .select('*')
+    .eq('dossier_id', input.dossierId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (claimResult.error && !isMissingRelation(claimResult.error, 'lc_dm_dossier_claims')) throw claimResult.error;
+  const claim = claimResult.error ? null : claimResult.data;
+  if (claim) {
+    const claimUpdate = await supabase.from('lc_dm_dossier_claims').update({
+      status: input.outcome,
+      reviewed_by: input.reviewerId,
+      reviewed_at: reviewedAt,
+      reject_reason: rejectReason,
+      updated_at: reviewedAt,
+    }).eq('id', claim.id).eq('status', 'pending');
+    if (claimUpdate.error) throw claimUpdate.error;
+  }
+  const dossierPatch: Record<string, unknown> = {
+    claim_status: input.outcome,
+    reject_reason: rejectReason,
+    updated_at: reviewedAt,
+  };
+  if (!claim && rejectReason) dossierPatch.claim_note = rejectReason;
+  const dossierUpdate = await supabase.from('lc_dm_dossiers')
+    .update(dossierPatch)
+    .eq('id', input.dossierId)
+    .eq('claim_status', 'pending')
+    .select('*')
+    .single();
+  if (dossierUpdate.error) {
+    if (claim) {
+      await supabase.from('lc_dm_dossier_claims').update({
+        status: 'pending', reviewed_by: null, reviewed_at: null, reject_reason: null, updated_at: new Date().toISOString(),
+      }).eq('id', claim.id);
+    }
+    throw dossierUpdate.error;
+  }
+  return { dossier: dossierUpdate.data, claimId: claim?.id || null };
+}
+
+app.get('/api/lc/dm-dossiers/:id/my-claim', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const result = await supabase.from('lc_dm_dossier_claims')
+      .select('id, dossier_id, proof_type, claim_note, status, reject_reason, created_at, reviewed_at')
+      .eq('dossier_id', req.params.id)
+      .eq('claimant_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (result.error && isMissingRelation(result.error, 'lc_dm_dossier_claims')) return res.json(ok(null));
+    if (result.error) throw result.error;
+    res.json(ok(result.data || null));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/admin/dm-dossier-claims/:claimId/proofs/:fileId', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const result = await supabase.from('lc_dm_dossier_claims')
+      .select('id, proof_files')
+      .eq('id', req.params.claimId)
+      .maybeSingle();
+    if (result.error && isMissingRelation(result.error, 'lc_dm_dossier_claims')) return res.status(404).json(err(new Error('认领材料不存在')));
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('认领材料不存在')));
+    const proof = internalClaimProofFiles(result.data.proof_files).find(file => file.id === req.params.fileId);
+    if (!proof) return res.status(404).json(err(new Error('认领材料不存在')));
+    const body = readDossierClaimProof(PRIVATE_UPLOAD_ROOT, proof.relative_path);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Length', String(body.length));
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `inline; filename="claim-proof-${proof.id}.jpg"`);
+    res.send(body);
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, upload.array('proofFiles', MAX_DOSSIER_CLAIM_PROOFS), async (req, res) => {
+  let savedProofs: DossierClaimProofFile[] = [];
+  let claimId = '';
+  let claimCommitted = false;
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     const claimNote = cleanText(req.body?.claimNote ?? req.body?.claim_note, 600);
+    const truthConfirmed = String((req.body?.truthConfirmed ?? req.body?.truth_confirmed) || '') === 'true';
+    const rawFiles = Array.isArray(req.files) ? req.files : [];
     const { data: dossier, error: findErr } = await supabase.from('lc_dm_dossiers')
       .select('id, status, entity_type, dm_name, claim_status')
       .eq('id', req.params.id)
@@ -8430,23 +8723,65 @@ app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, async (req, res) => {
     }
     if (!dossier || dossier.status !== 'approved') return res.status(404).json(err(new Error('档案不存在或尚未公开')));
     if (dossier.claim_status === 'approved') return res.status(400).json(err(new Error('这个档案已经被认领')));
+    if (dossier.claim_status === 'pending') return res.status(409).json(err(new Error('这份档案已经有认领申请正在审核')));
+    const entityType = dossier.entity_type === 'store' ? 'store' : 'dm';
+    const proofType = normalizeDossierClaimProofType(entityType, req.body?.proofType ?? req.body?.proof_type);
+    if (!proofType) return res.status(400).json(err(new Error('请选择有效的证明类型')));
+    if (claimNote.length < 6) return res.status(400).json(err(new Error('请至少写6个字说明你与这份档案的关系')));
+    if (!truthConfirmed) return res.status(400).json(err(new Error('请确认材料真实且你有权提交')));
+    if (rawFiles.length < 1 || rawFiles.length > MAX_DOSSIER_CLAIM_PROOFS) {
+      return res.status(400).json(err(new Error(`请上传1-${MAX_DOSSIER_CLAIM_PROOFS}张身份凭证截图`)));
+    }
 
-    const { error: updErr } = await supabase.from('lc_dm_dossiers').update({
-      claimed_by: profile.id,
-      claim_status: 'pending',
-      claim_note: claimNote,
-      updated_at: new Date().toISOString(),
-    }).eq('id', req.params.id);
-    if (updErr) throw updErr;
+    const sanitizedFiles = await Promise.all(rawFiles.map(async file => ({
+      originalName: file.originalname,
+      image: await sanitizeUploadedImageFile({ buffer: file.buffer, mimetype: file.mimetype }),
+    })));
+    claimId = randomUUID();
+    savedProofs = saveDossierClaimProofs({
+      root: PRIVATE_UPLOAD_ROOT,
+      dossierId: dossier.id,
+      claimId,
+      files: sanitizedFiles,
+    });
+
+    await createDossierClaimRecord({
+      claimId,
+      dossierId: dossier.id,
+      claimantId: profile.id,
+      entityType,
+      proofType,
+      claimNote,
+      proofFiles: savedProofs,
+    });
+    claimCommitted = true;
 
     await logSecurityEvent(req, {
       action: dossier.entity_type === 'store' ? 'store_dossier_claim_submitted' : 'dm_dossier_claim_submitted',
       targetType: 'dm_dossier',
       targetId: req.params.id,
-      metadata: { entity_type: dossier.entity_type || 'dm', dm_name: dossier.dm_name },
+      metadata: {
+        entity_type: dossier.entity_type || 'dm',
+        dm_name: dossier.dm_name,
+        claim_id: claimId,
+        proof_type: proofType,
+        proof_count: savedProofs.length,
+      },
     });
-    res.json(ok({ id: req.params.id, claim_status: 'pending' }));
-  } catch (e) { res.status(500).json(err(e)); }
+    res.json(ok({ id: req.params.id, claim_id: claimId, claim_status: 'pending' }));
+  } catch (e) {
+    if (!claimCommitted && claimId && savedProofs.length > 0) {
+      try { removeDossierClaimProofs(PRIVATE_UPLOAD_ROOT, req.params.id, claimId); } catch { /* cleanup best effort */ }
+    }
+    const errorRecord = e && typeof e === 'object' ? e as { code?: string; message?: string } : {};
+    if (errorRecord.code === '23505' || errorRecord.message?.includes('已经有认领申请')) {
+      return res.status(409).json(err(new Error('这份档案已经有认领申请正在审核')));
+    }
+    if (isMissingRelation(errorRecord, 'lc_dm_dossier_claims')) {
+      return res.status(503).json(err(new Error('认领审核表尚未初始化')));
+    }
+    res.status(500).json(err(e));
+  }
 });
 
 app.get('/api/lc/rankings', async (req, res) => {

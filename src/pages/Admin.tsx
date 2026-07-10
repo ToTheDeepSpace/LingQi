@@ -37,6 +37,14 @@ const SCRIPT_CREDIT_LABEL: Record<string, string> = {
   supervisor: '监制',
 };
 
+const DOSSIER_CLAIM_PROOF_LABEL: Record<DossierClaimSubmission['proof_type'], string> = {
+  social_account: '社交账号后台',
+  employment: '任职 / 排班证明',
+  business_license: '营业执照 / 主体资料',
+  store_backend: '店铺平台后台',
+  other: '其他身份证明',
+};
+
 function formatCredits(value?: Record<string, string[]> | null) {
   if (!value || typeof value !== 'object') return [];
   return Object.entries(value)
@@ -332,6 +340,24 @@ type PublicReview = {
   created_at: string;
 };
 
+type DossierClaimProof = {
+  id: string;
+  name: string;
+  type: 'image/jpeg';
+  size: number;
+  width: number;
+  height: number;
+};
+
+type DossierClaimSubmission = {
+  id: string;
+  claimant_id?: string | null;
+  proof_type: 'social_account' | 'employment' | 'business_license' | 'store_backend' | 'other';
+  claim_note: string;
+  proof_files: DossierClaimProof[];
+  created_at: string;
+};
+
 type DmDossierReview = {
   id: string;
   entity_type?: 'dm' | 'store' | null;
@@ -350,6 +376,7 @@ type DmDossierReview = {
   claim_status: 'unclaimed' | 'pending' | 'approved' | 'rejected';
   claim_note?: string | null;
   claimed_by?: string | null;
+  claim_submission?: DossierClaimSubmission | null;
   moderation_precheck?: ModerationPrecheck | null;
   similar_candidates?: Array<{
     id: string;
@@ -872,7 +899,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     });
     const payload = await response.json();
     if (!response.ok || !payload.success) {
-      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || 'DM建档审核失败');
+      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || '档案审核失败');
       return;
     }
     setDmDossiers(prev => prev.filter(item => item.id !== id));
@@ -1286,7 +1313,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     { label: '委托需求', value: commissions.length, color: '#b45309' },
     { label: '拼车', value: carpools.length, color: '#0f766e' },
     { label: '剧本库', value: scriptContributions.length, color: '#a16207' },
-    { label: 'DM建档', value: dmDossiers.length, color: '#be185d' },
+    { label: '档案审核', value: dmDossiers.length, color: '#be185d' },
     { label: 'DM评分', value: dmRatings.length, color: '#c2410c' },
     { label: '举报', value: reports.length, color: '#dc2626' },
     { label: '站内信', value: siteMessages.length, color: '#0369a1' },
@@ -1339,7 +1366,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
               <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
               <button style={tabStyle(tab === 'scriptContributions')} onClick={() => setTab('scriptContributions')}>剧本库 {scriptContributions.length > 0 && `(${scriptContributions.length})`}</button>
-              <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>DM建档 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
+              <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>档案审核 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
               <button style={tabStyle(tab === 'dmRatings')} onClick={() => setTab('dmRatings')}>DM评分 {dmRatings.length > 0 && `(${dmRatings.length})`}</button>
               <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
               <button style={tabStyle(tab === 'messages')} onClick={() => setTab('messages')}>站内信 {siteMessages.length > 0 && `(${siteMessages.length})`}</button>
@@ -1503,7 +1530,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       {['dm', 'store'].includes(r.subject_type) && (
                         <Proof>
                           关联档案：{linkedDossier ? `${linkedDossier.dm_name} · ${linkedDossier.city || '未知城市'}` : r.subject_dossier_id ? '待审新档案' : '旧记录尚未绑定档案'}
-                          {linkedDossierPending ? <div style={{ marginTop: 4, color: '#b45309' }}>请先在“DM建档”中创建或合并该对象，再通过帖子。</div> : null}
+                          {linkedDossierPending ? <div style={{ marginTop: 4, color: '#b45309' }}>请先在“档案审核”中创建或合并该对象，再通过帖子。</div> : null}
                         </Proof>
                       )}
                       {r.dm_employment_status_suggestion && (
@@ -1762,7 +1789,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
 
             {tab === 'dmDossiers' && (
-              <ListEmpty empty={dmDossiers.length === 0} text="暂无待审核DM建档">
+              <ListEmpty empty={dmDossiers.length === 0} text="暂无待审核档案或认领申请">
                 {dmDossiers.map(item => {
                   const entityType = item.entity_type === 'store' ? 'store' : 'dm';
                   const entityLabel = entityType === 'store' ? '店家' : 'DM';
@@ -1785,10 +1812,21 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         </AdminDetail>
                       </div>
                       {item.claim_status === 'pending' && (
-                        <Proof>
-                          认领申请：{item.claimed_by || '未知账号'}
-                          {item.claim_note ? ` · ${item.claim_note}` : ''}
-                        </Proof>
+                        <div style={{ marginTop: 14, padding: 12, borderRadius: 8, border: '1px solid rgba(217,168,87,0.24)', background: '#fff8e8' }}>
+                          <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#8a5a19' }}>认领核验材料</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 8 }}>
+                            <AdminDetail label="申请账号" value={item.claim_submission?.claimant_id || item.claimed_by || '未知账号'} />
+                            <AdminDetail label="证明类型" value={item.claim_submission ? DOSSIER_CLAIM_PROOF_LABEL[item.claim_submission.proof_type] : '旧版认领申请'} />
+                            <AdminDetail label="申请时间" value={item.claim_submission?.created_at ? item.claim_submission.created_at.slice(0, 19).replace('T', ' ') : item.created_at?.slice(0, 19).replace('T', ' ') || '未知'} />
+                          </div>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 900, color: INK }}>关系说明</div>
+                          <ContentBox>{item.claim_submission?.claim_note || item.claim_note || '未填写认领说明'}</ContentBox>
+                          {item.claim_submission ? (
+                            <AdminPrivateClaimProofs claimId={item.claim_submission.id} files={item.claim_submission.proof_files || []} />
+                          ) : (
+                            <Meta>这是升级前提交的认领申请，没有私密截图材料，请谨慎核验。</Meta>
+                          )}
+                        </div>
                       )}
                       <ModerationPrecheckBadge value={item.moderation_precheck} />
                       <AdminPhotoPreview url={item.photo_url} />
@@ -1859,7 +1897,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         )}
                         <ContentBox>{item.content}</ContentBox>
                         {item.tags && item.tags.length > 0 && <Meta>标签：{item.tags.join(' / ')}</Meta>}
-                        {item.dm_dossier?.status !== 'approved' && <Meta>这条评分关联的新DM尚未建档，请先在“DM建档”处理。</Meta>}
+                        {item.dm_dossier?.status !== 'approved' && <Meta>这条评分关联的新DM尚未建档，请先在“档案审核”处理。</Meta>}
                       </div>
                       <Actions vertical>
                         <ActionButton kind="ok" disabled={item.dm_dossier?.status !== 'approved'} onClick={() => approveDmRating(item.id)}>通过评分</ActionButton>
@@ -2324,6 +2362,57 @@ function AdminPhotoPreview({ url }: { url?: string | null }) {
         </div>
       )}
     </div>
+  );
+}
+
+function AdminPrivateClaimProofs({ claimId, files }: { claimId: string; files: DossierClaimProof[] }) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: '0.78rem', fontWeight: 900, color: INK, marginBottom: 7 }}>私密身份凭证（仅管理员可见）</div>
+      {files.length === 0 ? <Meta>没有可读取的凭证截图</Meta> : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 180px))', gap: 9 }}>
+          {files.map((file, index) => <AdminPrivateClaimProofImage key={file.id} claimId={claimId} file={file} index={index} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminPrivateClaimProofImage({ claimId, file, index }: { claimId: string; file: DossierClaimProof; index: number }) {
+  const [source, setSource] = useState('');
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl = '';
+    fetch(`${API}/lc/admin/dm-dossier-claims/${encodeURIComponent(claimId)}/proofs/${encodeURIComponent(file.id)}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+      signal: controller.signal,
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error('凭证图片读取失败');
+        return response.blob();
+      })
+      .then(blob => {
+        objectUrl = URL.createObjectURL(blob);
+        setSource(objectUrl);
+      })
+      .catch(reason => {
+        if (reason?.name !== 'AbortError') setLoadError(reason instanceof Error ? reason.message : '凭证图片读取失败');
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [claimId, file.id]);
+
+  if (loadError) return <div style={{ minHeight: 96, padding: 9, border: '1px solid rgba(185,28,28,0.18)', borderRadius: 7, background: '#fff', color: '#991b1b', fontSize: 11 }}>{loadError}</div>;
+  if (!source) return <div style={{ minHeight: 96, display: 'grid', placeItems: 'center', border: `1px solid ${LINE}`, borderRadius: 7, background: '#fff', color: MUTED, fontSize: 11 }}>读取中…</div>;
+  return (
+    <a href={source} target="_blank" rel="noreferrer" style={{ display: 'block', color: '#275389', textDecoration: 'none' }}>
+      <img src={source} alt={`认领凭证 ${index + 1}`} style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: `1px solid ${LINE}`, background: '#fff' }} />
+      <div style={{ overflow: 'hidden', marginTop: 4, fontSize: 10, fontWeight: 800, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || `凭证 ${index + 1}`}</div>
+    </a>
   );
 }
 

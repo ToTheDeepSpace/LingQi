@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import DossierClaimModal from '../components/DossierClaimModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
+import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -18,8 +20,11 @@ type DmDetail = {
 
 export default function DmProfile() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const [data, setData] = useState<DmDetail | null>(null);
   const [error, setError] = useState('');
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [claimMessage, setClaimMessage] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -40,6 +45,16 @@ export default function DmProfile() {
 
   const { dossier, summary, ratings, reputation_summary: reputationSummary = { event_count: 0, red_count: 0, black_count: 0, white_count: 0 }, reputation_events: reputationEvents = [] } = data;
   const scoreText = summary.player_count === 0 ? '暂无评分' : `${summary.avg?.toFixed(1)} / 5`;
+  const auth = readStoredCreatorAuth();
+  const claimStatusLabel = dossier.claim_status === 'approved' ? '已认领DM' : dossier.claim_status === 'pending' ? '认领审核中' : '未认领DM档案';
+
+  const openClaim = () => {
+    if (!auth?.token) {
+      navigate('/login');
+      return;
+    }
+    setClaimOpen(true);
+  };
 
   return (
     <main style={{ minHeight: '100vh', background: BG, color: INK }}>
@@ -47,9 +62,13 @@ export default function DmProfile() {
         <div style={{ maxWidth: 960, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 18, alignItems: 'center' }}>
           <img src={dossier.photo_url || generatedAvatarDataUrl(dossier.dm_name, dossier.id)} alt="" style={{ width: 112, height: 112, objectFit: 'cover', borderRadius: 8, background: '#fffaf2' }} />
           <div style={{ minWidth: 0 }}>
-            <p style={{ margin: '0 0 6px', color: GOLD, fontSize: 13, fontWeight: 900 }}>{dossier.claim_status === 'approved' ? '已认领DM' : '未认领DM档案'}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
+              <p style={{ margin: 0, color: GOLD, fontSize: 13, fontWeight: 900 }}>{claimStatusLabel}</p>
+              {dossier.claim_status !== 'approved' && dossier.claim_status !== 'pending' && <button type="button" onClick={openClaim} style={claimButtonStyle}>本人认领</button>}
+            </div>
             <h1 style={{ margin: 0, fontSize: 'clamp(1.8rem, 4vw, 2.6rem)', fontFamily: 'var(--font-serif)' }}>{dossier.dm_name}</h1>
             <p style={{ margin: '9px 0 0', color: MUTED }}>{dossier.city || '城市待补'} · {dossier.employment_status === 'freelance' ? '无受雇店家（自由DM）' : dossier.workplace || '受雇店家待补'}</p>
+            {claimMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{claimMessage}</p>}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
               <Link to={`/dm/rate?dmId=${encodeURIComponent(dossier.id)}`} style={primaryButton}>给TA评分</Link>
               <Link to={`/rankings/new?subjectType=dm&subjectDossierId=${encodeURIComponent(dossier.id)}`} style={secondaryButton}>发布红黑榜记录</Link>
@@ -98,6 +117,18 @@ export default function DmProfile() {
           </div>}
         </section>
       </div>
+      <DossierClaimModal
+        open={claimOpen}
+        dossier={{ id: dossier.id, name: dossier.dm_name, entityType: 'dm' }}
+        token={auth?.token || ''}
+        displayName={auth?.display_name || '当前用户'}
+        onClose={() => setClaimOpen(false)}
+        onSubmitted={() => {
+          setClaimOpen(false);
+          setClaimMessage('认领申请已提交，审核通过后会绑定到你的账号。');
+          setData(current => current ? { ...current, dossier: { ...current.dossier, claim_status: 'pending' } } : current);
+        }}
+      />
     </main>
   );
 }
@@ -111,4 +142,5 @@ const headingStyle = { margin: '0 0 14px', fontSize: 18 };
 const noticeStyle = { padding: '11px 13px', borderRadius: 7, background: '#fff7ed', color: '#9a5b18', border: '1px solid rgba(154,91,24,0.18)', lineHeight: 1.65, fontSize: 13 };
 const primaryButton = { borderRadius: 7, background: INK, color: '#fff', padding: '10px 14px', fontWeight: 900, textDecoration: 'none' };
 const secondaryButton = { borderRadius: 7, border: '1px solid rgba(31,41,55,0.14)', background: '#fff', color: INK, padding: '9px 13px', fontWeight: 850, textDecoration: 'none' };
+const claimButtonStyle = { padding: '4px 7px', borderRadius: 5, border: '1px solid rgba(166,106,31,0.22)', background: '#fff', color: '#8a5a19', fontSize: 11, fontWeight: 900, cursor: 'pointer' };
 const tagStyle = { padding: '3px 7px', borderRadius: 999, background: '#eff6ff', color: '#275389', fontSize: 12, fontWeight: 800 };
