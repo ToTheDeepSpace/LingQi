@@ -14,6 +14,7 @@ const GOLD = '#a66a1f';
 type AuthSession = { token: string; displayName: string };
 type DmOption = { id: string; dm_name: string; city?: string | null; workplace?: string | null };
 type LibraryOption = { id: string; name: string; city?: string | null };
+type StoreOption = LibraryOption & { linkedStoreId?: string | null };
 
 function getAuth(): AuthSession | null {
   const data = readStoredCreatorAuth();
@@ -29,6 +30,10 @@ function responseError(value: unknown, fallback: string) {
 function localDateInputValue() {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
+function normalizeCatalogSearch(value: string) {
+  return value.normalize('NFKC').toLocaleLowerCase('zh-CN').replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
 export default function DmRating() {
@@ -65,11 +70,16 @@ export default function DmRating() {
     Promise.all([
       fetch(`${API}/lc/dm-dossiers?entityType=dm`, { signal: controller.signal }).then(r => r.json()),
       fetch(`${API}/lc/scripts`, { signal: controller.signal }).then(r => r.json()),
-      fetch(`${API}/lc/stores`, { signal: controller.signal }).then(r => r.json()),
+      fetch(`${API}/lc/stores?catalog=reputation`, { signal: controller.signal }).then(r => r.json()),
     ]).then(([dmData, scriptData, storeData]) => {
       if (dmData.success) setDms(dmData.data || []);
       if (scriptData.success) setScripts((scriptData.data || []).map((item: { id: string; name: string }) => ({ id: item.id, name: item.name })));
-      if (storeData.success) setStores((storeData.data || []).map((item: { id: string; name: string; city?: string | null }) => ({ id: item.id, name: item.name, city: item.city })));
+      if (storeData.success) setStores((storeData.data || []).map((item: { id: string; linked_store_id?: string | null; name: string; city?: string | null }) => ({
+        id: item.id,
+        linkedStoreId: item.linked_store_id || null,
+        name: item.name,
+        city: item.city,
+      })));
     }).catch(error => {
       if (error?.name !== 'AbortError') setMessage({ text: 'DM、店家或剧本库加载失败，请稍后刷新', ok: false });
     }).finally(() => {
@@ -166,7 +176,17 @@ export default function DmRating() {
             <div style={responsiveGrid}>
               <Field label="DM名称 *"><input value={dmName} onChange={event => setDmName(event.target.value)} required style={inputStyle} /></Field>
               <CitySearchSelect label="城市 *" value={dmCity} onChange={setDmCity} allowCustom />
-              <Field label="常驻店家 / 工作地点 *"><input value={dmWorkplace} onChange={event => setDmWorkplace(event.target.value)} required style={inputStyle} /></Field>
+              <StoreSearchField
+                label="常驻店家 / 工作地点 *"
+                value={dmWorkplace}
+                stores={stores}
+                required
+                onChange={setDmWorkplace}
+                onSelect={item => {
+                  setDmWorkplace(item.name);
+                  if (!dmCity && item.city) setDmCity(item.city);
+                }}
+              />
               <Field label="个人主页链接（可选）"><input value={dmProfileUrl} onChange={event => setDmProfileUrl(event.target.value)} style={inputStyle} /></Field>
               <Field label="DM照片（可选）">
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -187,13 +207,20 @@ export default function DmRating() {
               </select>
             </Field>
             {!scriptId && <Field label="剧本名称 *"><input value={scriptName} onChange={event => setScriptName(event.target.value)} required style={inputStyle} /></Field>}
-            <Field label="从店家库选择">
-              <select value={storeId} onChange={event => setStoreId(event.target.value)} style={inputStyle}>
-                <option value="">库里没有或私人组局</option>
-                {stores.map(item => <option key={item.id} value={item.id}>{item.name}{item.city ? ` · ${item.city}` : ''}</option>)}
-              </select>
-            </Field>
-            {!storeId && <Field label="店家或场地名称 *"><input value={storeName} onChange={event => setStoreName(event.target.value)} required style={inputStyle} /></Field>}
+            <StoreSearchField
+              label="店家或场地 *"
+              value={storeName}
+              stores={stores}
+              required
+              onChange={value => {
+                setStoreName(value);
+                setStoreId('');
+              }}
+              onSelect={item => {
+                setStoreName(item.name);
+                setStoreId(item.linkedStoreId || '');
+              }}
+            />
             <Field label="体验日期 *"><input type="date" value={playedOn} onChange={event => setPlayedOn(event.target.value)} required max={localDateInputValue()} style={inputStyle} /></Field>
             <Field label="这是你第几刷 *"><input type="number" min={1} max={99} value={replayNumber} onChange={event => setReplayNumber(event.target.value)} required style={inputStyle} /></Field>
           </div>
@@ -237,6 +264,68 @@ function Helper({ children }: { children: React.ReactNode }) {
   return <span style={{ color: MUTED, fontSize: 12 }}>{children}</span>;
 }
 
+function StoreSearchField({
+  label,
+  value,
+  stores,
+  required = false,
+  onChange,
+  onSelect,
+}: {
+  label: string;
+  value: string;
+  stores: StoreOption[];
+  required?: boolean;
+  onChange: (value: string) => void;
+  onSelect: (item: StoreOption) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const query = normalizeCatalogSearch(value);
+  const matches = stores.filter(item => {
+    if (!query) return true;
+    return normalizeCatalogSearch(`${item.name}${item.city || ''}`).includes(query);
+  }).slice(0, 8);
+
+  return (
+    <div style={{ display: 'grid', gap: 6, position: 'relative' }}>
+      <span style={{ color: MUTED, fontSize: 13, fontWeight: 850 }}>{label}</span>
+      <input
+        value={value}
+        onChange={event => {
+          onChange(event.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        required={required}
+        autoComplete="off"
+        placeholder="输入店家名称搜索，也可以直接填写"
+        style={inputStyle}
+      />
+      {open && (matches.length > 0 || value.trim()) && (
+        <div style={suggestionListStyle}>
+          {matches.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => {
+                onSelect(item);
+                setOpen(false);
+              }}
+              style={suggestionButtonStyle}
+            >
+              <strong>{item.name}</strong>
+              <span style={{ color: MUTED, fontSize: 12 }}>{item.city || '城市待补'}</span>
+            </button>
+          ))}
+          {matches.length === 0 && <span style={{ padding: '11px 12px', color: MUTED, fontSize: 13 }}>没有匹配店家，可直接使用当前填写内容</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Notice({ value }: { value: { text: string; ok: boolean } }) {
   return <div style={{ padding: '12px 14px', borderRadius: 10, border: `1px solid ${value.ok ? 'rgba(21,128,61,0.22)' : 'rgba(185,28,28,0.22)'}`, background: value.ok ? '#f0fdf4' : '#fef2f2', color: value.ok ? '#166534' : '#b91c1c', fontWeight: 800, lineHeight: 1.65 }}>{value.text}</div>;
 }
@@ -244,6 +333,8 @@ function Notice({ value }: { value: { text: string; ok: boolean } }) {
 const sectionStyle: React.CSSProperties = { padding: 18, borderRadius: 8, border: '1px solid rgba(31,41,55,0.10)', background: '#fff' };
 const responsiveGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 };
 const inputStyle: React.CSSProperties = { boxSizing: 'border-box', width: '100%', minHeight: 44, border: '1px solid rgba(31,41,55,0.14)', borderRadius: 7, background: '#fff', color: INK, padding: '10px 12px', fontSize: 14 };
+const suggestionListStyle: React.CSSProperties = { position: 'absolute', zIndex: 20, top: '100%', left: 0, right: 0, display: 'grid', maxHeight: 280, overflowY: 'auto', marginTop: 4, border: '1px solid rgba(31,41,55,0.14)', borderRadius: 7, background: '#fff', boxShadow: '0 12px 30px rgba(31,41,55,0.14)' };
+const suggestionButtonStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%', minHeight: 44, border: 0, borderBottom: '1px solid rgba(31,41,55,0.08)', background: '#fff', color: INK, padding: '10px 12px', textAlign: 'left', cursor: 'pointer' };
 const switchStyle: React.CSSProperties = { display: 'inline-grid', gridTemplateColumns: '1fr 1fr', gap: 4, padding: 4, borderRadius: 8, background: '#f3f4f6', marginBottom: 14, maxWidth: '100%' };
 const switchButton = (active: boolean): React.CSSProperties => ({ border: 0, borderRadius: 6, padding: '9px 12px', background: active ? '#fff' : 'transparent', color: active ? INK : MUTED, fontWeight: 850, cursor: 'pointer', boxShadow: active ? '0 1px 4px rgba(31,41,55,0.10)' : 'none' });
 const starButton = (active: boolean): React.CSSProperties => ({ minWidth: 64, minHeight: 42, borderRadius: 7, border: `1px solid ${active ? '#a66a1f' : 'rgba(31,41,55,0.14)'}`, background: active ? '#fff4d6' : '#fff', color: active ? '#8a5a19' : MUTED, fontWeight: 900, cursor: 'pointer' });

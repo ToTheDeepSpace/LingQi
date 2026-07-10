@@ -5658,6 +5658,7 @@ app.post('/api/lc/entity-ratings', authMiddleware, async (req, res) => {
 app.get('/api/lc/stores', async (req, res) => {
   try {
     const city = cleanText(req.query.city, 40);
+    const includeReputationCatalog = cleanText(req.query.catalog, 40) === 'reputation';
     const { data, error: qErr } = await supabase.from('jzg_stores')
       .select('id, name, city, address, status, created_at')
       .eq('status', 'active')
@@ -5666,18 +5667,70 @@ app.get('/api/lc/stores', async (req, res) => {
     if (qErr && isMissingRelation(qErr, 'jzg_stores')) return res.json(ok([]));
     if (qErr) throw qErr;
 
-    const rows = (data || [])
+    const libraryRows = (data || []).map((store: Record<string, unknown>) => ({
+      id: cleanText(store.id, 80),
+      linked_store_id: cleanText(store.id, 80) || null,
+      source: 'store_library',
+      source_id: cleanText(store.id, 80),
+      name: cleanText(store.name, 100),
+      city: cleanText(store.city, 40) || null,
+      address: cleanText(store.address, 160) || null,
+    }));
+
+    if (includeReputationCatalog) {
+      const [dossierResult, rankingResult] = await Promise.all([
+        supabase.from('lc_dm_dossiers')
+          .select('id, dm_name, city, workplace')
+          .eq('entity_type', 'store')
+          .eq('status', 'approved')
+          .limit(500),
+        supabase.from('lc_rankings')
+          .select('id, subject_name, subject_city')
+          .eq('subject_type', 'store')
+          .eq('status', 'approved')
+          .limit(500),
+      ]);
+      if (dossierResult.error && !isMissingRelation(dossierResult.error, 'lc_dm_dossiers')) throw dossierResult.error;
+      if (rankingResult.error && !isMissingRelation(rankingResult.error, 'lc_rankings')) throw rankingResult.error;
+
+      const reputationRows = [
+        ...((dossierResult.data || []).map((store: Record<string, unknown>) => ({
+          id: `dossier:${cleanText(store.id, 80)}`,
+          linked_store_id: null,
+          source: 'store_dossier',
+          source_id: cleanText(store.id, 80),
+          name: cleanText(store.dm_name, 100),
+          city: cleanText(store.city, 40) || null,
+          address: cleanText(store.workplace, 160) || null,
+        }))),
+        ...((rankingResult.data || []).map((store: Record<string, unknown>) => ({
+          id: `ranking:${cleanText(store.id, 80)}`,
+          linked_store_id: null,
+          source: 'ranking',
+          source_id: cleanText(store.id, 80),
+          name: cleanText(store.subject_name, 100),
+          city: cleanText(store.subject_city, 40) || null,
+          address: null,
+        }))),
+      ].filter(store => store.name);
+
+      const deduped = new Map<string, typeof libraryRows[number]>();
+      for (const store of [...libraryRows, ...reputationRows]) {
+        const key = `${normalizeDmLookupText(store.name)}|${normalizeDmLookupText(store.city)}`;
+        const existing = deduped.get(key);
+        if (!existing || (!existing.linked_store_id && store.linked_store_id)) deduped.set(key, store);
+      }
+      libraryRows.splice(0, libraryRows.length, ...deduped.values());
+    }
+
+    const rows = libraryRows
       .filter((store: Record<string, unknown>) => {
         const storeCity = cleanText(store.city, 40);
         if (!city || city === 'all') return true;
         return !storeCity || storeCity === city || storeCity === '未设置';
       })
-      .map((store: Record<string, unknown>) => ({
-        id: store.id,
-        name: store.name,
-        city: store.city || null,
-        address: store.address || null,
-      }));
+      .sort((left, right) => cleanText(left.name, 100).localeCompare(cleanText(right.name, 100), 'zh-CN'))
+      .slice(0, 200);
     res.json(ok(rows));
   } catch (e) { res.status(500).json(err(e)); }
 });
