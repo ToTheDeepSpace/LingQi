@@ -139,73 +139,32 @@ function RouteFallback() {
 function SiteFooter() {
   return (
     <footer style={{
-      background: 'linear-gradient(180deg, #fffdf8 0%, #f7fbff 100%)',
+      background: '#fffdf8',
       borderTop: '1px solid rgba(201,146,46,0.22)',
-      padding: '42px 20px 30px',
+      padding: '22px 20px 18px',
       marginTop: 'auto',
       color: 'rgba(71,85,105,0.78)',
     }}>
       <div style={{ maxWidth: 1120, margin: '0 auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 28 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.35rem', color: '#1f2937', marginBottom: 10 }}>灵契</div>
-            <p style={{ fontSize: '0.86rem', lineHeight: 1.8, margin: 0, maxWidth: 320 }}>
-              致力于成为沉浸式娱乐领域最可信的卡司评分榜。从 DM 开始，记录真实口碑。
-            </p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
-              <FooterBadge>人工审核</FooterBadge>
-              <FooterBadge>契约币原型期</FooterBadge>
-              <FooterBadge>公安备案已通过</FooterBadge>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
+            <strong style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.08rem', color: '#1f2937' }}>灵契</strong>
+            <span style={{ fontSize: '0.78rem', lineHeight: 1.6, color: 'rgba(71,85,105,0.68)' }}>
+              沉浸式娱乐领域的卡司评分榜，从 DM 开始记录真实口碑。
+            </span>
           </div>
-          <FooterColumn title="主要入口">
-            <FooterLink to="/dm">DM评分</FooterLink>
-            <FooterLink to="/commissions">委托需求墙</FooterLink>
-            <FooterLink to="/carpools">拼车区</FooterLink>
-            <FooterLink to="/rankings">红黑榜事件</FooterLink>
-            <FooterLink to="/reputation/city">城市口碑</FooterLink>
-            <FooterLink to="/scripts">角色点评</FooterLink>
-            <FooterLink to="/guides">攻略交易</FooterLink>
-            <FooterLink to="/wallet">我的契约币</FooterLink>
-            <FooterLink to="/referrals">我的邀请</FooterLink>
-          </FooterColumn>
-          <FooterColumn title="发布与认证">
-            <FooterLink to="/dm/rate">给DM评分</FooterLink>
-            <FooterLink to="/commissions/new">发布委托</FooterLink>
-            <FooterLink to="/carpools/new">发布拼车</FooterLink>
-            <FooterLink to="/rankings/new">发布口碑</FooterLink>
-            <FooterLink to="/scripts/contribute">维护剧本库</FooterLink>
-            <FooterLink to="/guides/new">发布攻略</FooterLink>
-            <FooterLink to="/guides/income">创作者收入</FooterLink>
-            <FooterLink to="/scripts">给剧本评分</FooterLink>
-            <FooterLink to="/certification">身份认证</FooterLink>
-            <FooterLink to="/dashboard">个人后台</FooterLink>
-          </FooterColumn>
-          <FooterColumn title="生态连接">
-            <FooterExternal href="https://jusichen.com">剧司辰</FooterExternal>
-            <FooterLink to="/shop/dashboard">店家后台</FooterLink>
-            <FooterLink to="/roadmap">AI 口碑路线图</FooterLink>
-            <FooterExternal href="/ai/lingqi-overview.html">AI 可读说明</FooterExternal>
-            <FooterLink to="/contact">建议反馈 / 共建合作</FooterLink>
-            <FooterText>摄影师 / 妆造师</FooterText>
-            <FooterText>服装商 / 道具师</FooterText>
-            <FooterText>大陆低成本模型优先</FooterText>
-          </FooterColumn>
-          <FooterColumn title="规则与合规">
+          <nav aria-label="页脚导航" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px 14px', flexWrap: 'wrap' }}>
+            <FooterLink to="/contact">建议反馈</FooterLink>
             <FooterLink to="/rules">审核规则</FooterLink>
-            <FooterLink to="/moderation">社区观察员审核台</FooterLink>
             <FooterLink to="/terms">用户协议</FooterLink>
             <FooterLink to="/privacy">隐私政策</FooterLink>
-            <FooterLink to="/security-assessment">安全评估说明</FooterLink>
-            <FooterLink to="/business-license">经营主体信息</FooterLink>
-            <FooterLink to="/contact">联系我们 / 站内信</FooterLink>
+            <FooterLink to="/security-assessment">安全与合规</FooterLink>
+            <FooterLink to="/business-license">经营主体</FooterLink>
             <FooterExternal href={`mailto:${CONTACT_EMAIL}`}>客服邮箱</FooterExternal>
-            <FooterExternal href="https://beian.miit.gov.cn/">{ICP_RECORD_NO}</FooterExternal>
-            <FooterExternal href={MPS_RECORD_URL}>{MPS_RECORD_NO}</FooterExternal>
-          </FooterColumn>
+          </nav>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 34, paddingTop: 18, borderTop: '1px solid rgba(201,146,46,0.14)', fontSize: '0.76rem', color: 'rgba(71,85,105,0.58)' }}>
-          <span>© {new Date().getFullYear()} 灵契 LingQi. 原型期运营中。</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(201,146,46,0.12)', fontSize: '0.72rem', color: 'rgba(71,85,105,0.54)' }}>
+          <span>© {new Date().getFullYear()} 灵契 LingQi</span>
           <span style={{ display: 'inline-flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(39,83,137,0.72)', textDecoration: 'none', fontWeight: 700 }}>{ICP_RECORD_NO}</a>
             <a href={MPS_RECORD_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(39,83,137,0.72)', textDecoration: 'none', fontWeight: 700 }}>{MPS_RECORD_NO}</a>
@@ -213,15 +172,6 @@ function SiteFooter() {
         </div>
       </div>
     </footer>
-  );
-}
-
-function FooterColumn({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h3 style={{ color: '#1f2937', fontSize: '0.86rem', fontWeight: 900, marginBottom: 12 }}>{title}</h3>
-      <div style={{ display: 'grid', gap: 8 }}>{children}</div>
-    </div>
   );
 }
 
@@ -252,18 +202,10 @@ function FooterExternal({ href, children }: { href: string; children: React.Reac
   );
 }
 
-function FooterText({ children }: { children: React.ReactNode }) {
-  return <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.8rem' }}>{children}</span>;
-}
-
-function FooterBadge({ children }: { children: React.ReactNode }) {
-  return <span style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid rgba(217,168,87,0.2)', color: '#d9a857', background: 'rgba(217,168,87,0.08)', fontSize: '0.72rem', fontWeight: 800 }}>{children}</span>;
-}
-
 const footerLinkStyle: React.CSSProperties = {
   color: 'rgba(39,83,137,0.78)',
   textDecoration: 'none',
-  fontSize: '0.8rem',
+  fontSize: '0.76rem',
   fontWeight: 650,
 };
 
