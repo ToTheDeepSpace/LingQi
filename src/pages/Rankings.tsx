@@ -244,20 +244,26 @@ const filterBarStyle: React.CSSProperties = {
 
 const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 10, alignItems: 'start' };
-const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 10, borderTop: '1px solid rgba(31,41,55,0.06)' };
+const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 7, borderTop: '1px solid rgba(31,41,55,0.06)' };
 const compactActionButtonStyle: React.CSSProperties = { border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.66)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 0', fontWeight: 800 };
-const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 8 };
+const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 4, marginBottom: 5 };
 const paidVoteZoneStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  flexWrap: 'wrap',
   borderTop: '1px solid rgba(166,106,31,0.22)',
-  padding: '8px 0 4px',
+  padding: '6px 0 2px',
 };
 const freeVoteZoneStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  flexWrap: 'wrap',
   borderTop: '1px solid rgba(39,83,137,0.16)',
-  padding: '8px 0 4px',
+  padding: '6px 0 2px',
 };
-const voteZoneTitleStyle: React.CSSProperties = { display: 'flex', alignItems: 'baseline', gap: 7, flexWrap: 'wrap', marginBottom: 4 };
 const voteZoneKickerStyle: React.CSSProperties = { fontSize: '0.7rem', fontWeight: 950 };
-const voteZoneHintStyle: React.CSSProperties = { color: 'rgba(71,85,105,0.58)', fontSize: '0.68rem', lineHeight: 1.4, fontWeight: 650 };
 
 function getAuth(): AuthSession | null {
   const data = readStoredCreatorAuth();
@@ -400,8 +406,8 @@ function voteRecordIcon(vote: VoteRecord, itemType?: Ranking['type']) {
 
 function votesToggleLabel(item: Ranking, showVotes: boolean) {
   void item;
-  if (showVotes) return '收起记录';
-  return '谁同意/反对/欢乐';
+  if (showVotes) return '收起票数';
+  return '票数明细';
 }
 
 function emptyVoteRecordText(item: Ranking) {
@@ -1542,7 +1548,7 @@ export default function Rankings() {
                       background: '#626b78',
                     }} />
                   )}
-                  <div style={{ marginBottom: 12 }}>
+                  <div style={{ marginBottom: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 9 }}>
                       <span style={{
                         padding: '2px 8px',
@@ -1565,8 +1571,7 @@ export default function Rankings() {
                         marginLeft: 'auto',
                       }}>{boardMode === 'reputation' ? '口碑' : '真金'} #{idx + 1} · {currentBoardScore}</span>
                     </div>
-                    <div style={{ marginBottom: summary ? 8 : 0 }}>
-                      <span style={{ display: 'block', color: 'rgba(71,85,105,0.54)', fontSize: '0.64rem', fontWeight: 850, marginBottom: 2 }}>涉及对象</span>
+                    <div style={{ marginBottom: summary ? 6 : 0 }}>
                       <Link to={dossierUrl(item)}
                         style={{ display: 'inline', color: 'rgba(31,41,55,0.94)', fontSize: '1.12rem', lineHeight: 1.3, fontWeight: 950, textDecoration: 'none', overflowWrap: 'anywhere' }}
                         onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
@@ -1584,15 +1589,33 @@ export default function Rankings() {
                         lineHeight: 1.6,
                         margin: '0',
                         fontWeight: 650,
-                        whiteSpace: 'pre-wrap',
+                        display: '-webkit-box',
+                        WebkitBoxOrient: 'vertical',
+                        WebkitLineClamp: 2,
+                        overflow: 'hidden',
                       }}>
                         {renderContent(summary)}
                       </p>
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        color: 'rgba(71,85,105,0.64)',
+                        fontSize: '0.7rem',
+                        fontWeight: 760,
+                        }}>
+                        发布人 {renderName(item.author_name, item.is_realname)}
+                      </span>
+                      {item.lc_profiles?.verified_shop && (
+                        <span style={{ padding: '1px 5px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 900, background: '#3b82f6', color: '#fff' }} title="已认证店家">蓝V</span>
+                      )}
+                      {item.lc_profiles?.verified_dm && (
+                        <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
+                      )}
                       {item.subject_url && (
                         <a href={normalizeUrl(item.subject_url)} target="_blank" rel="noreferrer"
-                          style={{ fontSize: '0.72rem', color: GOLD, textDecoration: 'none' }}>社交主页 ↗</a>
+                          style={{ fontSize: '0.7rem', color: GOLD, textDecoration: 'none' }}>主页 ↗</a>
                       )}
                       {left !== null && left !== undefined && (
                         <span style={{
@@ -1610,32 +1633,12 @@ export default function Rankings() {
                         </span>
                       )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        color: 'rgba(71,85,105,0.64)',
-                        fontSize: '0.7rem',
-                        fontWeight: 760,
-                        }}>
-                        发布人 {renderName(item.author_name, item.is_realname)}
-                      </span>
-                      {item.lc_profiles?.verified_shop && (
-                        <span style={{ padding: '1px 5px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 900, background: '#3b82f6', color: '#fff' }} title="已认证店家">蓝V</span>
-                      )}
-                      {item.lc_profiles?.verified_dm && (
-                        <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
-                      )}
-                    </div>
                   </div>
 
                   <div style={voteZoneGridStyle}>
                     <div style={paidVoteZoneStyle}>
-                      <div style={voteZoneTitleStyle}>
-                        <span style={{ ...voteZoneKickerStyle, color: GOLD }}>真金打榜</span>
-                        <span style={voteZoneHintStyle}>契约币累计，影响热度和真金榜，不等于事实结论。</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <span style={{ ...voteZoneKickerStyle, color: GOLD }}>真金打榜</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', flexWrap: 'wrap' }}>
                         <button onClick={() => openPaidBoostModal(item.id, 'boost')}
                           aria-label={`给事件「${heading}」打榜`}
                           style={{ ...compactActionButtonStyle, color: boostStats.total > 0 ? GOLD : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
@@ -1652,11 +1655,8 @@ export default function Rankings() {
                       </div>
                     </div>
                     <div style={freeVoteZoneStyle}>
-                      <div style={voteZoneTitleStyle}>
-                        <span style={{ ...voteZoneKickerStyle, color: '#275389' }}>口碑票</span>
-                        <span style={voteZoneHintStyle}>登录后一人一票，可改票，优先反映真实参与人数。</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <span style={{ ...voteZoneKickerStyle, color: '#275389' }}>口碑票</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', flexWrap: 'wrap' }}>
                         <button onClick={() => openVoteModal(item.id, 'like')}
                           style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'like' ? '#8f3732' : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
                           {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}
@@ -1740,12 +1740,12 @@ export default function Rankings() {
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
                       onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>
-                      💬 {showComments ? '收起评论' : `评论${comments.length ? ` (${comments.length})` : ''}`}
+                      💬 {showComments ? '收起评论' : `评论 ${comments.length}`}
                     </button>
 	                    <button onClick={() => openCommentModal(item.id)}
 	                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
 	                      onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
-	                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>+ 发评论 免费</button>
+	                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>写评论</button>
                     <button onClick={() => toggleVotes(item.id)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
