@@ -26,6 +26,8 @@ type DossierDraft = {
   photoUrl: string;
   note: string;
   tags: string;
+  employmentStatus: 'store_affiliated' | 'freelance';
+  employerStoreId: string;
 };
 
 type DmDossier = {
@@ -34,6 +36,8 @@ type DmDossier = {
   dm_name: string;
   city?: string | null;
   workplace?: string | null;
+  employment_status?: 'unknown' | 'store_affiliated' | 'freelance';
+  employer_store_id?: string | null;
   profile_url?: string | null;
   photo_url?: string | null;
   note?: string | null;
@@ -119,6 +123,7 @@ function shouldSaveDossierDraft(data: DossierDraft) {
     data.photoUrl,
     data.note,
     data.tags,
+    data.employerStoreId,
   ].some(item => item.trim()) || data.entityType !== 'dm';
 }
 
@@ -131,7 +136,8 @@ export default function DmWall() {
   const [entityType, setEntityType] = useState<EntityFilter>('dm');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<DossierDraft>({ entityType: 'dm', dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
+  const [form, setForm] = useState<DossierDraft>({ entityType: 'dm', dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '', employmentStatus: 'store_affiliated', employerStoreId: '' });
+  const [storeOptions, setStoreOptions] = useState<DmDossier[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [claimingId, setClaimingId] = useState('');
@@ -156,6 +162,8 @@ export default function DmWall() {
         photoUrl: data.photoUrl || '',
         note: data.note || '',
         tags: data.tags || '',
+        employmentStatus: data.employmentStatus === 'freelance' ? 'freelance' : 'store_affiliated',
+        employerStoreId: data.employerStoreId || '',
       });
     },
   });
@@ -193,6 +201,15 @@ export default function DmWall() {
     return () => controller.abort();
   }, [loadDossiers]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${API}/lc/dm-dossiers?entityType=store`, { signal: controller.signal })
+      .then(r => r.json())
+      .then(data => { if (data.success) setStoreOptions(data.data || []); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
   const updateForm = (patch: Partial<typeof form>) => {
     setForm(prev => ({ ...prev, ...patch }));
     setMessage(null);
@@ -215,6 +232,8 @@ export default function DmWall() {
           dmName: form.dmName.trim(),
           city: form.city.trim(),
           workplace: form.workplace.trim(),
+          employmentStatus: form.entityType === 'dm' ? form.employmentStatus : 'unknown',
+          employerStoreId: form.entityType === 'dm' && form.employmentStatus === 'store_affiliated' ? form.employerStoreId : null,
           profileUrl: form.profileUrl.trim(),
           photoUrl: form.photoUrl.trim(),
           note: form.note.trim(),
@@ -231,7 +250,7 @@ export default function DmWall() {
       setMessage({ text: '已提交，管理员审核通过后会公开到档案墙。', ok: true });
       dossierDraft.clearDraft();
       setShowForm(false);
-      setForm({ entityType: form.entityType, dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '' });
+      setForm({ entityType: form.entityType, dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '', employmentStatus: 'store_affiliated', employerStoreId: '' });
       loadDossiers();
     } catch {
       setMessage({ text: '网络错误，请稍后再试', ok: false });
@@ -334,9 +353,29 @@ export default function DmWall() {
                 placeholder="搜索城市，例如：保定、上海"
               />
               <Field label={activeFormCopy.nameLabel} value={form.dmName} onChange={value => updateForm({ dmName: value })} />
-              <Field label={activeFormCopy.workplaceLabel} value={form.workplace} onChange={value => updateForm({ workplace: value })} />
+              {form.entityType === 'store' && <Field label={activeFormCopy.workplaceLabel} value={form.workplace} onChange={value => updateForm({ workplace: value })} />}
               <Field label={activeFormCopy.profileLabel} value={form.profileUrl} onChange={value => updateForm({ profileUrl: value })} placeholder={form.entityType === 'store' ? '大众点评 / 小红书 / 抖音店铺主页，可后补' : '抖音 / 小红书 / 微博主页'} />
             </div>
+            {form.entityType === 'dm' && (
+              <div style={{ marginTop: 12 }}>
+                <span style={labelStyle}>受雇店家 *</span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <button type="button" onClick={() => updateForm({ employmentStatus: 'store_affiliated' })} style={form.employmentStatus === 'store_affiliated' ? primaryButton : ghostButton}>选择已有店家</button>
+                  <button type="button" onClick={() => updateForm({ employmentStatus: 'freelance', employerStoreId: '', workplace: '' })} style={form.employmentStatus === 'freelance' ? primaryButton : ghostButton}>无受雇店家（自由DM）</button>
+                </div>
+                {form.employmentStatus === 'store_affiliated' && (
+                  <select value={form.employerStoreId} onChange={event => {
+                    const id = event.target.value;
+                    const store = storeOptions.find(item => item.id === id);
+                    updateForm({ employerStoreId: id, workplace: store?.dm_name || '' });
+                    if (!form.city && store?.city) updateForm({ employerStoreId: id, workplace: store.dm_name, city: store.city });
+                  }} style={inputStyle}>
+                    <option value="">请选择已有店家档案</option>
+                    {storeOptions.map(item => <option key={item.id} value={item.id}>{item.dm_name} · {item.city || '城市待补'}</option>)}
+                  </select>
+                )}
+              </div>
+            )}
             <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'end' }}>
               <Field label={activeFormCopy.photoLabel} value={form.photoUrl} onChange={value => updateForm({ photoUrl: value })} placeholder="上传后自动填入，也可粘贴图片链接" />
               {auth && <ImageUpload token={auth.token} scope="dm-dossier" label="上传照片" onUploaded={url => updateForm({ photoUrl: url })} />}
@@ -373,7 +412,7 @@ export default function DmWall() {
                     </span>
                   </div>
                   <p style={{ margin: '0 0 8px', color: MUTED, lineHeight: 1.7, fontSize: 14 }}>
-                    {item.city || '未知城市'} · {item.workplace || (kind === 'store' ? '店铺位置待补充' : '工作地点待补充')}
+                    {item.city || '未知城市'} · {kind === 'dm' && item.employment_status === 'freelance' ? '无受雇店家（自由DM）' : item.workplace || (kind === 'store' ? '店铺位置待补充' : '受雇店家待补充')}
                   </p>
                   {item.note && <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.78)', lineHeight: 1.7, fontSize: 14 }}>{item.note}</p>}
                   {kind === 'dm' && item.rating_summary && (

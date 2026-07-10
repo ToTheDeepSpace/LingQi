@@ -13,6 +13,7 @@
     "test:auth-flow": "tsc -p tsconfig.test.json && node --test dist-test/tests/authFlow.test.js",
     "test:dm-rating": "tsc -p tsconfig.test.json && node --test dist-test/tests/dmRatingSummary.test.js",
     "test:shared-script-library": "tsc -p tsconfig.test.json && node --test dist-test/tests/sharedScriptCatalog.test.js",
+    "test:ranking-workflow": "tsc -p tsconfig.test.json && node --test dist-test/tests/rankingWorkflow.test.js",
     "preview": "vite preview",
     "start:server": "node dist-server/server/standalone.js"
   },

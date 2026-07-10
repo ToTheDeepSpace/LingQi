@@ -12,7 +12,7 @@ const MUTED = 'rgba(71,85,105,0.74)';
 const GOLD = '#a66a1f';
 
 type AuthSession = { token: string; displayName: string };
-type DmOption = { id: string; dm_name: string; city?: string | null; workplace?: string | null };
+type DmOption = { id: string; dm_name: string; city?: string | null; workplace?: string | null; employment_status?: 'unknown' | 'store_affiliated' | 'freelance' };
 type LibraryOption = { id: string; name: string; city?: string | null };
 type StoreOption = LibraryOption & { linkedStoreId?: string | null };
 
@@ -42,7 +42,8 @@ export default function DmRating() {
   const auth = getAuth();
   const [dms, setDms] = useState<DmOption[]>([]);
   const [scripts, setScripts] = useState<LibraryOption[]>([]);
-  const [stores, setStores] = useState<LibraryOption[]>([]);
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [employerStores, setEmployerStores] = useState<DmOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
@@ -50,7 +51,8 @@ export default function DmRating() {
   const [dmId, setDmId] = useState(searchParams.get('dmId') || '');
   const [dmName, setDmName] = useState('');
   const [dmCity, setDmCity] = useState('');
-  const [dmWorkplace, setDmWorkplace] = useState('');
+  const [dmEmploymentStatus, setDmEmploymentStatus] = useState<'store_affiliated' | 'freelance'>('store_affiliated');
+  const [dmEmployerStoreId, setDmEmployerStoreId] = useState('');
   const [dmProfileUrl, setDmProfileUrl] = useState('');
   const [dmPhotoUrl, setDmPhotoUrl] = useState('');
   const [scriptId, setScriptId] = useState('');
@@ -71,7 +73,8 @@ export default function DmRating() {
       fetch(`${API}/lc/dm-dossiers?entityType=dm`, { signal: controller.signal }).then(r => r.json()),
       fetch(`${API}/lc/scripts`, { signal: controller.signal }).then(r => r.json()),
       fetch(`${API}/lc/stores?catalog=reputation`, { signal: controller.signal }).then(r => r.json()),
-    ]).then(([dmData, scriptData, storeData]) => {
+      fetch(`${API}/lc/dm-dossiers?entityType=store`, { signal: controller.signal }).then(r => r.json()),
+    ]).then(([dmData, scriptData, storeData, employerStoreData]) => {
       if (dmData.success) setDms(dmData.data || []);
       if (scriptData.success) setScripts((scriptData.data || []).map((item: { id: string; name: string }) => ({ id: item.id, name: item.name })));
       if (storeData.success) setStores((storeData.data || []).map((item: { id: string; linked_store_id?: string | null; name: string; city?: string | null }) => ({
@@ -80,6 +83,7 @@ export default function DmRating() {
         name: item.name,
         city: item.city,
       })));
+      if (employerStoreData.success) setEmployerStores(employerStoreData.data || []);
     }).catch(error => {
       if (error?.name !== 'AbortError') setMessage({ text: 'DM、店家或剧本库加载失败，请稍后刷新', ok: false });
     }).finally(() => {
@@ -106,7 +110,8 @@ export default function DmRating() {
         newDm: createNewDm ? {
           dmName: dmName.trim(),
           city: dmCity.trim(),
-          workplace: dmWorkplace.trim() || storeName.trim(),
+          employmentStatus: dmEmploymentStatus,
+          employerStoreId: dmEmploymentStatus === 'store_affiliated' ? dmEmployerStoreId : null,
           profileUrl: dmProfileUrl.trim(),
           photoUrl: dmPhotoUrl.trim(),
         } : null,
@@ -168,25 +173,31 @@ export default function DmRating() {
             <Field label="DM *">
               <select value={dmId} onChange={event => setDmId(event.target.value)} required style={inputStyle}>
                 <option value="">请选择DM</option>
-                {dms.map(item => <option key={item.id} value={item.id}>{item.dm_name} · {item.city || '城市待补'} · {item.workplace || '店家待补'}</option>)}
+                {dms.map(item => <option key={item.id} value={item.id}>{item.dm_name} · {item.city || '城市待补'} · {item.employment_status === 'freelance' ? '自由DM' : item.workplace || '店家待补'}</option>)}
               </select>
-              {selectedDm && <Helper>{selectedDm.city || '城市待补'} · {selectedDm.workplace || '店家待补'}</Helper>}
+              {selectedDm && <Helper>{selectedDm.city || '城市待补'} · {selectedDm.employment_status === 'freelance' ? '无受雇店家（自由DM）' : selectedDm.workplace || '受雇店家待补'}</Helper>}
             </Field>
           ) : (
             <div style={responsiveGrid}>
               <Field label="DM名称 *"><input value={dmName} onChange={event => setDmName(event.target.value)} required style={inputStyle} /></Field>
               <CitySearchSelect label="城市 *" value={dmCity} onChange={setDmCity} allowCustom />
-              <StoreSearchField
-                label="常驻店家 / 工作地点 *"
-                value={dmWorkplace}
-                stores={stores}
-                required
-                onChange={setDmWorkplace}
-                onSelect={item => {
-                  setDmWorkplace(item.name);
-                  if (!dmCity && item.city) setDmCity(item.city);
-                }}
-              />
+              <Field label="受雇店家 *">
+                <div style={switchStyle}>
+                  <button type="button" onClick={() => setDmEmploymentStatus('store_affiliated')} style={switchButton(dmEmploymentStatus === 'store_affiliated')}>选择已有店家</button>
+                  <button type="button" onClick={() => { setDmEmploymentStatus('freelance'); setDmEmployerStoreId(''); }} style={switchButton(dmEmploymentStatus === 'freelance')}>无受雇店家（自由DM）</button>
+                </div>
+                {dmEmploymentStatus === 'store_affiliated' && (
+                  <select value={dmEmployerStoreId} onChange={event => {
+                    const id = event.target.value;
+                    setDmEmployerStoreId(id);
+                    const store = employerStores.find(item => item.id === id);
+                    if (!dmCity && store?.city) setDmCity(store.city);
+                  }} required style={inputStyle}>
+                    <option value="">请选择已有店家档案</option>
+                    {employerStores.map(item => <option key={item.id} value={item.id}>{item.dm_name} · {item.city || '城市待补'}</option>)}
+                  </select>
+                )}
+              </Field>
               <Field label="个人主页链接（可选）"><input value={dmProfileUrl} onChange={event => setDmProfileUrl(event.target.value)} style={inputStyle} /></Field>
               <Field label="DM照片（可选）">
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

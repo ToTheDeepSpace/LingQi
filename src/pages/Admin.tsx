@@ -92,6 +92,7 @@ type Profile = {
   banned_at?: string | null;
   reject_reason?: string | null;
   role_type?: string;
+  avatar?: string | null;
 };
 
 type ContactReq = {
@@ -119,6 +120,17 @@ type Ranking = {
   status?: 'pending' | 'approved' | 'rejected';
   reject_reason?: string | null;
   payment_proof: string | null;
+  files?: ProofFile[];
+  subject_dossier_id?: string | null;
+  event_date?: string | null;
+  event_script_id?: string | null;
+  event_script_name?: string | null;
+  event_store_dossier_id?: string | null;
+  event_store_name?: string | null;
+  dm_employment_status_suggestion?: 'store_affiliated' | 'freelance' | null;
+  dm_employer_store_id_suggestion?: string | null;
+  evidence_required?: boolean;
+  revision_kind?: 'content' | 'evidence' | null;
   moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
 };
@@ -130,6 +142,19 @@ type RankingEditForm = {
   subject_city: string;
   subject_url: string;
   content: string;
+  subject_dossier_id: string;
+};
+
+type DossierOption = {
+  id: string;
+  entity_type: 'dm' | 'store';
+  dm_name: string;
+  city?: string | null;
+  workplace?: string | null;
+  employment_status?: 'unknown' | 'store_affiliated' | 'freelance';
+  employer_store_id?: string | null;
+  photo_url?: string | null;
+  photo_files?: ProofFile[] | null;
 };
 
 type CommentReview = {
@@ -313,8 +338,11 @@ type DmDossierReview = {
   dm_name: string;
   city?: string | null;
   workplace?: string | null;
+  employment_status?: 'unknown' | 'store_affiliated' | 'freelance';
+  employer_store_id?: string | null;
   profile_url?: string | null;
   photo_url?: string | null;
+  photo_files?: ProofFile[] | null;
   note?: string | null;
   tags?: string[];
   status: 'pending' | 'approved' | 'rejected' | 'hidden';
@@ -471,6 +499,28 @@ function summarizePublicReviewPayload(payload?: Record<string, unknown> | null) 
     .map(([key, value]) => `${key}: ${Array.isArray(value) ? `${value.length} 项` : typeof value === 'object' ? JSON.stringify(value).slice(0, 160) : String(value).slice(0, 160)}`);
 }
 
+function publicReviewProofFiles(item: PublicReview): ProofFile[] {
+  const payload = item.payload || {};
+  const files: ProofFile[] = [];
+  const push = (value: unknown, name: string) => {
+    if (typeof value === 'string' && value.trim()) files.push({ name, url: value.trim(), type: 'image/*' });
+  };
+  if (payload.profile_patch && typeof payload.profile_patch === 'object') {
+    push((payload.profile_patch as Record<string, unknown>).avatar, '待审公开头像');
+  }
+  push(payload.image_url, '待审作品图片');
+  if (Array.isArray(payload.items)) {
+    payload.items.forEach((raw, index) => {
+      if (!raw || typeof raw !== 'object') return;
+      const sourcePayload = (raw as Record<string, unknown>).source_payload;
+      if (!sourcePayload || typeof sourcePayload !== 'object') return;
+      push((sourcePayload as Record<string, unknown>).screenshot_url, `档期截图 ${index + 1}`);
+    });
+  }
+  const seen = new Set<string>();
+  return files.filter(file => file.url && !seen.has(file.url) && seen.add(file.url));
+}
+
 const card: React.CSSProperties = {
   backgroundColor: SURFACE,
   border: `1px solid ${LINE}`,
@@ -576,6 +626,7 @@ export default function Admin() {
   const [scriptContributions, setScriptContributions] = useState<ScriptContributionReview[]>([]);
   const [dmDossiers, setDmDossiers] = useState<DmDossierReview[]>([]);
   const [dmRatings, setDmRatings] = useState<DmRatingReview[]>([]);
+  const [dossierOptions, setDossierOptions] = useState<DossierOption[]>([]);
   const [reports, setReports] = useState<ReportReview[]>([]);
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
@@ -589,11 +640,12 @@ const [transactionLoading, setTransactionLoading] = useState(false);
 const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<Tab>('allPending');
-  const [rejectModal, setRejectModal] = useState<{ open: boolean; id: string; reason: string; type: RejectType }>({
+  const [rejectModal, setRejectModal] = useState<{ open: boolean; id: string; reason: string; type: RejectType; revisionKind: 'content' | 'evidence' }>({
     open: false,
     id: '',
     reason: '',
     type: 'profile',
+    revisionKind: 'content',
   });
   const [rankingEdit, setRankingEdit] = useState<{ item: Ranking; form: RankingEditForm; saving: boolean; error: string } | null>(null);
 
@@ -616,6 +668,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setScriptContributions((d.data as { scriptContributions: ScriptContributionReview[] }).scriptContributions || []);
         setDmDossiers((d.data as { dmDossiers: DmDossierReview[] }).dmDossiers || []);
         setDmRatings((d.data as { dmRatings: DmRatingReview[] }).dmRatings || []);
+        setDossierOptions((d.data as { dossierOptions: DossierOption[] }).dossierOptions || []);
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
         setReports((d.data as { reports: ReportReview[] }).reports || []);
@@ -739,6 +792,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         subject_city: item.subject_city || '',
         subject_url: item.subject_url || '',
         content: item.content || '',
+        subject_dossier_id: item.subject_dossier_id || '',
       },
     });
   };
@@ -942,16 +996,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
-  const openRejectModal = (id: string, type: RejectType) => {
-    setRejectModal({ open: true, id, reason: '', type });
+  const openRejectModal = (id: string, type: RejectType, revisionKind: 'content' | 'evidence' = 'content') => {
+    setRejectModal({ open: true, id, reason: '', type, revisionKind });
   };
 
   const confirmReject = async () => {
-    const { id, reason, type } = rejectModal;
-    setRejectModal({ open: false, id: '', reason: '', type: 'profile' });
+    const { id, reason, type, revisionKind } = rejectModal;
+    setRejectModal({ open: false, id: '', reason: '', type: 'profile', revisionKind: 'content' });
 
     const headers = { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
-    const body = JSON.stringify({ rejectReason: reason });
+    const body = JSON.stringify({ rejectReason: reason, revisionKind });
 
     if (type === 'profile') {
       await fetch(`${API}/lc/admin/profile/${id}/flag`, { method: 'PUT', headers, body });
@@ -1016,6 +1070,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setScriptContributions([]);
     setDmDossiers([]);
     setDmRatings([]);
+    setDossierOptions([]);
     setReports([]);
     setSiteMessages([]);
     setSecurityEvents([]);
@@ -1337,6 +1392,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 4 }}>{p.display_name}</div>
                       <div style={{ fontSize: '0.78rem', color: MUTED }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.role_type && ` · ${p.role_type}`}</div>
+                      {p.avatar && <AdminAttachmentLinks files={[{ name: '公开头像', url: p.avatar, type: 'image/*' }]} />}
                     </div>
                     <Actions>
                       <ActionButton kind="ok" onClick={() => approveProfile(p.id)}>通过</ActionButton>
@@ -1420,7 +1476,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         {tx.lc_profiles?.phone ? ` · ${tx.lc_profiles.phone}` : ''}
                         {tx.created_at ? ` · ${tx.created_at.slice(0, 10)}` : ''}
                       </Meta>
-                      {tx.payment_proof && <Proof>支付凭证：{tx.payment_proof}</Proof>}
+                      {tx.payment_proof && <AdminLinkedValue label="支付凭证" value={tx.payment_proof} />}
                     </div>
                     <Actions vertical>
                       <ActionButton kind="ok" disabled={transactionLoading} onClick={() => approveTransaction(tx.id)}>到账</ActionButton>
@@ -1434,26 +1490,48 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
 
             {tab === 'rankings' && (
               <ListEmpty empty={rankings.length === 0} text="暂无待审核的红黑榜帖子">
-                {rankings.map(r => (
+                {rankings.map(r => {
+                  const linkedDossier = [...dossierOptions, ...dmDossiers].find(item => item.id === r.subject_dossier_id);
+                  const linkedDossierPending = !!r.subject_dossier_id && !dossierOptions.some(item => item.id === r.subject_dossier_id);
+                  const suggestedEmployer = dossierOptions.find(item => item.id === r.dm_employer_store_id_suggestion);
+                  return (
                   <Row key={r.id} accent={r.type === 'red' ? '#dc2626' : r.type === 'black' ? '#475569' : '#d9a857'}>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <TitleLine title={r.subject_name} pill={r.type === 'red' ? '🏅 红榜' : r.type === 'black' ? '👎 黑榜' : '✨ 白榜'} />
                       <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · {r.type === 'white' && r.initial_amount === 0 ? '免费发布' : `初始：${r.initial_amount} 契约币`} · {r.created_at?.slice(0, 10)}</Meta>
                       {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
+                      {['dm', 'store'].includes(r.subject_type) && (
+                        <Proof>
+                          关联档案：{linkedDossier ? `${linkedDossier.dm_name} · ${linkedDossier.city || '未知城市'}` : r.subject_dossier_id ? '待审新档案' : '旧记录尚未绑定档案'}
+                          {linkedDossierPending ? <div style={{ marginTop: 4, color: '#b45309' }}>请先在“DM建档”中创建或合并该对象，再通过帖子。</div> : null}
+                        </Proof>
+                      )}
+                      {r.dm_employment_status_suggestion && (
+                        <Proof>
+                          DM店家关系建议：{r.dm_employment_status_suggestion === 'freelance'
+                            ? '无受雇店家（自由DM）'
+                            : `绑定店家 ${suggestedEmployer?.dm_name || '所选店家待核对'}`}
+                          <div style={{ marginTop: 4, color: MUTED }}>红黑榜通过后同步更新DM档案。</div>
+                        </Proof>
+                      )}
+                      {(r.event_date || r.event_script_name || r.event_store_name) && <Meta>事件背景：{[r.event_date, r.event_script_name, r.event_store_name].filter(Boolean).join(' · ')}</Meta>}
                       <ModerationPrecheckBadge value={r.moderation_precheck} />
                       <ContentBox>{r.content}</ContentBox>
-                      {r.payment_proof && <Proof>支付凭证：{r.payment_proof}</Proof>}
+                      <AdminAttachmentLinks files={r.files || []} emptyText="未提交证据图片" />
+                      {r.payment_proof && <AdminLinkedValue label="旧支付凭证" value={r.payment_proof} />}
                     </div>
                     <Actions vertical>
                       <ActionButton onClick={() => openRankingEdit(r)}>编辑</ActionButton>
-                      <ActionButton kind="ok" onClick={() => approveRanking(r.id)}>按{rankingTypeLabel(r.type)}通过</ActionButton>
+                      <ActionButton kind="ok" disabled={linkedDossierPending} onClick={() => approveRanking(r.id)}>按{rankingTypeLabel(r.type)}通过</ActionButton>
                       {(['red', 'black', 'white'] as const).filter(type => type !== r.type).map(type => (
-                        <ActionButton key={type} onClick={() => approveRanking(r.id, type)}>改成{rankingTypeLabel(type)}并通过</ActionButton>
+                        <ActionButton key={type} disabled={linkedDossierPending} onClick={() => approveRanking(r.id, type)}>改成{rankingTypeLabel(type)}并通过</ActionButton>
                       ))}
-                      <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking')}>打回重写</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking', 'content')}>打回修改</ActionButton>
+                      <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking', 'evidence')}>要求补证据</ActionButton>
                     </Actions>
                   </Row>
-                ))}
+                  );
+                })}
               </ListEmpty>
             )}
 
@@ -1486,6 +1564,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               <ListEmpty empty={publicReviews.length === 0} text="暂无待审核公开内容">
                 {publicReviews.map(item => {
                   const details = summarizePublicReviewPayload(item.payload);
+                  const proofFiles = publicReviewProofFiles(item);
                   return (
                     <Row key={item.id} accent="#facc15">
                       <div style={{ minWidth: 0, flex: 1 }}>
@@ -1502,6 +1581,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                             {details.map(line => <div key={line}>{line}</div>)}
                           </Proof>
                         )}
+                        <AdminAttachmentLinks files={proofFiles} />
                       </div>
                       <Actions vertical>
                         <ActionButton kind="ok" onClick={() => approvePublicReview(item.id)}>通过并公开</ActionButton>
@@ -1695,6 +1775,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <AdminDetail label="档案类型" value={entityLabel} />
                         <AdminDetail label="城市" value={item.city || '未填写'} />
                         <AdminDetail label={entityType === 'store' ? '地址 / 商圈' : '常驻店家 / 工作地点'} value={item.workplace || '未填写'} />
+                        {entityType === 'dm' && <AdminDetail label="受雇状态" value={item.employment_status === 'freelance' ? '无受雇店家（自由DM）' : item.employment_status === 'store_affiliated' ? `已关联店家：${dossierOptions.find(store => store.id === item.employer_store_id)?.dm_name || item.workplace || '待核对'}` : item.workplace ? `旧档案文本：${item.workplace}` : '待核对'} />}
                         <AdminDetail label="提交人" value={item.submitted_by_name || '未知账号'} />
                         <AdminDetail label="提交时间" value={item.created_at ? item.created_at.slice(0, 19).replace('T', ' ') : '未知'} />
                         <AdminDetail label="个人主页">
@@ -1711,6 +1792,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       )}
                       <ModerationPrecheckBadge value={item.moderation_precheck} />
                       <AdminPhotoPreview url={item.photo_url} />
+                      <AdminAttachmentLinks files={item.photo_files || []} />
                       <div style={{ marginTop: 14, fontSize: '0.82rem', fontWeight: 900, color: INK }}>补充说明</div>
                       {item.note ? <ContentBox>{item.note}</ContentBox> : <Meta>未填写补充说明</Meta>}
                       <div style={{ marginTop: 12, fontSize: '0.82rem', fontWeight: 900, color: INK }}>标签</div>
@@ -1726,7 +1808,10 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                                 <div style={{ fontSize: '0.82rem', fontWeight: 900 }}>{candidate.dm_name}</div>
                                 <Meta>{candidate.city || '未知城市'}{candidate.workplace ? ` · ${candidate.workplace}` : ''} · 相似度 {Math.round(candidate.score)}%</Meta>
                               </div>
-                              <ActionButton onClick={() => mergeDmDossier(item.id, candidate)}>合并到此DM</ActionButton>
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                {candidate.photo_url && <AdminAttachmentLinks files={[{ name: `${candidate.dm_name}照片`, url: candidate.photo_url, type: 'image/*' }]} compact />}
+                                <ActionButton onClick={() => mergeDmDossier(item.id, candidate)}>合并到此DM</ActionButton>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1912,7 +1997,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                             )}
                           </Proof>
                         )}
-                        {c.payment_proof && !isRelatedProof && <Proof>支付凭证：{c.payment_proof}</Proof>}
+                        {c.payment_proof && !isRelatedProof && <AdminLinkedValue label="旧评论凭证" value={c.payment_proof} />}
                       </div>
                       <Actions vertical>
                         <ActionButton kind="ok" onClick={() => approveComment(c.id)}>通过</ActionButton>
@@ -2018,7 +2103,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </label>
               <label style={{ display: 'block' }}>
                 <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginBottom: 6 }}>对象分类</span>
-                <select value={rankingEdit.form.subject_type} onChange={e => updateRankingEditForm({ subject_type: e.target.value })}
+                <select value={rankingEdit.form.subject_type} onChange={e => updateRankingEditForm({ subject_type: e.target.value, subject_dossier_id: '' })}
                   style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, outline: 'none' }}>
                   {Object.entries(SUBJECT_LABEL).map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
@@ -2032,6 +2117,25 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, outline: 'none' }} />
               </label>
             </div>
+
+            {['dm', 'store'].includes(rankingEdit.form.subject_type) && (
+              <label style={{ display: 'block', marginBottom: 12 }}>
+                <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginBottom: 6 }}>关联已有{rankingEdit.form.subject_type === 'dm' ? 'DM' : '店家'}档案</span>
+                <select value={rankingEdit.form.subject_dossier_id} onChange={e => {
+                  const id = e.target.value;
+                  const dossier = dossierOptions.find(item => item.id === id);
+                  updateRankingEditForm({
+                    subject_dossier_id: id,
+                    ...(dossier ? { subject_name: dossier.dm_name, subject_city: dossier.city || rankingEdit.form.subject_city } : {}),
+                  });
+                }} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, outline: 'none' }}>
+                  <option value="">暂不绑定（仅兼容旧记录）</option>
+                  {dossierOptions.filter(item => item.entity_type === rankingEdit.form.subject_type).map(item => (
+                    <option key={item.id} value={item.id}>{item.dm_name} · {item.city || '未知城市'}{item.workplace ? ` · ${item.workplace}` : ''}</option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <label style={{ display: 'block', marginBottom: 12 }}>
               <span style={{ display: 'block', fontSize: '0.76rem', color: MUTED, marginBottom: 6 }}>对象名称</span>
@@ -2072,23 +2176,25 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       {rejectModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(217,168,87,0.24)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 28px 80px rgba(31,41,55,0.22)' }}>
-            <h3 style={{ fontWeight: 800, fontSize: '1rem', marginBottom: 8, color: INK }}>{rejectModal.type === 'ranking' ? '打回重写原因' : '填写拒绝原因'}</h3>
+            <h3 style={{ fontWeight: 800, fontSize: '1rem', marginBottom: 8, color: INK }}>{rejectModal.type === 'ranking' ? (rejectModal.revisionKind === 'evidence' ? '要求补证据' : '打回修改原因') : '填写拒绝原因'}</h3>
             <p style={{ fontSize: '0.8rem', color: MUTED, marginBottom: 16 }}>
               {rejectModal.type === 'ranking'
-                ? '这段原因会写回帖子记录，用户在自己的发布记录里能看到为什么需要重写。'
+                ? rejectModal.revisionKind === 'evidence'
+                  ? '用户重新提交时必须至少上传一张证据图片；原帖和已扣契约币都会保留。'
+                  : '用户可以修改原帖后重新提交，证据仍然选填；不会重复扣除契约币。'
                 : '原因可不填，主要给自己留审核记录。'}
             </p>
             <textarea value={rejectModal.reason} onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}
-              placeholder={rejectModal.type === 'ranking' ? '例如：证据不足，请补充聊天记录截图并打码第三方信息。' : '请说明拒绝原因（选填）...'} rows={4}
+              placeholder={rejectModal.type === 'ranking' ? (rejectModal.revisionKind === 'evidence' ? '例如：请补充聊天记录或订单截图，并打码第三方信息。' : '例如：请删去人身攻击，补清楚事件经过。') : '请说明拒绝原因（选填）...'} rows={4}
               style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, fontSize: '0.875rem', boxSizing: 'border-box', resize: 'none', outline: 'none' }} />
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button onClick={() => setRejectModal({ open: false, id: '', reason: '', type: 'profile' })}
+              <button onClick={() => setRejectModal({ open: false, id: '', reason: '', type: 'profile', revisionKind: 'content' })}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: `1px solid ${LINE}`, background: SURFACE, color: MUTED, cursor: 'pointer', fontWeight: 700, fontSize: '0.875rem' }}>
                 取消
               </button>
               <button onClick={confirmReject}
                 style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(185,28,28,0.20)', background: '#fef2f2', color: '#b91c1c', cursor: 'pointer', fontWeight: 800, fontSize: '0.875rem' }}>
-                {rejectModal.type === 'ranking' ? '确认打回' : '确认拒绝'}
+                {rejectModal.type === 'ranking' ? (rejectModal.revisionKind === 'evidence' ? '确认要求补证据' : '确认打回修改') : '确认拒绝'}
               </button>
             </div>
           </div>
@@ -2163,6 +2269,39 @@ function AdminDetail({ label, value, children }: { label: string; value?: string
       <div style={{ color: INK, fontSize: '0.9rem', fontWeight: 850, lineHeight: 1.55, overflowWrap: 'anywhere' }}>{children || value || '未填写'}</div>
     </div>
   );
+}
+
+function AdminAttachmentLinks({ files, emptyText, compact = false }: { files: ProofFile[]; emptyText?: string; compact?: boolean }) {
+  const valid = (files || []).map((file, index) => ({
+    ...file,
+    index,
+    href: normalizeAdminUrl(file.url, true),
+  })).filter(file => file.href);
+  if (valid.length === 0) return emptyText ? <Meta>{emptyText}</Meta> : null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: compact ? 0 : 10 }}>
+      {valid.map(file => {
+        const isImage = (file.type || '').startsWith('image/') || /\.(png|jpe?g|webp)(\?|$)/i.test(file.href || '') || (file.href || '').startsWith('/uploads/');
+        return (
+          <a key={`${file.href}-${file.index}`} href={file.href || '#'} target="_blank" rel="noreferrer"
+            style={{ padding: '7px 11px', borderRadius: 8, border: '1px solid rgba(39,83,137,0.22)', background: '#eff6ff', color: '#275389', fontSize: '0.78rem', fontWeight: 850, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            {isImage ? '查看图片' : '打开附件'}{valid.length > 1 ? ` ${file.index + 1}` : ''}
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function AdminLinkedValue({ label, value }: { label: string; value: string }) {
+  const href = normalizeAdminUrl(value, true);
+  if (href) return (
+    <Proof>
+      <strong>{label}</strong>
+      <AdminAttachmentLinks files={[{ name: label, url: href, type: 'image/*' }]} compact />
+    </Proof>
+  );
+  return <Proof>{label}：{value}</Proof>;
 }
 
 function AdminPhotoPreview({ url }: { url?: string | null }) {

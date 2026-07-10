@@ -9,9 +9,11 @@ const MUTED = 'rgba(71,85,105,0.72)';
 const GOLD = '#a66a1f';
 
 type DmDetail = {
-  dossier: { id: string; dm_name: string; city?: string | null; workplace?: string | null; photo_url?: string | null; note?: string | null; tags?: string[]; claim_status?: string };
+  dossier: { id: string; dm_name: string; city?: string | null; workplace?: string | null; employment_status?: 'unknown' | 'store_affiliated' | 'freelance'; photo_url?: string | null; note?: string | null; tags?: string[]; claim_status?: string };
   summary: { avg: number | null; review_count: number; player_count: number; sample_status: 'insufficient' | 'stable' };
   ratings: Array<{ id: string; profile_name: string; script_name: string; store_name: string; played_on: string; replay_number: number; rating: number; content: string; tags?: string[] }>;
+  reputation_summary: { event_count: number; red_count: number; black_count: number; white_count: number };
+  reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; event_date?: string | null; event_script_name?: string | null; event_store_name?: string | null; created_at: string }>;
 };
 
 export default function DmProfile() {
@@ -36,7 +38,7 @@ export default function DmProfile() {
   if (error) return <main style={{ minHeight: '72vh', padding: '84px 20px', background: BG, color: INK }}><div style={{ maxWidth: 760, margin: '0 auto' }}>{error}</div></main>;
   if (!data) return <main style={{ minHeight: '72vh', padding: '84px 20px', background: BG, color: MUTED }}><div style={{ maxWidth: 760, margin: '0 auto' }}>加载中...</div></main>;
 
-  const { dossier, summary, ratings } = data;
+  const { dossier, summary, ratings, reputation_summary: reputationSummary = { event_count: 0, red_count: 0, black_count: 0, white_count: 0 }, reputation_events: reputationEvents = [] } = data;
   const scoreText = summary.player_count === 0 ? '暂无评分' : `${summary.avg?.toFixed(1)} / 5`;
 
   return (
@@ -47,9 +49,10 @@ export default function DmProfile() {
           <div style={{ minWidth: 0 }}>
             <p style={{ margin: '0 0 6px', color: GOLD, fontSize: 13, fontWeight: 900 }}>{dossier.claim_status === 'approved' ? '已认领DM' : '未认领DM档案'}</p>
             <h1 style={{ margin: 0, fontSize: 'clamp(1.8rem, 4vw, 2.6rem)', fontFamily: 'var(--font-serif)' }}>{dossier.dm_name}</h1>
-            <p style={{ margin: '9px 0 0', color: MUTED }}>{dossier.city || '城市待补'} · {dossier.workplace || '店家待补'}</p>
+            <p style={{ margin: '9px 0 0', color: MUTED }}>{dossier.city || '城市待补'} · {dossier.employment_status === 'freelance' ? '无受雇店家（自由DM）' : dossier.workplace || '受雇店家待补'}</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
               <Link to={`/dm/rate?dmId=${encodeURIComponent(dossier.id)}`} style={primaryButton}>给TA评分</Link>
+              <Link to={`/rankings/new?subjectType=dm&subjectDossierId=${encodeURIComponent(dossier.id)}`} style={secondaryButton}>发布红黑榜记录</Link>
               <Link to="/contact?category=dm_correction" style={secondaryButton}>资料纠错 / 申诉</Link>
             </div>
           </div>
@@ -61,6 +64,7 @@ export default function DmProfile() {
           <Stat label="综合评分" value={scoreText} />
           <Stat label="体验评价" value={`${summary.review_count} 条`} />
           <Stat label="独立玩家" value={`${summary.player_count} 人`} />
+          <Stat label="红黑榜记录" value={`${reputationSummary?.event_count || 0} 条`} />
         </section>
         {summary.sample_status === 'insufficient' && summary.player_count > 0 && <div style={noticeStyle}>当前少于3名独立玩家，分数会正常显示，但同时标记为样本较少。综合分始终按独立玩家计权。</div>}
         {dossier.note && <section style={cardStyle}><h2 style={headingStyle}>档案说明</h2><p style={{ margin: 0, lineHeight: 1.75, color: MUTED }}>{dossier.note}</p></section>}
@@ -75,6 +79,22 @@ export default function DmProfile() {
               <p style={{ margin: '10px 0 0', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{item.content}</p>
               {item.tags && item.tags.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>{item.tags.map(tag => <span key={tag} style={tagStyle}>#{tag}</span>)}</div>}
             </article>)}
+          </div>}
+        </section>
+        <section style={cardStyle}>
+          <h2 style={headingStyle}>红黑榜记录</h2>
+          <p style={{ margin: '-6px 0 14px', color: MUTED, fontSize: 13 }}>红榜、黑榜和白榜是事件口碑，不参与上方五星综合分。</p>
+          {reputationEvents.length === 0 ? <p style={{ color: MUTED }}>暂无关联到这份DM档案的红黑榜记录。</p> : <div style={{ display: 'grid', gap: 12 }}>
+            {reputationEvents.map(item => (
+              <article key={item.id} style={{ borderTop: '1px solid rgba(31,41,55,0.09)', paddingTop: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <strong style={{ color: item.type === 'red' ? '#b91c1c' : item.type === 'black' ? '#334155' : '#8a5a19' }}>{item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'}</strong>
+                  <span style={{ color: MUTED, fontSize: 13 }}>{item.author_name} · {item.created_at?.slice(0, 10)}</span>
+                </div>
+                {(item.event_date || item.event_script_name || item.event_store_name) && <div style={{ color: MUTED, fontSize: 13, marginTop: 6 }}>{[item.event_date, item.event_script_name, item.event_store_name].filter(Boolean).join(' · ')}</div>}
+                <p style={{ margin: '9px 0 0', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{item.content}</p>
+              </article>
+            ))}
           </div>}
         </section>
       </div>

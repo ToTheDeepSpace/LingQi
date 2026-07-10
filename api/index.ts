@@ -5,6 +5,7 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { createTencentPgClient, tencentPgPool } from './tencentPgSupabase.js';
 import { summarizeDmRatingRows } from './dmRatingSummary.js';
+import { hasRankingEvidence, normalizeRankingRevisionKind } from './rankingWorkflow.js';
 import {
   findSharedRole,
   findSharedScript,
@@ -2548,6 +2549,12 @@ function auditPayload(targetType: AuditTargetType, row: Record<string, unknown>)
       subject_type: row.subject_type,
       subject_city: row.subject_city,
       subject_url: row.subject_url,
+      subject_dossier_id: row.subject_dossier_id,
+      event_date: row.event_date,
+      event_script_id: row.event_script_id,
+      event_script_name: row.event_script_name,
+      event_store_dossier_id: row.event_store_dossier_id,
+      event_store_name: row.event_store_name,
       content: row.content,
       author_name: row.author_name,
       is_realname: row.is_realname,
@@ -2732,6 +2739,7 @@ const RANKING_EDIT_LABELS: Record<string, string> = {
   subject_type: '对象分类',
   subject_city: '所在城市',
   subject_url: '社交主页',
+  subject_dossier_id: '关联档案',
   content: '正文内容',
   expires_at: '黑榜到期时间',
 };
@@ -2769,6 +2777,8 @@ function isPublicRankingVisible(row: Record<string, unknown>, now = Date.now()) 
 }
 
 function reputationSubjectKey(row: Record<string, unknown>) {
+  const dossierId = cleanText(row.subject_dossier_id, 80);
+  if (dossierId) return `${cleanText(row.subject_type, 40) || 'unknown'}::dossier::${dossierId}`;
   return [
     cleanText(row.subject_type, 40) || 'unknown',
     cleanText(row.subject_name, 120) || '未命名对象',
@@ -2894,9 +2904,17 @@ function publicRankingPayload(row: Record<string, unknown>) {
     subject_type: row.subject_type,
     subject_city: row.subject_city,
     subject_url: row.subject_url,
+    subject_dossier_id: row.subject_dossier_id || null,
+    event_date: row.event_date || null,
+    event_script_id: row.event_script_id || null,
+    event_script_name: row.event_script_name || null,
+    event_store_dossier_id: row.event_store_dossier_id || null,
+    event_store_name: row.event_store_name || null,
     content: row.content,
     author_name: row.author_name,
+    poster_id: row.poster_id || null,
     is_realname: !!row.is_realname,
+    lc_profiles: row.lc_profiles || null,
     initial_amount: row.initial_amount || 0,
     likes: metrics.likes,
     dislikes: metrics.dislikes,
@@ -2908,7 +2926,6 @@ function publicRankingPayload(row: Record<string, unknown>) {
     created_at: row.created_at,
     expires_at: row.expires_at,
     expiry_override: row.expiry_override,
-    files: row.files || [],
   };
 }
 
@@ -6904,7 +6921,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
         .order('created_at', { ascending: false })
         .limit(150),
       supabase.from('lc_dm_dossiers').select('*').or('status.eq.pending,claim_status.eq.pending').order('created_at', { ascending: false }).limit(100),
-      supabase.from('lc_dm_dossiers').select('id, dm_name, city, workplace, photo_url').eq('entity_type', 'dm').eq('status', 'approved').order('approved_at', { ascending: false }).limit(1000),
+      supabase.from('lc_dm_dossiers').select('id, entity_type, dm_name, city, workplace, employment_status, employer_store_id, photo_url, status').eq('status', 'approved').order('approved_at', { ascending: false }).limit(1000),
       supabase.from('lc_dm_ratings').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
       supabase.from('lc_public_reviews').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
       supabase.from('lc_guides').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
@@ -6916,7 +6933,8 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     if (publicReviewsResult.error && !isMissingRelation(publicReviewsResult.error, 'lc_public_reviews')) throw publicReviewsResult.error;
     if (guidesResult.error && !isMissingRelation(guidesResult.error, 'lc_guides')) throw guidesResult.error;
     if (withdrawalsResult.error && !isMissingRelation(withdrawalsResult.error, 'lc_creator_withdrawals')) throw withdrawalsResult.error;
-    const approvedDmDossiers = approvedDmDossiersResult.error ? [] : (approvedDmDossiersResult.data || []) as Record<string, unknown>[];
+    const approvedDossiers = approvedDmDossiersResult.error ? [] : (approvedDmDossiersResult.data || []) as Record<string, unknown>[];
+    const approvedDmDossiers = approvedDossiers.filter(dossier => dossier.entity_type === 'dm');
     const pendingDmDossiers: Record<string, unknown>[] = dmDossiersResult.error ? [] : ((dmDossiersResult.data || []) as Record<string, unknown>[]).map(dossier => ({
       ...dossier,
       similar_candidates: dossier.entity_type === 'dm' && dossier.status === 'pending'
@@ -6948,6 +6966,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       scriptContributions: scriptContributions || [],
       securityEvents: securityEvents || [],
       dmDossiers: pendingDmDossiers,
+      dossierOptions: approvedDossiers,
       dmRatings: pendingDmRatings,
       publicReviews: publicReviewsResult.error ? [] : (publicReviewsResult.data || []),
       guides: guidesResult.error ? [] : (guidesResult.data || []),
@@ -7228,6 +7247,12 @@ async function mergeDmDossierInto(sourceId: string, targetId: string, reviewerId
         [targetId, source.dm_name, source.city, source.workplace, sourceId],
       );
       await client.query(
+        `update lc_rankings
+         set subject_dossier_id = $2, subject_name = $3, subject_city = coalesce($4, subject_city)
+         where subject_dossier_id = $1`,
+        [sourceId, targetId, target.dm_name, target.city],
+      );
+      await client.query(
         `update lc_dm_dossiers
          set status = 'hidden', merged_into = $2, reject_reason = $3, updated_at = now()
          where id = $1`,
@@ -7289,6 +7314,12 @@ async function mergeDmDossierInto(sourceId: string, targetId: string, reviewerId
     source_dossier_id: sourceId,
   });
   if (aliasResult.error && aliasResult.error.code !== '23505') throw aliasResult.error;
+  const rankingMove = await supabase.from('lc_rankings').update({
+    subject_dossier_id: targetId,
+    subject_name: target.dm_name,
+    subject_city: target.city || source.city || null,
+  }).eq('subject_dossier_id', sourceId);
+  if (rankingMove.error) throw rankingMove.error;
   const hiddenResult = await supabase.from('lc_dm_dossiers').update({
     status: 'hidden',
     merged_into: targetId,
@@ -7660,6 +7691,146 @@ app.post('/api/lc/admin/audit/backfill', authMiddleware, adminMiddleware, async 
 
 // ==================== 红黑榜 ====================
 
+function normalizeRankingEvidenceFiles(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 8).map((raw, index) => {
+    const file = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+    const url = normalizeOptionalPublicUrl(file.url, 1000, true);
+    if (!url) return null;
+    return {
+      name: cleanText(file.name, 120) || `证据图片 ${index + 1}`,
+      url,
+      type: cleanText(file.type, 80) || 'image/jpeg',
+      size: Math.max(0, Number(file.size || 0) || 0),
+    };
+  }).filter(Boolean);
+}
+
+async function findRankingDossier(idInput: unknown, entityType: 'dm' | 'store', allowPending = false) {
+  const id = cleanText(idInput, 80);
+  if (!id) return null;
+  let query = supabase.from('lc_dm_dossiers').select('*').eq('id', id).eq('entity_type', entityType);
+  query = allowPending ? query.in('status', ['approved', 'pending']) : query.eq('status', 'approved');
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error(entityType === 'dm' ? '选择的DM档案不存在或尚未公开' : '选择的店家档案不存在或尚未公开');
+  return data as Record<string, unknown>;
+}
+
+async function resolveDmEmployment(input: Record<string, unknown>, fallbackWorkplace = '') {
+  const requestedStatus = cleanText(input.employmentStatus ?? input.employment_status, 40);
+  const employerStoreId = cleanText(input.employerStoreId ?? input.employer_store_id, 80);
+  if (requestedStatus === 'freelance') {
+    return { employment_status: 'freelance', employer_store_id: null, workplace: null };
+  }
+  if (employerStoreId) {
+    const store = await findRankingDossier(employerStoreId, 'store');
+    return {
+      employment_status: 'store_affiliated',
+      employer_store_id: store?.id || null,
+      workplace: cleanText(store?.dm_name, 160) || fallbackWorkplace || null,
+    };
+  }
+  const workplace = cleanText(input.workplace, 160) || cleanText(fallbackWorkplace, 160);
+  if (requestedStatus === 'store_affiliated' && !workplace) throw new Error('请选择受雇店家');
+  if (!workplace) throw new Error('请选择受雇店家，或选择“无受雇店家（自由DM）”');
+  return { employment_status: 'unknown', employer_store_id: null, workplace };
+}
+
+async function resolveRankingSubjectDossier(input: {
+  subjectType: string;
+  subjectName: string;
+  subjectCity: string;
+  subjectDossierId: unknown;
+  newSubject: unknown;
+  profile: Record<string, unknown>;
+  allowPending?: boolean;
+}) {
+  if (input.subjectType !== 'dm' && input.subjectType !== 'store') return null;
+  if (cleanText(input.subjectDossierId, 80)) {
+    return findRankingDossier(input.subjectDossierId, input.subjectType, !!input.allowPending);
+  }
+  const source = input.newSubject && typeof input.newSubject === 'object'
+    ? input.newSubject as Record<string, unknown>
+    : null;
+  if (!source) throw new Error(`请选择已有${input.subjectType === 'dm' ? 'DM' : '店家'}档案，或提交一个待审档案`);
+  const workplace = cleanText(source.workplace ?? source.address, 160);
+  let employment: { employment_status: string; employer_store_id: unknown; workplace: string | null } = {
+    employment_status: 'unknown',
+    employer_store_id: null,
+    workplace: workplace || null,
+  };
+  if (input.subjectType === 'dm') employment = await resolveDmEmployment(source, workplace);
+  if (input.subjectType === 'store' && !workplace) throw new Error('请填写店家地址、商圈或常驻位置');
+  const moderationPrecheck = runLocalModerationPrecheck({
+    scene: input.subjectType === 'dm' ? 'dm_dossier_submit_with_ranking' : 'store_dossier_submit_with_ranking',
+    targetType: 'dm_dossier',
+    texts: {
+      name: input.subjectName,
+      city: input.subjectCity,
+      workplace: employment.workplace || workplace,
+      note: cleanText(source.note, 600),
+    },
+  });
+  const { data, error } = await supabase.from('lc_dm_dossiers').insert({
+    entity_type: input.subjectType,
+    dm_name: input.subjectName,
+    city: input.subjectCity,
+    workplace: input.subjectType === 'dm' ? employment.workplace : workplace,
+    employment_status: input.subjectType === 'dm' ? employment.employment_status : 'unknown',
+    employer_store_id: input.subjectType === 'dm' ? employment.employer_store_id : null,
+    note: cleanText(source.note, 600) || null,
+    tags: [],
+    submitted_by: input.profile.id,
+    submitted_by_name: input.profile.display_name,
+    status: 'pending',
+    claim_status: 'unclaimed',
+    moderation_precheck: moderationPrecheck,
+  }).select('*').single();
+  if (error) throw error;
+  return data as Record<string, unknown>;
+}
+
+async function resolveRankingEventContext(body: Record<string, unknown>) {
+  const rawEventDate = cleanText(body.eventDate ?? body.event_date, 30);
+  const eventDate = rawEventDate ? normalizeDateString(rawEventDate) : '';
+  if (rawEventDate && !eventDate) throw new Error('事件日期格式不正确');
+
+  const eventScriptId = cleanText(body.eventScriptId ?? body.event_script_id, 80);
+  let eventScriptName = cleanText(body.eventScriptName ?? body.event_script_name, 160);
+  if (eventScriptId) {
+    const script = findSharedScript(await loadSharedScriptCatalog(), eventScriptId);
+    if (!script) throw new Error('选择的剧本不存在');
+    eventScriptName = script.name;
+  }
+
+  const eventStoreDossierId = cleanText(body.eventStoreDossierId ?? body.event_store_dossier_id, 80);
+  let eventStoreName = cleanText(body.eventStoreName ?? body.event_store_name, 160);
+  if (eventStoreDossierId) {
+    const store = await findRankingDossier(eventStoreDossierId, 'store');
+    eventStoreName = cleanText(store?.dm_name, 160);
+  }
+  return {
+    event_date: eventDate || null,
+    event_script_id: eventScriptId || null,
+    event_script_name: eventScriptName || null,
+    event_store_dossier_id: eventStoreDossierId || null,
+    event_store_name: eventStoreName || null,
+  };
+}
+
+async function resolveDmEmploymentSuggestion(body: Record<string, unknown>, subjectType: string) {
+  if (subjectType !== 'dm') return { dm_employment_status_suggestion: null, dm_employer_store_id_suggestion: null };
+  const status = cleanText(body.subjectEmploymentStatus ?? body.subject_employment_status, 40);
+  if (!status) return { dm_employment_status_suggestion: null, dm_employer_store_id_suggestion: null };
+  if (status === 'freelance') return { dm_employment_status_suggestion: 'freelance', dm_employer_store_id_suggestion: null };
+  if (status !== 'store_affiliated') throw new Error('DM受雇状态不正确');
+  const storeId = cleanText(body.subjectEmployerStoreId ?? body.subject_employer_store_id, 80);
+  if (!storeId) throw new Error('请选择DM的受雇店家');
+  const store = await findRankingDossier(storeId, 'store');
+  return { dm_employment_status_suggestion: 'store_affiliated', dm_employer_store_id_suggestion: store?.id || null };
+}
+
 app.get('/api/lc/reputation/city', async (req, res) => {
   try {
     const city = cleanText(req.query.city, 80);
@@ -7668,7 +7839,7 @@ app.get('/api/lc/reputation/city', async (req, res) => {
 
     let query = supabase
       .from('lc_rankings')
-      .select('id, type, subject_name, subject_type, subject_city, subject_url, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, expires_at, expiry_override, created_at')
+      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, expires_at, expiry_override, created_at')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .limit(500);
@@ -7727,16 +7898,18 @@ app.get('/api/lc/reputation/dossier', async (req, res) => {
     const subjectName = cleanText(req.query.subjectName, 120);
     const subjectType = cleanText(req.query.subjectType, 40);
     const city = cleanText(req.query.city, 80);
-    if (!subjectName || !subjectType) return res.status(400).json(err(new Error('缺少口碑对象')));
+    const subjectDossierId = cleanText(req.query.subjectDossierId ?? req.query.subject_dossier_id, 80);
+    if ((!subjectName && !subjectDossierId) || !subjectType) return res.status(400).json(err(new Error('缺少口碑对象')));
 
     let query = supabase
       .from('lc_rankings')
-      .select('id, type, subject_name, subject_type, subject_city, subject_url, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, expires_at, expiry_override, created_at, files')
+      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, expires_at, expiry_override, created_at')
       .eq('status', 'approved')
-      .eq('subject_name', subjectName)
       .eq('subject_type', subjectType)
       .order('created_at', { ascending: false })
       .limit(200);
+    if (subjectDossierId) query = query.eq('subject_dossier_id', subjectDossierId);
+    else query = query.eq('subject_name', subjectName);
     if (city) query = query.eq('subject_city', city);
 
     const { data, error } = await query;
@@ -7787,7 +7960,7 @@ app.get('/api/lc/reputation/dossier', async (req, res) => {
     }, {});
 
     res.json(ok({
-      subject_name: subjectName,
+      subject_name: subjectName || rows[0]?.subject_name || '',
       subject_type: subjectType,
       subject_city: city || rows[0]?.subject_city || null,
       subject_url: rows.find(row => row.subject_url)?.subject_url || null,
@@ -7846,6 +8019,8 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       dm_name: row.dm_name,
       city: row.city,
       workplace: row.workplace,
+      employment_status: row.employment_status || 'unknown',
+      employer_store_id: row.employer_store_id || null,
       profile_url: row.profile_url,
       photo_url: row.photo_url,
       note: row.note,
@@ -7879,12 +8054,23 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
       .limit(100);
     if (ratingResult.error && !isMissingRelation(ratingResult.error, 'lc_dm_ratings')) throw ratingResult.error;
     const rows = ratingResult.error ? [] : (ratingResult.data || []) as Record<string, unknown>[];
+    const rankingResult = await supabase.from('lc_rankings')
+      .select('*')
+      .eq('subject_dossier_id', req.params.id)
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (rankingResult.error) throw rankingResult.error;
+    const rankingRows = ((rankingResult.data || []) as Record<string, unknown>[])
+      .filter(row => isPublicRankingVisible(row));
     res.json(ok({
       dossier: {
         id: dossier.id,
         dm_name: dossier.dm_name,
         city: dossier.city,
         workplace: dossier.workplace,
+        employment_status: dossier.employment_status || 'unknown',
+        employer_store_id: dossier.employer_store_id || null,
         profile_url: dossier.profile_url,
         photo_url: dossier.photo_url,
         note: dossier.note,
@@ -7893,6 +8079,8 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
         claimed_by: dossier.claim_status === 'approved' ? dossier.claimed_by : null,
       },
       summary: summarizeDmRatingRows(rows),
+      reputation_summary: buildReputationSummary(rankingRows),
+      reputation_events: rankingRows.map(publicRankingPayload),
       ratings: rows.map(row => ({
         id: row.id,
         profile_name: row.profile_name || '灵契玩家',
@@ -7922,7 +8110,7 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     const entityLabel = entityType === 'store' ? '店家' : 'DM';
     const dmName = cleanText(req.body?.dmName ?? req.body?.dm_name ?? req.body?.name, 80);
     const city = cleanText(req.body?.city, 80);
-    const workplace = cleanText(req.body?.workplace, 160);
+    const requestedWorkplace = cleanText(req.body?.workplace, 160);
     const rawProfileUrl = req.body?.profileUrl ?? req.body?.profile_url;
     const profileUrl = normalizeOptionalPublicUrl(rawProfileUrl, 600);
     const note = cleanText(req.body?.note, 600);
@@ -7935,10 +8123,14 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     })).filter((file: { url: string }) => file.url);
     const rawPhotoUrl = req.body?.photoUrl ?? req.body?.photo_url;
     const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true) || photoFiles[0]?.url || '';
+    const employment = entityType === 'dm'
+      ? await resolveDmEmployment(req.body as Record<string, unknown>, requestedWorkplace)
+      : { employment_status: 'unknown', employer_store_id: null, workplace: requestedWorkplace || null };
+    const workplace = cleanText(employment.workplace, 160);
 
     if (!dmName) return res.status(400).json(err(new Error(`请填写${entityLabel}名称`)));
     if (!city) return res.status(400).json(err(new Error('请选择城市')));
-    if (!workplace) return res.status(400).json(err(new Error(entityType === 'store' ? '请填写店家地址、商圈或常驻位置' : '请填写工作地点或常驻店家')));
+    if (entityType === 'store' && !workplace) return res.status(400).json(err(new Error('请填写店家地址、商圈或常驻位置')));
     if (!isOptionalUrlPlaceholder(rawProfileUrl) && !profileUrl) return res.status(400).json(err(new Error('个人主页链接格式不正确，不填写时请直接留空')));
     if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) return res.status(400).json(err(new Error('照片链接格式不正确，也可以直接使用上传按钮')));
 
@@ -7953,7 +8145,9 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
       entity_type: entityType,
       dm_name: dmName,
       city,
-      workplace,
+      workplace: workplace || null,
+      employment_status: employment.employment_status,
+      employer_store_id: employment.employer_store_id,
       profile_url: profileUrl || null,
       photo_url: photoUrl || null,
       photo_files: photoFiles,
@@ -8046,7 +8240,8 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
     } else if (newDm) {
       dmName = cleanText(newDm.dmName ?? newDm.dm_name ?? newDm.name, 80);
       const city = cleanText(newDm.city, 80);
-      const workplace = cleanText(newDm.workplace, 160) || storeName;
+      const employment = await resolveDmEmployment(newDm);
+      const workplace = cleanText(employment.workplace, 160);
       const rawProfileUrl = newDm.profileUrl ?? newDm.profile_url;
       const rawPhotoUrl = newDm.photoUrl ?? newDm.photo_url;
       const profileUrl = normalizeOptionalPublicUrl(rawProfileUrl, 600);
@@ -8066,7 +8261,9 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
         entity_type: 'dm',
         dm_name: dmName,
         city,
-        workplace,
+        workplace: workplace || null,
+        employment_status: employment.employment_status,
+        employer_store_id: employment.employer_store_id,
         profile_url: profileUrl || null,
         photo_url: photoUrl || null,
         photo_files: photoFiles,
@@ -8275,7 +8472,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     if (error) throw error;
 
     const now = Date.now();
-    const visible = (data || []).map((row: Record<string, unknown>) => withRankingMetrics(row)).filter((row: Record<string, unknown>) => {
+    const visibleRows = (data || []).map((row: Record<string, unknown>) => withRankingMetrics(row)).filter((row: Record<string, unknown>) => {
       if (row.type !== 'black') return true;
       if (row.expiry_override) return !expiredOnly;
       const expiresAt = row.expires_at
@@ -8284,6 +8481,7 @@ app.get('/api/lc/rankings', async (req, res) => {
       const isExpired = Number.isFinite(expiresAt) && expiresAt <= now;
       return expiredOnly ? isExpired : !isExpired;
     });
+    const visible = visibleRows.map((row: Record<string, unknown>) => publicRankingPayload(row));
 
     const visibleWithAudit = await attachAuditProof('ranking', visible);
     const rankingIds = visibleWithAudit.map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
@@ -8334,7 +8532,7 @@ app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
   try {
     const posterId = getReq(req, 'creatorId');
     const { data, error } = await supabase.from('lc_rankings')
-      .select('id, type, subject_name, subject_type, subject_city, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, reject_reason, created_at')
+      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, dm_employment_status_suggestion, dm_employer_store_id_suggestion, content, files, evidence_required, revision_kind, revision_requested_at, revision_count, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, reject_reason, created_at')
       .eq('poster_id', posterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -8344,13 +8542,12 @@ app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
 
 app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
   try {
-    const { type, subjectName, subjectType, subjectCity, subjectUrl, content, initialAmount, paymentProof, newSubject, files } = req.body;
+    const { type, subjectName, subjectType, subjectCity, subjectUrl, content, initialAmount, paymentProof, newSubject } = req.body;
     if (!type || !subjectName || !subjectType || !content) {
       return res.status(400).json(err(new Error('缺少必填字段')));
     }
     if (!['red', 'black', 'white'].includes(type)) return res.status(400).json(err(new Error('无效榜单类型')));
     if (!RANKING_SUBJECT_TYPES.includes(subjectType)) return res.status(400).json(err(new Error('无效对象分类')));
-    if (type !== 'white' && (!Array.isArray(files) || files.length === 0)) return res.status(400).json(err(new Error('请至少上传一份证据文件')));
     const amount = type === 'red' ? parseInt(initialAmount) : 0;
     if (type === 'red' && (!Number.isFinite(amount) || amount < 10 || amount > 100)) return res.status(400).json(err(new Error('红榜初始投入须在10~100契约币之间')));
 
@@ -8360,10 +8557,23 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
     if (amount > 0 && (profile.balance || 0) < amount) return res.status(402).json(err(new Error('契约币不足，请先充值')));
+    const files = normalizeRankingEvidenceFiles(req.body?.files);
+    const subjectDossier = await resolveRankingSubjectDossier({
+      subjectType,
+      subjectName: cleanText(subjectName, 120),
+      subjectCity: cleanText(subjectCity, 80),
+      subjectDossierId: req.body?.subjectDossierId ?? req.body?.subject_dossier_id,
+      newSubject,
+      profile,
+    });
+    const finalSubjectName = cleanText(subjectDossier?.dm_name, 120) || cleanText(subjectName, 120);
+    const finalSubjectCity = cleanText(subjectDossier?.city, 80) || cleanText(subjectCity, 80);
+    const eventContext = await resolveRankingEventContext(req.body as Record<string, unknown>);
+    const employmentSuggestion = await resolveDmEmploymentSuggestion(req.body as Record<string, unknown>, subjectType);
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'ranking_submit',
       targetType: 'ranking',
-      texts: { type, subjectName, subjectType, subjectCity, subjectUrl, content },
+      texts: { type, subjectName: finalSubjectName, subjectType, subjectCity: finalSubjectCity, subjectUrl, content },
       files,
       allowContact: false,
     });
@@ -8381,11 +8591,17 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
     }
 
     const row: Record<string, unknown> = {
-      type, subject_name: subjectName, subject_type: subjectType, subject_city: subjectCity || null,
+      type, subject_name: finalSubjectName, subject_type: subjectType, subject_city: finalSubjectCity || null,
       subject_url: subjectUrl || null, content,
       author_name: profile.display_name, poster_id: posterId,
       status: 'pending',
       reject_reason: null,
+      subject_dossier_id: subjectDossier?.id || null,
+      ...eventContext,
+      ...employmentSuggestion,
+      evidence_required: false,
+      revision_kind: null,
+      revision_requested_at: null,
       initial_amount: amount, payment_proof: paymentProof || null,
       is_realname: !!profile.is_realname, real_name: null,
       files: files || [],
@@ -8408,7 +8624,7 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
 
     if (insErr) throw insErr;
 
-    if (newSubject && ranking && newSubject.name) {
+    if (!subjectDossier && newSubject && ranking && newSubject.name) {
       await supabase.from('lc_submitted_subjects').insert({
         name: newSubject.name, subject_type: newSubject.subject_type || subjectType,
         city: newSubject.city || subjectCity, description: newSubject.description || null,
@@ -8420,9 +8636,83 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       action: 'ranking_submitted',
       targetType: 'ranking',
       targetId: ranking?.id,
-      metadata: { ranking_type: type, subject_type: subjectType, subject_city: subjectCity || null, amount, moderation: moderationPrecheck },
+      metadata: { ranking_type: type, subject_type: subjectType, subject_city: subjectCity || null, subject_dossier_id: subjectDossier?.id || null, amount, evidence_count: files.length, moderation: moderationPrecheck },
     });
     res.json(ok({ id: ranking?.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/rankings/:id/resubmit', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data: existing, error: findErr } = await supabase.from('lc_rankings')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('poster_id', profile.id)
+      .maybeSingle();
+    if (findErr) throw findErr;
+    if (!existing) return res.status(404).json(err(new Error('没有找到这条红黑榜记录')));
+    if (existing.status !== 'rejected') return res.status(400).json(err(new Error('只有被打回的记录可以重新提交')));
+
+    const subjectType = cleanText(req.body?.subjectType ?? req.body?.subject_type ?? existing.subject_type, 40);
+    const subjectName = cleanText(req.body?.subjectName ?? req.body?.subject_name, 120);
+    const subjectCity = cleanText(req.body?.subjectCity ?? req.body?.subject_city, 80);
+    const content = cleanText(req.body?.content, 4000);
+    if (!subjectName || !subjectType || !content) return res.status(400).json(err(new Error('请补齐对象和正文内容')));
+    if (!RANKING_SUBJECT_TYPES.includes(subjectType)) return res.status(400).json(err(new Error('无效对象分类')));
+    const files = normalizeRankingEvidenceFiles(req.body?.files);
+    if (existing.evidence_required && !hasRankingEvidence(files)) {
+      return res.status(400).json(err(new Error('管理员要求补充证据，请至少上传一张证据图片')));
+    }
+
+    const subjectDossier = await resolveRankingSubjectDossier({
+      subjectType,
+      subjectName,
+      subjectCity,
+      subjectDossierId: req.body?.subjectDossierId ?? req.body?.subject_dossier_id ?? existing.subject_dossier_id,
+      newSubject: req.body?.newSubject,
+      profile,
+      allowPending: true,
+    });
+    const finalSubjectName = cleanText(subjectDossier?.dm_name, 120) || subjectName;
+    const finalSubjectCity = cleanText(subjectDossier?.city, 80) || subjectCity;
+    const eventContext = await resolveRankingEventContext(req.body as Record<string, unknown>);
+    const employmentSuggestion = await resolveDmEmploymentSuggestion(req.body as Record<string, unknown>, subjectType);
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'ranking_resubmit',
+      targetType: 'ranking',
+      texts: { type: existing.type, subjectName: finalSubjectName, subjectType, subjectCity: finalSubjectCity, subjectUrl: req.body?.subjectUrl, content },
+      files,
+      allowContact: false,
+    });
+    const { data: updated, error: updateErr } = await supabase.from('lc_rankings').update({
+      subject_name: finalSubjectName,
+      subject_type: subjectType,
+      subject_city: finalSubjectCity || null,
+      subject_url: cleanText(req.body?.subjectUrl ?? req.body?.subject_url, 500) || null,
+      subject_dossier_id: subjectDossier?.id || null,
+      ...eventContext,
+      ...employmentSuggestion,
+      content,
+      files,
+      status: 'pending',
+      reject_reason: null,
+      evidence_required: false,
+      revision_kind: null,
+      revision_requested_at: null,
+      moderation_precheck: moderationPrecheck,
+    }).eq('id', existing.id).select('*').single();
+    if (updateErr) throw updateErr;
+    await logSecurityEvent(req, {
+      action: 'ranking_resubmitted',
+      targetType: 'ranking',
+      targetId: existing.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { prior_revision_kind: existing.revision_kind || null, evidence_count: files.length, subject_dossier_id: subjectDossier?.id || null, moderation: moderationPrecheck },
+    });
+    res.json(ok({ id: updated?.id, status: updated?.status, message: '已重新提交审核，不会重复扣除契约币' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -8980,13 +9270,41 @@ app.post('/api/lc/rankings/:id/claim', authMiddleware, async (req, res) => {
 app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const targetType = ['red', 'black', 'white'].includes(req.body?.targetType) ? req.body.targetType : null;
-    const { data: r } = await supabase.from('lc_rankings').select('type, initial_amount').eq('id', req.params.id).single();
+    const { data: r } = await supabase.from('lc_rankings').select('type, initial_amount, subject_type, subject_dossier_id, dm_employment_status_suggestion, dm_employer_store_id_suggestion').eq('id', req.params.id).single();
     if (!r) return res.status(404).json(err(new Error('帖子不存在')));
+    if (['dm', 'store'].includes(String(r.subject_type || '')) && r.subject_dossier_id) {
+      await findRankingDossier(r.subject_dossier_id, r.subject_type as 'dm' | 'store');
+    }
+    if (r.subject_type === 'dm' && r.subject_dossier_id && r.dm_employment_status_suggestion) {
+      if (r.dm_employment_status_suggestion === 'freelance') {
+        const result = await supabase.from('lc_dm_dossiers').update({
+          employment_status: 'freelance',
+          employer_store_id: null,
+          workplace: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', r.subject_dossier_id);
+        if (result.error) throw result.error;
+      } else {
+        const store = await findRankingDossier(r.dm_employer_store_id_suggestion, 'store');
+        const result = await supabase.from('lc_dm_dossiers').update({
+          employment_status: 'store_affiliated',
+          employer_store_id: store?.id || null,
+          workplace: store?.dm_name || null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', r.subject_dossier_id);
+        if (result.error) throw result.error;
+      }
+    }
     const nextType = targetType || r.type;
     const patch: Record<string, unknown> = {
       status: 'approved',
       type: nextType,
       reject_reason: null,
+      evidence_required: false,
+      revision_kind: null,
+      revision_requested_at: null,
+      dm_employment_status_suggestion: null,
+      dm_employer_store_id_suggestion: null,
       boost_amount: nextType === 'red' ? r.initial_amount : 0,
       negative_boost_amount: 0,
       agree_count: 0,
@@ -9045,6 +9363,19 @@ app.put('/api/lc/admin/rankings/:id/edit', authMiddleware, adminMiddleware, asyn
       if (!RANKING_SUBJECT_TYPES.includes(value)) return res.status(400).json(err(new Error('无效对象分类')));
       patch.subject_type = value;
     }
+    if ('subject_dossier_id' in body) {
+      const dossierId = cleanText(body.subject_dossier_id, 80);
+      const dossierType = cleanText(patch.subject_type || before.subject_type, 40);
+      if (dossierId) {
+        if (dossierType !== 'dm' && dossierType !== 'store') return res.status(400).json(err(new Error('只有DM或店家帖子可以绑定档案')));
+        const dossier = await findRankingDossier(dossierId, dossierType);
+        patch.subject_dossier_id = dossier.id;
+        patch.subject_name = dossier.dm_name;
+        patch.subject_city = dossier.city || before.subject_city || null;
+      } else {
+        patch.subject_dossier_id = null;
+      }
+    }
     if ('subject_city' in body) {
       patch.subject_city = cleanText(body.subject_city, 80) || null;
     }
@@ -9095,15 +9426,27 @@ app.put('/api/lc/admin/rankings/:id/edit', authMiddleware, adminMiddleware, asyn
 app.put('/api/lc/admin/rankings/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const rejectReason = cleanText(req.body?.rejectReason, 300);
-    await supabase.from('lc_rankings').update({
+    const revisionKind = normalizeRankingRevisionKind(req.body?.revisionKind ?? req.body?.revision_kind);
+    const { data: current, error: findErr } = await supabase.from('lc_rankings')
+      .select('revision_count')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (findErr) throw findErr;
+    if (!current) return res.status(404).json(err(new Error('帖子不存在')));
+    const { error: updateErr } = await supabase.from('lc_rankings').update({
       status: 'rejected',
-      reject_reason: rejectReason || '请按审核要求补充或修改后重新发布',
+      reject_reason: rejectReason || (revisionKind === 'evidence' ? '请补充能够支撑这条记录的证据图片并重新提交' : '请按审核要求修改后重新提交'),
+      evidence_required: revisionKind === 'evidence',
+      revision_kind: revisionKind,
+      revision_requested_at: new Date().toISOString(),
+      revision_count: Math.max(0, Number(current.revision_count || 0)) + 1,
     }).eq('id', req.params.id);
+    if (updateErr) throw updateErr;
     await logSecurityEvent(req, {
       action: 'admin_ranking_rejected',
       targetType: 'ranking',
       targetId: req.params.id,
-      metadata: { reject_reason: rejectReason || null },
+      metadata: { reject_reason: rejectReason || null, revision_kind: revisionKind },
     });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }

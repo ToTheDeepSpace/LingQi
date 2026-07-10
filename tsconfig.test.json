@@ -10,5 +10,5 @@
     "strict": true,
     "esModuleInterop": true
   },
-  "include": ["src/lib/authFlow.ts", "api/dmRatingSummary.ts", "api/sharedScriptCatalog.ts", "tests/**/*.ts"]
+  "include": ["src/lib/authFlow.ts", "api/dmRatingSummary.ts", "api/sharedScriptCatalog.ts", "api/rankingWorkflow.ts", "tests/**/*.ts"]
 }

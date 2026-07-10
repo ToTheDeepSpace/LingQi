@@ -78,6 +78,8 @@ type MyRanking = {
   oppose_count?: number;
   status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
   reject_reason?: string | null;
+  evidence_required?: boolean;
+  revision_kind?: 'content' | 'evidence' | null;
   created_at: string;
 };
 
@@ -1263,7 +1265,7 @@ export default function Dashboard() {
             </p>
             <div className="onboarding-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginBottom: 16 }}>
               {[
-                ['看红黑白榜', '夸人、避雷、记录离谱事；主帖要证据和审核，相关方可以回应。'],
+                ['看红黑白榜', '夸人、避雷、记录离谱事；主帖进入审核，证据初次提交选填，相关方可以回应。'],
                 ['给万物评分', '剧本、角色、店家、DM/卡司、玩家等都可以沉淀口碑和 tag。'],
                 ['打榜与投票', '契约币表达支持或反对强度；同意、反对、离谱这类态度投票单独保留。'],
                 ['讨论圈内行为', '比如睡车、加戏、拒绝边界等，可以通过投票和口碑记录形成共识。'],
@@ -2437,9 +2439,13 @@ export default function Dashboard() {
                       title={item.subject_name}
                       meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · ${item.initial_amount === 0 ? '免费发布' : `初始 ${item.initial_amount} 契约币`} · 打榜${item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0)} 踩榜${item.negative_boost_amount || 0} 同意${item.agree_count ?? 0} 反对${item.oppose_count ?? 0} 离谱${item.joys || 0}`}
                       status={item.status}
-                      note={item.status === 'rejected' && item.reject_reason ? `打回原因：${item.reject_reason}` : undefined}
+                      note={item.status === 'rejected' && item.reject_reason ? `${item.evidence_required ? '需补证据' : '打回修改'}：${item.reject_reason}` : undefined}
                       to="/rankings"
-                      action={item.status === 'pending' && item.initial_amount === 0 ? (
+                      action={item.status === 'rejected' ? (
+                        <Link to={`/rankings/new?resubmit=${encodeURIComponent(item.id)}`} style={miniButtonStyle}>
+                          {item.evidence_required ? '补证据并重新提交' : '修改并重新提交'}
+                        </Link>
+                      ) : item.status === 'pending' && item.initial_amount === 0 ? (
                         <button onClick={() => withdrawRanking(item.id)} style={miniButtonStyle}>
                           撤回
                         </button>

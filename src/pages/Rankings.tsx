@@ -57,6 +57,10 @@ type Ranking = {
   subject_type: string;
   subject_city: string | null;
   subject_url: string | null;
+  subject_dossier_id?: string | null;
+  event_date?: string | null;
+  event_script_name?: string | null;
+  event_store_name?: string | null;
   content: string;
   author_name: string;
   is_realname: boolean;
@@ -71,7 +75,6 @@ type Ranking = {
   created_at: string;
   expires_at?: string;
   expiry_override?: string;
-  files?: { name: string; url: string; type?: string }[];
   lc_profiles?: { display_name?: string; avatar?: string | null; verified_dm?: boolean; verified_shop?: boolean; role?: string };
   my_vote?: MyVote | null;
   audit_proof?: {
@@ -297,12 +300,14 @@ function normalizeUrl(url: string): string {
   return `https://${url}`;
 }
 
-function dossierUrl(item: Pick<Ranking, 'subject_name' | 'subject_type' | 'subject_city'>) {
+function dossierUrl(item: Pick<Ranking, 'subject_name' | 'subject_type' | 'subject_city' | 'subject_dossier_id'>) {
+  if (item.subject_type === 'dm' && item.subject_dossier_id) return `/dm/${encodeURIComponent(item.subject_dossier_id)}`;
   const params = new URLSearchParams({
     subjectName: item.subject_name,
     subjectType: item.subject_type,
   });
   if (item.subject_city) params.set('city', item.subject_city);
+  if (item.subject_dossier_id) params.set('subjectDossierId', item.subject_dossier_id);
   return `/reputation/dossier?${params}`;
 }
 
@@ -1360,7 +1365,7 @@ export default function Rankings() {
                 ['红黑白榜', '红榜夸好事，黑榜记录风险，白榜放事实、笑话和普通线索。'],
                 ['口碑榜 / 真金榜', '口碑榜看一人一票，真金榜看真实打榜值，两套榜单分开看。'],
                 ['万物皆可评分', '剧本、角色、DM、店家、玩家、圈内行为都可以继续沉淀 tag 和评价。'],
-                ['公开内容会审核', '发布前准备证据，涉及第三方隐私要打码；相关方可以发表置顶回应。'],
+                ['公开内容会审核', '证据首次提交选填；审核需要时会要求补充，涉及第三方隐私必须打码。'],
               ].map(([title, desc]) => (
                 <div key={title} style={{ padding: '11px 12px', borderRadius: 12, background: 'rgba(255,250,242,0.92)', border: '1px solid rgba(166,106,31,0.12)' }}>
                   <p style={{ fontWeight: 900, fontSize: '0.86rem', marginBottom: 4 }}>{title}</p>
@@ -1465,7 +1470,7 @@ export default function Rankings() {
               lineHeight: 1.7,
               maxWidth: 860,
             }}>
-              主帖必须附带证据；涉及第三方隐私的信息请先打码。口碑票一人一票，可改票；真金打榜和踩榜按实际契约币金额累计，影响热度，不代表平台事实裁判。发布者对事实、证据、隐私打码和言论后果负责。
+              主帖证据首次提交选填；审核员认为内容不足时可以打回并要求补充。涉及第三方隐私的信息请先打码。口碑票一人一票，可改票；真金打榜和踩榜按实际契约币金额累计，影响热度，不代表平台事实裁判。发布者对事实、证据、隐私打码和言论后果负责。
             </div>
           </details>
         </div>
@@ -1655,30 +1660,6 @@ export default function Rankings() {
                     <span style={metricChipStyle}>评论 {comments.length}</span>
                   </div>
 
-                  {item.files && item.files.length > 0 && (() => {
-                    const pdfFiles = item.files.filter(f => {
-                      if (f.type && (f.type.includes('pdf') || f.type === 'application/pdf')) return true;
-                      if (f.name && f.name.toLowerCase().endsWith('.pdf')) return true;
-                      return false;
-                    });
-                    if (pdfFiles.length === 0) return null;
-                    return (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-                        {pdfFiles.map((f, fi) => (
-                          <button key={fi} onClick={() => window.open(f.url, '_blank')}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6,
-                              padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
-                              border: '1px solid rgba(248,113,113,0.25)', background: 'rgba(248,113,113,0.08)',
-                              color: '#f87171', fontSize: '0.8rem', fontWeight: 600,
-                            }}>
-                            📄 {f.name}
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })()}
-
                   <div style={voteZoneGridStyle}>
                     <div style={paidVoteZoneStyle}>
                       <div style={voteZoneTitleStyle}>
@@ -1832,8 +1813,13 @@ export default function Rankings() {
                     <div style={{ flex: 1 }} />
                     <span style={{ marginLeft: 'auto', color: 'rgba(71,85,105,0.42)', fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
                       {item.created_at?.slice(0, 10)}
-                    </span>
-                  </div>
+                      </span>
+                    </div>
+                    {(item.event_date || item.event_script_name || item.event_store_name) && (
+                      <div style={{ color: 'rgba(71,85,105,0.66)', fontSize: '0.76rem', fontWeight: 720, marginBottom: 10 }}>
+                        事件背景：{[item.event_date, item.event_script_name, item.event_store_name].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
 
                   {showVotes && (
                     <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
