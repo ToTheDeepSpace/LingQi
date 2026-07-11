@@ -1963,6 +1963,8 @@ const DOSSIER_EDIT_FIELD_LABELS: Record<string, string> = {
   tags: '标签',
 };
 
+const DM_AFFILIATION_EDIT_FIELDS = new Set(['workplace', 'employment_status', 'employer_store_id']);
+
 function dossierEditComparableValue(value: unknown) {
   if (Array.isArray(value)) return JSON.stringify(value.map(item => String(item || '').trim()).filter(Boolean));
   if (value === null || value === undefined || value === '') return '';
@@ -1980,7 +1982,11 @@ function dossierEditAdminBlockReason(payload: Record<string, unknown>, now = new
   return dueAt ? `仍在等待认领人确认，截止时间为 ${dueAt}` : '仍在等待认领人确认';
 }
 
-async function applyDossierUpdateReview(review: PublicReviewRecord, payload: Record<string, unknown>) {
+async function applyDossierUpdateReview(
+  review: PublicReviewRecord,
+  payload: Record<string, unknown>,
+  reviewerId: string | null,
+) {
   const dossierId = cleanText(payload.dossier_id, 80);
   const entityType = cleanText(payload.entity_type, 20) === 'store' ? 'store' : 'dm';
   const patch = objectPayload(payload.patch);
@@ -2031,6 +2037,211 @@ async function applyDossierUpdateReview(review: PublicReviewRecord, payload: Rec
     if (payloadUpdate.error) throw payloadUpdate.error;
   }
 
+  const employmentFieldsTouched = entityType === 'dm'
+    && Object.keys(safePatch).some(field => DM_AFFILIATION_EDIT_FIELDS.has(field));
+  if (employmentFieldsTouched) {
+    const requestedEmploymentStatus = cleanText(
+      safePatch.employment_status ?? dossier.employment_status,
+      40,
+    ) || 'unknown';
+    const requestedStoreId = cleanText(
+      safePatch.employer_store_id ?? dossier.employer_store_id,
+      80,
+    );
+    if (!['store_affiliated', 'freelance', 'unknown'].includes(requestedEmploymentStatus)) {
+      throw new Error('任职状态无效，请重新提交修改');
+    }
+    if (requestedEmploymentStatus === 'store_affiliated' && !requestedStoreId) {
+      throw new Error('任职店家信息不完整，请重新提交修改');
+    }
+
+    const now = new Date().toISOString();
+    const requestReason = cleanText(
+      `档案修改审核通过：${cleanText(payload.edit_reason, 420) || '社区用户补充任职信息'}（审核单 ${review.id}）`,
+      500,
+    );
+    const affiliationPatch: Record<string, unknown> = {};
+    const regularPatch = { ...safePatch };
+    for (const field of DM_AFFILIATION_EDIT_FIELDS) {
+      if (field in regularPatch) {
+        affiliationPatch[field] = regularPatch[field];
+        delete regularPatch[field];
+      }
+    }
+
+    if (useTencentPg) {
+      const client = await tencentPgPool.connect();
+      try {
+        await client.query('BEGIN');
+        const lockedResult = await client.query(
+          `select * from lc_dm_dossiers
+            where id = $1 and entity_type = 'dm' and status = 'approved'
+            for update`,
+          [dossierId],
+        );
+        const lockedDossier = lockedResult.rows[0] as Record<string, unknown> | undefined;
+        if (!lockedDossier) throw new Error('DM档案不存在或已下架');
+        const lockedOwnerId = lockedDossier.claim_status === 'approved'
+          ? cleanText(lockedDossier.claimed_by, 80)
+          : '';
+        if (lockedOwnerId && lockedOwnerId !== originalOwnerId && lockedOwnerId !== cleanText(review.profile_id, 80)) {
+          throw new Error('档案认领人已经变化，需要由新认领人重新确认');
+        }
+        for (const field of Object.keys(safePatch)) {
+          if (field === 'photo_files') continue;
+          if (dossierEditComparableValue(lockedDossier[field]) !== dossierEditComparableValue(beforeSnapshot[field])) {
+            throw new Error(`${DOSSIER_EDIT_FIELD_LABELS[field] || field}已被其他审核更新，请重新提交修改`);
+          }
+        }
+
+        const affiliationResult = await client.query(
+          `select * from lc_dm_store_affiliations
+            where dm_dossier_id = $1 and status in ('pending', 'approved')
+            order by created_at desc
+            for update`,
+          [dossierId],
+        );
+        const affiliations = affiliationResult.rows as Record<string, unknown>[];
+        const pendingAffiliation = affiliations.find(row => row.status === 'pending');
+        const approvedAffiliation = affiliations.find(row => row.status === 'approved');
+
+        if (requestedEmploymentStatus === 'store_affiliated') {
+          const storeResult = await client.query(
+            `select id, dm_name from lc_dm_dossiers
+              where id = $1 and entity_type = 'store' and status = 'approved'`,
+            [requestedStoreId],
+          );
+          const store = storeResult.rows[0] as Record<string, unknown> | undefined;
+          if (!store) throw new Error('选择的任职店家不存在或尚未公开');
+          if (pendingAffiliation && String(pendingAffiliation.store_dossier_id || '') !== requestedStoreId) {
+            throw new Error('已有另一条任职确认申请正在处理，请处理后再审核这次修改');
+          }
+          if (String(approvedAffiliation?.store_dossier_id || '') === requestedStoreId) {
+            regularPatch.employment_status = 'store_affiliated';
+            regularPatch.employer_store_id = requestedStoreId;
+            regularPatch.workplace = store.dm_name || null;
+          } else if (!pendingAffiliation) {
+            await client.query(
+              `insert into lc_dm_store_affiliations (
+                  dm_dossier_id, store_dossier_id, dm_profile_id,
+                  requested_by_profile_id, requested_by_role, request_kind,
+                  request_note, status, created_at, updated_at
+                ) values ($1, $2, $3, $4, 'admin', $5, $6, 'pending', $7, $7)`,
+              [
+                dossierId,
+                requestedStoreId,
+                lockedOwnerId || null,
+                reviewerId,
+                approvedAffiliation ? 'change' : 'join',
+                requestReason,
+                now,
+              ],
+            );
+          }
+        } else {
+          await client.query(
+            `update lc_dm_store_affiliations
+                set status = case when status = 'approved' then 'ended' else 'cancelled' end,
+                    ended_at = $2, ended_by_profile_id = $3,
+                    end_reason = $4, updated_at = $2
+              where dm_dossier_id = $1 and status in ('approved', 'pending')`,
+            [dossierId, now, reviewerId, requestReason],
+          );
+          Object.assign(regularPatch, affiliationPatch);
+        }
+
+        const patchEntries = Object.entries(regularPatch);
+        if (patchEntries.length > 0) {
+          const values: unknown[] = [dossierId];
+          const assignments = patchEntries.map(([field, value]) => {
+            values.push(field === 'photo_files' ? JSON.stringify(value) : value);
+            const cast = field === 'photo_files' ? '::jsonb' : field === 'tags' ? '::text[]' : '';
+            return `${field} = $${values.length}${cast}`;
+          });
+          values.push(now);
+          assignments.push(`updated_at = $${values.length}`);
+          await client.query(
+            `update lc_dm_dossiers set ${assignments.join(', ')} where id = $1 and status = 'approved'`,
+            values,
+          );
+        }
+        await client.query('COMMIT');
+        return;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    const affiliationResult = await supabase.from('lc_dm_store_affiliations')
+      .select('*')
+      .eq('dm_dossier_id', dossierId)
+      .in('status', ['pending', 'approved'])
+      .order('created_at', { ascending: false });
+    if (affiliationResult.error && !isMissingRelation(affiliationResult.error, 'lc_dm_store_affiliations')) {
+      throw affiliationResult.error;
+    }
+    const affiliations = affiliationResult.error ? [] : (affiliationResult.data || []) as Record<string, unknown>[];
+    const pendingAffiliation = affiliations.find(row => row.status === 'pending');
+    const approvedAffiliation = affiliations.find(row => row.status === 'approved');
+    if (requestedEmploymentStatus === 'store_affiliated') {
+      const storeResult = await supabase.from('lc_dm_dossiers')
+        .select('id, dm_name')
+        .eq('id', requestedStoreId)
+        .eq('entity_type', 'store')
+        .eq('status', 'approved')
+        .maybeSingle();
+      if (storeResult.error) throw storeResult.error;
+      if (!storeResult.data) throw new Error('选择的任职店家不存在或尚未公开');
+      if (pendingAffiliation && String(pendingAffiliation.store_dossier_id || '') !== requestedStoreId) {
+        throw new Error('已有另一条任职确认申请正在处理，请处理后再审核这次修改');
+      }
+      if (String(approvedAffiliation?.store_dossier_id || '') === requestedStoreId) {
+        regularPatch.employment_status = 'store_affiliated';
+        regularPatch.employer_store_id = requestedStoreId;
+        regularPatch.workplace = storeResult.data.dm_name || null;
+      } else if (!pendingAffiliation) {
+        const insertResult = await supabase.from('lc_dm_store_affiliations').insert({
+          dm_dossier_id: dossierId,
+          store_dossier_id: requestedStoreId,
+          dm_profile_id: currentOwnerId || null,
+          requested_by_profile_id: reviewerId,
+          requested_by_role: 'admin',
+          request_kind: approvedAffiliation ? 'change' : 'join',
+          request_note: requestReason,
+          status: 'pending',
+          created_at: now,
+          updated_at: now,
+        });
+        if (insertResult.error) throw insertResult.error;
+      }
+    } else {
+      if (!affiliationResult.error) {
+        const pendingUpdate = await supabase.from('lc_dm_store_affiliations').update({
+          status: 'cancelled', ended_at: now, ended_by_profile_id: reviewerId,
+          end_reason: requestReason, updated_at: now,
+        }).eq('dm_dossier_id', dossierId).eq('status', 'pending');
+        if (pendingUpdate.error) throw pendingUpdate.error;
+        const approvedUpdate = await supabase.from('lc_dm_store_affiliations').update({
+          status: 'ended', ended_at: now, ended_by_profile_id: reviewerId,
+          end_reason: requestReason, updated_at: now,
+        }).eq('dm_dossier_id', dossierId).eq('status', 'approved');
+        if (approvedUpdate.error) throw approvedUpdate.error;
+      }
+      Object.assign(regularPatch, affiliationPatch);
+    }
+    if (Object.keys(regularPatch).length > 0) {
+      const updateResult = await supabase.from('lc_dm_dossiers').update({
+        ...regularPatch,
+        updated_at: now,
+      }).eq('id', dossierId).eq('status', 'approved');
+      if (updateResult.error) throw updateResult.error;
+    }
+    return;
+  }
+
   const { error: updateErr } = await supabase.from('lc_dm_dossiers').update({
     ...safePatch,
     updated_at: new Date().toISOString(),
@@ -2038,7 +2249,7 @@ async function applyDossierUpdateReview(review: PublicReviewRecord, payload: Rec
   if (updateErr) throw updateErr;
 }
 
-async function applyPublicReview(review: PublicReviewRecord) {
+async function applyPublicReview(review: PublicReviewRecord, reviewerId: string | null = null) {
   const payload = objectPayload(review.payload);
   if (review.target_type === 'profile_update') {
     await applyProfileUpdateReview(review);
@@ -2046,7 +2257,7 @@ async function applyPublicReview(review: PublicReviewRecord) {
     return;
   }
   if (review.target_type === 'dossier_update') {
-    await applyDossierUpdateReview(review, payload);
+    await applyDossierUpdateReview(review, payload, reviewerId);
     return;
   }
   if (review.target_type === 'service_create') {
@@ -7296,7 +7507,7 @@ app.put('/api/lc/admin/public-reviews/:id/approve', authMiddleware, adminMiddlew
       }
     }
 
-    await applyPublicReview(review as PublicReviewRecord);
+    await applyPublicReview(review as PublicReviewRecord, reviewerId);
     const { data: updated, error: updErr } = await supabase.from('lc_public_reviews')
       .update({
         status: 'approved',
