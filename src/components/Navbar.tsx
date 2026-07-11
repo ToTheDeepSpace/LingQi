@@ -46,11 +46,7 @@ export default function Navbar() {
   const isLoggedIn = !!creatorAuth;
   const isAdmin = !!adminToken;
   const isShop = creatorAuth?.role === 'shop';
-  const showBack = ![
-    '/', '/dm', '/dm-wall', '/commissions', '/carpools', '/rankings',
-    '/reputation/city', '/scripts', '/guides', '/explore', '/dashboard',
-    '/admin', '/login', '/shop/dashboard', '/roadmap',
-  ].includes(pathname);
+  const isHome = pathname === '/';
   const mobileIdentity = creatorAuth?.display_name || creatorAuth?.phone || creatorAuth?.email || (isAdmin ? '管理员' : '');
   const currentPageLabel = locationLabelFor(pathname);
   const adminActive = pathname.startsWith('/admin');
@@ -126,14 +122,14 @@ export default function Navbar() {
       boxShadow: '0 10px 32px rgba(31,41,55,0.06)',
     }}>
       <div style={{
-        maxWidth: 1160, margin: '0 auto',
-        padding: '0 20px', height: 64,
+        width: '100%', boxSizing: 'border-box',
+        padding: '0 16px', height: 64,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         gap: 16,
       }}>
 
-        {/* 主入口保留品牌；只有真正的下级页面显示返回上一级。 */}
-        {!showBack ? (
+        {/* 首页显示品牌；其他页面统一显示返回上一级。 */}
+        {isHome ? (
           <Link
             className="home-return-link"
             to="/"
