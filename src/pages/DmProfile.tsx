@@ -11,7 +11,24 @@ const MUTED = 'rgba(71,85,105,0.72)';
 const GOLD = '#a66a1f';
 
 type DmDetail = {
-  dossier: { id: string; dm_name: string; city?: string | null; workplace?: string | null; employment_status?: 'unknown' | 'store_affiliated' | 'freelance'; photo_url?: string | null; note?: string | null; tags?: string[]; claim_status?: string };
+  dossier: {
+    id: string;
+    dm_name: string;
+    city?: string | null;
+    workplace?: string | null;
+    employment_status?: 'unknown' | 'store_affiliated' | 'freelance';
+    photo_url?: string | null;
+    note?: string | null;
+    tags?: string[];
+    claim_status?: string;
+    affiliation?: {
+      status: 'approved' | 'pending' | 'legacy_unverified';
+      store_dossier_id?: string | null;
+      store_name?: string | null;
+      store_city?: string | null;
+      confirmed_at?: string | null;
+    } | null;
+  };
   summary: { avg: number | null; review_count: number; player_count: number; sample_status: 'insufficient' | 'stable' };
   ratings: Array<{ id: string; profile_name: string; script_name: string; store_name: string; played_on: string; replay_number: number; rating: number; content: string; tags?: string[] }>;
   reputation_summary: { event_count: number; red_count: number; black_count: number; white_count: number };
@@ -46,7 +63,17 @@ export default function DmProfile() {
   const { dossier, summary, ratings, reputation_summary: reputationSummary = { event_count: 0, red_count: 0, black_count: 0, white_count: 0 }, reputation_events: reputationEvents = [] } = data;
   const scoreText = summary.player_count === 0 ? '暂无评分' : `${summary.avg?.toFixed(1)} / 5`;
   const auth = readStoredCreatorAuth();
-  const claimStatusLabel = dossier.claim_status === 'approved' ? '已认领DM' : dossier.claim_status === 'pending' ? '认领审核中' : '未认领DM档案';
+  const claimStatusLabel = dossier.claim_status === 'approved'
+    ? 'DM 身份已认证'
+    : dossier.claim_status === 'pending' ? '身份认证审核中'
+      : dossier.claim_status === 'withdrawn' ? '原身份认证已撤销' : '未认证 DM 档案';
+  const affiliationLabel = dossier.affiliation?.status === 'approved'
+    ? `${dossier.affiliation.store_name || '店家'}已确认任职`
+    : dossier.affiliation?.status === 'pending'
+      ? `等待${dossier.affiliation.store_name || '店家'}确认任职`
+      : dossier.affiliation?.status === 'legacy_unverified'
+        ? `${dossier.affiliation.store_name || '历史店家'}关联待确认`
+        : dossier.employment_status === 'freelance' ? '自由 DM（本人声明）' : '暂无已确认店家';
 
   const openClaim = () => {
     if (!auth?.token) {
@@ -64,10 +91,14 @@ export default function DmProfile() {
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
               <p style={{ margin: 0, color: GOLD, fontSize: 13, fontWeight: 900 }}>{claimStatusLabel}</p>
-              {dossier.claim_status !== 'approved' && dossier.claim_status !== 'pending' && <button type="button" onClick={openClaim} style={claimButtonStyle}>本人认领</button>}
+              {dossier.claim_status !== 'approved' && dossier.claim_status !== 'pending' && dossier.claim_status !== 'withdrawn' && <button type="button" onClick={openClaim} style={claimButtonStyle}>本人认领</button>}
             </div>
             <h1 style={{ margin: 0, fontSize: 'clamp(1.8rem, 4vw, 2.6rem)', fontFamily: 'var(--font-serif)' }}>{dossier.dm_name}</h1>
-            <p style={{ margin: '9px 0 0', color: MUTED }}>{dossier.city || '城市待补'} · {dossier.employment_status === 'freelance' ? '无受雇店家（自由DM）' : dossier.workplace || '受雇店家待补'}</p>
+            <p style={{ margin: '9px 0 0', color: MUTED }}>{dossier.city || '城市待补'}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 8 }}>
+              <span style={affiliationBadgeStyle(dossier.affiliation?.status || (dossier.employment_status === 'freelance' ? 'freelance' : 'unknown'))}>{affiliationLabel}</span>
+              {dossier.affiliation?.status === 'approved' && dossier.affiliation.confirmed_at && <span style={{ color: MUTED, fontSize: 11 }}>确认于 {dossier.affiliation.confirmed_at.slice(0, 10)}</span>}
+            </div>
             {claimMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{claimMessage}</p>}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
               <Link to={`/dm/rate?dmId=${encodeURIComponent(dossier.id)}`} style={primaryButton}>给TA评分</Link>
@@ -135,6 +166,20 @@ export default function DmProfile() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <div style={{ padding: 14, border: '1px solid rgba(31,41,55,0.09)', borderRadius: 8, background: '#fff' }}><div style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{label}</div><div style={{ marginTop: 6, fontSize: 20, fontWeight: 900 }}>{value}</div></div>;
+}
+
+function affiliationBadgeStyle(status: 'approved' | 'pending' | 'legacy_unverified' | 'freelance' | 'unknown') {
+  const approved = status === 'approved';
+  const pending = status === 'pending' || status === 'legacy_unverified';
+  return {
+    padding: '4px 8px',
+    borderRadius: 999,
+    border: approved ? '1px solid rgba(22,101,52,0.16)' : pending ? '1px solid rgba(217,168,87,0.24)' : '1px solid rgba(39,83,137,0.14)',
+    background: approved ? '#ECFDF3' : pending ? '#FFF8E8' : '#EEF6FF',
+    color: approved ? '#166534' : pending ? '#8A5A19' : '#275389',
+    fontSize: 11,
+    fontWeight: 900,
+  };
 }
 
 const cardStyle = { padding: 18, border: '1px solid rgba(31,41,55,0.09)', borderRadius: 8, background: '#fff' };

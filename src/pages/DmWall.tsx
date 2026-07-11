@@ -47,8 +47,13 @@ type DmDossier = {
   photo_url?: string | null;
   note?: string | null;
   tags?: string[];
-  claim_status?: 'unclaimed' | 'pending' | 'approved' | 'rejected';
+  claim_status?: 'unclaimed' | 'pending' | 'approved' | 'rejected' | 'withdrawn';
   claimed_by?: string | null;
+  affiliation?: {
+    status: 'approved' | 'pending' | 'legacy_unverified';
+    store_name?: string | null;
+    reviewed_at?: string | null;
+  } | null;
   created_at?: string;
   rating_summary?: {
     avg: number | null;
@@ -117,6 +122,21 @@ function normalizeUrl(url: string) {
 
 function normalizeEntityType(value?: string | null): DossierEntityType {
   return value === 'store' ? 'store' : 'dm';
+}
+
+function dossierClaimLabel(status?: DmDossier['claim_status']) {
+  if (status === 'approved') return '身份已认证';
+  if (status === 'pending') return '身份审核中';
+  if (status === 'withdrawn') return '原认证已撤销';
+  return '未认证';
+}
+
+function dmAffiliationLabel(item: DmDossier) {
+  if (item.affiliation?.status === 'approved') return `${item.affiliation.store_name || '店家'}已确认任职`;
+  if (item.affiliation?.status === 'pending') return `等待${item.affiliation.store_name || '店家'}确认任职`;
+  if (item.affiliation?.status === 'legacy_unverified') return `${item.affiliation.store_name || '历史店家'}关联待确认`;
+  if (item.employment_status === 'freelance') return '自由 DM（本人声明）';
+  return '暂无已确认店家';
 }
 
 function shouldSaveDossierDraft(data: DossierDraft) {
@@ -387,17 +407,17 @@ export default function DmWall() {
                       <div className="dm-dossier-title-row" style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
                         <span style={{ ...badgeStyle, color: '#275389', background: 'rgba(239,246,255,0.88)' }}>{copy.kindLabel}</span>
                         <h2 style={{ margin: 0, fontSize: 17 }}>{item.dm_name}</h2>
-                        <span style={{ ...badgeStyle, color: item.claim_status === 'approved' ? '#15803d' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : 'rgba(166,106,31,0.10)' }}>
-                          {item.claim_status === 'approved' ? '已认领' : item.claim_status === 'pending' ? '认领审核中' : '未认领'}
+                        <span style={{ ...badgeStyle, color: item.claim_status === 'approved' ? '#15803d' : item.claim_status === 'withdrawn' ? '#9f1239' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : item.claim_status === 'withdrawn' ? 'rgba(255,228,230,0.76)' : 'rgba(166,106,31,0.10)' }}>
+                          {dossierClaimLabel(item.claim_status)}
                         </span>
-                        {item.claim_status !== 'approved' && item.claim_status !== 'pending' && (
+                        {item.claim_status !== 'approved' && item.claim_status !== 'pending' && item.claim_status !== 'withdrawn' && (
                           <button type="button" onClick={() => openClaim(item)} style={claimButtonStyle}>
                             {kind === 'store' ? '店家认领' : '本人认领'}
                           </button>
                         )}
                       </div>
                       <p className="dm-dossier-location" style={{ margin: '0 0 6px', color: MUTED, lineHeight: 1.55, fontSize: 13 }}>
-                        {item.city || '未知城市'} · {kind === 'dm' && item.employment_status === 'freelance' ? '无受雇店家（自由DM）' : item.workplace || (kind === 'store' ? '店铺位置待补充' : '受雇店家待补充')}
+                        {item.city || '未知城市'} · {kind === 'dm' ? dmAffiliationLabel(item) : item.workplace || '店铺位置待补充'}
                       </p>
                       {item.note && <p className="dm-dossier-note" style={{ margin: 0, color: 'rgba(31,41,55,0.74)', lineHeight: 1.55, fontSize: 13 }}>{item.note}</p>}
                     </div>

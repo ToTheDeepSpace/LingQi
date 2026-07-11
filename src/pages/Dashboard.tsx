@@ -162,6 +162,34 @@ type ReferralDashboardData = {
   referrals: ReferralDashboardItem[];
 };
 
+type DmAffiliationRecord = {
+  id: string;
+  dm_dossier_id: string;
+  store_dossier_id: string;
+  status: 'pending' | 'approved' | 'rejected' | 'ended' | 'cancelled' | 'legacy_unverified';
+  request_kind: 'join' | 'change' | 'legacy';
+  request_note?: string | null;
+  reject_reason?: string | null;
+  end_reason?: string | null;
+  created_at: string;
+  store_dossier?: { id: string; dm_name: string; city?: string | null; workplace?: string | null } | null;
+};
+
+type DmIdentityDossier = {
+  id: string;
+  dm_name: string;
+  city?: string | null;
+  claim_status: 'approved' | 'withdrawn';
+  employment_status?: 'unknown' | 'store_affiliated' | 'freelance';
+  affiliations: DmAffiliationRecord[];
+  withdrawal?: { id: string; status: 'pending' | 'approved' | 'rejected' | 'cancelled'; reason: string; reject_reason?: string | null; created_at: string } | null;
+};
+
+type DmIdentityManagementData = {
+  dossiers: DmIdentityDossier[];
+  stores: Array<{ id: string; dm_name: string; city?: string | null; workplace?: string | null; claim_status?: string }>;
+};
+
 type RolePreferenceDraft = {
   script_id: string;
   script_name: string;
@@ -401,6 +429,13 @@ function certTone(status: Certification['status']): ToneName {
   return 'gold';
 }
 
+async function fetchDmIdentityManagement(token: string) {
+  const response = await fetch(`${API}/lc/dm/identity-management`, { headers: { Authorization: `Bearer ${token}` } });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.success) throw new Error(data?.error || 'DM 身份与店家关系加载失败');
+  return (data.data || { dossiers: [], stores: [] }) as DmIdentityManagementData;
+}
+
 function getProfileCompletion(form: ProfileForm, services: Service[], portfolio: Portfolio[], rolePreferences: RolePreferenceDraft[]) {
   const checks = [
     form.display_name.trim(),
@@ -464,6 +499,9 @@ export default function Dashboard() {
   const [walletData, setWalletData] = useState<WalletDashboardData | null>(null);
   const [referralData, setReferralData] = useState<ReferralDashboardData | null>(null);
   const [certifications, setCertifications] = useState<Certification[]>([]);
+  const [dmIdentityData, setDmIdentityData] = useState<DmIdentityManagementData>({ dossiers: [], stores: [] });
+  const [dmStoreChoices, setDmStoreChoices] = useState<Record<string, string>>({});
+  const [identityAction, setIdentityAction] = useState('');
   const [moduleLoading, setModuleLoading] = useState(false);
   const [moduleError, setModuleError] = useState('');
   const [copiedInvite, setCopiedInvite] = useState('');
@@ -619,10 +657,16 @@ export default function Dashboard() {
           if (!cancelled) setReferralData(data.data || null);
         }
         if (activeSection === 'identity') {
-          const response = await fetch(`${API}/lc/certifications/my`, { headers: { Authorization: `Bearer ${token}` } });
-          const data = await response.json().catch(() => null);
-          if (!response.ok || !data?.success) throw new Error(data?.error || '认证记录加载失败');
-          if (!cancelled) setCertifications(data.data || []);
+          const [certificationResponse, identityData] = await Promise.all([
+            fetch(`${API}/lc/certifications/my`, { headers: { Authorization: `Bearer ${token}` } }),
+            fetchDmIdentityManagement(token),
+          ]);
+          const data = await certificationResponse.json().catch(() => null);
+          if (!certificationResponse.ok || !data?.success) throw new Error(data?.error || '认证记录加载失败');
+          if (!cancelled) {
+            setCertifications(data.data || []);
+            setDmIdentityData(identityData);
+          }
         }
       } catch (moduleErr) {
         if (!cancelled) setModuleError(moduleErr instanceof Error ? moduleErr.message : '加载失败');
@@ -1175,6 +1219,108 @@ export default function Dashboard() {
       window.setTimeout(() => setCopiedInvite(''), 1600);
     } catch {
       setModuleError('复制失败，请手动选中复制');
+    }
+  };
+
+  const refreshDmIdentity = async () => {
+    const data = await fetchDmIdentityManagement(token);
+    setDmIdentityData(data);
+    setCreator(current => current ? { ...current, verified_dm: data.dossiers.some(dossier => dossier.claim_status === 'approved') } : current);
+  };
+
+  const requestDmStoreConfirmation = async (dossier: DmIdentityDossier) => {
+    const storeDossierId = dmStoreChoices[dossier.id] || '';
+    if (!storeDossierId) {
+      setModuleError('请先选择要申请确认的店家');
+      return;
+    }
+    const requestNote = window.prompt('可以补充你的任职说明（选填）', '') ?? null;
+    if (requestNote === null) return;
+    setIdentityAction(`request:${dossier.id}`);
+    setModuleError('');
+    try {
+      const response = await fetch(`${API}/lc/dm-dossiers/${encodeURIComponent(dossier.id)}/affiliations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ storeDossierId, requestNote: requestNote.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || '申请提交失败');
+      await refreshDmIdentity();
+      setMsg('已提交店家确认；店家通过前，公开档案不会显示为已确认任职。');
+    } catch (actionError) {
+      setModuleError(actionError instanceof Error ? actionError.message : '申请提交失败');
+    } finally {
+      setIdentityAction('');
+    }
+  };
+
+  const cancelDmStoreRequest = async (dossier: DmIdentityDossier, affiliationId: string) => {
+    if (!window.confirm('确认取消这条店家确认申请吗？')) return;
+    setIdentityAction(`cancel:${affiliationId}`);
+    setModuleError('');
+    try {
+      const response = await fetch(`${API}/lc/dm-dossiers/${encodeURIComponent(dossier.id)}/affiliations/${encodeURIComponent(affiliationId)}/cancel`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || '取消失败');
+      await refreshDmIdentity();
+    } catch (actionError) {
+      setModuleError(actionError instanceof Error ? actionError.message : '取消失败');
+    } finally {
+      setIdentityAction('');
+    }
+  };
+
+  const declareFreelanceDm = async (dossier: DmIdentityDossier) => {
+    if (!window.confirm('确认解除当前店家关系，并将公开状态改为“自由 DM（本人声明）”吗？')) return;
+    const reason = window.prompt('请填写解除原因（选填）', '') ?? null;
+    if (reason === null) return;
+    setIdentityAction(`freelance:${dossier.id}`);
+    setModuleError('');
+    try {
+      const response = await fetch(`${API}/lc/dm-dossiers/${encodeURIComponent(dossier.id)}/affiliations/freelance`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || '解除关联失败');
+      await refreshDmIdentity();
+      setMsg('店家关联已解除；公开档案将显示为自由 DM（本人声明）。');
+    } catch (actionError) {
+      setModuleError(actionError instanceof Error ? actionError.message : '解除关联失败');
+    } finally {
+      setIdentityAction('');
+    }
+  };
+
+  const requestDmIdentityWithdrawal = async (dossier: DmIdentityDossier) => {
+    const reason = window.prompt('请说明为什么要撤销 DM 身份认证（至少 6 个字）', '') ?? null;
+    if (reason === null) return;
+    if (reason.trim().length < 6) {
+      setModuleError('撤销原因至少填写 6 个字');
+      return;
+    }
+    if (!window.confirm('撤销通过后会解除账号与 DM 档案的公开绑定，并结束所有店家关系；历史评分和档案仍会保留。确认提交吗？')) return;
+    setIdentityAction(`withdraw:${dossier.id}`);
+    setModuleError('');
+    try {
+      const response = await fetch(`${API}/lc/dm-dossiers/${encodeURIComponent(dossier.id)}/withdraw-certification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || '撤销申请提交失败');
+      await refreshDmIdentity();
+      setMsg('DM 身份撤销申请已提交审核。');
+    } catch (actionError) {
+      setModuleError(actionError instanceof Error ? actionError.message : '撤销申请提交失败');
+    } finally {
+      setIdentityAction('');
     }
   };
 
@@ -2240,6 +2386,78 @@ export default function Dashboard() {
                   <MetricCard label="DM 认证" value={creator.verified_dm ? '已认证' : creator.has_pending_dm_cert ? '审核中' : '未认证'} tone={creator.verified_dm ? 'green' : creator.has_pending_dm_cert ? 'gold' : 'gray'} />
                   <MetricCard label="店家认证" value={creator.verified_shop ? '已认证' : creator.has_pending_shop_cert ? '审核中' : '未认证'} tone={creator.verified_shop ? 'green' : creator.has_pending_shop_cert ? 'gold' : 'gray'} />
                 </div>
+                {creator.verified_dm && (
+                  <section style={card}>
+                    <div style={{ marginBottom: 14 }}>
+                      <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>DM 身份与任职店家</h2>
+                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650, lineHeight: 1.65 }}>DM 身份由平台认证；店家只确认任职关系，不代表能力背书。</p>
+                    </div>
+                    {dmIdentityData.dossiers.length === 0 ? (
+                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 700, padding: '14px 0' }}>当前账号已标记为 DM，但尚未找到已绑定的 DM 档案，请通过建议反馈处理。</p>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        {dmIdentityData.dossiers.map(dossier => {
+                          const activeAffiliation = dossier.affiliations.find(item => item.status === 'approved');
+                          const pendingAffiliation = dossier.affiliations.find(item => item.status === 'pending');
+                          const legacyAffiliation = dossier.affiliations.find(item => item.status === 'legacy_unverified');
+                          const currentStore = activeAffiliation?.store_dossier;
+                          return (
+                            <article key={dossier.id} style={{ borderRadius: 8, border: '1px solid rgba(31,41,55,0.08)', padding: 14, background: '#fff' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                                    <strong style={{ color: INK, fontSize: 15 }}>{dossier.dm_name}</strong>
+                                    <span style={identityStatusBadgeStyle('verified')}>身份已认证</span>
+                                  </div>
+                                  <p style={{ margin: '6px 0 0', color: MUTED, fontSize: 13 }}>
+                                    {activeAffiliation
+                                      ? `${currentStore?.dm_name || '店家'}已确认任职`
+                                      : pendingAffiliation
+                                        ? `等待${pendingAffiliation.store_dossier?.dm_name || '店家'}确认`
+                                        : legacyAffiliation
+                                          ? `${legacyAffiliation.store_dossier?.dm_name || '历史店家'}关联待确认`
+                                          : dossier.employment_status === 'freelance' ? '自由 DM（本人声明）' : '暂无已确认店家'}
+                                  </p>
+                                  {dossier.withdrawal?.status === 'pending' && <p style={{ margin: '7px 0 0', color: '#b45309', fontSize: 12, fontWeight: 850 }}>身份撤销申请审核中</p>}
+                                </div>
+                                <Link to={`/dm/${encodeURIComponent(dossier.id)}`} style={secondaryActionStyle}>查看公开档案</Link>
+                              </div>
+
+                              {pendingAffiliation ? (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.07)' }}>
+                                  <span style={{ color: MUTED, fontSize: 12 }}>申请于 {pendingAffiliation.created_at?.slice(0, 10)}；原店关系会保留到新店确认。</span>
+                                  <button type="button" disabled={identityAction === `cancel:${pendingAffiliation.id}`} onClick={() => cancelDmStoreRequest(dossier, pendingAffiliation.id)} style={identitySecondaryButtonStyle}>取消申请</button>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 8, alignItems: 'end', marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.07)' }}>
+                                  <label style={{ display: 'grid', gap: 5 }}>
+                                    <span style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{activeAffiliation ? '申请更换店家' : '申请店家确认'}</span>
+                                    <select value={dmStoreChoices[dossier.id] || ''} onChange={event => setDmStoreChoices(current => ({ ...current, [dossier.id]: event.target.value }))} style={{ ...inputStyle, minHeight: 38, padding: '0 10px' }}>
+                                      <option value="">选择已收录店家</option>
+                                      {dmIdentityData.stores.filter(store => store.id !== activeAffiliation?.store_dossier_id).map(store => (
+                                        <option key={store.id} value={store.id}>{store.dm_name}{store.city ? ` · ${store.city}` : ''}</option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <button type="button" disabled={identityAction === `request:${dossier.id}`} onClick={() => requestDmStoreConfirmation(dossier)} style={identityPrimaryButtonStyle}>提交确认申请</button>
+                                </div>
+                              )}
+
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                                {(activeAffiliation || pendingAffiliation || dossier.employment_status !== 'freelance') && (
+                                  <button type="button" disabled={identityAction === `freelance:${dossier.id}`} onClick={() => declareFreelanceDm(dossier)} style={identitySecondaryButtonStyle}>解除店家 / 改为自由 DM</button>
+                                )}
+                                {!dossier.withdrawal || dossier.withdrawal.status !== 'pending' ? (
+                                  <button type="button" disabled={identityAction === `withdraw:${dossier.id}`} onClick={() => requestDmIdentityWithdrawal(dossier)} style={identityDangerButtonStyle}>申请撤销 DM 身份认证</button>
+                                ) : null}
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                )}
                 <section style={card}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
@@ -3107,6 +3325,43 @@ const secondaryActionStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 900,
   cursor: 'pointer',
+};
+
+function identityStatusBadgeStyle(status: 'verified' | 'pending'): React.CSSProperties {
+  return {
+    padding: '3px 7px',
+    borderRadius: 999,
+    border: status === 'verified' ? '1px solid rgba(22,101,52,0.15)' : '1px solid rgba(217,168,87,0.24)',
+    background: status === 'verified' ? '#ECFDF3' : '#FFF8E8',
+    color: status === 'verified' ? '#166534' : '#8A5A19',
+    fontSize: 11,
+    fontWeight: 900,
+  };
+}
+
+const identityPrimaryButtonStyle: React.CSSProperties = {
+  minHeight: 38,
+  padding: '0 12px',
+  borderRadius: 7,
+  border: `1px solid ${INK}`,
+  background: INK,
+  color: '#fff',
+  fontSize: 12,
+  fontWeight: 900,
+  cursor: 'pointer',
+};
+
+const identitySecondaryButtonStyle: React.CSSProperties = {
+  ...identityPrimaryButtonStyle,
+  border: '1px solid rgba(31,41,55,0.14)',
+  background: '#fff',
+  color: INK,
+};
+
+const identityDangerButtonStyle: React.CSSProperties = {
+  ...identitySecondaryButtonStyle,
+  border: '1px solid rgba(185,28,28,0.16)',
+  color: '#b91c1c',
 };
 
 const primaryButtonStyle: React.CSSProperties = {

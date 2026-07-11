@@ -44,6 +44,7 @@ interface ShopProfile {
   address: string | null;
   juzhanggui_link: string | null;
   role: string;
+  verified_shop?: boolean;
 }
 
 interface Review {
@@ -69,6 +70,29 @@ interface Comment {
   content: string;
   author_name: string;
   created_at: string;
+}
+
+interface StoreDossier {
+  id: string;
+  dm_name: string;
+  city?: string | null;
+  workplace?: string | null;
+}
+
+interface DmAffiliation {
+  id: string;
+  dm_dossier_id: string;
+  store_dossier_id: string;
+  status: 'pending' | 'approved' | 'rejected' | 'ended' | 'cancelled';
+  request_kind: 'join' | 'change' | 'legacy';
+  request_note?: string | null;
+  reject_reason?: string | null;
+  end_reason?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+  ended_at?: string | null;
+  dm_dossier?: { id: string; dm_name: string; city?: string | null; photo_url?: string | null; claim_status?: string } | null;
+  store_dossier?: StoreDossier | null;
 }
 
 type ShopForm = {
@@ -116,6 +140,10 @@ export default function ShopDashboard() {
   const [shop, setShop] = useState<ShopProfile | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [storeDossiers, setStoreDossiers] = useState<StoreDossier[]>([]);
+  const [dmAffiliations, setDmAffiliations] = useState<DmAffiliation[]>([]);
+  const [dmView, setDmView] = useState<'pending' | 'approved' | 'history'>('pending');
+  const [dmActionId, setDmActionId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -176,11 +204,13 @@ export default function ShopDashboard() {
           setError(errMsg || '加载失败');
           return;
         }
-        const { profile, reviews: revs, comments: cmts } = data;
-        if (profile.role !== 'shop') { setError('此功能仅限店家使用'); return; }
+        const { profile, reviews: revs, comments: cmts, store_dossiers: dossiers, dm_affiliations: affiliations } = data;
+        if (!profile.verified_shop) { setError('此功能仅限已认证店家使用'); return; }
         setShop(profile);
         setReviews(revs || []);
         setComments(cmts || []);
+        setStoreDossiers(dossiers || []);
+        setDmAffiliations(affiliations || []);
         setForm(profileToForm(profile));
       })
       .catch(() => setError('网络错误'))
@@ -249,6 +279,41 @@ export default function ShopDashboard() {
     finally { setAppealSending(false); }
   };
 
+  const updateDmAffiliation = async (item: DmAffiliation, action: 'approve' | 'reject' | 'end') => {
+    const promptText = action === 'reject' ? '请填写拒绝原因' : action === 'end' ? '请填写解除关联原因' : '';
+    const reason = promptText ? window.prompt(promptText, '') : '';
+    if (promptText && reason === null) return;
+    if (action === 'approve' && !window.confirm(`确认 ${item.dm_dossier?.dm_name || '该 DM'} 当前在你的店家任职吗？`)) return;
+    if (action === 'end' && !window.confirm(`确认解除与 ${item.dm_dossier?.dm_name || '该 DM'} 的任职关系吗？`)) return;
+    setDmActionId(item.id);
+    try {
+      const response = await fetch(`${API}/lc/shop/dm-affiliations/${encodeURIComponent(item.id)}/${action}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason: reason?.trim() || null }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '操作失败');
+      setDmAffiliations(current => current.map(row => {
+        if (action === 'approve' && row.dm_dossier_id === item.dm_dossier_id && row.status === 'approved') {
+          return { ...row, status: 'ended', end_reason: `已切换至${item.store_dossier?.dm_name || '新店家'}` };
+        }
+        if (row.id !== item.id) return row;
+        return {
+          ...row,
+          status: action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'ended',
+          reject_reason: action === 'reject' ? reason?.trim() || '店家未确认这段任职关系' : row.reject_reason,
+          end_reason: action === 'end' ? reason?.trim() || '店家解除任职关系' : row.end_reason,
+        };
+      }));
+      setDmView(action === 'approve' ? 'approved' : 'history');
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : '操作失败');
+    } finally {
+      setDmActionId('');
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('lc_creator');
     window.dispatchEvent(new Event('lc-auth-changed'));
@@ -276,6 +341,9 @@ export default function ShopDashboard() {
   );
 
   const reviewComments = (reviewId: string) => comments.filter(c => c.ranking_id === reviewId);
+  const visibleDmAffiliations = dmAffiliations.filter(item => (
+    dmView === 'pending' ? item.status === 'pending' : dmView === 'approved' ? item.status === 'approved' : !['pending', 'approved'].includes(item.status)
+  ));
 
   return (
     <div style={{ backgroundColor: C, minHeight: '100vh', color: '#e0e0e0' }}>
@@ -308,6 +376,50 @@ export default function ShopDashboard() {
             {error}
           </div>
         )}
+
+        <section style={{ ...card, marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.05rem', color: 'rgba(226,238,252,0.92)' }}>关联 DM 管理</h2>
+              <p style={{ margin: '6px 0 0', color: 'rgba(186,207,231,0.62)', fontSize: '0.82rem', lineHeight: 1.6 }}>这里只确认任职关系，不代表对 DM 能力或评分的背书。</p>
+            </div>
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => setDmView('pending')} style={dmTabStyle(dmView === 'pending')}>待确认 {dmAffiliations.filter(item => item.status === 'pending').length}</button>
+              <button type="button" onClick={() => setDmView('approved')} style={dmTabStyle(dmView === 'approved')}>当前 DM {dmAffiliations.filter(item => item.status === 'approved').length}</button>
+              <button type="button" onClick={() => setDmView('history')} style={dmTabStyle(dmView === 'history')}>历史记录</button>
+            </div>
+          </div>
+
+          {storeDossiers.length === 0 ? (
+            <div style={dmEmptyStyle}>当前账号尚未认领店家档案。完成店家档案认领后，才能确认关联 DM。</div>
+          ) : visibleDmAffiliations.length === 0 ? (
+            <div style={dmEmptyStyle}>{dmView === 'pending' ? '暂无待确认申请' : dmView === 'approved' ? '暂无已确认 DM' : '暂无历史记录'}</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 9 }}>
+              {visibleDmAffiliations.map(item => (
+                <article key={item.id} style={dmRowStyle}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <strong style={{ color: '#fff', fontSize: '0.92rem' }}>{item.dm_dossier?.dm_name || 'DM 档案'}</strong>
+                      <span style={dmStatusStyle(item.status)}>{dmStatusLabel(item.status)}</span>
+                    </div>
+                    <p style={{ margin: '6px 0 0', color: 'rgba(186,207,231,0.66)', fontSize: '0.78rem' }}>
+                      {item.store_dossier?.dm_name || '店家档案'} · {item.dm_dossier?.city || item.store_dossier?.city || '城市待补'} · {item.created_at?.slice(0, 10)}
+                    </p>
+                    {item.request_note && <p style={{ margin: '7px 0 0', color: 'rgba(226,238,252,0.76)', fontSize: '0.82rem', lineHeight: 1.55 }}>申请说明：{item.request_note}</p>}
+                    {(item.reject_reason || item.end_reason) && <p style={{ margin: '7px 0 0', color: '#fbbf24', fontSize: '0.78rem' }}>{item.reject_reason || item.end_reason}</p>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <Link to={`/dm/${encodeURIComponent(item.dm_dossier_id)}`} style={dmGhostButtonStyle}>查看档案</Link>
+                    {item.status === 'pending' && <button disabled={dmActionId === item.id} onClick={() => updateDmAffiliation(item, 'approve')} style={dmApproveButtonStyle}>确认任职</button>}
+                    {item.status === 'pending' && <button disabled={dmActionId === item.id} onClick={() => updateDmAffiliation(item, 'reject')} style={dmDangerButtonStyle}>拒绝</button>}
+                    {item.status === 'approved' && <button disabled={dmActionId === item.id} onClick={() => updateDmAffiliation(item, 'end')} style={dmDangerButtonStyle}>解除关联</button>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* ── 主页信息编辑区 ── */}
         <div style={{ ...card, marginBottom: 32 }}>
@@ -549,3 +661,45 @@ export default function ShopDashboard() {
     </div>
   );
 }
+
+function dmTabStyle(active: boolean): React.CSSProperties {
+  return {
+    minHeight: 34,
+    padding: '0 11px',
+    borderRadius: 7,
+    border: active ? `1px solid ${GOLD}` : '1px solid rgba(255,255,255,0.12)',
+    background: active ? 'rgba(217,168,87,0.16)' : 'transparent',
+    color: active ? '#f4c873' : 'rgba(226,238,252,0.68)',
+    fontSize: '0.76rem',
+    fontWeight: 850,
+    cursor: 'pointer',
+  };
+}
+
+function dmStatusLabel(status: DmAffiliation['status']) {
+  if (status === 'pending') return '待店家确认';
+  if (status === 'approved') return '已确认任职';
+  if (status === 'rejected') return '已拒绝';
+  if (status === 'ended') return '已解除';
+  return '已取消';
+}
+
+function dmStatusStyle(status: DmAffiliation['status']): React.CSSProperties {
+  const positive = status === 'approved';
+  const pending = status === 'pending';
+  return {
+    padding: '3px 7px',
+    borderRadius: 999,
+    border: `1px solid ${positive ? 'rgba(52,211,153,0.28)' : pending ? 'rgba(217,168,87,0.28)' : 'rgba(248,113,113,0.24)'}`,
+    background: positive ? 'rgba(52,211,153,0.10)' : pending ? 'rgba(217,168,87,0.10)' : 'rgba(248,113,113,0.08)',
+    color: positive ? '#34d399' : pending ? '#f4c873' : '#fca5a5',
+    fontSize: '0.7rem',
+    fontWeight: 850,
+  };
+}
+
+const dmEmptyStyle: React.CSSProperties = { padding: '24px 14px', border: '1px dashed rgba(217,168,87,0.20)', borderRadius: 8, color: 'rgba(186,207,231,0.58)', textAlign: 'center', fontSize: '0.82rem' };
+const dmRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', padding: 13, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.035)' };
+const dmGhostButtonStyle: React.CSSProperties = { minHeight: 34, display: 'inline-flex', alignItems: 'center', padding: '0 11px', borderRadius: 7, border: '1px solid rgba(217,168,87,0.24)', color: GOLD, textDecoration: 'none', fontSize: '0.76rem', fontWeight: 850 };
+const dmApproveButtonStyle: React.CSSProperties = { ...dmGhostButtonStyle, border: '1px solid rgba(52,211,153,0.28)', background: 'rgba(52,211,153,0.10)', color: '#6ee7b7', cursor: 'pointer' };
+const dmDangerButtonStyle: React.CSSProperties = { ...dmGhostButtonStyle, border: '1px solid rgba(248,113,113,0.26)', background: 'rgba(248,113,113,0.08)', color: '#fca5a5', cursor: 'pointer' };

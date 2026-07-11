@@ -5,6 +5,7 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { createTencentPgClient, tencentPgPool } from './tencentPgSupabase.js';
 import { summarizeDmRatingRows } from './dmRatingSummary.js';
+import { preferredPublicDmAffiliation } from './dmAffiliationWorkflow.js';
 import { hasRankingEvidence, normalizeRankingRevisionKind } from './rankingWorkflow.js';
 import {
   findSharedRole,
@@ -492,6 +493,8 @@ type AuthedProfile = {
   role?: string | null;
   role_type?: string | null;
   identity_roles?: string[] | null;
+  verified_dm?: boolean | null;
+  verified_shop?: boolean | null;
   referral_code?: string | null;
   community_role?: string | null;
   community_role_expires_at?: string | null;
@@ -500,7 +503,7 @@ type AuthedProfile = {
 async function getAuthedProfile(req: express.Request): Promise<AuthedProfile | null> {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, email, email_verified_at, gender, role, role_type, identity_roles, referral_code, community_role, community_role_expires_at')
+    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, email, email_verified_at, gender, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at')
     .eq('id', creatorId)
     .single();
   return data as AuthedProfile | null;
@@ -6917,7 +6920,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, approvedDmDossiersResult, dmRatingsResult, storeRatingsResult, publicReviewsResult, guidesResult, withdrawalsResult] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, approvedDmDossiersResult, dmRatingsResult, storeRatingsResult, dmIdentityWithdrawalsResult, publicReviewsResult, guidesResult, withdrawalsResult] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -6939,6 +6942,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_dm_dossiers').select('id, entity_type, dm_name, city, workplace, employment_status, employer_store_id, photo_url, status').eq('status', 'approved').order('approved_at', { ascending: false }).limit(1000),
       supabase.from('lc_dm_ratings').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
       supabase.from('lc_store_ratings').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
+      supabase.from('lc_dm_identity_withdrawals').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_public_reviews').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
       supabase.from('lc_guides').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_creator_withdrawals').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
@@ -6953,6 +6957,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     if (approvedDmDossiersResult.error && !isMissingRelation(approvedDmDossiersResult.error, 'lc_dm_dossiers')) throw approvedDmDossiersResult.error;
     if (dmRatingsResult.error && !isMissingRelation(dmRatingsResult.error, 'lc_dm_ratings')) throw dmRatingsResult.error;
     if (storeRatingsResult.error && !isMissingRelation(storeRatingsResult.error, 'lc_store_ratings')) throw storeRatingsResult.error;
+    if (dmIdentityWithdrawalsResult.error && !isMissingRelation(dmIdentityWithdrawalsResult.error, 'lc_dm_identity_withdrawals')) throw dmIdentityWithdrawalsResult.error;
     if (publicReviewsResult.error && !isMissingRelation(publicReviewsResult.error, 'lc_public_reviews')) throw publicReviewsResult.error;
     if (guidesResult.error && !isMissingRelation(guidesResult.error, 'lc_guides')) throw guidesResult.error;
     if (withdrawalsResult.error && !isMissingRelation(withdrawalsResult.error, 'lc_creator_withdrawals')) throw withdrawalsResult.error;
@@ -6996,6 +7001,10 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       ...rating,
       store_dossier: dmDossierLookup.get(String(rating.store_dossier_id || '')) || null,
     }));
+    const pendingDmIdentityWithdrawals = dmIdentityWithdrawalsResult.error ? [] : ((dmIdentityWithdrawalsResult.data || []) as Record<string, unknown>[]).map(withdrawal => ({
+      ...withdrawal,
+      dm_dossier: dmDossierLookup.get(String(withdrawal.dm_dossier_id || '')) || null,
+    }));
     res.json(ok({
       profiles: (profiles || []).map(profile => sanitizeProfile(profile, true)),
       contactRequests: requests || [],
@@ -7015,6 +7024,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       dossierOptions: approvedDossiers,
       dmRatings: pendingDmRatings,
       storeRatings: pendingStoreRatings,
+      dmIdentityWithdrawals: pendingDmIdentityWithdrawals,
       publicReviews: publicReviewsResult.error ? [] : (publicReviewsResult.data || []),
       guides: guidesResult.error ? [] : (guidesResult.data || []),
       guideWithdrawals: withdrawalsResult.error ? [] : (withdrawalsResult.data || []),
@@ -7682,6 +7692,178 @@ app.put('/api/lc/admin/store-ratings/:id/reject', authMiddleware, adminMiddlewar
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+function profileWithoutDmIdentity(profile: Record<string, unknown>) {
+  const filtered = Array.isArray(profile.identity_roles)
+    ? profile.identity_roles.map(normalizeProfileIdentityRole).filter(role => role && role !== 'dm')
+    : [];
+  const sanitized = {
+    ...profile,
+    verified_dm: false,
+    identity_roles: filtered,
+    role_type: normalizeProfileIdentityRole(profile.role_type) === 'dm' ? 'player' : profile.role_type,
+    role: normalizeProfileIdentityRole(profile.role) === 'dm' ? 'creator' : profile.role,
+  };
+  const identityRoles = profileIdentityRoles(sanitized).filter(role => role !== 'dm');
+  return {
+    verified_dm: false,
+    identity_roles: identityRoles.length > 0 ? identityRoles : ['player'],
+    role_type: normalizeProfileIdentityRole(sanitized.role_type) || identityRoles[0] || 'player',
+    role: sanitized.role || 'creator',
+  };
+}
+
+app.put('/api/lc/admin/dm-identity-withdrawals/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
+    const now = new Date().toISOString();
+    if (useTencentPg) {
+      const client = await tencentPgPool.connect();
+      try {
+        await client.query('BEGIN');
+        const withdrawalResult = await client.query(
+          `select * from lc_dm_identity_withdrawals where id = $1 and status = 'pending' for update`,
+          [req.params.id],
+        );
+        const withdrawal = withdrawalResult.rows[0];
+        if (!withdrawal) throw new Error('撤销认证申请不存在或已经处理');
+        const dossierResult = await client.query(
+          `select * from lc_dm_dossiers where id = $1 for update`,
+          [withdrawal.dm_dossier_id],
+        );
+        const dossier = dossierResult.rows[0];
+        if (!dossier || dossier.entity_type !== 'dm') throw new Error('DM 档案不存在');
+        if (String(dossier.claimed_by || '') !== String(withdrawal.profile_id || '')) throw new Error('申请账号与当前档案认领人不一致');
+        await client.query(
+          `update lc_dm_identity_withdrawals
+              set status = 'approved', reviewed_by = $2, reviewed_at = $3,
+                  reject_reason = null, updated_at = $3
+            where id = $1`,
+          [req.params.id, reviewerId, now],
+        );
+        await client.query(
+          `update lc_dm_store_affiliations
+              set status = case when status = 'approved' then 'ended' else 'cancelled' end,
+                  ended_at = $2, ended_by_profile_id = $3,
+                  end_reason = 'DM 身份认证已撤销', updated_at = $2
+            where dm_dossier_id = $1 and status in ('approved', 'pending')`,
+          [dossier.id, now, reviewerId],
+        );
+        await client.query(
+          `update lc_dm_dossiers
+              set claim_status = 'withdrawn', claimed_by = null,
+                  employment_status = 'unknown', employer_store_id = null,
+                  workplace = null, reject_reason = null,
+                  claim_note = '原认证人主动申请撤销身份认证', updated_at = $2
+            where id = $1`,
+          [dossier.id, now],
+        );
+        const remainingResult = await client.query(
+          `select count(*)::int as count
+             from lc_dm_dossiers
+            where claimed_by = $1 and entity_type = 'dm'
+              and status = 'approved' and claim_status = 'approved'`,
+          [withdrawal.profile_id],
+        );
+        if (Number(remainingResult.rows[0]?.count || 0) === 0 && withdrawal.profile_id) {
+          const profileResult = await client.query(
+            `select role, role_type, identity_roles, verified_dm, verified_shop
+               from lc_profiles where id = $1 for update`,
+            [withdrawal.profile_id],
+          );
+          if (profileResult.rows[0]) {
+            const patch = profileWithoutDmIdentity(profileResult.rows[0]);
+            await client.query(
+              `update lc_profiles
+                  set verified_dm = false, identity_roles = $2,
+                      role_type = $3, role = $4, updated_at = $5
+                where id = $1`,
+              [withdrawal.profile_id, patch.identity_roles, patch.role_type, patch.role, now],
+            );
+          }
+        }
+        await client.query('COMMIT');
+        await logSecurityEvent(req, {
+          action: 'admin_dm_identity_withdrawal_approved', targetType: 'dm_identity_withdrawal', targetId: req.params.id,
+          metadata: { dm_dossier_id: dossier.id, profile_id: withdrawal.profile_id },
+        });
+        return res.json(ok());
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    const withdrawalResult = await supabase.from('lc_dm_identity_withdrawals')
+      .select('*').eq('id', req.params.id).eq('status', 'pending').maybeSingle();
+    if (withdrawalResult.error) throw withdrawalResult.error;
+    const withdrawal = withdrawalResult.data;
+    if (!withdrawal) return res.status(404).json(err(new Error('撤销认证申请不存在或已经处理')));
+    const dossierResult = await supabase.from('lc_dm_dossiers').select('*').eq('id', withdrawal.dm_dossier_id).maybeSingle();
+    if (dossierResult.error) throw dossierResult.error;
+    const dossier = dossierResult.data;
+    if (!dossier || String(dossier.claimed_by || '') !== String(withdrawal.profile_id || '')) return res.status(409).json(err(new Error('申请账号与当前档案认领人不一致')));
+    const withdrawalUpdate = await supabase.from('lc_dm_identity_withdrawals').update({
+      status: 'approved', reviewed_by: reviewerId, reviewed_at: now, reject_reason: null, updated_at: now,
+    }).eq('id', req.params.id).eq('status', 'pending');
+    if (withdrawalUpdate.error) throw withdrawalUpdate.error;
+    const affiliationUpdate = await supabase.from('lc_dm_store_affiliations').update({
+      status: 'ended', ended_at: now, ended_by_profile_id: reviewerId,
+      end_reason: 'DM 身份认证已撤销', updated_at: now,
+    }).eq('dm_dossier_id', dossier.id).eq('status', 'approved');
+    if (affiliationUpdate.error && !isMissingRelation(affiliationUpdate.error, 'lc_dm_store_affiliations')) throw affiliationUpdate.error;
+    const pendingUpdate = await supabase.from('lc_dm_store_affiliations').update({
+      status: 'cancelled', ended_at: now, ended_by_profile_id: reviewerId,
+      end_reason: 'DM 身份认证已撤销', updated_at: now,
+    }).eq('dm_dossier_id', dossier.id).eq('status', 'pending');
+    if (pendingUpdate.error && !isMissingRelation(pendingUpdate.error, 'lc_dm_store_affiliations')) throw pendingUpdate.error;
+    const dossierUpdate = await supabase.from('lc_dm_dossiers').update({
+      claim_status: 'withdrawn', claimed_by: null, employment_status: 'unknown', employer_store_id: null,
+      workplace: null, reject_reason: null, claim_note: '原认证人主动申请撤销身份认证', updated_at: now,
+    }).eq('id', dossier.id);
+    if (dossierUpdate.error) throw dossierUpdate.error;
+    const remaining = await supabase.from('lc_dm_dossiers').select('id', { count: 'exact', head: true })
+      .eq('claimed_by', withdrawal.profile_id).eq('entity_type', 'dm').eq('status', 'approved').eq('claim_status', 'approved');
+    if (remaining.error) throw remaining.error;
+    if ((remaining.count || 0) === 0 && withdrawal.profile_id) {
+      const profileResult = await supabase.from('lc_profiles')
+        .select('role, role_type, identity_roles, verified_dm, verified_shop')
+        .eq('id', withdrawal.profile_id).maybeSingle();
+      if (profileResult.error) throw profileResult.error;
+      if (profileResult.data) {
+        const patch = profileWithoutDmIdentity(profileResult.data as Record<string, unknown>);
+        const profileUpdate = await supabase.from('lc_profiles').update({ ...patch, updated_at: now }).eq('id', withdrawal.profile_id);
+        if (profileUpdate.error) throw profileUpdate.error;
+      }
+    }
+    await logSecurityEvent(req, {
+      action: 'admin_dm_identity_withdrawal_approved', targetType: 'dm_identity_withdrawal', targetId: req.params.id,
+      metadata: { dm_dossier_id: dossier.id, profile_id: withdrawal.profile_id },
+    });
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/dm-identity-withdrawals/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
+    const rejectReason = cleanText(req.body?.reason ?? req.body?.rejectReason, 500) || '暂不符合撤销认证条件';
+    const now = new Date().toISOString();
+    const result = await supabase.from('lc_dm_identity_withdrawals').update({
+      status: 'rejected', reviewed_by: reviewerId, reviewed_at: now,
+      reject_reason: rejectReason, updated_at: now,
+    }).eq('id', req.params.id).eq('status', 'pending').select('id').single();
+    if (result.error && isMissingRelation(result.error, 'lc_dm_identity_withdrawals')) return res.status(503).json(err(new Error('认证撤销表尚未初始化')));
+    if (result.error) throw result.error;
+    await logSecurityEvent(req, {
+      action: 'admin_dm_identity_withdrawal_rejected', targetType: 'dm_identity_withdrawal', targetId: req.params.id,
+      metadata: { reason: rejectReason },
+    });
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.put('/api/lc/admin/dm-dossiers/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const rejectReason = cleanText(req.body?.rejectReason, 500) || '不符合卡司评分公开规则';
@@ -8120,6 +8302,24 @@ async function resolveDmEmploymentSuggestion(body: Record<string, unknown>, subj
   return { dm_employment_status_suggestion: 'store_affiliated', dm_employer_store_id_suggestion: store?.id || null };
 }
 
+type PublicDmAffiliationStatus = 'approved' | 'pending' | 'legacy_unverified';
+
+function publicDmAffiliationPayload(
+  affiliation: Record<string, unknown> | null | undefined,
+  store: Record<string, unknown> | null | undefined,
+) {
+  const status = cleanText(affiliation?.status, 40) as PublicDmAffiliationStatus;
+  if (!['approved', 'pending', 'legacy_unverified'].includes(status)) return null;
+  return {
+    id: affiliation?.id || null,
+    status,
+    store_dossier_id: affiliation?.store_dossier_id || null,
+    store_name: store?.dm_name || null,
+    store_city: store?.city || null,
+    confirmed_at: status === 'approved' ? affiliation?.started_at || affiliation?.reviewed_at || null : null,
+  };
+}
+
 app.get('/api/lc/reputation/city', async (req, res) => {
   try {
     const city = cleanText(req.query.city, 80);
@@ -8360,8 +8560,10 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
     const dossierIds = dossierRows.map(row => String(row.id || '')).filter(Boolean);
     let dmRatingRows: Record<string, unknown>[] = [];
     let storeRatingRows: Record<string, unknown>[] = [];
+    let affiliationRows: Record<string, unknown>[] = [];
+    let affiliationStores: Record<string, unknown>[] = [];
     if (dossierIds.length > 0) {
-      const [dmRatingResult, storeRatingResult] = await Promise.all([
+      const [dmRatingResult, storeRatingResult, affiliationResult] = await Promise.all([
         supabase.from('lc_dm_ratings')
           .select('id, dm_dossier_id, profile_id, rating')
           .in('dm_dossier_id', dossierIds)
@@ -8372,11 +8574,28 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
           .in('store_dossier_id', dossierIds)
           .eq('status', 'approved')
           .limit(5000),
+        supabase.from('lc_dm_store_affiliations')
+          .select('id, dm_dossier_id, store_dossier_id, status, reviewed_at, started_at, created_at, updated_at')
+          .in('dm_dossier_id', dossierIds)
+          .in('status', ['approved', 'pending', 'legacy_unverified'])
+          .order('created_at', { ascending: false })
+          .limit(1000),
       ]);
       if (dmRatingResult.error && !isMissingRelation(dmRatingResult.error, 'lc_dm_ratings')) throw dmRatingResult.error;
       if (storeRatingResult.error && !isMissingRelation(storeRatingResult.error, 'lc_store_ratings')) throw storeRatingResult.error;
+      if (affiliationResult.error && !isMissingRelation(affiliationResult.error, 'lc_dm_store_affiliations')) throw affiliationResult.error;
       dmRatingRows = dmRatingResult.error ? [] : (dmRatingResult.data || []) as Record<string, unknown>[];
       storeRatingRows = storeRatingResult.error ? [] : (storeRatingResult.data || []) as Record<string, unknown>[];
+      affiliationRows = affiliationResult.error ? [] : (affiliationResult.data || []) as Record<string, unknown>[];
+      const storeIds = Array.from(new Set(affiliationRows.map(row => String(row.store_dossier_id || '')).filter(Boolean)));
+      if (storeIds.length > 0) {
+        const storeResult = await supabase.from('lc_dm_dossiers')
+          .select('id, dm_name, city')
+          .in('id', storeIds)
+          .eq('entity_type', 'store');
+        if (storeResult.error) throw storeResult.error;
+        affiliationStores = (storeResult.data || []) as Record<string, unknown>[];
+      }
     }
     const dmRatingsByDossier = new Map<string, Record<string, unknown>[]>();
     dmRatingRows.forEach(row => {
@@ -8392,27 +8611,47 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       values.push(row);
       storeRatingsByDossier.set(key, values);
     });
-    res.json(ok(dossierRows.map((row: Record<string, unknown>) => ({
-      id: row.id,
-      entity_type: row.entity_type || 'dm',
-      dm_name: row.dm_name,
-      city: row.city,
-      workplace: row.workplace,
-      employment_status: row.employment_status || 'unknown',
-      employer_store_id: row.employer_store_id || null,
-      profile_url: row.profile_url,
-      photo_url: row.photo_url,
-      note: row.note,
-      tags: row.tags || [],
-      claim_status: row.claim_status,
-      claimed_by: row.claim_status === 'approved' ? row.claimed_by : null,
-      created_at: row.created_at,
-      rating_summary: summarizeDmRatingRows(
-        row.entity_type === 'store'
-          ? storeRatingsByDossier.get(String(row.id || '')) || []
-          : dmRatingsByDossier.get(String(row.id || '')) || [],
-      ),
-    }))));
+    const affiliationsByDm = new Map<string, Record<string, unknown>[]>();
+    affiliationRows.forEach(row => {
+      const key = String(row.dm_dossier_id || '');
+      const values = affiliationsByDm.get(key) || [];
+      values.push(row);
+      affiliationsByDm.set(key, values);
+    });
+    const storesById = new Map(affiliationStores.map(store => [String(store.id || ''), store]));
+    res.json(ok(dossierRows.map((row: Record<string, unknown>) => {
+      const isDm = (row.entity_type || 'dm') === 'dm';
+      const affiliation = isDm ? preferredPublicDmAffiliation(affiliationsByDm.get(String(row.id || '')) || []) : null;
+      const publicAffiliation = affiliation
+        ? publicDmAffiliationPayload(affiliation, storesById.get(String(affiliation.store_dossier_id || '')))
+        : null;
+      const confirmedStore = publicAffiliation?.status === 'approved' ? storesById.get(String(publicAffiliation.store_dossier_id || '')) : null;
+      const employmentStatus = confirmedStore
+        ? 'store_affiliated'
+        : row.employment_status === 'freelance' ? 'freelance' : 'unknown';
+      return {
+        id: row.id,
+        entity_type: row.entity_type || 'dm',
+        dm_name: row.dm_name,
+        city: row.city,
+        workplace: confirmedStore?.dm_name || (employmentStatus === 'freelance' ? null : row.workplace),
+        employment_status: employmentStatus,
+        employer_store_id: confirmedStore?.id || null,
+        affiliation: publicAffiliation,
+        profile_url: row.profile_url,
+        photo_url: row.photo_url,
+        note: row.note,
+        tags: row.tags || [],
+        claim_status: row.claim_status,
+        claimed_by: row.claim_status === 'approved' ? row.claimed_by : null,
+        created_at: row.created_at,
+        rating_summary: summarizeDmRatingRows(
+          row.entity_type === 'store'
+            ? storeRatingsByDossier.get(String(row.id || '')) || []
+            : dmRatingsByDossier.get(String(row.id || '')) || [],
+        ),
+      };
+    })));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -8446,14 +8685,40 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
     if (rankingResult.error) throw rankingResult.error;
     const rankingRows = ((rankingResult.data || []) as Record<string, unknown>[])
       .filter(row => isPublicRankingVisible(row));
+    const affiliationResult = await supabase.from('lc_dm_store_affiliations')
+      .select('*')
+      .eq('dm_dossier_id', req.params.id)
+      .in('status', ['approved', 'pending', 'legacy_unverified'])
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (affiliationResult.error && !isMissingRelation(affiliationResult.error, 'lc_dm_store_affiliations')) throw affiliationResult.error;
+    const affiliation = affiliationResult.error
+      ? null
+      : preferredPublicDmAffiliation((affiliationResult.data || []) as Record<string, unknown>[]);
+    let affiliationStore: Record<string, unknown> | null = null;
+    if (affiliation?.store_dossier_id) {
+      const storeResult = await supabase.from('lc_dm_dossiers')
+        .select('id, dm_name, city')
+        .eq('id', affiliation.store_dossier_id)
+        .eq('entity_type', 'store')
+        .maybeSingle();
+      if (storeResult.error) throw storeResult.error;
+      affiliationStore = storeResult.data as Record<string, unknown> | null;
+    }
+    const publicAffiliation = publicDmAffiliationPayload(affiliation, affiliationStore);
+    const confirmedStore = publicAffiliation?.status === 'approved' ? affiliationStore : null;
+    const employmentStatus = confirmedStore
+      ? 'store_affiliated'
+      : dossier.employment_status === 'freelance' ? 'freelance' : 'unknown';
     res.json(ok({
       dossier: {
         id: dossier.id,
         dm_name: dossier.dm_name,
         city: dossier.city,
-        workplace: dossier.workplace,
-        employment_status: dossier.employment_status || 'unknown',
-        employer_store_id: dossier.employer_store_id || null,
+        workplace: confirmedStore?.dm_name || (employmentStatus === 'freelance' ? null : dossier.workplace),
+        employment_status: employmentStatus,
+        employer_store_id: confirmedStore?.id || null,
+        affiliation: publicAffiliation,
         profile_url: dossier.profile_url,
         photo_url: dossier.photo_url,
         note: dossier.note,
@@ -9325,6 +9590,274 @@ async function finalizeDossierClaimReview(input: {
   }
   return { dossier: dossierUpdate.data, claimId: claim?.id || null };
 }
+
+async function findOwnedVerifiedDmDossier(profileId: string, dossierId: string) {
+  const result = await supabase.from('lc_dm_dossiers')
+    .select('*')
+    .eq('id', dossierId)
+    .eq('entity_type', 'dm')
+    .eq('status', 'approved')
+    .eq('claim_status', 'approved')
+    .eq('claimed_by', profileId)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) throw new Error('你没有管理这份 DM 档案的权限');
+  return result.data as Record<string, unknown>;
+}
+
+async function findClaimedStoreDossiers(profileId: string) {
+  const result = await supabase.from('lc_dm_dossiers')
+    .select('id, dm_name, city, workplace, claimed_by, claim_status, status')
+    .eq('entity_type', 'store')
+    .eq('status', 'approved')
+    .eq('claim_status', 'approved')
+    .eq('claimed_by', profileId)
+    .order('approved_at', { ascending: false });
+  if (result.error) throw result.error;
+  return (result.data || []) as Record<string, unknown>[];
+}
+
+function enrichAffiliations(
+  rows: Record<string, unknown>[],
+  dmDossiers: Record<string, unknown>[],
+  storeDossiers: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const dmById = new Map(dmDossiers.map(row => [String(row.id || ''), row]));
+  const storeById = new Map(storeDossiers.map(row => [String(row.id || ''), row]));
+  return rows.map(row => ({
+    ...row,
+    dm_dossier: dmById.get(String(row.dm_dossier_id || '')) || null,
+    store_dossier: storeById.get(String(row.store_dossier_id || '')) || null,
+  }) as Record<string, unknown>);
+}
+
+app.get('/api/lc/dm/identity-management', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const dossierResult = await supabase.from('lc_dm_dossiers')
+      .select('*')
+      .eq('entity_type', 'dm')
+      .eq('status', 'approved')
+      .eq('claimed_by', profile.id)
+      .order('approved_at', { ascending: false });
+    if (dossierResult.error) throw dossierResult.error;
+    const dossiers = (dossierResult.data || []) as Record<string, unknown>[];
+    const dossierIds = dossiers.map(row => String(row.id || '')).filter(Boolean);
+    let affiliations: Record<string, unknown>[] = [];
+    let withdrawals: Record<string, unknown>[] = [];
+    if (dossierIds.length > 0) {
+      const [affiliationResult, withdrawalResult] = await Promise.all([
+        supabase.from('lc_dm_store_affiliations')
+          .select('*')
+          .in('dm_dossier_id', dossierIds)
+          .order('created_at', { ascending: false })
+          .limit(500),
+        supabase.from('lc_dm_identity_withdrawals')
+          .select('*')
+          .in('dm_dossier_id', dossierIds)
+          .eq('profile_id', profile.id)
+          .order('created_at', { ascending: false })
+          .limit(100),
+      ]);
+      if (affiliationResult.error && !isMissingRelation(affiliationResult.error, 'lc_dm_store_affiliations')) throw affiliationResult.error;
+      if (withdrawalResult.error && !isMissingRelation(withdrawalResult.error, 'lc_dm_identity_withdrawals')) throw withdrawalResult.error;
+      affiliations = affiliationResult.error ? [] : (affiliationResult.data || []) as Record<string, unknown>[];
+      withdrawals = withdrawalResult.error ? [] : (withdrawalResult.data || []) as Record<string, unknown>[];
+    }
+    const storeResult = await supabase.from('lc_dm_dossiers')
+      .select('id, dm_name, city, workplace, claim_status')
+      .eq('entity_type', 'store')
+      .eq('status', 'approved')
+      .order('dm_name')
+      .limit(1000);
+    if (storeResult.error) throw storeResult.error;
+    const stores = (storeResult.data || []) as Record<string, unknown>[];
+    const enriched = enrichAffiliations(affiliations, dossiers, stores);
+    res.json(ok({
+      dossiers: dossiers.map(dossier => ({
+        ...dossier,
+        affiliations: enriched.filter(row => row.dm_dossier_id === dossier.id),
+        withdrawal: withdrawals.find(row => row.dm_dossier_id === dossier.id && row.status === 'pending')
+          || withdrawals.find(row => row.dm_dossier_id === dossier.id)
+          || null,
+      })),
+      stores,
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/dm-dossiers/:id/affiliations', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const dossier = await findOwnedVerifiedDmDossier(profile.id, req.params.id);
+    const storeDossierId = cleanText(req.body?.storeDossierId ?? req.body?.store_dossier_id, 120);
+    const requestNote = cleanText(req.body?.requestNote ?? req.body?.request_note, 500);
+    if (!storeDossierId) return res.status(400).json(err(new Error('请选择要申请确认的店家')));
+    const storeResult = await supabase.from('lc_dm_dossiers')
+      .select('id, dm_name, city, status, entity_type')
+      .eq('id', storeDossierId)
+      .eq('entity_type', 'store')
+      .eq('status', 'approved')
+      .maybeSingle();
+    if (storeResult.error) throw storeResult.error;
+    if (!storeResult.data) return res.status(400).json(err(new Error('选择的店家不存在或尚未公开')));
+    const existingResult = await supabase.from('lc_dm_store_affiliations')
+      .select('*')
+      .eq('dm_dossier_id', dossier.id)
+      .in('status', ['pending', 'approved'])
+      .order('created_at', { ascending: false });
+    if (existingResult.error && !isMissingRelation(existingResult.error, 'lc_dm_store_affiliations')) throw existingResult.error;
+    const existing = (existingResult.data || []) as Record<string, unknown>[];
+    if (existing.some(row => row.status === 'pending')) return res.status(409).json(err(new Error('已有一条店家确认申请正在处理')));
+    if (existing.some(row => row.status === 'approved' && row.store_dossier_id === storeDossierId)) return res.status(409).json(err(new Error('当前店家已经确认这段任职关系')));
+    const requestKind = existing.some(row => row.status === 'approved') ? 'change' : 'join';
+    const insertResult = await supabase.from('lc_dm_store_affiliations').insert({
+      dm_dossier_id: dossier.id,
+      store_dossier_id: storeDossierId,
+      dm_profile_id: profile.id,
+      requested_by_profile_id: profile.id,
+      requested_by_role: 'dm',
+      request_kind: requestKind,
+      request_note: requestNote || null,
+      status: 'pending',
+    }).select('*').single();
+    if (insertResult.error) {
+      if (isMissingRelation(insertResult.error, 'lc_dm_store_affiliations')) return res.status(503).json(err(new Error('任职关系表尚未初始化')));
+      if (insertResult.error.code === '23505') return res.status(409).json(err(new Error('已有一条店家确认申请正在处理')));
+      throw insertResult.error;
+    }
+    await logSecurityEvent(req, {
+      action: 'dm_store_affiliation_requested',
+      targetType: 'dm_store_affiliation',
+      targetId: insertResult.data?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { dm_dossier_id: dossier.id, store_dossier_id: storeDossierId, request_kind: requestKind },
+    });
+    res.json(ok(insertResult.data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/dm-dossiers/:id/affiliations/freelance', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const dossier = await findOwnedVerifiedDmDossier(profile.id, req.params.id);
+    const reason = cleanText(req.body?.reason, 500) || 'DM 本人解除店家关联并声明为自由 DM';
+    const now = new Date().toISOString();
+    if (useTencentPg) {
+      const client = await tencentPgPool.connect();
+      try {
+        await client.query('BEGIN');
+        const locked = await client.query(
+          `select id from lc_dm_dossiers
+            where id = $1 and entity_type = 'dm' and claimed_by = $2
+              and status = 'approved' and claim_status = 'approved'
+            for update`,
+          [dossier.id, profile.id],
+        );
+        if (!locked.rows[0]) throw new Error('你没有管理这份 DM 档案的权限');
+        await client.query(
+          `update lc_dm_store_affiliations
+              set status = case when status = 'approved' then 'ended' else 'cancelled' end,
+                  ended_at = $2, ended_by_profile_id = $3,
+                  end_reason = $4, updated_at = $2
+            where dm_dossier_id = $1 and status in ('approved', 'pending')`,
+          [dossier.id, now, profile.id, reason],
+        );
+        await client.query(
+          `update lc_dm_dossiers
+              set employment_status = 'freelance', employer_store_id = null,
+                  workplace = null, updated_at = $2
+            where id = $1`,
+          [dossier.id, now],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } else {
+      const pendingResult = await supabase.from('lc_dm_store_affiliations').update({
+        status: 'cancelled', ended_at: now, ended_by_profile_id: profile.id, end_reason: reason, updated_at: now,
+      }).eq('dm_dossier_id', dossier.id).eq('status', 'pending');
+      if (pendingResult.error && !isMissingRelation(pendingResult.error, 'lc_dm_store_affiliations')) throw pendingResult.error;
+      const activeResult = await supabase.from('lc_dm_store_affiliations').update({
+        status: 'ended', ended_at: now, ended_by_profile_id: profile.id, end_reason: reason, updated_at: now,
+      }).eq('dm_dossier_id', dossier.id).eq('status', 'approved');
+      if (activeResult.error && !isMissingRelation(activeResult.error, 'lc_dm_store_affiliations')) throw activeResult.error;
+      const dossierResult = await supabase.from('lc_dm_dossiers').update({
+        employment_status: 'freelance', employer_store_id: null, workplace: null, updated_at: now,
+      }).eq('id', dossier.id);
+      if (dossierResult.error) throw dossierResult.error;
+    }
+    await logSecurityEvent(req, {
+      action: 'dm_store_affiliation_ended_by_dm',
+      targetType: 'dm_dossier',
+      targetId: String(dossier.id || ''),
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { next_status: 'freelance', reason },
+    });
+    res.json(ok({ employment_status: 'freelance' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/dm-dossiers/:id/affiliations/:affiliationId/cancel', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    await findOwnedVerifiedDmDossier(profile.id, req.params.id);
+    const now = new Date().toISOString();
+    const result = await supabase.from('lc_dm_store_affiliations').update({
+      status: 'cancelled', ended_at: now, ended_by_profile_id: profile.id, end_reason: 'DM 取消店家确认申请', updated_at: now,
+    }).eq('id', req.params.affiliationId).eq('dm_dossier_id', req.params.id).eq('status', 'pending').select('id').maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('待处理申请不存在')));
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/dm-dossiers/:id/withdraw-certification', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const dossier = await findOwnedVerifiedDmDossier(profile.id, req.params.id);
+    const reason = cleanText(req.body?.reason, 600);
+    if (reason.length < 6) return res.status(400).json(err(new Error('请至少填写 6 个字说明撤销原因')));
+    const existing = await supabase.from('lc_dm_identity_withdrawals')
+      .select('id')
+      .eq('dm_dossier_id', dossier.id)
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (existing.error && !isMissingRelation(existing.error, 'lc_dm_identity_withdrawals')) throw existing.error;
+    if (existing.data) return res.status(409).json(err(new Error('撤销认证申请正在审核')));
+    const result = await supabase.from('lc_dm_identity_withdrawals').insert({
+      dm_dossier_id: dossier.id,
+      profile_id: profile.id,
+      reason,
+      status: 'pending',
+    }).select('*').single();
+    if (result.error) {
+      if (isMissingRelation(result.error, 'lc_dm_identity_withdrawals')) return res.status(503).json(err(new Error('认证撤销表尚未初始化')));
+      if (result.error.code === '23505') return res.status(409).json(err(new Error('撤销认证申请正在审核')));
+      throw result.error;
+    }
+    await logSecurityEvent(req, {
+      action: 'dm_identity_withdrawal_requested',
+      targetType: 'dm_identity_withdrawal',
+      targetId: result.data?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { dm_dossier_id: dossier.id },
+    });
+    res.json(ok(result.data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
 
 app.get('/api/lc/dm-dossiers/:id/my-claim', authMiddleware, async (req, res) => {
   try {
@@ -11090,13 +11623,21 @@ app.get('/api/lc/shop/dashboard', authMiddleware, async (req, res) => {
   try {
     const creatorId = getReq(req, 'creatorId');
     const { data: profile } = await supabase.from('lc_profiles').select('*').eq('id', creatorId).single();
-    if (!profile || profile.role !== 'shop' || !profile.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
     const shopName = profile.shop_name || profile.display_name;
-    const { data: reviews } = await supabase.from('lc_rankings')
-      .select('*')
-      .eq('subject_type', 'store')
-      .eq('subject_name', shopName)
-      .order('created_at', { ascending: false });
+    const storeDossiers = await findClaimedStoreDossiers(String(creatorId));
+    const storeIds = storeDossiers.map(row => String(row.id || '')).filter(Boolean);
+    const [dossierReviewResult, nameReviewResult] = await Promise.all([
+      storeIds.length > 0
+        ? supabase.from('lc_rankings').select('*').eq('subject_type', 'store').in('subject_dossier_id', storeIds).order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      supabase.from('lc_rankings').select('*').eq('subject_type', 'store').eq('subject_name', shopName).order('created_at', { ascending: false }),
+    ]);
+    if (dossierReviewResult.error) throw dossierReviewResult.error;
+    if (nameReviewResult.error) throw nameReviewResult.error;
+    const reviewById = new Map<string, Record<string, unknown>>();
+    [...(dossierReviewResult.data || []), ...(nameReviewResult.data || [])].forEach(review => reviewById.set(String(review.id), review as Record<string, unknown>));
+    const reviews = Array.from(reviewById.values()).sort((left, right) => new Date(String(right.created_at)).getTime() - new Date(String(left.created_at)).getTime());
     const reviewIds = (reviews || []).map((r: { id: string }) => r.id);
     let comments: Record<string, unknown>[] = [];
     if (reviewIds.length > 0) {
@@ -11106,7 +11647,191 @@ app.get('/api/lc/shop/dashboard', authMiddleware, async (req, res) => {
         .order('created_at', { ascending: true });
       comments = cmts || [];
     }
-    res.json(ok({ profile, reviews: reviews || [], comments }));
+    let dmAffiliations: Record<string, unknown>[] = [];
+    if (storeIds.length > 0) {
+      const affiliationResult = await supabase.from('lc_dm_store_affiliations')
+        .select('*')
+        .in('store_dossier_id', storeIds)
+        .in('status', ['pending', 'approved', 'ended', 'rejected'])
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (affiliationResult.error && !isMissingRelation(affiliationResult.error, 'lc_dm_store_affiliations')) throw affiliationResult.error;
+      const affiliationRows = affiliationResult.error ? [] : (affiliationResult.data || []) as Record<string, unknown>[];
+      const dmIds = Array.from(new Set(affiliationRows.map(row => String(row.dm_dossier_id || '')).filter(Boolean)));
+      let dmDossiers: Record<string, unknown>[] = [];
+      if (dmIds.length > 0) {
+        const dmResult = await supabase.from('lc_dm_dossiers')
+          .select('id, dm_name, city, photo_url, claimed_by, claim_status, status')
+          .in('id', dmIds)
+          .eq('entity_type', 'dm');
+        if (dmResult.error) throw dmResult.error;
+        dmDossiers = (dmResult.data || []) as Record<string, unknown>[];
+      }
+      dmAffiliations = enrichAffiliations(affiliationRows, dmDossiers, storeDossiers);
+    }
+    res.json(ok({ profile, reviews: reviews || [], comments, store_dossiers: storeDossiers, dm_affiliations: dmAffiliations }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+async function ensureShopOwnsAffiliation(profileId: string, affiliationId: string, requiredStatus: string) {
+  const stores = await findClaimedStoreDossiers(profileId);
+  const storeIds = new Set(stores.map(row => String(row.id || '')));
+  const affiliationResult = await supabase.from('lc_dm_store_affiliations')
+    .select('*')
+    .eq('id', affiliationId)
+    .eq('status', requiredStatus)
+    .maybeSingle();
+  if (affiliationResult.error) throw affiliationResult.error;
+  if (!affiliationResult.data || !storeIds.has(String(affiliationResult.data.store_dossier_id || ''))) {
+    throw new Error('你没有处理这条任职关系的权限');
+  }
+  const store = stores.find(row => String(row.id || '') === String(affiliationResult.data.store_dossier_id || '')) || null;
+  return { affiliation: affiliationResult.data as Record<string, unknown>, store };
+}
+
+app.put('/api/lc/shop/dm-affiliations/:id/approve', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    const { affiliation, store } = await ensureShopOwnsAffiliation(profile.id, req.params.id, 'pending');
+    const now = new Date().toISOString();
+    if (useTencentPg) {
+      const client = await tencentPgPool.connect();
+      try {
+        await client.query('BEGIN');
+        const locked = await client.query(
+          `select * from lc_dm_store_affiliations where id = $1 and status = 'pending' for update`,
+          [req.params.id],
+        );
+        if (!locked.rows[0]) throw new Error('这条任职申请已经处理过了');
+        await client.query(
+          `update lc_dm_store_affiliations
+              set status = 'ended', ended_at = $2, ended_by_profile_id = $3,
+                  end_reason = $4, updated_at = $2
+            where dm_dossier_id = $1 and status = 'approved'`,
+          [affiliation.dm_dossier_id, now, profile.id, `已切换至${store?.dm_name || '新店家'}`],
+        );
+        await client.query(
+          `update lc_dm_store_affiliations
+              set status = 'approved', reviewed_by_profile_id = $2, reviewed_at = $3,
+                  started_at = $3, reject_reason = null, updated_at = $3
+            where id = $1 and status = 'pending'`,
+          [req.params.id, profile.id, now],
+        );
+        await client.query(
+          `update lc_dm_dossiers
+              set employment_status = 'store_affiliated', employer_store_id = $2,
+                  workplace = $3, updated_at = $4
+            where id = $1 and entity_type = 'dm'`,
+          [affiliation.dm_dossier_id, affiliation.store_dossier_id, store?.dm_name || null, now],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } else {
+      const activeResult = await supabase.from('lc_dm_store_affiliations').update({
+        status: 'ended', ended_at: now, ended_by_profile_id: profile.id,
+        end_reason: `已切换至${store?.dm_name || '新店家'}`, updated_at: now,
+      }).eq('dm_dossier_id', affiliation.dm_dossier_id).eq('status', 'approved');
+      if (activeResult.error) throw activeResult.error;
+      const approveResult = await supabase.from('lc_dm_store_affiliations').update({
+        status: 'approved', reviewed_by_profile_id: profile.id, reviewed_at: now,
+        started_at: now, reject_reason: null, updated_at: now,
+      }).eq('id', req.params.id).eq('status', 'pending').select('*').single();
+      if (approveResult.error) throw approveResult.error;
+      const dossierResult = await supabase.from('lc_dm_dossiers').update({
+        employment_status: 'store_affiliated', employer_store_id: affiliation.store_dossier_id,
+        workplace: store?.dm_name || null, updated_at: now,
+      }).eq('id', affiliation.dm_dossier_id).eq('entity_type', 'dm');
+      if (dossierResult.error) throw dossierResult.error;
+    }
+    await logSecurityEvent(req, {
+      action: 'dm_store_affiliation_approved_by_store',
+      targetType: 'dm_store_affiliation',
+      targetId: req.params.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'shop',
+      metadata: { dm_dossier_id: affiliation.dm_dossier_id, store_dossier_id: affiliation.store_dossier_id },
+    });
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/shop/dm-affiliations/:id/reject', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    const { affiliation } = await ensureShopOwnsAffiliation(profile.id, req.params.id, 'pending');
+    const rejectReason = cleanText(req.body?.reason, 500) || '店家未确认这段任职关系';
+    const now = new Date().toISOString();
+    const result = await supabase.from('lc_dm_store_affiliations').update({
+      status: 'rejected', reviewed_by_profile_id: profile.id, reviewed_at: now,
+      reject_reason: rejectReason, updated_at: now,
+    }).eq('id', req.params.id).eq('status', 'pending').select('id').single();
+    if (result.error) throw result.error;
+    await logSecurityEvent(req, {
+      action: 'dm_store_affiliation_rejected_by_store', targetType: 'dm_store_affiliation', targetId: req.params.id,
+      actorId: profile.id, actorRole: profile.role || 'shop',
+      metadata: { dm_dossier_id: affiliation.dm_dossier_id, store_dossier_id: affiliation.store_dossier_id, reason: rejectReason },
+    });
+    res.json(ok());
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/shop/dm-affiliations/:id/end', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    const { affiliation } = await ensureShopOwnsAffiliation(profile.id, req.params.id, 'approved');
+    const reason = cleanText(req.body?.reason, 500) || '店家解除任职关系';
+    const now = new Date().toISOString();
+    if (useTencentPg) {
+      const client = await tencentPgPool.connect();
+      try {
+        await client.query('BEGIN');
+        const ended = await client.query(
+          `update lc_dm_store_affiliations
+              set status = 'ended', ended_at = $2, ended_by_profile_id = $3,
+                  end_reason = $4, updated_at = $2
+            where id = $1 and status = 'approved'
+            returning id`,
+          [req.params.id, now, profile.id, reason],
+        );
+        if (!ended.rows[0]) throw new Error('这段任职关系已经结束');
+        await client.query(
+          `update lc_dm_dossiers
+              set employment_status = 'unknown', employer_store_id = null,
+                  workplace = null, updated_at = $3
+            where id = $1 and employer_store_id = $2`,
+          [affiliation.dm_dossier_id, affiliation.store_dossier_id, now],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } else {
+      const endResult = await supabase.from('lc_dm_store_affiliations').update({
+        status: 'ended', ended_at: now, ended_by_profile_id: profile.id, end_reason: reason, updated_at: now,
+      }).eq('id', req.params.id).eq('status', 'approved').select('id').single();
+      if (endResult.error) throw endResult.error;
+      const dossierResult = await supabase.from('lc_dm_dossiers').update({
+        employment_status: 'unknown', employer_store_id: null, workplace: null, updated_at: now,
+      }).eq('id', affiliation.dm_dossier_id).eq('employer_store_id', affiliation.store_dossier_id);
+      if (dossierResult.error) throw dossierResult.error;
+    }
+    await logSecurityEvent(req, {
+      action: 'dm_store_affiliation_ended_by_store', targetType: 'dm_store_affiliation', targetId: req.params.id,
+      actorId: profile.id, actorRole: profile.role || 'shop',
+      metadata: { dm_dossier_id: affiliation.dm_dossier_id, store_dossier_id: affiliation.store_dossier_id, reason },
+    });
+    res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -11114,7 +11839,7 @@ app.put('/api/lc/shop/profile', authMiddleware, async (req, res) => {
   try {
     const creatorId = getReq(req, 'creatorId');
     const { data: profile } = await supabase.from('lc_profiles').select('role, verified_shop').eq('id', creatorId).single();
-    if (!profile || profile.role !== 'shop' || !profile.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
     const { shop_name, shop_description, contact_phone, contact_wechat, address, juzhanggui_link } = req.body;
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (shop_name !== undefined) update.shop_name = shop_name;
@@ -11132,7 +11857,7 @@ app.post('/api/lc/shop/review/:id/reply', authMiddleware, async (req, res) => {
   try {
     const creatorId = getReq(req, 'creatorId');
     const { data: profile } = await supabase.from('lc_profiles').select('role, verified_shop, shop_name, display_name').eq('id', creatorId).single();
-    if (!profile || profile.role !== 'shop' || !profile.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
     const { data: review } = await supabase.from('lc_rankings').select('*').eq('id', req.params.id).single();
     if (!review) return res.status(404).json(err(new Error('评价不存在')));
     const shopName = profile.shop_name || profile.display_name;
@@ -11148,7 +11873,7 @@ app.post('/api/lc/shop/review/:id/appeal', authMiddleware, async (req, res) => {
   try {
     const creatorId = getReq(req, 'creatorId');
     const { data: profile } = await supabase.from('lc_profiles').select('role, verified_shop, shop_name, display_name').eq('id', creatorId).single();
-    if (!profile || profile.role !== 'shop' || !profile.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
+    if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
     const { data: review } = await supabase.from('lc_rankings').select('*').eq('id', req.params.id).single();
     if (!review) return res.status(404).json(err(new Error('评价不存在')));
     const shopName = profile.shop_name || profile.display_name;

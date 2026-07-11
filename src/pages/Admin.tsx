@@ -493,6 +493,23 @@ type StoreRatingReview = {
   created_at: string;
 };
 
+type DmIdentityWithdrawalReview = {
+  id: string;
+  dm_dossier_id: string;
+  profile_id?: string | null;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  created_at: string;
+  dm_dossier?: {
+    id: string;
+    dm_name: string;
+    city?: string | null;
+    workplace?: string | null;
+    claimed_by?: string | null;
+    claim_status?: string;
+  } | null;
+};
+
 type GuideReview = {
   id: string;
   author_name: string;
@@ -519,7 +536,7 @@ type GuideWithdrawalReview = {
 };
 
 type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'dmRating' | 'storeRating' | 'publicReview' | 'guide' | 'guideWithdrawal';
-type Tab = 'allPending' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'dmRatings' | 'storeRatings' | 'reports' | 'wallet' | 'certs' | 'security';
+type Tab = 'allPending' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'certs' | 'security';
 
 type PendingReviewItem = {
   id: string;
@@ -725,6 +742,7 @@ export default function Admin() {
   const [dmDossiers, setDmDossiers] = useState<DmDossierReview[]>([]);
   const [dmRatings, setDmRatings] = useState<DmRatingReview[]>([]);
   const [storeRatings, setStoreRatings] = useState<StoreRatingReview[]>([]);
+  const [dmIdentityWithdrawals, setDmIdentityWithdrawals] = useState<DmIdentityWithdrawalReview[]>([]);
   const [dossierOptions, setDossierOptions] = useState<DossierOption[]>([]);
   const [reports, setReports] = useState<ReportReview[]>([]);
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
@@ -768,6 +786,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setDmDossiers((d.data as { dmDossiers: DmDossierReview[] }).dmDossiers || []);
         setDmRatings((d.data as { dmRatings: DmRatingReview[] }).dmRatings || []);
         setStoreRatings((d.data as { storeRatings: StoreRatingReview[] }).storeRatings || []);
+        setDmIdentityWithdrawals((d.data as { dmIdentityWithdrawals: DmIdentityWithdrawalReview[] }).dmIdentityWithdrawals || []);
         setDossierOptions((d.data as { dossierOptions: DossierOption[] }).dossierOptions || []);
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
@@ -1041,6 +1060,29 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
+  const reviewDmIdentityWithdrawal = async (id: string, action: 'approve' | 'reject') => {
+    let reason = '';
+    if (action === 'approve') {
+      if (!window.confirm('确认撤销这份 DM 身份认证吗？档案、评分和历史记录会保留，但账号绑定及当前任职关系会解除。')) return;
+    } else {
+      const input = window.prompt('请输入拒绝原因', '请补充说明后再申请');
+      if (input === null) return;
+      reason = input.trim();
+    }
+    const response = await fetch(`${API}/lc/admin/dm-identity-withdrawals/${id}/${action}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || '认证撤销审核失败');
+      return;
+    }
+    setDmIdentityWithdrawals(prev => prev.filter(item => item.id !== id));
+    void loadData();
+  };
+
   const approvePublicReview = async (id: string) => {
     await fetch(`${API}/lc/admin/public-reviews/${id}/approve`, {
       method: 'PUT',
@@ -1205,6 +1247,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setDmDossiers([]);
     setDmRatings([]);
     setStoreRatings([]);
+    setDmIdentityWithdrawals([]);
     setDossierOptions([]);
     setReports([]);
     setSiteMessages([]);
@@ -1305,6 +1348,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       createdAt: item.created_at,
       accent: '#be185d',
       tags: item.tags || [],
+    })),
+    ...dmIdentityWithdrawals.map(item => ({
+      id: `dm-withdrawal-${item.id}`,
+      tab: 'dmWithdrawals' as const,
+      category: 'DM认证撤销',
+      title: item.dm_dossier?.dm_name || 'DM档案',
+      meta: `${profileAccountById(profiles, item.profile_id)} · ${item.reason}`,
+      createdAt: item.created_at,
+      accent: '#9f1239',
+      tags: ['保留档案', '解除账号绑定', '结束任职关系'],
     })),
     ...dmRatings.map(item => ({
       id: `dm-rating-${item.id}`,
@@ -1434,6 +1487,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     { label: '拼车', value: carpools.length, color: '#0f766e' },
     { label: '剧本库', value: scriptContributions.length, color: '#a16207' },
     { label: '档案审核', value: dmDossiers.length, color: '#be185d' },
+    { label: '认证撤销', value: dmIdentityWithdrawals.length, color: '#9f1239' },
     { label: 'DM评分', value: dmRatings.length, color: '#c2410c' },
     { label: '店家评分', value: storeRatings.length, color: '#0f766e' },
     { label: '举报', value: reports.length, color: '#dc2626' },
@@ -1488,6 +1542,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
               <button style={tabStyle(tab === 'scriptContributions')} onClick={() => setTab('scriptContributions')}>剧本库 {scriptContributions.length > 0 && `(${scriptContributions.length})`}</button>
               <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>档案审核 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
+              <button style={tabStyle(tab === 'dmWithdrawals')} onClick={() => setTab('dmWithdrawals')}>认证撤销 {dmIdentityWithdrawals.length > 0 && `(${dmIdentityWithdrawals.length})`}</button>
               <button style={tabStyle(tab === 'dmRatings')} onClick={() => setTab('dmRatings')}>DM评分 {dmRatings.length > 0 && `(${dmRatings.length})`}</button>
               <button style={tabStyle(tab === 'storeRatings')} onClick={() => setTab('storeRatings')}>店家评分 {storeRatings.length > 0 && `(${storeRatings.length})`}</button>
               <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
@@ -1990,6 +2045,32 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   </Row>
                   );
                 })}
+              </ListEmpty>
+            )}
+
+            {tab === 'dmWithdrawals' && (
+              <ListEmpty empty={dmIdentityWithdrawals.length === 0} text="暂无待审核的 DM 认证撤销申请">
+                {dmIdentityWithdrawals.map(item => (
+                  <Row key={item.id} accent="#fb7185">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={item.dm_dossier?.dm_name || 'DM档案'} pill="认证撤销" />
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', columnGap: 20, borderTop: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, marginTop: 12 }}>
+                        <AdminDetail label="申请账号" value={profileAccountById(profiles, item.profile_id)} />
+                        <AdminDetail label="城市" value={item.dm_dossier?.city || '未填写'} />
+                        <AdminDetail label="当前档案店家" value={item.dm_dossier?.workplace || '无已确认店家'} />
+                        <AdminDetail label="档案认领状态" value={item.dm_dossier?.claim_status || '未知'} />
+                        <AdminDetail label="申请时间" value={item.created_at ? item.created_at.slice(0, 19).replace('T', ' ') : '未知'} />
+                      </div>
+                      <div style={{ marginTop: 14, fontSize: '0.82rem', fontWeight: 900, color: INK }}>撤销原因</div>
+                      <ContentBox>{item.reason}</ContentBox>
+                      <Proof>通过后保留这份 DM 档案、全部评分和任职历史；解除账号绑定，结束当前及待确认任职关系。若账号没有其他已认证 DM 档案，同时取消账号的 DM 身份认证。</Proof>
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => reviewDmIdentityWithdrawal(item.id, 'approve')}>确认撤销</ActionButton>
+                      <ActionButton kind="bad" onClick={() => reviewDmIdentityWithdrawal(item.id, 'reject')}>拒绝申请</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
               </ListEmpty>
             )}
 

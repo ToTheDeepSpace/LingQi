@@ -11,6 +11,8 @@ export type StoredCreatorAuth = {
   role?: string;
   role_type?: string;
   identity_roles?: string[];
+  verified_shop?: boolean;
+  verified_dm?: boolean;
 };
 
 type JwtPayload = {

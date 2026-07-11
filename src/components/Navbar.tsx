@@ -45,7 +45,7 @@ export default function Navbar() {
   const { creatorAuth, adminToken } = authSnapshot;
   const isLoggedIn = !!creatorAuth;
   const isAdmin = !!adminToken;
-  const isShop = creatorAuth?.role === 'shop';
+  const isShop = Boolean(creatorAuth?.verified_shop || creatorAuth?.role === 'shop' || creatorAuth?.identity_roles?.includes('shop'));
   const isHome = pathname === '/';
   const mobileIdentity = creatorAuth?.display_name || creatorAuth?.phone || creatorAuth?.email || (isAdmin ? '管理员' : '');
   const currentPageLabel = locationLabelFor(pathname);
@@ -88,6 +88,7 @@ export default function Navbar() {
           + (data.scriptContributions || []).length
           + (data.dmRatings || []).length
           + (data.storeRatings || []).length
+          + (data.dmIdentityWithdrawals || []).length
           + (data.guides || []).length
           + (data.guideWithdrawals || []).length;
         const dmDossierCount = (data.dmDossiers || []).length;

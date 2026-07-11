@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "test:auth-flow": "tsc -p tsconfig.test.json && node --test dist-test/tests/authFlow.test.js",
     "test:dm-rating": "tsc -p tsconfig.test.json && node --test dist-test/tests/dmRatingSummary.test.js",
+    "test:dm-affiliation": "tsc -p tsconfig.test.json && node --test dist-test/tests/dmAffiliationWorkflow.test.js",
     "test:shared-script-library": "tsc -p tsconfig.test.json && node --test dist-test/tests/sharedScriptCatalog.test.js",
     "test:ranking-workflow": "tsc -p tsconfig.test.json && node --test dist-test/tests/rankingWorkflow.test.js",
     "test:dossier-claim": "tsc -p tsconfig.test.json && node --test dist-test/tests/dossierClaimStorage.test.js",

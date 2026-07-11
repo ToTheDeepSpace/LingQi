@@ -99,6 +99,8 @@ export interface AuthData {
   role: string;
   role_type?: string;
   identity_roles?: string[];
+  verified_shop?: boolean;
+  verified_dm?: boolean;
 }
 
 export type CarpoolSubsidyType = 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
