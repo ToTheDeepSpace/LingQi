@@ -135,6 +135,13 @@ function profileAuthProviderLabel(provider?: string | null) {
   return labels[provider] || '其他来源';
 }
 
+function profileAccountById(profiles: Profile[], profileId?: string | null) {
+  if (!profileId) return '未知账号';
+  const profile = profiles.find(item => item.id === profileId);
+  if (!profile) return '账号资料未载入';
+  return `${profileAccountSummary(profile)} · 昵称：${profileNickname(profile)}`;
+}
+
 type ContactReq = {
   id: string;
   requester_name: string;
@@ -1934,7 +1941,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <div style={{ marginTop: 14, padding: 12, borderRadius: 8, border: '1px solid rgba(217,168,87,0.24)', background: '#fff8e8' }}>
                           <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#8a5a19' }}>认领核验材料</div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 8 }}>
-                            <AdminDetail label="申请账号" value={item.claim_submission?.claimant_id || item.claimed_by || '未知账号'} />
+                            <AdminDetail label="申请账号" value={profileAccountById(profiles, item.claim_submission?.claimant_id || item.claimed_by)} />
                             <AdminDetail label="证明类型" value={item.claim_submission ? DOSSIER_CLAIM_PROOF_LABEL[item.claim_submission.proof_type] : '旧版认领申请'} />
                             <AdminDetail label="申请时间" value={item.claim_submission?.created_at ? item.claim_submission.created_at.slice(0, 19).replace('T', ' ') : item.created_at?.slice(0, 19).replace('T', ' ') || '未知'} />
                           </div>

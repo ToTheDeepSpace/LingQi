@@ -375,42 +375,46 @@ export default function DmWall() {
         ) : items.length === 0 ? (
           <div style={emptyStyle}>当前筛选下暂无公开档案。你可以先创建一个，审核后会出现在档案墙。</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+          <div className="dm-dossier-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
             {items.map(item => {
               const kind = normalizeEntityType(item.entity_type);
               const copy = ENTITY_COPY[kind];
               return (
-                <article key={item.id} style={cardStyle}>
-                  <img src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 10, background: '#fffaf2', marginBottom: 12 }} />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
-                    <span style={{ ...badgeStyle, color: '#275389', background: 'rgba(239,246,255,0.88)' }}>{copy.kindLabel}</span>
-                    <h2 style={{ margin: 0, fontSize: 18 }}>{item.dm_name}</h2>
-                    <span style={{ ...badgeStyle, color: item.claim_status === 'approved' ? '#15803d' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : 'rgba(166,106,31,0.10)' }}>
-                      {item.claim_status === 'approved' ? '已认领' : item.claim_status === 'pending' ? '认领审核中' : '未认领'}
-                    </span>
-                    {item.claim_status !== 'approved' && item.claim_status !== 'pending' && (
-                      <button type="button" onClick={() => openClaim(item)} style={claimButtonStyle}>
-                        {kind === 'store' ? '店家认领' : '本人认领'}
-                      </button>
-                    )}
+                <article key={item.id} className="dm-dossier-card" style={cardStyle}>
+                  <div className="dm-dossier-summary">
+                    <img className="dm-dossier-photo" src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" />
+                    <div className="dm-dossier-summary-copy">
+                      <div className="dm-dossier-title-row" style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
+                        <span style={{ ...badgeStyle, color: '#275389', background: 'rgba(239,246,255,0.88)' }}>{copy.kindLabel}</span>
+                        <h2 style={{ margin: 0, fontSize: 17 }}>{item.dm_name}</h2>
+                        <span style={{ ...badgeStyle, color: item.claim_status === 'approved' ? '#15803d' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : 'rgba(166,106,31,0.10)' }}>
+                          {item.claim_status === 'approved' ? '已认领' : item.claim_status === 'pending' ? '认领审核中' : '未认领'}
+                        </span>
+                        {item.claim_status !== 'approved' && item.claim_status !== 'pending' && (
+                          <button type="button" onClick={() => openClaim(item)} style={claimButtonStyle}>
+                            {kind === 'store' ? '店家认领' : '本人认领'}
+                          </button>
+                        )}
+                      </div>
+                      <p className="dm-dossier-location" style={{ margin: '0 0 6px', color: MUTED, lineHeight: 1.55, fontSize: 13 }}>
+                        {item.city || '未知城市'} · {kind === 'dm' && item.employment_status === 'freelance' ? '无受雇店家（自由DM）' : item.workplace || (kind === 'store' ? '店铺位置待补充' : '受雇店家待补充')}
+                      </p>
+                      {item.note && <p className="dm-dossier-note" style={{ margin: 0, color: 'rgba(31,41,55,0.74)', lineHeight: 1.55, fontSize: 13 }}>{item.note}</p>}
+                    </div>
                   </div>
-                  <p style={{ margin: '0 0 8px', color: MUTED, lineHeight: 1.7, fontSize: 14 }}>
-                    {item.city || '未知城市'} · {kind === 'dm' && item.employment_status === 'freelance' ? '无受雇店家（自由DM）' : item.workplace || (kind === 'store' ? '店铺位置待补充' : '受雇店家待补充')}
-                  </p>
-                  {item.note && <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.78)', lineHeight: 1.7, fontSize: 14 }}>{item.note}</p>}
                   {kind === 'dm' && item.rating_summary && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginBottom: 12 }}>
+                    <div className="dm-dossier-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
                       <MiniStat label={item.rating_summary.sample_status === 'insufficient' && item.rating_summary.player_count > 0 ? '综合·样本少' : '综合'} value={item.rating_summary.player_count === 0 ? '暂无' : `${item.rating_summary.avg?.toFixed(1)}`} />
                       <MiniStat label="体验" value={`${item.rating_summary.review_count}`} />
                       <MiniStat label="玩家" value={`${item.rating_summary.player_count}`} />
                     </div>
                   )}
                   {item.tags && item.tags.length > 0 && (
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <div className="dm-dossier-tags" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
                       {item.tags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
                     </div>
                   )}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto' }}>
+                  <div className="dm-dossier-actions" style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 'auto' }}>
                     {kind === 'dm' && <Link to={`/dm/${item.id}`} style={primaryButton}>查看评分</Link>}
                     {kind === 'dm' && <Link to={`/dm/rate?dmId=${encodeURIComponent(item.id)}`} style={ghostButton}>给TA评分</Link>}
                     {item.profile_url && <a href={normalizeUrl(item.profile_url)} target="_blank" rel="noreferrer" style={ghostButton}>{kind === 'store' ? '店铺主页' : '个人主页'}</a>}
@@ -435,15 +439,110 @@ export default function DmWall() {
           loadDossiers();
         }}
       />
+      <style>{`
+        .dm-dossier-summary {
+          display: block;
+          margin-bottom: 10px;
+        }
+        .dm-dossier-photo {
+          display: block;
+          width: 100%;
+          aspect-ratio: 16 / 9;
+          object-fit: cover;
+          border-radius: 8px;
+          border: 1px solid rgba(31,41,55,0.06);
+          background: #fffaf2;
+          margin-bottom: 10px;
+        }
+        .dm-dossier-note {
+          display: -webkit-box;
+          overflow: hidden;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+        @media (max-width: 640px) {
+          .dm-dossier-grid {
+            grid-template-columns: 1fr !important;
+            gap: 9px !important;
+          }
+          .dm-dossier-card {
+            padding: 10px !important;
+          }
+          .dm-dossier-summary {
+            display: grid;
+            grid-template-columns: 84px minmax(0, 1fr);
+            gap: 10px;
+            align-items: start;
+            margin-bottom: 8px;
+          }
+          .dm-dossier-photo {
+            width: 84px;
+            height: 84px;
+            aspect-ratio: 1;
+            margin: 0;
+          }
+          .dm-dossier-title-row {
+            gap: 5px !important;
+            margin-bottom: 4px !important;
+          }
+          .dm-dossier-title-row h2 {
+            font-size: 16px !important;
+          }
+          .dm-dossier-title-row span {
+            padding: 2px 6px !important;
+            font-size: 10px !important;
+          }
+          .dm-dossier-location,
+          .dm-dossier-note {
+            font-size: 12px !important;
+            line-height: 1.45 !important;
+          }
+          .dm-dossier-tags > :nth-child(n + 4) {
+            display: none !important;
+          }
+          .dm-dossier-stats {
+            display: flex !important;
+            align-items: center;
+            gap: 12px !important;
+            margin: 0 0 7px !important;
+            padding: 0 2px;
+          }
+          .dm-mini-stat {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            padding: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+            text-align: left !important;
+          }
+          .dm-mini-stat-label,
+          .dm-mini-stat-value {
+            margin: 0 !important;
+            font-size: 11px !important;
+            line-height: 1.35 !important;
+          }
+          .dm-dossier-tags {
+            margin-bottom: 7px !important;
+          }
+          .dm-dossier-actions a,
+          .dm-dossier-actions button,
+          .dm-dossier-actions span {
+            min-height: 32px !important;
+            padding: 0 10px !important;
+            font-size: 12px !important;
+          }
+        }
+      `}</style>
     </JumuluPageFrame>
   );
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ minWidth: 0, padding: '8px 6px', borderRadius: 7, background: '#fffaf2', border: '1px solid rgba(166,106,31,0.10)', textAlign: 'center' }}>
-      <div style={{ color: MUTED, fontSize: 11, fontWeight: 800 }}>{label}</div>
-      <div style={{ marginTop: 3, color: INK, fontSize: 14, fontWeight: 900 }}>{value}</div>
+    <div className="dm-mini-stat" style={{ minWidth: 0, padding: '8px 6px', borderRadius: 7, background: '#fffaf2', border: '1px solid rgba(166,106,31,0.10)', textAlign: 'center' }}>
+      <div className="dm-mini-stat-label" style={{ color: MUTED, fontSize: 11, fontWeight: 800 }}>{label}</div>
+      <div className="dm-mini-stat-value" style={{ marginTop: 3, color: INK, fontSize: 14, fontWeight: 900 }}>{value}</div>
     </div>
   );
 }
