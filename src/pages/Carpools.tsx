@@ -12,7 +12,7 @@ import {
   JumuluCompactHeader,
   JumuluPageFrame,
 } from '../components/JumuluPageChrome';
-import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
+import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle } from '../styles/jumuluPageStyles';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
@@ -251,15 +251,7 @@ export default function Carpools() {
   }) : [];
 
   return (
-    <JumuluPageFrame
-      currentLabel="拼车区"
-      actions={
-        <>
-          <Link to="/carpools/new" style={jumuluPrimaryLinkStyle}>发布拼车</Link>
-          <Link to="/rankings" style={jumuluSecondaryLinkStyle}>看看红黑榜</Link>
-        </>
-      }
-    >
+    <JumuluPageFrame currentLabel="拼车区">
       <JumuluCompactHeader
         eyebrow="同城拼车"
         title="找角色，找搭子"
