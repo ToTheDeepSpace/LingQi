@@ -3,7 +3,6 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
-import BrandLogo from '../components/BrandLogo';
 import InfoTip from '../components/InfoTip';
 import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
@@ -1169,12 +1168,6 @@ export default function Dashboard() {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('lc_creator');
-    window.dispatchEvent(new Event('lc-auth-changed'));
-    navigate('/login');
-  };
-
   const copyInviteText = async (label: string, text: string) => {
     try {
       await copyTextToClipboard(text);
@@ -1294,68 +1287,15 @@ export default function Dashboard() {
         </div>
       )}
 
-      <nav className="dashboard-shell-top" style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        backgroundColor: 'rgba(255,253,248,0.94)',
-        borderBottom: '1px solid rgba(201,146,46,0.22)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-        boxShadow: '0 10px 32px rgba(31,41,55,0.06)',
-      }}>
-        <div className="dashboard-topbar" style={{
-          maxWidth: 1160,
-          height: 64,
-          margin: '0 auto',
-          padding: '0 20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}>
-          <Link to="/" aria-label="剧幕录首页" className="dashboard-brand-link" style={dashboardBrandLinkStyle}>
-            <BrandLogo />
-          </Link>
-          <div className="dashboard-public-links" style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: 6,
-            minWidth: 0,
-            flex: '1 1 auto',
-            flexWrap: 'nowrap',
-            whiteSpace: 'nowrap',
-          }}>
-            {[
-              { to: '/dm-wall', label: '卡司评分' },
-              { to: '/commissions', label: '委托需求' },
-              { to: '/carpools', label: '拼车区' },
-              { to: '/rankings', label: '红黑榜' },
-              { to: '/scripts', label: '角色点评' },
-              { to: '/guides', label: '攻略交易' },
-            ].map(item => (
-              <Link key={item.to} to={item.to} className="dashboard-public-link" style={dashboardPublicNavLinkStyle}>
-                {item.label}
-              </Link>
-            ))}
-            <span className="dashboard-module-chip" style={dashboardIdentityChipStyle}>后台：{currentDashboardLabel}</span>
-          </div>
-          <div className="dashboard-top-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap' }}>
-            <Link to={`/explore/${creator.id}`} className="dashboard-top-action dashboard-top-action-primary" style={{ ...topActionStyle, borderColor: 'rgba(39,83,137,0.16)', background: '#EEF6FF', color: '#275389' }}>
-              预览主页
-            </Link>
-            <Link to="/dashboard/referrals" className="dashboard-top-action" style={topActionStyle}>邀请</Link>
-            <Link to="/dashboard/certification" className="dashboard-top-action" style={topActionStyle}>认证</Link>
-            <button onClick={logout} className="dashboard-top-action" style={{ ...topActionStyle, borderColor: 'rgba(185,28,28,0.14)', color: '#b91c1c', cursor: 'pointer' }}>
-              退出
-            </button>
-            <Link to="/admin" className="dashboard-top-action" style={dashboardAdminActionStyle}>管理</Link>
-          </div>
-        </div>
-      </nav>
+      <div className="dashboard-body" style={{ maxWidth: 1440, margin: '0 auto', padding: '12px 20px 80px' }}>
 
-      <div className="dashboard-body" style={{ maxWidth: 1396, margin: '0 auto', padding: '14px 22px 80px' }}>
+        <div className="dashboard-context" style={{ minHeight: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '0 2px 10px', borderBottom: '1px solid rgba(31,41,55,0.08)', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, minWidth: 0 }}>
+            <span style={{ color: '#925f18', fontSize: 12, fontWeight: 900 }}>个人后台</span>
+            <strong style={{ color: INK, fontSize: 16 }}>{currentDashboardLabel}</strong>
+          </div>
+          <Link to={`/explore/${creator.id}`} style={{ ...secondaryActionStyle, minHeight: 34 }}>预览公开主页</Link>
+        </div>
 
         {error && (
           <div style={{ padding: '12px 16px', backgroundColor: 'rgba(254,242,242,0.92)', border: '1px solid rgba(220,38,38,0.24)', borderRadius: 10, fontSize: '0.875rem', color: '#b91c1c', marginBottom: 20 }}>
@@ -1381,7 +1321,7 @@ export default function Dashboard() {
         <div className="dashboard-layout" style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
 
           {/* ── 左侧导航 ── */}
-          <div className="dashboard-tabs" style={{ width: 248, minHeight: 760, flexShrink: 0, ...card, padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="dashboard-tabs" style={{ width: 216, minHeight: 0, flexShrink: 0, position: 'sticky', top: 78, ...card, padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div className="dashboard-side-head" style={{ display: 'grid', gap: 6, paddingBottom: 8 }}>
               <p style={{ color: INK, fontSize: 14, fontWeight: 900, lineHeight: 1 }}>主页管理</p>
               <p style={{ color: 'rgba(71,85,105,0.70)', fontSize: 12, fontWeight: 700, lineHeight: 1.35 }}>
@@ -2768,7 +2708,7 @@ export default function Dashboard() {
 
         @media (max-width: 760px) {
           .dashboard-page {
-            background: linear-gradient(180deg, #f7fbff 0%, #fffdf8 32%, #fffdf8 100%) !important;
+            background: #fffdf8 !important;
           }
           .onboarding-backdrop {
             padding: 10px !important;
@@ -2806,42 +2746,6 @@ export default function Dashboard() {
             min-height: 36px !important;
             flex: 1 1 auto !important;
             padding: 8px 10px !important;
-            font-size: 0.78rem !important;
-          }
-          .dashboard-shell-top {
-            position: sticky !important;
-            top: 0 !important;
-            z-index: 50 !important;
-          }
-          .dashboard-topbar {
-            align-items: center !important;
-            flex-wrap: wrap !important;
-            height: auto !important;
-            min-height: 0 !important;
-            padding: 10px 12px !important;
-            gap: 8px !important;
-          }
-          .dashboard-brand-link {
-            padding: 6px 9px !important;
-          }
-          .dashboard-public-links {
-            display: none !important;
-          }
-          .dashboard-top-actions {
-            width: 100% !important;
-            justify-content: flex-start !important;
-            flex-wrap: nowrap !important;
-            overflow-x: auto !important;
-            padding-bottom: 1px !important;
-            scrollbar-width: none !important;
-          }
-          .dashboard-top-actions::-webkit-scrollbar {
-            display: none !important;
-          }
-          .dashboard-top-action {
-            min-height: 32px !important;
-            flex: 0 0 auto !important;
-            padding: 0 10px !important;
             font-size: 0.78rem !important;
           }
           .dashboard-hero {
@@ -2907,7 +2811,17 @@ export default function Dashboard() {
             justify-self: stretch !important;
           }
           .dashboard-body {
-            padding: 14px 12px 64px !important;
+            padding: 10px 12px 64px !important;
+          }
+          .dashboard-context {
+            align-items: center !important;
+            padding-bottom: 8px !important;
+            margin-bottom: 10px !important;
+          }
+          .dashboard-context a {
+            min-height: 32px !important;
+            padding: 0 10px !important;
+            font-size: 0.76rem !important;
           }
           .dashboard-layout {
             flex-direction: column !important;
@@ -2918,16 +2832,16 @@ export default function Dashboard() {
             max-width: none !important;
             min-height: 0 !important;
             position: sticky !important;
-            top: 86px !important;
+            top: 68px !important;
             z-index: 20 !important;
             display: block !important;
             gap: 8px !important;
             overflow-x: auto !important;
             padding: 8px !important;
-            border-radius: 14px !important;
-            background: rgba(255,250,242,0.94) !important;
+            border-radius: 8px !important;
+            background: rgba(255,253,248,0.96) !important;
             backdrop-filter: blur(12px) !important;
-            box-shadow: 0 8px 24px rgba(31,41,55,0.08) !important;
+            box-shadow: none !important;
             -webkit-overflow-scrolling: touch !important;
           }
           .dashboard-tabs::-webkit-scrollbar {
@@ -2971,9 +2885,9 @@ export default function Dashboard() {
           .dashboard-card,
           .dashboard-panel,
           .dashboard-main section {
-            border-radius: 14px !important;
+            border-radius: 8px !important;
             padding: 14px !important;
-            box-shadow: 0 10px 26px rgba(31,41,55,0.05) !important;
+            box-shadow: none !important;
           }
           .profile-editor-card > h2 {
             margin-bottom: 14px !important;
@@ -3149,66 +3063,6 @@ const miniButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontSize: '0.76rem',
   fontWeight: 800,
-};
-
-const dashboardBrandLinkStyle: React.CSSProperties = {
-  textDecoration: 'none',
-  display: 'inline-flex',
-  alignItems: 'center',
-  flex: '0 0 auto',
-  minWidth: 0,
-  padding: '7px 10px',
-  borderRadius: 12,
-  border: '1px solid rgba(201,146,46,0.18)',
-  background: 'rgba(255,250,242,0.72)',
-  color: INK,
-};
-
-const dashboardPublicNavLinkStyle: React.CSSProperties = {
-  textDecoration: 'none',
-  padding: '8px 14px',
-  borderRadius: 8,
-  fontSize: '0.875rem',
-  color: MUTED,
-  fontWeight: 650,
-};
-
-const dashboardIdentityChipStyle: React.CSSProperties = {
-  maxWidth: 150,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  padding: '6px 10px',
-  borderRadius: 8,
-  border: '1px solid rgba(125,147,170,0.22)',
-  background: 'rgba(239,246,255,0.78)',
-  color: '#275389',
-  fontSize: '0.76rem',
-  fontWeight: 800,
-};
-
-const topActionStyle: React.CSSProperties = {
-  minHeight: 36,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '0 12px',
-  borderRadius: 8,
-  border: '1px solid rgba(201,146,46,0.15)',
-  background: 'transparent',
-  color: MUTED,
-  textDecoration: 'none',
-  fontSize: 13,
-  fontWeight: 850,
-};
-
-const dashboardAdminActionStyle: React.CSSProperties = {
-  ...topActionStyle,
-  marginLeft: 4,
-  border: '1px solid rgba(217,168,87,0.75)',
-  background: 'linear-gradient(135deg, #f4c873 0%, #d9a857 100%)',
-  color: '#0F1117',
-  fontWeight: 900,
 };
 
 const primaryActionStyle: React.CSSProperties = {
