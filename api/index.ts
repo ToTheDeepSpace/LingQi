@@ -4945,6 +4945,24 @@ app.get('/api/lc/creators/:id', async (req, res) => {
 
 // ==================== 更新创作者资料（需登录） ====================
 
+const PROFILE_REVIEW_FIELD_LABELS: Record<string, string> = {
+  display_name: '昵称', avatar: '头像', bio: '个人简介', tags: '个人标签', city: '常驻城市',
+  social_links: '社交主页', wechat: '微信号', available_cities: '可服务城市', travel_status: '常驻状态',
+  contact_unlock_enabled: '联系方式解锁', contact_intent_amount: '联系意向金额', gender: '性别',
+  sexual_orientation: '性取向', preferred_story_lines: '偏好故事线', avatar_focus_x: '头像展示位置',
+  avatar_focus_y: '头像展示位置',
+};
+
+function profileReviewComparableValue(value: unknown) {
+  if (value === undefined || value === null || value === '') return '';
+  if (Array.isArray(value)) return value.length > 0 ? JSON.stringify(value) : '';
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).filter(([, item]) => item !== undefined && item !== null && item !== '');
+    return entries.length > 0 ? JSON.stringify(Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right)))) : '';
+  }
+  return String(value);
+}
+
 app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
   try {
     if (getReq(req, 'creatorId') !== req.params.id) {
@@ -4958,25 +4976,69 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
       gender, sexual_orientation, preferred_story_lines, role_preferences,
       avatar_focus_x, avatar_focus_y,
     } = req.body;
-    const normalizedSocialLinks = normalizeProfileSocialLinks(social_links);
-    const socialSnapshots = makeSocialSnapshots(normalizedSocialLinks);
+    const hasField = (field: string) => Object.prototype.hasOwnProperty.call(req.body || {}, field);
+    const normalizedSocialLinks = hasField('social_links') ? normalizeProfileSocialLinks(social_links) : undefined;
+    const socialSnapshots = normalizedSocialLinks ? makeSocialSnapshots(normalizedSocialLinks) : undefined;
     const rolePreferences = await sanitizeProfileRolePreferences(role_preferences);
-    const normalizedTravelStatus = travel_status === '常驻本地'
+    const normalizedTravelStatus = !hasField('travel_status') ? undefined : travel_status === '常驻本地'
       ? '常驻所在城市'
       : (travel_status || '常驻所在城市');
-    const profilePatch = {
-      display_name, avatar, bio, tags, city, social_links: normalizedSocialLinks, wechat,
-      avatar_focus_x: normalizeImageFocus(avatar_focus_x, 50),
-      avatar_focus_y: normalizeImageFocus(avatar_focus_y, 25),
-      gender: cleanChoice(gender, PROFILE_GENDER_OPTIONS),
-      sexual_orientation: cleanChoice(sexual_orientation, PROFILE_ORIENTATION_OPTIONS),
-      preferred_story_lines: cleanTextArray(preferred_story_lines),
-      available_cities: Array.isArray(available_cities) ? available_cities : [],
+    const candidatePatch: Record<string, unknown> = {
+      display_name: hasField('display_name') ? display_name : undefined,
+      avatar: hasField('avatar') ? avatar : undefined,
+      bio: hasField('bio') ? bio : undefined,
+      tags: hasField('tags') ? (Array.isArray(tags) ? tags : []) : undefined,
+      city: hasField('city') ? city : undefined,
+      social_links: normalizedSocialLinks,
+      wechat: hasField('wechat') ? wechat : undefined,
+      avatar_focus_x: hasField('avatar_focus_x') ? normalizeImageFocus(avatar_focus_x, Number((profile as unknown as Record<string, unknown>).avatar_focus_x ?? 50)) : undefined,
+      avatar_focus_y: hasField('avatar_focus_y') ? normalizeImageFocus(avatar_focus_y, Number((profile as unknown as Record<string, unknown>).avatar_focus_y ?? 25)) : undefined,
+      gender: hasField('gender') ? cleanChoice(gender, PROFILE_GENDER_OPTIONS) : undefined,
+      sexual_orientation: hasField('sexual_orientation') ? cleanChoice(sexual_orientation, PROFILE_ORIENTATION_OPTIONS) : undefined,
+      preferred_story_lines: hasField('preferred_story_lines') ? cleanTextArray(preferred_story_lines) : undefined,
+      available_cities: hasField('available_cities') ? (Array.isArray(available_cities) ? available_cities : []) : undefined,
       travel_status: normalizedTravelStatus,
-      contact_unlock_enabled: !!contact_unlock_enabled,
-      contact_intent_amount: Math.max(0, parseInt(contact_intent_amount || 0) || 0),
-      social_snapshots: socialSnapshots,
+      contact_unlock_enabled: hasField('contact_unlock_enabled') ? !!contact_unlock_enabled : undefined,
+      contact_intent_amount: hasField('contact_intent_amount') ? Math.max(0, parseInt(contact_intent_amount || 0) || 0) : undefined,
     };
+    const profilePatch: Record<string, unknown> = {};
+    const beforeSnapshot: Record<string, unknown> = {};
+    const changedFields: string[] = [];
+    for (const [field, value] of Object.entries(candidatePatch)) {
+      if (value === undefined || profileReviewComparableValue(profile[field]) === profileReviewComparableValue(value)) continue;
+      profilePatch[field] = value;
+      beforeSnapshot[field] = profile[field] ?? null;
+      changedFields.push(field);
+    }
+    if (changedFields.includes('social_links') && socialSnapshots) profilePatch.social_snapshots = socialSnapshots;
+
+    let reviewedRolePreferences: Record<string, unknown>[] | null = null;
+    let beforeRolePreferences: Record<string, unknown>[] | null = null;
+    if (Array.isArray(role_preferences)) {
+      const currentRolesResult = await supabase.from('lc_profile_role_preferences')
+        .select('script_id, script_name, role_name, role_gender, role_tags, is_recommended, note, sort_order')
+        .eq('profile_id', profile.id)
+        .order('sort_order', { ascending: true });
+      if (currentRolesResult.error && !isMissingRelation(currentRolesResult.error, 'lc_profile_role_preferences')) throw currentRolesResult.error;
+      const normalizeRole = (item: Record<string, unknown>, index: number) => ({
+        script_id: item.script_id || null,
+        script_name: cleanText(item.script_name, 120),
+        role_name: cleanText(item.role_name, 80),
+        role_gender: cleanText(item.role_gender, 20) || null,
+        role_tags: Array.isArray(item.role_tags) ? item.role_tags : [],
+        is_recommended: !!item.is_recommended,
+        note: cleanText(item.note, 200),
+        sort_order: index,
+      });
+      const nextRoles = rolePreferences.map((item, index) => normalizeRole(item as Record<string, unknown>, index));
+      const currentRoles = (currentRolesResult.error ? [] : (currentRolesResult.data || []))
+        .map((item: Record<string, unknown>, index: number) => normalizeRole(item, index));
+      if (JSON.stringify(nextRoles) !== JSON.stringify(currentRoles)) {
+        reviewedRolePreferences = nextRoles;
+        beforeRolePreferences = currentRoles;
+      }
+    }
+    if (changedFields.length === 0 && !reviewedRolePreferences) return res.status(400).json(err(new Error('没有检测到需要审核的资料修改')));
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'profile_update_submit',
       targetType: 'profile_update',
@@ -4986,31 +5048,27 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
         tags: Array.isArray(tags) ? tags.join(' ') : '',
         city,
         wechat,
-        social_links: JSON.stringify(normalizedSocialLinks),
+        social_links: JSON.stringify(normalizedSocialLinks || {}),
         preferred_story_lines: cleanTextArray(preferred_story_lines).join(' '),
         available_cities: Array.isArray(available_cities) ? available_cities.join(' ') : '',
-        role_preferences: rolePreferences.map(item => `${item.script_name} ${item.role_name} ${item.note || ''}`).join('\n'),
+        role_preferences: (reviewedRolePreferences || []).map(item => `${item.script_name} ${item.role_name} ${item.note || ''}`).join('\n'),
       },
-      files: avatar ? [{ url: avatar, type: 'image/*' }] : [],
+      files: changedFields.includes('avatar') && avatar ? [{ url: avatar, type: 'image/*' }] : [],
       allowContact: true,
     });
+    const changedLabels = Array.from(new Set(changedFields.map(field => PROFILE_REVIEW_FIELD_LABELS[field]).filter(Boolean)));
+    if (reviewedRolePreferences) changedLabels.push('可接角色');
     const review = await createPublicReview({
       targetType: 'profile_update',
       profile,
       title: '主页资料修改',
-      summary: '昵称、头像、简介、社交链接、服务设置或可接角色修改',
+      summary: `修改内容：${changedLabels.join('、')}`,
       payload: {
         profile_patch: profilePatch,
-        role_preferences: Array.isArray(role_preferences) ? rolePreferences.map((item, index) => ({
-          script_id: item.script_id,
-          script_name: item.script_name,
-          role_name: item.role_name,
-          role_gender: item.role_gender,
-          role_tags: item.role_tags,
-          is_recommended: item.is_recommended,
-          note: item.note,
-          sort_order: index,
-        })) : null,
+        before_snapshot: beforeSnapshot,
+        changed_fields: changedFields,
+        role_preferences: reviewedRolePreferences,
+        before_role_preferences: beforeRolePreferences,
       },
       moderationPrecheck,
     });
@@ -7259,7 +7317,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, approvedDmDossiersResult, dmRatingsResult, storeRatingsResult, dmIdentityWithdrawalsResult, publicReviewsResult, guidesResult, withdrawalsResult] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, approvedDmDossiersResult, dmRatingsResult, storeRatingsResult, dmIdentityWithdrawalsResult, publicReviewsResult, reviewHistoryResult, guidesResult, withdrawalsResult] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -7276,13 +7334,14 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_security_events')
         .select('id, actor_id, actor_role, action, target_type, target_id, ip_address, user_agent, request_path, metadata, created_at')
         .order('created_at', { ascending: false })
-        .limit(150),
+        .limit(500),
       supabase.from('lc_dm_dossiers').select('*').or('status.eq.pending,claim_status.eq.pending').order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_dm_dossiers').select('id, entity_type, dm_name, city, workplace, employment_status, employer_store_id, photo_url, status').eq('status', 'approved').order('approved_at', { ascending: false }).limit(1000),
       supabase.from('lc_dm_ratings').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
       supabase.from('lc_store_ratings').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
       supabase.from('lc_dm_identity_withdrawals').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_public_reviews').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
+      supabase.from('lc_public_reviews').select('*').neq('status', 'pending').order('reviewed_at', { ascending: false }).limit(200),
       supabase.from('lc_guides').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_creator_withdrawals').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(100),
     ]);
@@ -7298,6 +7357,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     if (storeRatingsResult.error && !isMissingRelation(storeRatingsResult.error, 'lc_store_ratings')) throw storeRatingsResult.error;
     if (dmIdentityWithdrawalsResult.error && !isMissingRelation(dmIdentityWithdrawalsResult.error, 'lc_dm_identity_withdrawals')) throw dmIdentityWithdrawalsResult.error;
     if (publicReviewsResult.error && !isMissingRelation(publicReviewsResult.error, 'lc_public_reviews')) throw publicReviewsResult.error;
+    if (reviewHistoryResult.error && !isMissingRelation(reviewHistoryResult.error, 'lc_public_reviews')) throw reviewHistoryResult.error;
     if (guidesResult.error && !isMissingRelation(guidesResult.error, 'lc_guides')) throw guidesResult.error;
     if (withdrawalsResult.error && !isMissingRelation(withdrawalsResult.error, 'lc_creator_withdrawals')) throw withdrawalsResult.error;
     const approvedDossiers = approvedDmDossiersResult.error ? [] : (approvedDmDossiersResult.data || []) as Record<string, unknown>[];
@@ -7378,6 +7438,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
           },
         };
       }),
+      reviewHistory: reviewHistoryResult.error ? [] : (reviewHistoryResult.data || []),
       guides: guidesResult.error ? [] : (guidesResult.data || []),
       guideWithdrawals: withdrawalsResult.error ? [] : (withdrawalsResult.data || []),
     }));

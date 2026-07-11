@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import { isTokenExpired } from '../lib/authSession';
+import { ADMIN_REVIEW_ACTIONS, moderationHistoryMetadataLines, summarizeProfileReviewPayload } from '../lib/adminReviewPresentation';
 import BrandLogo from '../components/BrandLogo';
 
 const API = '/api';
@@ -105,6 +106,20 @@ type Profile = {
   reject_reason?: string | null;
   role_type?: string;
   avatar?: string | null;
+  bio?: string | null;
+  tags?: string[];
+  city?: string | null;
+  social_links?: Record<string, string> | null;
+  wechat?: string | null;
+  available_cities?: string[];
+  travel_status?: string | null;
+  contact_unlock_enabled?: boolean;
+  contact_intent_amount?: number;
+  gender?: string | null;
+  sexual_orientation?: string | null;
+  preferred_story_lines?: string[];
+  avatar_focus_x?: number;
+  avatar_focus_y?: number;
 };
 
 function profileNickname(profile: Profile) {
@@ -375,6 +390,8 @@ type PublicReview = {
   payload?: Record<string, unknown> | null;
   status: 'pending' | 'approved' | 'rejected';
   review_note?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
   moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
 };
@@ -536,7 +553,19 @@ type GuideWithdrawalReview = {
 };
 
 type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'dmRating' | 'storeRating' | 'publicReview' | 'guide' | 'guideWithdrawal';
-type Tab = 'allPending' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'certs' | 'security';
+type Tab = 'allPending' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
+type AdminGroup = 'all' | 'dm' | 'store' | 'content' | 'finance' | 'appeals' | 'history' | 'accounts';
+
+function adminGroupForTab(tab: Tab): AdminGroup {
+  if (['dmDossiers', 'dmDossierEdits', 'dmCerts', 'dmRatings', 'dmWithdrawals'].includes(tab)) return 'dm';
+  if (['storeDossiers', 'storeDossierEdits', 'storeCerts', 'storeRatings'].includes(tab)) return 'store';
+  if (['rankings', 'publishedRankings', 'publicReviews', 'comments', 'commissions', 'carpools', 'scriptContributions', 'guides'].includes(tab)) return 'content';
+  if (['wallet', 'guideWithdrawals'].includes(tab)) return 'finance';
+  if (['reports', 'messages', 'claims', 'requests'].includes(tab)) return 'appeals';
+  if (tab === 'reviewHistory') return 'history';
+  if (['accounts', 'pending', 'realnameCerts', 'security'].includes(tab)) return 'accounts';
+  return 'all';
+}
 
 type PendingReviewItem = {
   id: string;
@@ -598,12 +627,16 @@ function publicReviewTags(item: PublicReview) {
     if (payload.spoiler_level) tags.push(`剧透:${String(payload.spoiler_level)}`);
   } else if (item.target_type === 'dossier_update') {
     if (payload.entity_type) tags.push(payload.entity_type === 'store' ? '店家档案' : 'DM档案');
-    if (Array.isArray(payload.changed_fields)) tags.push(...payload.changed_fields.slice(0, 4).map(field => `改:${String(field)}`));
+    const fieldLabels: Record<string, string> = {
+      dm_name: '名称', city: '城市', workplace: '店家 / 地址', employment_status: '受雇状态',
+      employer_store_id: '受雇店家', profile_url: '主页链接', photo_url: '照片', note: '档案说明', tags: '标签',
+    };
+    if (Array.isArray(payload.changed_fields)) tags.push(...payload.changed_fields.slice(0, 4).map(field => `修改：${fieldLabels[String(field)] || '资料'}`));
   }
   return Array.from(new Set(tags.filter(Boolean))).slice(0, 6);
 }
 
-function summarizePublicReviewPayload(payload?: Record<string, unknown> | null) {
+function summarizePublicReviewPayload(payload?: Record<string, unknown> | null, fallbackProfile?: Record<string, unknown> | null) {
   if (!payload || typeof payload !== 'object') return [];
   if (payload.patch && typeof payload.patch === 'object') {
     const patch = payload.patch as Record<string, unknown>;
@@ -622,11 +655,7 @@ function summarizePublicReviewPayload(payload?: Record<string, unknown> | null) 
     return lines.slice(0, 16);
   }
   if (payload.profile_patch && typeof payload.profile_patch === 'object') {
-    const patch = payload.profile_patch as Record<string, unknown>;
-    return Object.entries(patch)
-      .filter(([, value]) => value !== undefined && value !== null && value !== '')
-      .slice(0, 12)
-      .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join('、') : typeof value === 'object' ? JSON.stringify(value) : String(value).slice(0, 120)}`);
+    return summarizeProfileReviewPayload(payload, fallbackProfile);
   }
   return Object.entries(payload)
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -771,6 +800,7 @@ export default function Admin() {
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [publicReviews, setPublicReviews] = useState<PublicReview[]>([]);
+  const [reviewHistory, setReviewHistory] = useState<PublicReview[]>([]);
   const [guides, setGuides] = useState<GuideReview[]>([]);
   const [guideWithdrawals, setGuideWithdrawals] = useState<GuideWithdrawalReview[]>([]);
   const [transactions, setTransactions] = useState<TransactionReview[]>([]);
@@ -817,6 +847,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setSiteMessages((d.data as { siteMessages: SiteMessage[] }).siteMessages || []);
         setSecurityEvents((d.data as { securityEvents: SecurityEvent[] }).securityEvents || []);
         setPublicReviews((d.data as { publicReviews: PublicReview[] }).publicReviews || []);
+        setReviewHistory((d.data as { reviewHistory: PublicReview[] }).reviewHistory || []);
         setGuides((d.data as { guides: GuideReview[] }).guides || []);
         setGuideWithdrawals((d.data as { guideWithdrawals: GuideWithdrawalReview[] }).guideWithdrawals || []);
       } else {
@@ -1275,6 +1306,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setReports([]);
     setSiteMessages([]);
     setSecurityEvents([]);
+    setPublicReviews([]);
+    setReviewHistory([]);
     setGuides([]);
     setGuideWithdrawals([]);
     setTransactions([]);
@@ -1305,7 +1338,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     })),
     ...publicReviews.map(item => ({
       id: `public-${item.id}`,
-      tab: 'publicReviews' as const,
+      tab: item.target_type === 'dossier_update'
+        ? (item.payload?.entity_type === 'store' ? 'storeDossierEdits' as const : 'dmDossierEdits' as const)
+        : 'publicReviews' as const,
       category: publicReviewTypeLabel(item.target_type),
       title: item.title || publicReviewTypeLabel(item.target_type),
       meta: `提交人：${item.profile_name || item.profile_id || '未知用户'}${item.summary ? ` · ${item.summary}` : ''}`,
@@ -1362,7 +1397,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     })),
     ...dmDossiers.map(item => ({
       id: `dossier-${item.id}`,
-      tab: 'dmDossiers' as const,
+      tab: item.entity_type === 'store' ? 'storeDossiers' as const : 'dmDossiers' as const,
       category: item.claim_status === 'pending' && item.status !== 'pending'
         ? '档案认领'
         : item.entity_type === 'store' ? '店家档案' : 'DM档案',
@@ -1432,7 +1467,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     })),
     ...certs.map(c => ({
       id: `cert-${c.id}`,
-      tab: 'certs' as const,
+      tab: c.type === 'dm' ? 'dmCerts' as const : c.type === 'shop' ? 'storeCerts' as const : 'realnameCerts' as const,
       category: '认证',
       title: certificationTypeLabel(c.type),
       meta: `用户：${c.lc_profiles?.display_name || c.profile_id}`,
@@ -1459,6 +1494,79 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       accent: '#047857',
     })),
   ].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+  const activeGroup = adminGroupForTab(tab);
+  const dmDossierItems = dmDossiers.filter(item => item.entity_type !== 'store');
+  const storeDossierItems = dmDossiers.filter(item => item.entity_type === 'store');
+  const dmDossierEdits = publicReviews.filter(item => item.target_type === 'dossier_update' && item.payload?.entity_type !== 'store');
+  const storeDossierEdits = publicReviews.filter(item => item.target_type === 'dossier_update' && item.payload?.entity_type === 'store');
+  const contentPublicReviews = publicReviews.filter(item => item.target_type !== 'dossier_update');
+  const visiblePublicReviews = tab === 'dmDossierEdits' ? dmDossierEdits : tab === 'storeDossierEdits' ? storeDossierEdits : contentPublicReviews;
+  const visibleDossiers = tab === 'storeDossiers' ? storeDossierItems : dmDossierItems;
+  const visibleCerts = certs.filter(item => tab === 'dmCerts' ? item.type === 'dm' : tab === 'storeCerts' ? item.type === 'shop' : item.type === 'realname');
+  const historyEvents = securityEvents.filter(event => Boolean(ADMIN_REVIEW_ACTIONS[event.action]));
+  const reviewHistoryById = new Map(reviewHistory.map(item => [item.id, item]));
+  const today = new Date().toISOString().slice(0, 10);
+  const reviewedToday = historyEvents.filter(event => event.created_at?.slice(0, 10) === today).length;
+  const highRiskCount = [
+    ...rankings.map(item => item.moderation_precheck),
+    ...publicReviews.map(item => item.moderation_precheck),
+    ...dmRatings.map(item => item.moderation_precheck),
+    ...storeRatings.map(item => item.moderation_precheck),
+    ...reports.map(item => item.moderation_precheck),
+  ].filter(item => item?.decision === 'review' || item?.decision === 'block').length;
+
+  const groupTabs: Record<Exclude<AdminGroup, 'all' | 'history'>, Array<{ tab: Tab; label: string; count?: number }>> = {
+    dm: [
+      { tab: 'dmDossiers', label: '建档 / 认领', count: dmDossierItems.length },
+      { tab: 'dmDossierEdits', label: '资料修改', count: dmDossierEdits.length },
+      { tab: 'dmCerts', label: '身份认证', count: certs.filter(item => item.type === 'dm').length },
+      { tab: 'dmRatings', label: 'DM评分', count: dmRatings.length },
+      { tab: 'dmWithdrawals', label: '认证撤销', count: dmIdentityWithdrawals.length },
+    ],
+    store: [
+      { tab: 'storeDossiers', label: '建档 / 认领', count: storeDossierItems.length },
+      { tab: 'storeDossierEdits', label: '资料修改', count: storeDossierEdits.length },
+      { tab: 'storeCerts', label: '店家认证', count: certs.filter(item => item.type === 'shop').length },
+      { tab: 'storeRatings', label: '店家评分', count: storeRatings.length },
+    ],
+    content: [
+      { tab: 'publicReviews', label: '主页与公开资料', count: contentPublicReviews.length },
+      { tab: 'rankings', label: '红黑榜', count: rankings.length },
+      { tab: 'comments', label: '评论', count: comments.length },
+      { tab: 'commissions', label: '委托', count: commissions.length },
+      { tab: 'carpools', label: '拼车', count: carpools.length },
+      { tab: 'scriptContributions', label: '剧本库', count: scriptContributions.length },
+      { tab: 'guides', label: '攻略', count: guides.length },
+      { tab: 'publishedRankings', label: '已发布榜单', count: approvedRankings.length },
+    ],
+    finance: [
+      { tab: 'wallet', label: '充值', count: transactions.length },
+      { tab: 'guideWithdrawals', label: '提现', count: guideWithdrawals.length },
+    ],
+    appeals: [
+      { tab: 'reports', label: '举报', count: reports.length },
+      { tab: 'messages', label: '建议 / 申诉', count: siteMessages.length },
+      { tab: 'claims', label: '相关方申请', count: claims.length },
+      { tab: 'requests', label: '联系申请', count: requests.length },
+    ],
+    accounts: [
+      { tab: 'accounts', label: '账号管理', count: accountProfiles.length },
+      { tab: 'pending', label: '创作者主页', count: pendingProfiles.length },
+      { tab: 'realnameCerts', label: '实名认证', count: certs.filter(item => item.type === 'realname').length },
+      { tab: 'security', label: '安全日志' },
+    ],
+  };
+  const primaryGroups: Array<{ group: AdminGroup; label: string; tab: Tab; count?: number }> = [
+    { group: 'all', label: '全部待审', tab: 'allPending', count: pendingReviewItems.length },
+    { group: 'dm', label: 'DM审核', tab: 'dmDossiers', count: dmDossierItems.length + dmDossierEdits.length + dmRatings.length + dmIdentityWithdrawals.length + certs.filter(item => item.type === 'dm').length },
+    { group: 'store', label: '店家审核', tab: 'storeDossiers', count: storeDossierItems.length + storeDossierEdits.length + storeRatings.length + certs.filter(item => item.type === 'shop').length },
+    { group: 'content', label: '内容审核', tab: 'publicReviews', count: contentPublicReviews.length + rankings.length + comments.length + commissions.length + carpools.length + scriptContributions.length + guides.length },
+    { group: 'finance', label: '交易审核', tab: 'wallet', count: transactions.length + guideWithdrawals.length },
+    { group: 'appeals', label: '举报申诉', tab: 'reports', count: reports.length + siteMessages.length + claims.length + requests.length },
+    { group: 'history', label: '审核历史', tab: 'reviewHistory' },
+    { group: 'accounts', label: '账号与安全', tab: 'accounts', count: pendingProfiles.length + certs.filter(item => item.type === 'realname').length },
+  ];
 
   if (!authed) return (
     <div style={{ backgroundColor: BG, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -1488,43 +1596,31 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: '0 0 auto',
-    padding: '9px 12px',
-    borderRadius: 10,
+    minHeight: 38,
+    padding: '0 13px',
+    borderRadius: 8,
     border: active ? `1px solid ${INK}` : `1px solid ${LINE}`,
     cursor: 'pointer',
     fontSize: '0.82rem',
     fontWeight: 700,
-    transition: 'all 0.2s',
     background: active ? INK : SURFACE,
     color: active ? BG : MUTED,
-    boxShadow: active ? '0 8px 18px rgba(31,41,55,0.12)' : 'none',
     whiteSpace: 'nowrap',
   });
 
-  const statCards = [
-    { label: '全部待审', value: pendingReviewItems.length, color: '#b91c1c' },
-    { label: '账号', value: accountProfiles.length, color: '#047857' },
-    { label: '联系申请', value: requests.length, color: '#8a5a19' },
-    { label: '充值', value: transactions.length, color: '#15803d' },
-    { label: '委托需求', value: commissions.length, color: '#b45309' },
-    { label: '拼车', value: carpools.length, color: '#0f766e' },
-    { label: '剧本库', value: scriptContributions.length, color: '#a16207' },
-    { label: '档案审核', value: dmDossiers.length, color: '#be185d' },
-    { label: '认证撤销', value: dmIdentityWithdrawals.length, color: '#9f1239' },
-    { label: 'DM评分', value: dmRatings.length, color: '#c2410c' },
-    { label: '店家评分', value: storeRatings.length, color: '#0f766e' },
-    { label: '举报', value: reports.length, color: '#dc2626' },
-    { label: '站内信', value: siteMessages.length, color: '#0369a1' },
-    { label: '安全日志', value: securityEvents.length, color: '#c2410c' },
-    { label: '红黑榜', value: rankings.length, color: '#7c3aed' },
-    { label: '已发布榜单', value: approvedRankings.length, color: '#2563eb' },
-    { label: '公开内容', value: publicReviews.length, color: '#ca8a04' },
-    { label: '攻略', value: guides.length, color: '#be123c' },
-    { label: '提现', value: guideWithdrawals.length, color: '#047857' },
-    { label: '评论', value: comments.length, color: '#0284c7' },
-    { label: '相关方', value: claims.length, color: '#ea580c' },
-    { label: '认证', value: certs.length, color: '#2563eb' },
-  ];
+  const subTabStyle = (active: boolean): React.CSSProperties => ({
+    flex: '0 0 auto',
+    minHeight: 32,
+    padding: '0 10px',
+    borderRadius: 7,
+    border: 'none',
+    cursor: 'pointer',
+    background: active ? 'rgba(217,168,87,0.18)' : 'transparent',
+    color: active ? '#8a5a19' : MUTED,
+    fontSize: '0.78rem',
+    fontWeight: active ? 900 : 700,
+    whiteSpace: 'nowrap',
+  });
 
   return (
     <div style={{ backgroundColor: BG, minHeight: '100vh', color: INK }}>
@@ -1548,37 +1644,36 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       </div>
 
       <div className="admin-page-body" style={{ maxWidth: 1360, margin: '0 auto', padding: '28px 40px 40px' }}>
-        <div className="admin-main-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: 20, alignItems: 'start' }}>
-          <section style={{ minWidth: 0, display: 'grid', gap: 16 }}>
-            <div style={{ ...card, padding: '16px 18px' }}>
-              <div style={{ fontWeight: 900, fontSize: '1.02rem', marginBottom: 4 }}>待审核队列</div>
-              <div style={{ color: MUTED, fontSize: '0.82rem' }}>按类型切换处理，内容和证据优先显示，统计缩到右侧。</div>
+        <section style={{ minWidth: 0, display: 'grid', gap: 14 }}>
+            <div style={{ ...card, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: '1.02rem', marginBottom: 3 }}>审核工作台</div>
+                <div style={{ color: MUTED, fontSize: '0.8rem' }}>先看用户提交了什么，再处理风险和结果。</div>
+              </div>
+              <div style={{ display: 'flex', gap: 14, color: MUTED, fontSize: '0.78rem', fontWeight: 800, flexWrap: 'wrap' }}>
+                <span>待审 <strong style={{ color: '#b91c1c' }}>{pendingReviewItems.length}</strong></span>
+                <span>需关注 <strong style={{ color: '#c2410c' }}>{highRiskCount}</strong></span>
+                <span>今日处理 <strong style={{ color: '#166534' }}>{reviewedToday}</strong></span>
+              </div>
             </div>
 
-            <div className="admin-tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: 8, backgroundColor: 'rgba(255,255,255,0.72)', border: `1px solid ${LINE}`, borderRadius: 14, boxShadow: '0 8px 22px rgba(31,41,55,0.04)' }}>
-              <button style={tabStyle(tab === 'allPending')} onClick={() => setTab('allPending')}>全部待审 {pendingReviewItems.length > 0 && `(${pendingReviewItems.length})`}</button>
-              <button style={tabStyle(tab === 'accounts')} onClick={() => setTab('accounts')}>账号 ({accountProfiles.length})</button>
-              <button style={tabStyle(tab === 'pending')} onClick={() => setTab('pending')}>创作者 {pendingProfiles.length > 0 && `(${pendingProfiles.length})`}</button>
-              <button style={tabStyle(tab === 'requests')} onClick={() => setTab('requests')}>联系 {requests.length > 0 && `(${requests.length})`}</button>
-              <button style={tabStyle(tab === 'wallet')} onClick={() => setTab('wallet')}>充值 {transactions.length > 0 && `(${transactions.length})`}</button>
-              <button style={tabStyle(tab === 'commissions')} onClick={() => setTab('commissions')}>委托 {commissions.length > 0 && `(${commissions.length})`}</button>
-              <button style={tabStyle(tab === 'carpools')} onClick={() => setTab('carpools')}>拼车 {carpools.length > 0 && `(${carpools.length})`}</button>
-              <button style={tabStyle(tab === 'scriptContributions')} onClick={() => setTab('scriptContributions')}>剧本库 {scriptContributions.length > 0 && `(${scriptContributions.length})`}</button>
-              <button style={tabStyle(tab === 'dmDossiers')} onClick={() => setTab('dmDossiers')}>档案审核 {dmDossiers.length > 0 && `(${dmDossiers.length})`}</button>
-              <button style={tabStyle(tab === 'dmWithdrawals')} onClick={() => setTab('dmWithdrawals')}>认证撤销 {dmIdentityWithdrawals.length > 0 && `(${dmIdentityWithdrawals.length})`}</button>
-              <button style={tabStyle(tab === 'dmRatings')} onClick={() => setTab('dmRatings')}>DM评分 {dmRatings.length > 0 && `(${dmRatings.length})`}</button>
-              <button style={tabStyle(tab === 'storeRatings')} onClick={() => setTab('storeRatings')}>店家评分 {storeRatings.length > 0 && `(${storeRatings.length})`}</button>
-              <button style={tabStyle(tab === 'reports')} onClick={() => setTab('reports')}>举报 {reports.length > 0 && `(${reports.length})`}</button>
-              <button style={tabStyle(tab === 'messages')} onClick={() => setTab('messages')}>站内信 {siteMessages.length > 0 && `(${siteMessages.length})`}</button>
-              <button style={tabStyle(tab === 'security')} onClick={() => setTab('security')}>安全日志</button>
-              <button style={tabStyle(tab === 'rankings')} onClick={() => setTab('rankings')}>榜单 {rankings.length > 0 && `(${rankings.length})`}</button>
-              <button style={tabStyle(tab === 'publishedRankings')} onClick={() => setTab('publishedRankings')}>已发布 ({approvedRankings.length})</button>
-              <button style={tabStyle(tab === 'publicReviews')} onClick={() => setTab('publicReviews')}>公开内容 {publicReviews.length > 0 && `(${publicReviews.length})`}</button>
-              <button style={tabStyle(tab === 'guides')} onClick={() => setTab('guides')}>攻略 {guides.length > 0 && `(${guides.length})`}</button>
-              <button style={tabStyle(tab === 'guideWithdrawals')} onClick={() => setTab('guideWithdrawals')}>提现 {guideWithdrawals.length > 0 && `(${guideWithdrawals.length})`}</button>
-              <button style={tabStyle(tab === 'comments')} onClick={() => setTab('comments')}>评论 {comments.length > 0 && `(${comments.length})`}</button>
-              <button style={tabStyle(tab === 'claims')} onClick={() => setTab('claims')}>相关方 {claims.length > 0 && `(${claims.length})`}</button>
-              <button style={tabStyle(tab === 'certs')} onClick={() => setTab('certs')}>认证审核 {certs.length > 0 && `(${certs.length})`}</button>
+            <div className="admin-tabs" style={{ display: 'grid', gap: 7, padding: 8, backgroundColor: 'rgba(255,255,255,0.72)', border: `1px solid ${LINE}`, borderRadius: 8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                {primaryGroups.map(item => (
+                  <button key={item.group} style={tabStyle(activeGroup === item.group)} onClick={() => setTab(item.tab)}>
+                    {item.label}{typeof item.count === 'number' && item.count > 0 ? ` (${item.count})` : ''}
+                  </button>
+                ))}
+              </div>
+              {!['all', 'history'].includes(activeGroup) && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, paddingTop: 6, borderTop: `1px solid ${LINE}` }}>
+                  {groupTabs[activeGroup as Exclude<AdminGroup, 'all' | 'history'>].map(item => (
+                    <button key={item.tab} style={subTabStyle(tab === item.tab)} onClick={() => setTab(item.tab)}>
+                      {item.label}{typeof item.count === 'number' && item.count > 0 ? ` ${item.count}` : ''}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {error && <p style={{ color: '#b91c1c', fontSize: '0.85rem', margin: 0 }}>{error}</p>}
@@ -1791,10 +1886,11 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </ListEmpty>
             )}
 
-            {tab === 'publicReviews' && (
-              <ListEmpty empty={publicReviews.length === 0} text="暂无待审核公开内容">
-                {publicReviews.map(item => {
-                  const details = summarizePublicReviewPayload(item.payload);
+            {['publicReviews', 'dmDossierEdits', 'storeDossierEdits'].includes(tab) && (
+              <ListEmpty empty={visiblePublicReviews.length === 0} text="暂无待审核内容">
+                {visiblePublicReviews.map(item => {
+                  const fallbackProfile = item.status === 'pending' ? profiles.find(profile => profile.id === item.profile_id) : undefined;
+                  const details = summarizePublicReviewPayload(item.payload, fallbackProfile as Record<string, unknown> | undefined);
                   const proofFiles = publicReviewProofFiles(item);
                   const waitingForDossierOwner = item.target_type === 'dossier_update' && item.payload?.owner_response_status === 'pending';
                   return (
@@ -1805,16 +1901,18 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           提交人：{item.profile_name || item.profile_id || '未知用户'}
                           {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
                         </Meta>
-                        {item.summary && <Meta>{item.summary}</Meta>}
+                        {item.summary && <ContentBox>{item.summary}</ContentBox>}
                         {waitingForDossierOwner && <Meta>认领人确认期尚未结束，当前不能通过；可以先拒绝明显无效的修改。</Meta>}
-                        <ModerationPrecheckBadge value={item.moderation_precheck} />
-                        <TagCloud tags={publicReviewTags(item)} />
                         {details.length > 0 && (
-                          <Proof>
+                          <ReviewSection title={item.target_type === 'profile_update' || item.target_type === 'dossier_update' ? '修改对比' : '提交内容'}>
                             {details.map(line => <div key={line}>{line}</div>)}
-                          </Proof>
+                          </ReviewSection>
                         )}
-                        <AdminAttachmentLinks files={proofFiles} />
+                        <ReviewSection title="上传材料">
+                          <AdminAttachmentLinks files={proofFiles} emptyText="没有上传图片或附件" compact />
+                        </ReviewSection>
+                        <TagCloud tags={publicReviewTags(item)} />
+                        <ModerationPrecheckBadge value={item.moderation_precheck} />
                       </div>
                       <Actions vertical>
                         <ActionButton kind="ok" disabled={waitingForDossierOwner} onClick={() => approvePublicReview(item.id)}>{waitingForDossierOwner ? '等待认领人确认' : '通过并公开'}</ActionButton>
@@ -1994,9 +2092,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </ListEmpty>
             )}
 
-            {tab === 'dmDossiers' && (
-              <ListEmpty empty={dmDossiers.length === 0} text="暂无待审核档案或认领申请">
-                {dmDossiers.map(item => {
+            {['dmDossiers', 'storeDossiers'].includes(tab) && (
+              <ListEmpty empty={visibleDossiers.length === 0} text="暂无待审核档案或认领申请">
+                {visibleDossiers.map(item => {
                   const entityType = item.entity_type === 'store' ? 'store' : 'dm';
                   const entityLabel = entityType === 'store' ? '店家' : 'DM';
                   const profileHref = normalizeAdminUrl(item.profile_url);
@@ -2034,13 +2132,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           )}
                         </div>
                       )}
-                      <ModerationPrecheckBadge value={item.moderation_precheck} />
                       <AdminPhotoPreview url={item.photo_url} />
                       <AdminAttachmentLinks files={item.photo_files || []} />
                       <div style={{ marginTop: 14, fontSize: '0.82rem', fontWeight: 900, color: INK }}>补充说明</div>
                       {item.note ? <ContentBox>{item.note}</ContentBox> : <Meta>未填写补充说明</Meta>}
                       <div style={{ marginTop: 12, fontSize: '0.82rem', fontWeight: 900, color: INK }}>标签</div>
                       {item.tags && item.tags.length > 0 ? <TagCloud tags={item.tags} /> : <Meta>未填写标签</Meta>}
+                      <ModerationPrecheckBadge value={item.moderation_precheck} />
                       {item.status === 'pending' && (
                         <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${LINE}`, display: 'grid', gap: 8 }}>
                           <div style={{ fontSize: '0.9rem', fontWeight: 900, color: INK }}>相似{entityLabel}候选</div>
@@ -2117,7 +2215,10 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <Proof>
                           剧本：{item.script_name} · 店家：{item.store_name} · 体验日期：{item.played_on} · 第{item.replay_number}刷
                         </Proof>
-                        <ModerationPrecheckBadge value={item.moderation_precheck} />
+                        <ReviewSection title="玩家评价">
+                          <div>{item.content}</div>
+                          {item.tags && item.tags.length > 0 && <div style={{ marginTop: 5 }}>标签：{item.tags.join(' / ')}</div>}
+                        </ReviewSection>
                         {(typeof abuse.risk_score === 'number' || abuseLabels.length > 0) && (
                           <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(194,65,12,0.26)', background: '#fff7ed', color: '#7c2d12', fontSize: '0.76rem', lineHeight: 1.6 }}>
                             <strong>反刷检查：风险 {abuse.risk_score || 0}</strong>
@@ -2127,8 +2228,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                             </div>
                           </div>
                         )}
-                        <ContentBox>{item.content}</ContentBox>
-                        {item.tags && item.tags.length > 0 && <Meta>标签：{item.tags.join(' / ')}</Meta>}
+                        <ModerationPrecheckBadge value={item.moderation_precheck} />
                         {item.dm_dossier?.status !== 'approved' && <Meta>这条评分关联的新DM尚未建档，请先在“档案审核”处理。</Meta>}
                       </div>
                       <Actions vertical>
@@ -2256,6 +2356,48 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </ListEmpty>
             )}
 
+            {tab === 'reviewHistory' && (
+              <ListEmpty empty={historyEvents.length === 0} text="暂无审核历史">
+                {historyEvents.map(event => {
+                  const actionInfo = ADMIN_REVIEW_ACTIONS[event.action];
+                  const publicReview = event.target_type === 'public_review' && event.target_id ? reviewHistoryById.get(event.target_id) : undefined;
+                  const details = publicReview ? summarizePublicReviewPayload(publicReview.payload) : [];
+                  const proofFiles = publicReview ? publicReviewProofFiles(publicReview) : [];
+                  const metadataLines = moderationHistoryMetadataLines(event.metadata);
+                  const outcomeText = actionInfo.outcome === 'approved' ? '已通过' : actionInfo.outcome === 'rejected' ? '已拒绝' : '已处理';
+                  const accent = actionInfo.outcome === 'approved' ? '#16a34a' : actionInfo.outcome === 'rejected' ? '#dc2626' : '#275389';
+                  return (
+                    <Row key={event.id} accent={accent}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <TitleLine title={publicReview?.title || actionInfo.label} pill={`${actionInfo.label} · ${outcomeText}`} />
+                        <Meta>
+                          审核人：{profileAccountById(profiles, event.actor_id)}
+                          {event.created_at ? ` · ${event.created_at.slice(0, 19).replace('T', ' ')}` : ''}
+                        </Meta>
+                        {publicReview?.summary && <ContentBox>{publicReview.summary}</ContentBox>}
+                        {details.length > 0 && (
+                          <ReviewSection title={publicReview?.target_type === 'profile_update' || publicReview?.target_type === 'dossier_update' ? '修改对比' : '提交内容'}>
+                            {details.map(line => <div key={line}>{line}</div>)}
+                          </ReviewSection>
+                        )}
+                        {proofFiles.length > 0 && (
+                          <ReviewSection title="上传材料">
+                            <AdminAttachmentLinks files={proofFiles} compact />
+                          </ReviewSection>
+                        )}
+                        {(publicReview?.review_note || metadataLines.length > 0) && (
+                          <ReviewSection title="处理说明">
+                            {publicReview?.review_note && <div>{publicReview.review_note}</div>}
+                            {metadataLines.map(line => <div key={line}>{line}</div>)}
+                          </ReviewSection>
+                        )}
+                      </div>
+                    </Row>
+                  );
+                })}
+              </ListEmpty>
+            )}
+
             {tab === 'security' && (
               <ListEmpty empty={securityEvents.length === 0} text="暂无安全日志">
                 {securityEvents.map(event => (
@@ -2337,9 +2479,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </ListEmpty>
             )}
 
-            {tab === 'certs' && (
-              <ListEmpty empty={certs.length === 0} text="暂无待审核认证">
-                {certs.map(c => (
+            {['dmCerts', 'storeCerts', 'realnameCerts'].includes(tab) && (
+              <ListEmpty empty={visibleCerts.length === 0} text="暂无待审核认证">
+                {visibleCerts.map(c => (
                   <Row key={c.id} accent="#3b82f6">
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <TitleLine
@@ -2353,16 +2495,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       </Meta>
                       {c.description && <ContentBox>{c.description}</ContentBox>}
                       {c.type === 'realname' && <Meta>身份证材料应已带“仅用于剧幕录实名认证”水印；审核通过后只给前台实名标识，不公开证件。</Meta>}
-                      {c.files && c.files.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                          {c.files.map((f, i) => (
-                            <a key={i} href={f.url} target="_blank" rel="noreferrer"
-                              style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(59,130,246,0.25)', background: 'rgba(59,130,246,0.08)', color: '#3b82f6', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
-                              📎 {f.name || `附件 ${i + 1}`}
-                            </a>
-                          ))}
-                        </div>
-                      )}
+                      <ReviewSection title="上传材料">
+                        <AdminAttachmentLinks files={c.files || []} emptyText="没有上传图片或附件" compact />
+                      </ReviewSection>
                     </div>
                     <Actions vertical>
                       <ActionButton kind="ok" onClick={() => approveCert(c.id)}>通过</ActionButton>
@@ -2374,23 +2509,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
               </>
             )}
-          </section>
-
-          <aside className="admin-stats" style={{ position: 'sticky', top: 18, display: 'grid', gap: 14 }}>
-            <div style={{ ...card, padding: '16px 18px' }}>
-              <div style={{ fontWeight: 900, fontSize: '1rem', marginBottom: 4 }}>数据概览</div>
-              <div style={{ color: MUTED, fontSize: '0.8rem', lineHeight: 1.7 }}>右侧只放辅助判断，左侧保留审核主动作。</div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {statCards.map(({ label, value, color }) => (
-                <div key={label} style={{ ...card, padding: '13px 14px', minHeight: 72 }}>
-                  <div style={{ fontSize: '1.55rem', fontWeight: 900, color, lineHeight: 1 }}>{value}</div>
-                  <div style={{ fontSize: '0.72rem', color: MUTED, marginTop: 8, lineHeight: 1.35 }}>{label}</div>
-                </div>
-              ))}
-            </div>
-          </aside>
-        </div>
+        </section>
       </div>
 
       {rankingEdit && (
@@ -2513,14 +2632,6 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        @media (max-width: 980px) {
-          .admin-main-grid {
-            grid-template-columns: 1fr !important;
-          }
-          .admin-stats {
-            position: static !important;
-          }
-        }
         @media (max-width: 720px) {
           .admin-header-inner {
             flex-direction: column !important;
@@ -2530,9 +2641,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             padding: 20px !important;
           }
           .admin-tabs {
+            overflow: hidden !important;
+          }
+          .admin-tabs > div {
             flex-wrap: nowrap !important;
             overflow-x: auto !important;
             -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
           }
           .admin-row {
             flex-direction: column !important;
@@ -2589,13 +2704,21 @@ function AdminAttachmentLinks({ files, emptyText, compact = false }: { files: Pr
   })).filter(file => file.href);
   if (valid.length === 0) return emptyText ? <Meta>{emptyText}</Meta> : null;
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: compact ? 0 : 10 }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginTop: compact ? 0 : 10 }}>
       {valid.map(file => {
         const isImage = (file.type || '').startsWith('image/') || /\.(png|jpe?g|webp)(\?|$)/i.test(file.href || '') || (file.href || '').startsWith('/uploads/');
+        if (isImage) return (
+          <a key={`${file.href}-${file.index}`} href={file.href || '#'} target="_blank" rel="noreferrer"
+            style={{ width: 150, maxWidth: '100%', display: 'grid', gap: 5, color: '#275389', fontSize: '0.72rem', fontWeight: 850, textDecoration: 'none' }}>
+            <img src={file.href || ''} alt={file.name || `待审核图片 ${file.index + 1}`}
+              style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff' }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || '查看原图'}{valid.length > 1 ? ` ${file.index + 1}` : ''}</span>
+          </a>
+        );
         return (
           <a key={`${file.href}-${file.index}`} href={file.href || '#'} target="_blank" rel="noreferrer"
             style={{ padding: '7px 11px', borderRadius: 8, border: '1px solid rgba(39,83,137,0.22)', background: '#eff6ff', color: '#275389', fontSize: '0.78rem', fontWeight: 850, textDecoration: 'none', whiteSpace: 'nowrap' }}>
-            {isImage ? '查看图片' : '打开附件'}{valid.length > 1 ? ` ${file.index + 1}` : ''}
+            打开附件{valid.length > 1 ? ` ${file.index + 1}` : ''}
           </a>
         );
       })}
@@ -2713,6 +2836,15 @@ function Meta({ children }: { children: React.ReactNode }) {
 
 function ContentBox({ children }: { children: React.ReactNode }) {
   return <div style={{ padding: '10px 14px', backgroundColor: '#fffdf8', border: `1px solid ${LINE}`, borderRadius: 8, fontSize: '0.82rem', color: 'rgba(31,41,55,0.78)', lineHeight: 1.7, marginTop: 8 }}>{children}</div>;
+}
+
+function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section style={{ marginTop: 10, padding: '11px 12px', border: `1px solid ${LINE}`, borderRadius: 8, background: '#fff' }}>
+      <div style={{ marginBottom: 7, color: INK, fontSize: '0.78rem', fontWeight: 900 }}>{title}</div>
+      <div style={{ color: 'rgba(31,41,55,0.76)', fontSize: '0.8rem', lineHeight: 1.7 }}>{children}</div>
+    </section>
+  );
 }
 
 function Proof({ children }: { children: React.ReactNode }) {
