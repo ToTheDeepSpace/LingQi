@@ -9,7 +9,6 @@ const API = '/api';
 const BG = '#fffdf8';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.72)';
-const GOLD = '#a66a1f';
 
 type DmDetail = {
   dossier: {
@@ -94,26 +93,29 @@ export default function DmProfile() {
 
   return (
     <main style={{ minHeight: '100vh', background: BG, color: INK }}>
-      <section style={{ padding: '34px 20px 28px', borderBottom: '1px solid rgba(31,41,55,0.09)', background: '#fff' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 18, alignItems: 'center' }}>
-          <img src={dossier.photo_url || generatedAvatarDataUrl(dossier.dm_name, dossier.id)} alt="" style={{ width: 112, height: 112, objectFit: 'cover', objectPosition: `${dossier.photo_focus_x ?? 50}% ${dossier.photo_focus_y ?? 25}%`, borderRadius: 8, background: '#fffaf2' }} />
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
-              <p style={{ margin: 0, color: GOLD, fontSize: 13, fontWeight: 900 }}>{claimStatusLabel}</p>
+      <section className="dm-profile-hero" style={{ padding: '24px 20px 26px', borderBottom: '1px solid rgba(31,41,55,0.09)', background: '#fff' }}>
+        <div className="dm-profile-hero-inner" style={{ maxWidth: 960, margin: '0 auto', display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) minmax(0, 1fr)', gap: 32, alignItems: 'stretch' }}>
+          <div className="dm-profile-portrait" style={{ width: '100%', aspectRatio: '4 / 5', maxHeight: 350, overflow: 'hidden', borderRadius: 8, border: '1px solid rgba(31,41,55,0.09)', background: '#fffaf2' }}>
+            <img src={dossier.photo_url || generatedAvatarDataUrl(dossier.dm_name, dossier.id)} alt="" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover', objectPosition: `${dossier.photo_focus_x ?? 50}% ${dossier.photo_focus_y ?? 25}%` }} />
+          </div>
+          <div className="dm-profile-info" style={{ minWidth: 0, minHeight: 350, padding: '5px 0', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <div className="dm-profile-status-row" style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+              <span style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.16)', background: '#fff8e8', color: '#8a5a19', fontSize: 12, fontWeight: 900 }}>{claimStatusLabel}</span>
               {dossier.claim_status !== 'approved' && dossier.claim_status !== 'pending' && dossier.claim_status !== 'withdrawn' && <button type="button" onClick={openClaim} style={claimButtonStyle}>本人认领</button>}
               <button type="button" onClick={() => auth?.token ? setEditOpen(true) : navigate(`/login?redirect=${encodeURIComponent(`/dm/${dossier.id}`)}`)} style={editButtonStyle}>
                 {isOwner ? '编辑我的档案' : '补充 / 纠错资料'}
               </button>
             </div>
-            <h1 style={{ margin: 0, fontSize: 'clamp(1.8rem, 4vw, 2.6rem)', fontFamily: 'var(--font-serif)' }}>{dossier.dm_name}</h1>
-            <p style={{ margin: '9px 0 0', color: MUTED }}>{dossier.city || '城市待补'}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 8 }}>
+            <h1 className="dm-profile-name" style={{ margin: '18px 0 0', fontSize: 'clamp(2.25rem, 5vw, 3.35rem)', lineHeight: 1.08, fontFamily: 'var(--font-serif)', overflowWrap: 'anywhere' }}>{dossier.dm_name}</h1>
+            <div className="dm-profile-meta" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+              <span style={{ color: MUTED, fontSize: 14, fontWeight: 750 }}>{dossier.city || '城市待补'}</span>
+              <span aria-hidden="true" style={{ color: 'rgba(71,85,105,0.34)' }}>·</span>
               <span style={affiliationBadgeStyle(dossier.affiliation?.status || (dossier.employment_status === 'freelance' ? 'freelance' : 'unknown'))}>{affiliationLabel}</span>
               {dossier.affiliation?.status === 'approved' && dossier.affiliation.confirmed_at && <span style={{ color: MUTED, fontSize: 11 }}>确认于 {dossier.affiliation.confirmed_at.slice(0, 10)}</span>}
             </div>
             {claimMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{claimMessage}</p>}
             {editMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{editMessage}</p>}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+            <div className="dm-profile-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto', paddingTop: 20 }}>
               <Link to={`/dm/rate?dmId=${encodeURIComponent(dossier.id)}`} style={primaryButton}>给TA评分</Link>
               <Link to={`/rankings/new?subjectType=dm&subjectDossierId=${encodeURIComponent(dossier.id)}`} style={secondaryButton}>发布红黑榜记录</Link>
             </div>
@@ -196,6 +198,47 @@ export default function DmProfile() {
           setEditMessage(message);
         }}
       />}
+      <style>{`
+        @media (max-width: 700px) {
+          .dm-profile-hero {
+            padding: 12px 12px 18px !important;
+          }
+          .dm-profile-hero-inner {
+            grid-template-columns: 1fr !important;
+            gap: 14px !important;
+          }
+          .dm-profile-portrait {
+            width: 100% !important;
+            max-height: 320px !important;
+            aspect-ratio: 4 / 3 !important;
+          }
+          .dm-profile-info {
+            min-height: 0 !important;
+            padding: 0 !important;
+          }
+          .dm-profile-name {
+            margin-top: 12px !important;
+            font-size: 2rem !important;
+          }
+          .dm-profile-meta {
+            margin-top: 9px !important;
+          }
+          .dm-profile-actions {
+            width: 100% !important;
+            margin-top: 14px !important;
+            padding-top: 0 !important;
+            flex-wrap: nowrap !important;
+          }
+          .dm-profile-actions a {
+            flex: 1 1 0 !important;
+            min-width: 0 !important;
+            text-align: center !important;
+            padding-left: 9px !important;
+            padding-right: 9px !important;
+            font-size: 13px !important;
+          }
+        }
+      `}</style>
     </main>
   );
 }
