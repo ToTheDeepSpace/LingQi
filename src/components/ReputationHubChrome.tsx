@@ -21,7 +21,6 @@ type ShellProps = {
 export function ReputationHubShell({
   active,
   cityTitle = '城市口碑',
-  cityHref = '/reputation/city',
   currentLabel,
   actions,
   children,
@@ -30,13 +29,6 @@ export function ReputationHubShell({
   return (
     <JumuluPageFrame
       currentLabel={label}
-      navigation={
-        <>
-            <SubnavLink active={active === 'rankings'} to="/rankings">红黑榜</SubnavLink>
-            <SubnavLink active={active === 'roles'} to="/scripts">角色点评</SubnavLink>
-            <SubnavLink active={active === 'city'} to={cityHref}>{cityTitle}</SubnavLink>
-        </>
-      }
       actions={actions}
     >
       {children}
@@ -94,23 +86,6 @@ export function ReputationAdCard() {
   );
 }
 
-function SubnavLink({ active, to, children }: { active: boolean; to: string; children: React.ReactNode }) {
-  return (
-    <Link
-      to={to}
-      style={{
-        ...subnavItemStyle,
-        background: active ? BLUE : '#fff',
-        color: active ? '#fff' : BLUE,
-        borderColor: active ? BLUE : 'rgba(39,83,137,0.16)',
-      }}
-    >
-      {children}
-    </Link>
-  );
-}
-
-const subnavItemStyle: React.CSSProperties = { minHeight: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, border: '1px solid', padding: '0 12px', textDecoration: 'none', fontSize: 12, fontWeight: 900 };
 const badgeStyle: React.CSSProperties = { width: 'fit-content', display: 'inline-flex', alignItems: 'center', borderRadius: 999, border: '1px solid', padding: '8px 12px', fontSize: 12, fontWeight: 900, lineHeight: 1 };
 const buttonStyle: React.CSSProperties = { minHeight: 42, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: '1px solid', padding: '0 16px', textDecoration: 'none', fontSize: 13, fontWeight: 900 };
 const statStyle: React.CSSProperties = { minHeight: 94, borderRadius: 10, border: '1px solid rgba(31,41,55,0.06)', padding: 16, display: 'grid', alignContent: 'start', gap: 7 };
