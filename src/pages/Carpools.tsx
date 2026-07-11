@@ -12,7 +12,7 @@ import {
   JumuluCompactHeader,
   JumuluPageFrame,
 } from '../components/JumuluPageChrome';
-import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle } from '../styles/jumuluPageStyles';
+import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
@@ -256,6 +256,12 @@ export default function Carpools() {
         eyebrow="同城拼车"
         title="找角色，找搭子"
         description="按日期、城市、剧本和角色寻找正在招募的车；补贴与票价折扣保持原始口径展示。"
+        aside={
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Link to="/carpools/new" style={jumuluPrimaryLinkStyle}>发布拼车</Link>
+            <Link to="/rankings" style={jumuluSecondaryLinkStyle}>看看红黑榜</Link>
+          </div>
+        }
       />
         {submitted && (
           <div style={{ marginBottom: 18, borderRadius: 12, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(217,168,87,0.12)', padding: '14px 16px', color: '#65401c', lineHeight: 1.7 }}>
