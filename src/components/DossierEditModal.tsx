@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import CitySearchSelect from './CitySearchSelect';
+import DossierGalleryEditor from './DossierGalleryEditor';
+import DossierWikiFieldsEditor, { type DossierWikiDraft } from './DossierWikiFieldsEditor';
 import ImageUpload from './ImageUpload';
+import {
+  normalizeDossierCareerHistory,
+  normalizeDossierNamedRefs,
+  normalizeDossierPhotos,
+  type DossierCareerEntry,
+  type DossierNamedRef,
+  type DossierPhoto,
+} from '../lib/dossierWiki';
 
 const API = '/api';
 const INK = '#1f2937';
@@ -18,12 +28,23 @@ export type EditableDossier = {
   employerStoreId?: string | null;
   profileUrl?: string | null;
   photoUrl?: string | null;
+  photoFiles?: DossierPhoto[];
   note?: string | null;
   tags?: string[];
   claimedBy?: string | null;
+  dmStartedMonth?: string | null;
+  birthYear?: number | null;
+  heightCm?: number | null;
+  weightKg?: number | null;
+  bio?: string | null;
+  commonScripts?: DossierNamedRef[];
+  careerHistory?: DossierCareerEntry[];
+  relatedProfiles?: DossierNamedRef[];
+  relatedStores?: DossierNamedRef[];
 };
 
 type StoreOption = { id: string; dm_name: string; city?: string | null };
+type ScriptOption = { id: string; name: string };
 
 type Props = {
   open: boolean;
@@ -42,10 +63,23 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
   const [employerStoreId, setEmployerStoreId] = useState(dossier.employerStoreId || '');
   const [profileUrl, setProfileUrl] = useState(dossier.profileUrl || '');
   const [photoUrl, setPhotoUrl] = useState(dossier.photoUrl || '');
+  const [photoFiles, setPhotoFiles] = useState<DossierPhoto[]>(() => normalizeDossierPhotos(dossier.photoFiles, dossier.photoUrl));
   const [note, setNote] = useState(dossier.note || '');
   const [tags, setTags] = useState((dossier.tags || []).join(' / '));
   const [editReason, setEditReason] = useState('');
   const [storeOptions, setStoreOptions] = useState<StoreOption[]>([]);
+  const [scriptOptions, setScriptOptions] = useState<ScriptOption[]>([]);
+  const [wikiDraft, setWikiDraft] = useState<DossierWikiDraft>({
+    dmStartedMonth: dossier.dmStartedMonth?.slice(0, 7) || '',
+    birthYear: dossier.birthYear ? String(dossier.birthYear) : '',
+    heightCm: dossier.heightCm ? String(dossier.heightCm) : '',
+    weightKg: dossier.weightKg ? String(dossier.weightKg) : '',
+    bio: dossier.bio || '',
+    commonScripts: normalizeDossierNamedRefs(dossier.commonScripts),
+    careerHistory: normalizeDossierCareerHistory(dossier.careerHistory),
+    relatedProfiles: normalizeDossierNamedRefs(dossier.relatedProfiles),
+    relatedStores: normalizeDossierNamedRefs(dossier.relatedStores),
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const isOwner = Boolean(dossier.claimedBy && dossier.claimedBy === currentUserId);
@@ -54,9 +88,14 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
   useEffect(() => {
     if (!open || dossier.entityType !== 'dm') return;
     const controller = new AbortController();
-    fetch(`${API}/lc/dm-dossiers?entityType=store`, { signal: controller.signal })
-      .then(response => response.json())
-      .then(payload => { if (payload.success) setStoreOptions(payload.data || []); })
+    Promise.all([
+      fetch(`${API}/lc/dm-dossiers?entityType=store`, { signal: controller.signal }).then(response => response.json()),
+      fetch(`${API}/lc/scripts`, { signal: controller.signal }).then(response => response.json()),
+    ])
+      .then(([storePayload, scriptPayload]) => {
+        if (storePayload.success) setStoreOptions(storePayload.data || []);
+        if (scriptPayload.success) setScriptOptions((scriptPayload.data || []).map((item: ScriptOption) => ({ id: item.id, name: item.name })));
+      })
       .catch(() => undefined);
     return () => controller.abort();
   }, [dossier.entityType, open]);
@@ -97,9 +136,19 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
           employmentStatus: dossier.entityType === 'dm' ? employmentStatus : 'unknown',
           employerStoreId: dossier.entityType === 'dm' && employmentStatus === 'store_affiliated' ? employerStoreId : null,
           profileUrl: profileUrl.trim(),
-          photoUrl: photoUrl.trim(),
+          photoUrl: dossier.entityType === 'dm' ? photoFiles[0]?.url || '' : photoUrl.trim(),
+          photoFiles: dossier.entityType === 'dm' ? photoFiles : undefined,
           note: note.trim(),
           tags: parsedTags,
+          dmStartedMonth: dossier.entityType === 'dm' ? wikiDraft.dmStartedMonth || null : undefined,
+          birthYear: dossier.entityType === 'dm' ? wikiDraft.birthYear || null : undefined,
+          heightCm: dossier.entityType === 'dm' ? wikiDraft.heightCm || null : undefined,
+          weightKg: dossier.entityType === 'dm' ? wikiDraft.weightKg || null : undefined,
+          bio: dossier.entityType === 'dm' ? wikiDraft.bio.trim() : undefined,
+          commonScripts: dossier.entityType === 'dm' ? wikiDraft.commonScripts : undefined,
+          careerHistory: dossier.entityType === 'dm' ? wikiDraft.careerHistory : undefined,
+          relatedProfiles: dossier.entityType === 'dm' ? wikiDraft.relatedProfiles : undefined,
+          relatedStores: dossier.entityType === 'dm' ? wikiDraft.relatedStores : undefined,
           editReason: editReason.trim(),
         }),
       });
@@ -163,13 +212,26 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
             </div>
           )}
 
-          <div style={{ ...twoColumnStyle, marginTop: 14 }}>
+          <div style={{ marginTop: 14 }}>
             <Field label={dossier.entityType === 'store' ? '店铺主页链接' : '个人主页链接'} value={profileUrl} onChange={setProfileUrl} placeholder="可留空" />
-            <div>
+            {dossier.entityType === 'store' && <div>
               <Field label="公开照片链接" value={photoUrl} onChange={setPhotoUrl} placeholder="可留空" />
               <ImageUpload token={token} scope="dossier-edit" label="上传新照片" variant="compact" onUploaded={setPhotoUrl} style={{ marginTop: 7 }} />
-            </div>
+            </div>}
           </div>
+
+          {dossier.entityType === 'dm' && (
+            <>
+              <DossierGalleryEditor photos={photoFiles} token={token} onChange={setPhotoFiles} />
+              <DossierWikiFieldsEditor
+                value={wikiDraft}
+                onChange={setWikiDraft}
+                scriptOptions={scriptOptions}
+                storeOptions={storeOptions.map(store => ({ id: store.id, name: store.dm_name }))}
+                sensitiveMode={isOwner ? 'owner' : dossier.claimedBy ? 'requires_consent' : 'unavailable'}
+              />
+            </>
+          )}
 
           <label style={{ display: 'block', marginTop: 14 }}>
             <span style={labelStyle}>档案说明</span>
@@ -197,7 +259,7 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
 }
 
 const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 1300, display: 'grid', placeItems: 'center', padding: 18, background: 'rgba(15,23,42,0.48)', backdropFilter: 'blur(3px)' };
-const modalStyle: React.CSSProperties = { width: 'min(720px, 100%)', maxHeight: '92dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 8, border: '1px solid rgba(31,41,55,0.12)', background: '#fffdf8', color: INK, boxShadow: '0 24px 80px rgba(15,23,42,0.24)' };
+const modalStyle: React.CSSProperties = { width: 'min(940px, 100%)', maxHeight: '92dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 8, border: '1px solid rgba(31,41,55,0.12)', background: '#fffdf8', color: INK, boxShadow: '0 24px 80px rgba(15,23,42,0.24)' };
 const headerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 16, padding: '18px 20px 15px', borderBottom: '1px solid rgba(31,41,55,0.09)', background: '#fff' };
 const kickerStyle: React.CSSProperties = { margin: '0 0 5px', color: GOLD, fontSize: 11, fontWeight: 900 };
 const closeStyle: React.CSSProperties = { width: 32, height: 32, flex: '0 0 32px', display: 'grid', placeItems: 'center', padding: 0, borderRadius: 6, border: '1px solid rgba(31,41,55,0.12)', background: '#fff', color: '#475569', fontSize: 21, cursor: 'pointer' };

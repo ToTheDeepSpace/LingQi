@@ -15,7 +15,10 @@ const GOLD = '#a66a1f';
 type AuthSession = { token: string; displayName: string };
 type DmOption = { id: string; dm_name: string; city?: string | null; workplace?: string | null; employment_status?: 'unknown' | 'store_affiliated' | 'freelance'; claim_status?: string; claimed_by?: string | null };
 type LibraryOption = { id: string; name: string; city?: string | null };
-type StoreOption = LibraryOption & { linkedStoreId?: string | null };
+type StoreOption = LibraryOption & {
+  linkedStoreId?: string | null;
+  linkedStoreDossierId?: string | null;
+};
 
 function getAuth(): AuthSession | null {
   const data = readStoredCreatorAuth();
@@ -59,6 +62,8 @@ export default function DmRating() {
   const [scriptId, setScriptId] = useState('');
   const [scriptName, setScriptName] = useState('');
   const [storeId, setStoreId] = useState('');
+  const [storeDossierId, setStoreDossierId] = useState('');
+  const [storeCatalogId, setStoreCatalogId] = useState('');
   const [storeName, setStoreName] = useState('');
   const [playedOn, setPlayedOn] = useState('');
   const [replayNumber, setReplayNumber] = useState('1');
@@ -82,9 +87,10 @@ export default function DmRating() {
     ]).then(([dmData, scriptData, storeData, employerStoreData]) => {
       if (dmData.success) setDms(dmData.data || []);
       if (scriptData.success) setScripts((scriptData.data || []).map((item: { id: string; name: string }) => ({ id: item.id, name: item.name })));
-      if (storeData.success) setStores((storeData.data || []).map((item: { id: string; linked_store_id?: string | null; name: string; city?: string | null }) => ({
+      if (storeData.success) setStores((storeData.data || []).map((item: { id: string; linked_store_id?: string | null; linked_store_dossier_id?: string | null; name: string; city?: string | null }) => ({
         id: item.id,
         linkedStoreId: item.linked_store_id || null,
+        linkedStoreDossierId: item.linked_store_dossier_id || null,
         name: item.name,
         city: item.city,
       })));
@@ -109,7 +115,7 @@ export default function DmRating() {
 
   const selectedDm = useMemo(() => dms.find(item => item.id === dmId) || null, [dmId, dms]);
   const selectedScript = useMemo(() => scripts.find(item => item.id === scriptId) || null, [scriptId, scripts]);
-  const selectedStore = useMemo(() => stores.find(item => item.id === storeId) || null, [storeId, stores]);
+  const selectedStore = useMemo(() => stores.find(item => item.id === storeCatalogId) || null, [storeCatalogId, stores]);
   const selectedDmCanReceiveChanto = Boolean(selectedDm?.claim_status === 'approved' && selectedDm.claimed_by);
 
   const submit = async (event: React.FormEvent) => {
@@ -134,6 +140,7 @@ export default function DmRating() {
         scriptId: scriptId || null,
         scriptName: (selectedScript?.name || scriptName).trim(),
         storeId: storeId || null,
+        storeDossierId: storeDossierId || null,
         storeName: (selectedStore?.name || storeName).trim(),
         playedOn,
         replayNumber: Number(replayNumber),
@@ -266,10 +273,14 @@ export default function DmRating() {
               onChange={value => {
                 setStoreName(value);
                 setStoreId('');
+                setStoreDossierId('');
+                setStoreCatalogId('');
               }}
               onSelect={item => {
                 setStoreName(item.name);
                 setStoreId(item.linkedStoreId || '');
+                setStoreDossierId(item.linkedStoreDossierId || '');
+                setStoreCatalogId(item.id);
               }}
             />
             <Field label="体验日期 *"><input type="date" value={playedOn} onChange={event => setPlayedOn(event.target.value)} required max={localDateInputValue()} style={inputStyle} /></Field>
@@ -346,10 +357,19 @@ function StoreSearchField({
 }) {
   const [open, setOpen] = useState(false);
   const query = normalizeCatalogSearch(value);
-  const matches = stores.filter(item => {
-    if (!query) return true;
-    return normalizeCatalogSearch(`${item.name}${item.city || ''}`).includes(query);
-  }).slice(0, 8);
+  const matches = stores
+    .map(item => {
+      const normalizedName = normalizeCatalogSearch(item.name);
+      const normalizedHaystack = normalizeCatalogSearch(`${item.name}${item.city || ''}`);
+      const score = !query
+        ? 3
+        : normalizedName === query ? 0 : normalizedName.startsWith(query) ? 1 : normalizedHaystack.includes(query) ? 2 : 99;
+      return { item, score };
+    })
+    .filter(match => match.score < 99)
+    .sort((a, b) => a.score - b.score || a.item.name.localeCompare(b.item.name, 'zh-CN'))
+    .slice(0, 12)
+    .map(match => match.item);
 
   return (
     <div style={{ display: 'grid', gap: 6, position: 'relative' }}>

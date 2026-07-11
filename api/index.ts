@@ -48,6 +48,20 @@ import {
   identityRolesFromServices,
   mergeIdentityRoles,
 } from '../src/lib/serviceCategories.js';
+import {
+  dossierComparableValue,
+  dossierPatchForOwnerConsent,
+  dossierSensitiveFieldsInPatch,
+  MAX_DOSSIER_COMMON_SCRIPTS,
+  MAX_DOSSIER_PHOTOS,
+  normalizeDossierCareerHistory,
+  normalizeDossierMonth,
+  normalizeDossierNamedRefs,
+  normalizeDossierPhotos,
+  type DossierCareerEntry,
+  type DossierNamedRef,
+  type DossierPhoto,
+} from '../src/lib/dossierWiki.js';
 import { extractSharedUrl } from '../src/lib/socialLinks.js';
 import { CHANTO_MAX_AMOUNT, CHANTO_MIN_AMOUNT, isValidChantoAmount } from '../src/lib/chanto.js';
 
@@ -1974,17 +1988,26 @@ const DOSSIER_EDIT_FIELD_LABELS: Record<string, string> = {
   employment_status: '受雇状态',
   employer_store_id: '受雇店家',
   profile_url: '主页链接',
-  photo_url: '照片',
+  photo_url: '封面照片',
+  photo_files: '照片图库',
   note: '档案说明',
   tags: '标签',
+  dm_started_month: 'DM 入行时间',
+  birth_year: '出生年份',
+  height_cm: '身高',
+  weight_kg: '体重',
+  bio: '人物简介',
+  common_scripts: '常开剧本',
+  career_history: '任职履历',
+  related_profiles: '圈人',
+  related_stores: '圈店',
 };
 
 const DM_AFFILIATION_EDIT_FIELDS = new Set(['workplace', 'employment_status', 'employer_store_id']);
+const DOSSIER_JSONB_EDIT_FIELDS = new Set(['photo_files', 'common_scripts', 'career_history', 'related_profiles', 'related_stores']);
 
 function dossierEditComparableValue(value: unknown) {
-  if (Array.isArray(value)) return JSON.stringify(value.map(item => String(item || '').trim()).filter(Boolean));
-  if (value === null || value === undefined || value === '') return '';
-  return String(value);
+  return dossierComparableValue(value);
 }
 
 function dossierEditAdminBlockReason(payload: Record<string, unknown>, now = new Date()) {
@@ -2026,31 +2049,58 @@ async function applyDossierUpdateReview(
     throw new Error('档案认领人已经变化，需要由新认领人重新确认');
   }
 
-  const allowedFields = Object.keys(DOSSIER_EDIT_FIELD_LABELS);
-  const safePatch: Record<string, unknown> = {};
-  for (const field of allowedFields) {
-    if (!(field in patch)) continue;
-    if (dossierEditComparableValue(dossier[field]) !== dossierEditComparableValue(beforeSnapshot[field])) {
-      throw new Error(`${DOSSIER_EDIT_FIELD_LABELS[field]}已被其他审核更新，请重新提交修改`);
-    }
-    safePatch[field] = patch[field];
-  }
-  if (Object.keys(safePatch).length === 0) throw new Error('没有可应用的档案修改');
-  if ('photo_url' in safePatch) {
-    safePatch.photo_files = safePatch.photo_url
-      ? [{ name: `${entityType === 'store' ? '店家' : 'DM'}照片`, url: safePatch.photo_url, type: 'image/*' }]
-      : [];
-  }
-
   const effectiveOwnerStatus = effectiveDossierOwnerResponseStatus({
     status: cleanText(payload.owner_response_status, 40),
     dueAt: cleanText(payload.owner_response_due_at, 80),
   });
+  const consentResult = dossierPatchForOwnerConsent(patch, {
+    submitterIsOwner: Boolean(payload.submitter_is_owner),
+    ownerResponseStatus: effectiveOwnerStatus,
+  });
+  if (Object.keys(consentResult.appliedPatch).length === 0 && consentResult.omittedSensitiveFields.length > 0) {
+    throw new Error('出生年份、身高和体重必须由 DM 本人明确同意后才能公开');
+  }
+
+  let payloadChanged = false;
   if (effectiveOwnerStatus === 'expired' && payload.owner_response_status !== 'expired') {
     payload.owner_response_status = 'expired';
     payload.owner_responded_at = null;
+    payloadChanged = true;
+  }
+  if (consentResult.omittedSensitiveFields.length > 0) {
+    payload.omitted_sensitive_fields = consentResult.omittedSensitiveFields;
+    payloadChanged = true;
+  }
+  if (payloadChanged) {
     const payloadUpdate = await supabase.from('lc_public_reviews').update({ payload, updated_at: new Date().toISOString() }).eq('id', review.id);
     if (payloadUpdate.error) throw payloadUpdate.error;
+  }
+
+  const allowedFields = Object.keys(DOSSIER_EDIT_FIELD_LABELS);
+  const safePatch: Record<string, unknown> = {};
+  for (const field of allowedFields) {
+    if (!(field in consentResult.appliedPatch)) continue;
+    if (dossierEditComparableValue(dossier[field]) !== dossierEditComparableValue(beforeSnapshot[field])) {
+      throw new Error(`${DOSSIER_EDIT_FIELD_LABELS[field]}已被其他审核更新，请重新提交修改`);
+    }
+    safePatch[field] = consentResult.appliedPatch[field];
+  }
+  if (Object.keys(safePatch).length === 0) throw new Error('没有可应用的档案修改');
+  if ('photo_files' in safePatch) {
+    const photos = normalizeDossierPhotoSubmission(
+      safePatch.photo_files,
+      safePatch.photo_url ?? dossier.photo_url,
+      entityType === 'store' ? '店家' : 'DM',
+    );
+    const cover = photos[0] || null;
+    safePatch.photo_files = photos;
+    safePatch.photo_url = cover?.url || null;
+    safePatch.photo_focus_x = cover?.focus_x ?? 50;
+    safePatch.photo_focus_y = cover?.focus_y ?? 25;
+  } else if ('photo_url' in safePatch) {
+    safePatch.photo_files = safePatch.photo_url
+      ? [{ name: `${entityType === 'store' ? '店家' : 'DM'}照片`, url: safePatch.photo_url, type: 'image/*', focus_x: 50, focus_y: 25 }]
+      : [];
   }
 
   const employmentFieldsTouched = entityType === 'dm'
@@ -2103,8 +2153,7 @@ async function applyDossierUpdateReview(
         if (lockedOwnerId && lockedOwnerId !== originalOwnerId && lockedOwnerId !== cleanText(review.profile_id, 80)) {
           throw new Error('档案认领人已经变化，需要由新认领人重新确认');
         }
-        for (const field of Object.keys(safePatch)) {
-          if (field === 'photo_files') continue;
+        for (const field of Object.keys(consentResult.appliedPatch)) {
           if (dossierEditComparableValue(lockedDossier[field]) !== dossierEditComparableValue(beforeSnapshot[field])) {
             throw new Error(`${DOSSIER_EDIT_FIELD_LABELS[field] || field}已被其他审核更新，请重新提交修改`);
           }
@@ -2170,8 +2219,8 @@ async function applyDossierUpdateReview(
         if (patchEntries.length > 0) {
           const values: unknown[] = [dossierId];
           const assignments = patchEntries.map(([field, value]) => {
-            values.push(field === 'photo_files' ? JSON.stringify(value) : value);
-            const cast = field === 'photo_files' ? '::jsonb' : field === 'tags' ? '::text[]' : '';
+            values.push(DOSSIER_JSONB_EDIT_FIELDS.has(field) ? JSON.stringify(value) : value);
+            const cast = DOSSIER_JSONB_EDIT_FIELDS.has(field) ? '::jsonb' : field === 'tags' ? '::text[]' : '';
             return `${field} = $${values.length}${cast}`;
           });
           values.push(now);
@@ -5978,6 +6027,7 @@ app.get('/api/lc/stores', async (req, res) => {
     const libraryRows = (data || []).map((store: Record<string, unknown>) => ({
       id: cleanText(store.id, 80),
       linked_store_id: cleanText(store.id, 80) || null,
+      linked_store_dossier_id: null,
       source: 'store_library',
       source_id: cleanText(store.id, 80),
       name: cleanText(store.name, 100),
@@ -6005,6 +6055,7 @@ app.get('/api/lc/stores', async (req, res) => {
         ...((dossierResult.data || []).map((store: Record<string, unknown>) => ({
           id: `dossier:${cleanText(store.id, 80)}`,
           linked_store_id: null,
+          linked_store_dossier_id: cleanText(store.id, 80) || null,
           source: 'store_dossier',
           source_id: cleanText(store.id, 80),
           name: cleanText(store.dm_name, 100),
@@ -6014,6 +6065,7 @@ app.get('/api/lc/stores', async (req, res) => {
         ...((rankingResult.data || []).map((store: Record<string, unknown>) => ({
           id: `ranking:${cleanText(store.id, 80)}`,
           linked_store_id: null,
+          linked_store_dossier_id: null,
           source: 'ranking',
           source_id: cleanText(store.id, 80),
           name: cleanText(store.subject_name, 100),
@@ -7582,6 +7634,16 @@ app.put('/api/lc/admin/public-reviews/:id/approve', authMiddleware, adminMiddlew
       })) {
         return res.status(409).json(err(new Error(dossierEditAdminBlockReason(payload))));
       }
+      const consentResult = dossierPatchForOwnerConsent(objectPayload(payload.patch), {
+        submitterIsOwner: Boolean(payload.submitter_is_owner),
+        ownerResponseStatus: effectiveDossierOwnerResponseStatus({
+          status: cleanText(payload.owner_response_status, 40),
+          dueAt: cleanText(payload.owner_response_due_at, 80),
+        }),
+      });
+      if (Object.keys(consentResult.appliedPatch).length === 0 && consentResult.omittedSensitiveFields.length > 0) {
+        return res.status(409).json(err(new Error('出生年份、身高和体重必须由 DM 本人明确同意后才能公开')));
+      }
     }
 
     await applyPublicReview(review as PublicReviewRecord, reviewerId);
@@ -8809,6 +8871,47 @@ function publicDmAffiliationPayload(
   };
 }
 
+function publicDossierPhotoFiles(dossier: Record<string, unknown>): DossierPhoto[] {
+  return normalizeDossierPhotos(dossier.photo_files, dossier.photo_url).map(photo => ({
+    url: photo.url,
+    name: photo.name || null,
+    type: photo.type || 'image/*',
+    caption: photo.caption || null,
+    focus_x: normalizeImageFocus(photo.focus_x, 50),
+    focus_y: normalizeImageFocus(photo.focus_y, 25),
+  }));
+}
+
+function publicDossierWikiPayload(
+  dossier: Record<string, unknown>,
+  affiliation?: { status?: string; store_dossier_id?: unknown } | null,
+) {
+  const confirmedStoreId = affiliation?.status === 'approved' ? cleanText(affiliation.store_dossier_id, 120) : '';
+  const careerHistory = normalizeDossierCareerHistory(dossier.career_history).map(entry => ({
+    ...entry,
+    verification_status: confirmedStoreId && entry.store_dossier_id === confirmedStoreId
+      ? 'store_confirmed'
+      : 'platform_reviewed',
+  }));
+  const numberOrNull = (value: unknown) => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  return {
+    photo_files: publicDossierPhotoFiles(dossier),
+    dm_started_month: normalizeDossierMonth(dossier.dm_started_month),
+    birth_year: numberOrNull(dossier.birth_year),
+    height_cm: numberOrNull(dossier.height_cm),
+    weight_kg: numberOrNull(dossier.weight_kg),
+    bio: cleanText(dossier.bio, 3000) || null,
+    common_scripts: normalizeDossierNamedRefs(dossier.common_scripts, MAX_DOSSIER_COMMON_SCRIPTS) as DossierNamedRef[],
+    career_history: careerHistory as Array<DossierCareerEntry & { verification_status: string }>,
+    related_profiles: normalizeDossierNamedRefs(dossier.related_profiles) as DossierNamedRef[],
+    related_stores: normalizeDossierNamedRefs(dossier.related_stores) as DossierNamedRef[],
+  };
+}
+
 app.get('/api/lc/reputation/city', async (req, res) => {
   try {
     const city = cleanText(req.query.city, 80);
@@ -9025,6 +9128,20 @@ app.get('/api/lc/reputation/dossier', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+function collectPublicRatingTags(rows: Record<string, unknown>[]) {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  rows.forEach(row => {
+    cleanTextArray(row.tags, 8, 20).forEach(tag => {
+      const key = tag.toLocaleLowerCase('zh-CN');
+      if (seen.has(key)) return;
+      seen.add(key);
+      tags.push(tag);
+    });
+  });
+  return tags;
+}
+
 app.get('/api/lc/dm-dossiers', async (req, res) => {
   try {
     const city = cleanText(req.query.city, 80);
@@ -9054,12 +9171,12 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
     if (dossierIds.length > 0) {
       const [dmRatingResult, storeRatingResult, affiliationResult] = await Promise.all([
         supabase.from('lc_dm_ratings')
-          .select('id, dm_dossier_id, profile_id, rating')
+          .select('id, dm_dossier_id, profile_id, rating, tags')
           .in('dm_dossier_id', dossierIds)
           .eq('status', 'approved')
           .limit(5000),
         supabase.from('lc_store_ratings')
-          .select('id, store_dossier_id, profile_id, rating')
+          .select('id, store_dossier_id, profile_id, rating, tags')
           .in('store_dossier_id', dossierIds)
           .eq('status', 'approved')
           .limit(5000),
@@ -9118,6 +9235,9 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       const employmentStatus = confirmedStore
         ? 'store_affiliated'
         : row.employment_status === 'freelance' ? 'freelance' : 'unknown';
+      const ratingRows = row.entity_type === 'store'
+        ? storeRatingsByDossier.get(String(row.id || '')) || []
+        : dmRatingsByDossier.get(String(row.id || '')) || [];
       return {
         id: row.id,
         entity_type: row.entity_type || 'dm',
@@ -9131,16 +9251,14 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
         photo_url: row.photo_url,
         photo_focus_x: normalizeImageFocus(row.photo_focus_x, 50),
         photo_focus_y: normalizeImageFocus(row.photo_focus_y, 25),
+        ...publicDossierWikiPayload(row, publicAffiliation),
         note: row.note,
         tags: row.tags || [],
         claim_status: row.claim_status,
         claimed_by: row.claim_status === 'approved' ? row.claimed_by : null,
         created_at: row.created_at,
-        rating_summary: summarizeDmRatingRows(
-          row.entity_type === 'store'
-            ? storeRatingsByDossier.get(String(row.id || '')) || []
-            : dmRatingsByDossier.get(String(row.id || '')) || [],
-        ),
+        rating_summary: summarizeDmRatingRows(ratingRows),
+        rating_tags: collectPublicRatingTags(ratingRows),
       };
     })));
   } catch (e) { res.status(500).json(err(e)); }
@@ -9280,6 +9398,7 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
         photo_url: dossier.photo_url,
         photo_focus_x: normalizeImageFocus(dossier.photo_focus_x, 50),
         photo_focus_y: normalizeImageFocus(dossier.photo_focus_y, 25),
+        ...publicDossierWikiPayload(dossier, publicAffiliation),
         note: dossier.note,
         tags: dossier.tags || [],
         claim_status: dossier.claim_status,
@@ -9295,6 +9414,7 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
         script_id: row.script_id,
         script_name: row.script_name,
         store_id: row.store_id,
+        store_dossier_id: row.store_dossier_id,
         store_name: row.store_name,
         played_on: row.played_on,
         replay_number: row.replay_number,
@@ -9539,14 +9659,9 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     const profileUrl = normalizeOptionalPublicUrl(rawProfileUrl, 600);
     const note = cleanText(req.body?.note, 600);
     const tags = cleanTextArray(req.body?.tags, 10, 18);
-    const rawFiles = Array.isArray(req.body?.photoFiles ?? req.body?.photo_files) ? (req.body?.photoFiles ?? req.body?.photo_files) : [];
-    const photoFiles = rawFiles.slice(0, 4).map((file: Record<string, unknown>) => ({
-      name: cleanText(file.name, 120) || `${entityLabel} 照片`,
-      url: normalizeOptionalPublicUrl(file.url, 800, true),
-      type: cleanText(file.type, 80) || null,
-    })).filter((file: { url: string }) => file.url);
     const rawPhotoUrl = req.body?.photoUrl ?? req.body?.photo_url;
-    const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true) || photoFiles[0]?.url || '';
+    const photoFiles = normalizeDossierPhotoSubmission(req.body?.photoFiles ?? req.body?.photo_files, rawPhotoUrl, entityLabel);
+    const photoUrl = photoFiles[0]?.url || '';
     const photoFocusX = normalizeImageFocus(req.body?.photoFocusX ?? req.body?.photo_focus_x, 50);
     const photoFocusY = normalizeImageFocus(req.body?.photoFocusY ?? req.body?.photo_focus_y, 25);
     const employment = entityType === 'dm'
@@ -9602,6 +9717,104 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+function hasOwnInput(input: Record<string, unknown>, ...keys: string[]) {
+  return keys.some(key => Object.prototype.hasOwnProperty.call(input, key));
+}
+
+function optionalDossierInteger(value: unknown, min: number, max: number, label: string) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) throw new Error(`${label}格式不正确`);
+  return parsed;
+}
+
+function optionalDossierDecimal(value: unknown, min: number, max: number, label: string) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) throw new Error(`${label}格式不正确`);
+  return Math.round(parsed * 10) / 10;
+}
+
+function optionalDossierMonth(value: unknown, label: string) {
+  if (value === null || value === undefined || value === '') return null;
+  const month = normalizeDossierMonth(value);
+  if (!month) throw new Error(`${label}格式不正确`);
+  return `${month}-01`;
+}
+
+function normalizeDossierPhotoSubmission(input: unknown, fallbackUrl: unknown, entityLabel: string) {
+  const rawRows = Array.isArray(input) ? input : [];
+  const rows = rawRows.slice(0, MAX_DOSSIER_PHOTOS).map((item, index) => {
+    const row = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    const rawUrl = row.url;
+    const url = normalizeOptionalPublicUrl(rawUrl, 800, true);
+    if (!isOptionalUrlPlaceholder(rawUrl) && !url) throw new Error(`第${index + 1}张照片链接格式不正确`);
+    return {
+      url,
+      name: cleanText(row.name, 120) || `${entityLabel}照片 ${index + 1}`,
+      type: cleanText(row.type, 80) || 'image/*',
+      caption: cleanText(row.caption, 160) || null,
+      focus_x: normalizeImageFocus(row.focus_x ?? row.focusX, 50),
+      focus_y: normalizeImageFocus(row.focus_y ?? row.focusY, 25),
+    };
+  }).filter(row => row.url);
+  const fallback = normalizeOptionalPublicUrl(fallbackUrl, 800, true);
+  return normalizeDossierPhotos(rows, fallback);
+}
+
+async function canonicalDossierProfileRefs(input: unknown) {
+  const refs = normalizeDossierNamedRefs(input);
+  if (refs.length === 0) return [];
+  const result = await supabase.from('lc_profiles')
+    .select('id, display_name')
+    .in('id', refs.map(ref => ref.id))
+    .eq('is_visible', true);
+  if (result.error) throw result.error;
+  const profiles = new Map((result.data || []).map(row => [String(row.id || ''), cleanText(row.display_name, 100)]));
+  const invalid = refs.find(ref => !profiles.has(ref.id));
+  if (invalid) throw new Error(`圈选用户“${invalid.name}”不存在或未公开`);
+  return refs.map(ref => ({ id: ref.id, name: profiles.get(ref.id) || ref.name }));
+}
+
+async function canonicalDossierStoreData(relatedInput: unknown, careerInput: unknown) {
+  const related = normalizeDossierNamedRefs(relatedInput);
+  const career = normalizeDossierCareerHistory(careerInput);
+  const ids = Array.from(new Set([
+    ...related.map(ref => ref.id),
+    ...career.map(entry => cleanText(entry.store_dossier_id, 120)).filter(Boolean),
+  ]));
+  if (ids.length === 0) return { related, career };
+  const result = await supabase.from('lc_dm_dossiers')
+    .select('id, dm_name')
+    .in('id', ids)
+    .eq('entity_type', 'store')
+    .eq('status', 'approved');
+  if (result.error) throw result.error;
+  const stores = new Map((result.data || []).map(row => [String(row.id || ''), cleanText(row.dm_name, 100)]));
+  const invalidRelated = related.find(ref => !stores.has(ref.id));
+  if (invalidRelated) throw new Error(`圈选店家“${invalidRelated.name}”不存在或未公开`);
+  const invalidCareer = career.find(entry => entry.store_dossier_id && !stores.has(String(entry.store_dossier_id)));
+  if (invalidCareer) throw new Error(`任职店家“${invalidCareer.store_name}”不存在或未公开`);
+  return {
+    related: related.map(ref => ({ id: ref.id, name: stores.get(ref.id) || ref.name })),
+    career: career.map(entry => ({
+      ...entry,
+      store_name: entry.store_dossier_id ? stores.get(String(entry.store_dossier_id)) || entry.store_name : entry.store_name,
+    })),
+  };
+}
+
+async function canonicalDossierScripts(input: unknown) {
+  const refs = normalizeDossierNamedRefs(input, MAX_DOSSIER_COMMON_SCRIPTS);
+  if (refs.length === 0) return [];
+  const catalog = await loadSharedScriptCatalog();
+  return refs.map(ref => {
+    const script = findSharedScript(catalog, ref.id, ref.name);
+    if (!script) throw new Error(`常开剧本“${ref.name}”不在共用剧本库中`);
+    return { id: String(script.id), name: cleanText(script.name, 100) };
+  });
+}
+
 function dossierEditSnapshot(dossier: Record<string, unknown>) {
   return {
     dm_name: cleanText(dossier.dm_name, 80),
@@ -9611,44 +9824,110 @@ function dossierEditSnapshot(dossier: Record<string, unknown>) {
     employer_store_id: cleanText(dossier.employer_store_id, 80) || null,
     profile_url: cleanText(dossier.profile_url, 600) || null,
     photo_url: cleanText(dossier.photo_url, 800) || null,
+    photo_files: normalizeDossierPhotos(dossier.photo_files, dossier.photo_url),
     note: cleanText(dossier.note, 600) || null,
     tags: cleanTextArray(dossier.tags, 10, 18),
+    dm_started_month: optionalDossierMonth(dossier.dm_started_month, 'DM 入行时间'),
+    birth_year: optionalDossierInteger(dossier.birth_year, 1900, 2100, '出生年份'),
+    height_cm: optionalDossierInteger(dossier.height_cm, 100, 250, '身高'),
+    weight_kg: optionalDossierDecimal(dossier.weight_kg, 25, 300, '体重'),
+    bio: cleanText(dossier.bio, 3000) || null,
+    common_scripts: normalizeDossierNamedRefs(dossier.common_scripts, MAX_DOSSIER_COMMON_SCRIPTS),
+    career_history: normalizeDossierCareerHistory(dossier.career_history),
+    related_profiles: normalizeDossierNamedRefs(dossier.related_profiles),
+    related_stores: normalizeDossierNamedRefs(dossier.related_stores),
   };
 }
 
 async function normalizeDossierEditProposal(dossier: Record<string, unknown>, body: Record<string, unknown>) {
   const entityType = dossier.entity_type === 'store' ? 'store' : 'dm';
   const entityLabel = entityType === 'store' ? '店家' : 'DM';
-  const rawProfileUrl = body.profileUrl ?? body.profile_url;
-  const rawPhotoUrl = body.photoUrl ?? body.photo_url;
+  const rawProfileUrl = hasOwnInput(body, 'profileUrl', 'profile_url')
+    ? body.profileUrl ?? body.profile_url
+    : dossier.profile_url;
   const profileUrl = normalizeOptionalPublicUrl(rawProfileUrl, 600);
-  const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true);
   if (!isOptionalUrlPlaceholder(rawProfileUrl) && !profileUrl) throw new Error('主页链接格式不正确，不填写时请直接留空');
-  if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) throw new Error('照片链接格式不正确，也可以直接使用上传按钮');
+  const existingPhotos = normalizeDossierPhotos(dossier.photo_files, dossier.photo_url);
+  const rawPhotoUrl = body.photoUrl ?? body.photo_url;
+  const hasPhotoFiles = hasOwnInput(body, 'photoFiles', 'photo_files');
+  let photoFiles = hasPhotoFiles
+    ? normalizeDossierPhotoSubmission(body.photoFiles ?? body.photo_files, rawPhotoUrl, entityLabel)
+    : existingPhotos;
+  if (!hasPhotoFiles && hasOwnInput(body, 'photoUrl', 'photo_url')) {
+    const coverUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true);
+    if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !coverUrl) throw new Error('照片链接格式不正确，也可以直接使用上传按钮');
+    photoFiles = coverUrl
+      ? normalizeDossierPhotos([
+        { ...(existingPhotos.find(photo => photo.url === coverUrl) || {}), url: coverUrl },
+        ...existingPhotos.filter(photo => photo.url !== coverUrl),
+      ])
+      : [];
+  }
+  const photoUrl = photoFiles[0]?.url || null;
 
   const proposed: Record<string, unknown> = {
-    dm_name: cleanText(body.dmName ?? body.dm_name ?? body.name, 80),
-    city: cleanText(body.city, 80),
+    dm_name: hasOwnInput(body, 'dmName', 'dm_name', 'name')
+      ? cleanText(body.dmName ?? body.dm_name ?? body.name, 80)
+      : cleanText(dossier.dm_name, 80),
+    city: hasOwnInput(body, 'city') ? cleanText(body.city, 80) : cleanText(dossier.city, 80),
     profile_url: profileUrl || null,
-    photo_url: photoUrl || null,
-    note: cleanText(body.note, 600) || null,
-    tags: cleanTextArray(body.tags, 10, 18),
+    photo_url: photoUrl,
+    photo_files: photoFiles,
+    note: hasOwnInput(body, 'note') ? cleanText(body.note, 600) || null : cleanText(dossier.note, 600) || null,
+    tags: hasOwnInput(body, 'tags') ? cleanTextArray(body.tags, 10, 18) : cleanTextArray(dossier.tags, 10, 18),
   };
   if (!proposed.dm_name) throw new Error(`请填写${entityLabel}名称`);
   if (!proposed.city) throw new Error('请选择城市');
 
   if (entityType === 'store') {
-    const workplace = cleanText(body.workplace ?? body.address, 160);
+    const workplace = hasOwnInput(body, 'workplace', 'address')
+      ? cleanText(body.workplace ?? body.address, 160)
+      : cleanText(dossier.workplace, 160);
     if (!workplace) throw new Error('请填写店家地址、商圈或常驻位置');
     proposed.workplace = workplace;
   } else {
+    const hasEmploymentInput = hasOwnInput(body, 'employmentStatus', 'employment_status', 'employerStoreId', 'employer_store_id', 'workplace');
     const requestedStatus = cleanText(body.employmentStatus ?? body.employment_status, 40);
-    const employment = requestedStatus === 'unknown'
-      ? { employment_status: 'unknown', employer_store_id: null, workplace: cleanText(body.workplace, 160) || null }
-      : await resolveDmEmployment(body, cleanText(dossier.workplace, 160));
+    const employment = !hasEmploymentInput
+      ? {
+          employment_status: cleanText(dossier.employment_status, 40) || 'unknown',
+          employer_store_id: cleanText(dossier.employer_store_id, 80) || null,
+          workplace: cleanText(dossier.workplace, 160) || null,
+        }
+      : requestedStatus === 'unknown'
+        ? { employment_status: 'unknown', employer_store_id: null, workplace: cleanText(body.workplace, 160) || null }
+        : await resolveDmEmployment(body, cleanText(dossier.workplace, 160));
     proposed.workplace = employment.workplace || null;
     proposed.employment_status = employment.employment_status;
     proposed.employer_store_id = employment.employer_store_id || null;
+    const relatedStoreInput = hasOwnInput(body, 'relatedStores', 'related_stores')
+      ? body.relatedStores ?? body.related_stores
+      : dossier.related_stores;
+    const careerInput = hasOwnInput(body, 'careerHistory', 'career_history')
+      ? body.careerHistory ?? body.career_history
+      : dossier.career_history;
+    const storeData = await canonicalDossierStoreData(relatedStoreInput, careerInput);
+    proposed.dm_started_month = hasOwnInput(body, 'dmStartedMonth', 'dm_started_month')
+      ? optionalDossierMonth(body.dmStartedMonth ?? body.dm_started_month, 'DM 入行时间')
+      : optionalDossierMonth(dossier.dm_started_month, 'DM 入行时间');
+    proposed.birth_year = hasOwnInput(body, 'birthYear', 'birth_year')
+      ? optionalDossierInteger(body.birthYear ?? body.birth_year, 1900, new Date().getFullYear(), '出生年份')
+      : optionalDossierInteger(dossier.birth_year, 1900, 2100, '出生年份');
+    proposed.height_cm = hasOwnInput(body, 'heightCm', 'height_cm')
+      ? optionalDossierInteger(body.heightCm ?? body.height_cm, 100, 250, '身高')
+      : optionalDossierInteger(dossier.height_cm, 100, 250, '身高');
+    proposed.weight_kg = hasOwnInput(body, 'weightKg', 'weight_kg')
+      ? optionalDossierDecimal(body.weightKg ?? body.weight_kg, 25, 300, '体重')
+      : optionalDossierDecimal(dossier.weight_kg, 25, 300, '体重');
+    proposed.bio = hasOwnInput(body, 'bio') ? cleanText(body.bio, 3000) || null : cleanText(dossier.bio, 3000) || null;
+    proposed.common_scripts = hasOwnInput(body, 'commonScripts', 'common_scripts')
+      ? await canonicalDossierScripts(body.commonScripts ?? body.common_scripts)
+      : normalizeDossierNamedRefs(dossier.common_scripts, MAX_DOSSIER_COMMON_SCRIPTS);
+    proposed.career_history = storeData.career;
+    proposed.related_profiles = hasOwnInput(body, 'relatedProfiles', 'related_profiles')
+      ? await canonicalDossierProfileRefs(body.relatedProfiles ?? body.related_profiles)
+      : normalizeDossierNamedRefs(dossier.related_profiles);
+    proposed.related_stores = storeData.related;
   }
 
   const beforeSnapshot = dossierEditSnapshot(dossier);
@@ -9671,6 +9950,8 @@ function publicDossierEditReview(review: Record<string, unknown>) {
     entity_type: payload.entity_type,
     dossier_name: payload.dossier_name,
     changed_fields: Array.isArray(payload.changed_fields) ? payload.changed_fields : [],
+    sensitive_fields: Array.isArray(payload.sensitive_fields) ? payload.sensitive_fields : [],
+    omitted_sensitive_fields: Array.isArray(payload.omitted_sensitive_fields) ? payload.omitted_sensitive_fields : [],
     patch: objectPayload(payload.patch),
     before_snapshot: objectPayload(payload.before_snapshot),
     edit_reason: payload.edit_reason,
@@ -9716,6 +9997,10 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
 
     const normalized = await normalizeDossierEditProposal(dossier as Record<string, unknown>, req.body as Record<string, unknown>);
     const ownerProfileId = dossier.claim_status === 'approved' ? cleanText(dossier.claimed_by, 80) : '';
+    const sensitiveFields = dossierSensitiveFieldsInPatch(normalized.patch);
+    if (sensitiveFields.length > 0 && !ownerProfileId) {
+      return res.status(400).json(err(new Error('出生年份、身高和体重只能由 DM 本人认领档案后填写或明确同意')));
+    }
     const workflow = initialDossierEditWorkflow({
       ownerProfileId: ownerProfileId || null,
       submitterProfileId: profile.id,
@@ -9729,16 +10014,25 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
         workplace: normalized.patch.workplace,
         profileUrl: normalized.patch.profile_url,
         note: normalized.patch.note,
+        bio: normalized.patch.bio,
         tags: Array.isArray(normalized.patch.tags) ? normalized.patch.tags.join(' ') : '',
+        commonScripts: Array.isArray(normalized.patch.common_scripts)
+          ? normalized.patch.common_scripts.map(item => cleanText(objectPayload(item).name, 100)).join(' ')
+          : '',
         editReason,
       },
-      files: normalized.patch.photo_url ? [{ url: normalized.patch.photo_url, type: 'image/*' }] : [],
+      files: Array.isArray(normalized.patch.photo_files)
+        ? normalized.patch.photo_files.map(item => ({
+          url: cleanText(objectPayload(item).url, 800),
+          type: cleanText(objectPayload(item).type, 80) || 'image/*',
+        })).filter(item => item.url)
+        : normalized.patch.photo_url ? [{ url: normalized.patch.photo_url, type: 'image/*' }] : [],
     });
     const review = await createPublicReview({
       targetType: 'dossier_update',
       profile,
       title: `${cleanText(dossier.dm_name, 80)} · ${normalized.entityLabel}档案修改`,
-      summary: `${workflow.requiresOwnerResponse ? '等待认领人优先确认；' : ''}修改字段：${normalized.changedFields.map(field => DOSSIER_EDIT_FIELD_LABELS[field] || field).join('、')}`,
+      summary: `${workflow.requiresOwnerResponse ? '等待认领人优先确认；' : ''}${sensitiveFields.length > 0 && ownerProfileId !== profile.id ? '敏感资料须本人明确同意；' : ''}修改字段：${normalized.changedFields.map(field => DOSSIER_EDIT_FIELD_LABELS[field] || field).join('、')}`,
       payload: {
         dossier_id: dossier.id,
         entity_type: normalized.entityType,
@@ -9746,6 +10040,7 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
         before_snapshot: normalized.beforeSnapshot,
         patch: normalized.patch,
         changed_fields: normalized.changedFields,
+        sensitive_fields: sensitiveFields,
         edit_reason: editReason,
         owner_profile_id: ownerProfileId || null,
         submitter_is_owner: ownerProfileId === profile.id,
@@ -9904,12 +10199,24 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
     const scriptKey = normalizeDmLookupText(scriptName);
 
     const storeId = cleanText(req.body?.storeId ?? req.body?.store_id, 120);
+    const storeDossierId = cleanText(req.body?.storeDossierId ?? req.body?.store_dossier_id, 120);
     let storeName = cleanText(req.body?.storeName ?? req.body?.store_name, 160);
     if (storeId) {
       const storeResult = await supabase.from('jzg_stores').select('id, name, city, status').eq('id', storeId).maybeSingle();
       if (storeResult.error) throw storeResult.error;
       if (!storeResult.data || storeResult.data.status !== 'active') return res.status(400).json(err(new Error('选择的店家不存在或不可用')));
       storeName = cleanText(storeResult.data.name, 160);
+    }
+    if (storeDossierId) {
+      const dossierResult = await supabase.from('lc_dm_dossiers')
+        .select('id, dm_name, status, entity_type')
+        .eq('id', storeDossierId)
+        .eq('entity_type', 'store')
+        .eq('status', 'approved')
+        .maybeSingle();
+      if (dossierResult.error) throw dossierResult.error;
+      if (!dossierResult.data) return res.status(400).json(err(new Error('选择的店家档案不存在或尚未公开')));
+      storeName = cleanText(dossierResult.data.dm_name, 160);
     }
     if (!storeName) return res.status(400).json(err(new Error('请选择或填写本次体验的店家或场地')));
 
@@ -10071,6 +10378,7 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
       script_name: scriptName,
       script_key: scriptKey,
       store_id: storeId || null,
+      store_dossier_id: storeDossierId || null,
       store_name: storeName,
       played_on: playedOn,
       replay_number: replayNumber,
@@ -12582,6 +12890,26 @@ app.post('/api/lc/wallet/wechat/notify', async (req, res) => {
 });
 
 // ── 艾特解析 ──
+
+app.get('/api/lc/profiles/search', async (req, res) => {
+  try {
+    const q = cleanText(req.query.q, 80);
+    if (!q) return res.json(ok([]));
+    const result = await supabase.from('lc_profiles')
+      .select('id, display_name, city, avatar')
+      .eq('is_visible', true)
+      .ilike('display_name', `%${q}%`)
+      .order('display_name')
+      .limit(20);
+    if (result.error) throw result.error;
+    res.json(ok((result.data || []).map(profile => ({
+      id: profile.id,
+      name: profile.display_name,
+      city: profile.city || null,
+      avatar: profile.avatar || null,
+    }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
 
 app.get('/api/lc/profiles/lookup', async (req, res) => {
   try {

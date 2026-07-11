@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import CitySearchSelect from '../components/CitySearchSelect';
@@ -16,6 +16,10 @@ import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { extractSharedUrl } from '../lib/socialLinks';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
+import type { DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
+import type { DmGraphDossier } from '../components/DmRelationshipGraph';
+
+const DmRelationshipGraph = lazy(() => import('../components/DmRelationshipGraph'));
 
 const API = '/api';
 const GOLD = '#a66a1f';
@@ -25,6 +29,8 @@ const MUTED = 'rgba(71,85,105,0.76)';
 type AuthSession = { token: string; displayName: string; userId?: string };
 type DossierEntityType = 'dm' | 'store';
 type EntityFilter = 'all' | DossierEntityType;
+type RatingFilter = 'all' | 'rated' | '4.0' | '4.5' | 'unrated';
+type ViewMode = 'cards' | 'graph';
 type DossierDraft = {
   entityType: DossierEntityType;
   dmName: string;
@@ -52,8 +58,13 @@ type DmDossier = {
   photo_url?: string | null;
   photo_focus_x?: number | null;
   photo_focus_y?: number | null;
+  photo_files?: DossierPhoto[];
   note?: string | null;
   tags?: string[];
+  rating_tags?: string[];
+  common_scripts?: DossierNamedRef[];
+  related_profiles?: DossierNamedRef[];
+  related_stores?: DossierNamedRef[];
   claim_status?: 'unclaimed' | 'pending' | 'approved' | 'rejected' | 'withdrawn';
   claimed_by?: string | null;
   affiliation?: {
@@ -69,6 +80,14 @@ type DmDossier = {
     sample_status: 'insufficient' | 'stable';
   };
 };
+
+const RATING_FILTERS: { value: RatingFilter; label: string }[] = [
+  { value: 'all', label: '全部评价' },
+  { value: 'rated', label: '已有评价' },
+  { value: '4.0', label: '4.0 分以上' },
+  { value: '4.5', label: '4.5 分以上' },
+  { value: 'unrated', label: '暂无评价' },
+];
 
 const ENTITY_COPY: Record<DossierEntityType, {
   filterLabel: string;
@@ -126,6 +145,30 @@ function normalizeEntityType(value?: string | null): DossierEntityType {
   return value === 'store' ? 'store' : 'dm';
 }
 
+function normalizeDossierSearch(value: string) {
+  return value.normalize('NFKC').toLocaleLowerCase('zh-CN').replace(/\s+/g, ' ').trim();
+}
+
+function dossierDisplayTags(item: DmDossier) {
+  const seen = new Set<string>();
+  return [...(item.tags || []), ...(item.rating_tags || [])].filter(tag => {
+    const key = normalizeDossierSearch(tag);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function matchesRatingFilter(item: DmDossier, filter: RatingFilter) {
+  const summary = item.rating_summary;
+  const hasRatings = Boolean(summary && summary.player_count > 0 && summary.avg !== null);
+  if (filter === 'rated') return hasRatings;
+  if (filter === 'unrated') return !hasRatings;
+  if (filter === '4.0') return hasRatings && Number(summary?.avg || 0) >= 4;
+  if (filter === '4.5') return hasRatings && Number(summary?.avg || 0) >= 4.5;
+  return true;
+}
+
 function dossierClaimLabel(status?: DmDossier['claim_status']) {
   if (status === 'approved') return '已认证';
   if (status === 'pending') return '审核中';
@@ -162,6 +205,9 @@ export default function DmWall() {
   const [city, setCity] = useState('all');
   const [entityType, setEntityType] = useState<EntityFilter>('dm');
   const [query, setQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState('all');
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<DossierDraft>({ entityType: 'dm', dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', photoFocusX: 50, photoFocusY: 25, note: '', tags: '', employmentStatus: 'store_affiliated', employerStoreId: '' });
   const [storeOptions, setStoreOptions] = useState<DmDossier[]>([]);
@@ -169,9 +215,40 @@ export default function DmWall() {
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [claimTarget, setClaimTarget] = useState<{ id: string; name: string; entityType: DossierEntityType } | null>(null);
 
-  const requestKey = useMemo(() => `${city}|${entityType}|${query.trim()}`, [city, entityType, query]);
+  const requestKey = useMemo(() => `${city}|${entityType}`, [city, entityType]);
   const loading = loadedKey !== requestKey;
   const activeFormCopy = ENTITY_COPY[form.entityType];
+
+  const availableTags = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number }>();
+    items.forEach(item => dossierDisplayTags(item).forEach(tag => {
+      const key = normalizeDossierSearch(tag);
+      const current = counts.get(key);
+      counts.set(key, { label: current?.label || tag, count: (current?.count || 0) + 1 });
+    }));
+    return Array.from(counts.entries())
+      .sort((left, right) => right[1].count - left[1].count || left[1].label.localeCompare(right[1].label, 'zh-CN'))
+      .map(([value, meta]) => ({ value, ...meta }));
+  }, [items]);
+
+  const visibleItems = useMemo(() => {
+    const normalizedQuery = normalizeDossierSearch(query);
+    return items.filter(item => {
+      const displayTags = dossierDisplayTags(item);
+      if (tagFilter !== 'all' && !displayTags.some(tag => normalizeDossierSearch(tag) === tagFilter)) return false;
+      if (!matchesRatingFilter(item, ratingFilter)) return false;
+      if (!normalizedQuery) return true;
+      const searchable = [
+        item.dm_name,
+        item.city,
+        item.workplace,
+        item.note,
+        ...displayTags,
+        ...(item.common_scripts || []).map(script => script.name),
+      ].filter(Boolean).join(' ');
+      return normalizeDossierSearch(searchable).includes(normalizedQuery);
+    });
+  }, [items, query, ratingFilter, tagFilter]);
 
   const dossierDraft = useDraftAutosave<DossierDraft>({
     key: 'lc:draft:dm-wall:dossier-form',
@@ -198,11 +275,10 @@ export default function DmWall() {
   });
 
   const loadDossiers = useCallback((signal?: AbortSignal) => {
-    const nextKey = `${city}|${entityType}|${query.trim()}`;
+    const nextKey = `${city}|${entityType}`;
     const params = new URLSearchParams();
     if (city !== 'all') params.set('city', city);
     if (entityType !== 'all') params.set('entityType', entityType);
-    if (query.trim()) params.set('q', query.trim());
     fetch(`${API}/lc/dm-dossiers?${params}`, { signal })
       .then(r => r.json())
       .then(d => {
@@ -222,7 +298,7 @@ export default function DmWall() {
       .finally(() => {
         if (!signal?.aborted) setLoadedKey(nextKey);
       });
-  }, [city, entityType, query]);
+  }, [city, entityType]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -318,14 +394,31 @@ export default function DmWall() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <CitySearchSelect
             value={city}
-            onChange={setCity}
+            onChange={value => {
+              setCity(value);
+              setTagFilter('all');
+            }}
             allowAll
             allowCustom
             style={{ minWidth: 190, flex: '1 1 190px' }}
           />
-          <EntityFilterSwitch value={entityType} onChange={setEntityType} />
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索 DM / 店家名称" style={{ ...inputStyle, minWidth: 180, flex: '1 1 220px' }} />
+          <EntityFilterSwitch value={entityType} onChange={value => {
+            setEntityType(value);
+            setTagFilter('all');
+          }} />
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索名称、标签或常开剧本" style={{ ...inputStyle, minWidth: 190, flex: '1 1 230px' }} />
           <Link to="/reputation/city" style={ghostButton}>看城市口碑</Link>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+          <select aria-label="按标签筛选" value={tagFilter} onChange={event => setTagFilter(event.target.value)} style={{ ...inputStyle, minWidth: 170, flex: '1 1 190px' }}>
+            <option value="all">全部标签</option>
+            {availableTags.map(tag => <option key={tag.value} value={tag.value}>{tag.label}（{tag.count}）</option>)}
+          </select>
+          <select aria-label="按评价筛选" value={ratingFilter} onChange={event => setRatingFilter(event.target.value as RatingFilter)} style={{ ...inputStyle, minWidth: 150, flex: '0 1 180px' }}>
+            {RATING_FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <ViewModeSwitch value={viewMode} onChange={setViewMode} />
+          <span style={{ color: MUTED, fontSize: 12, marginLeft: 'auto' }}>共 {visibleItems.length} 个档案</span>
         </div>
       </section>
 
@@ -407,14 +500,20 @@ export default function DmWall() {
 
         {loading ? (
           <p style={{ color: MUTED, padding: '36px 0' }}>加载中...</p>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <div style={emptyStyle}>当前筛选下暂无公开档案。你可以先创建一个，审核后会出现在档案墙。</div>
+        ) : viewMode === 'graph' ? (
+          <Suspense fallback={<div style={emptyStyle}>关系图加载中...</div>}>
+            <DmRelationshipGraph items={visibleItems as DmGraphDossier[]} />
+          </Suspense>
         ) : (
           <div className="dm-dossier-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
-            {items.map(item => {
+            {visibleItems.map(item => {
               const kind = normalizeEntityType(item.entity_type);
               const copy = ENTITY_COPY[kind];
               const dossierHref = kind === 'store' ? `/stores/${encodeURIComponent(item.id)}` : `/dm/${encodeURIComponent(item.id)}`;
+              const displayTags = dossierDisplayTags(item);
+              const hasRatings = kind === 'dm' && item.rating_summary && item.rating_summary.player_count > 0 && item.rating_summary.avg !== null;
               return (
                 <article key={item.id} className="dm-dossier-card" style={cardStyle}>
                   <Link to={dossierHref} aria-label={`查看${item.dm_name}${copy.kindLabel}专属页`} style={cardOverlayLinkStyle} />
@@ -439,20 +538,20 @@ export default function DmWall() {
                       {item.note && <p className="dm-dossier-note" style={{ margin: 0, color: 'rgba(31,41,55,0.74)', lineHeight: 1.55, fontSize: 13 }}>{item.note}</p>}
                     </div>
                   </div>
-                  {kind === 'dm' && item.rating_summary && (
-                    <div className="dm-dossier-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
-                      <MiniStat label={item.rating_summary.sample_status === 'insufficient' && item.rating_summary.player_count > 0 ? '综合·样本少' : '综合'} value={item.rating_summary.player_count === 0 ? '暂无' : `${item.rating_summary.avg?.toFixed(1)}`} />
-                      <MiniStat label="体验" value={`${item.rating_summary.review_count}`} />
-                      <MiniStat label="玩家" value={`${item.rating_summary.player_count}`} />
+                  {hasRatings && item.rating_summary && (
+                    <div className="dm-dossier-rating-line" style={{ display: 'flex', alignItems: 'center', gap: 7, color: MUTED, fontSize: 12, marginBottom: 8, whiteSpace: 'nowrap' }}>
+                      <strong style={{ color: '#9a5f18', fontSize: 13 }}>★ {item.rating_summary.avg?.toFixed(1)}</strong>
+                      <span>{item.rating_summary.player_count} 位玩家</span>
+                      <span>{item.rating_summary.review_count} 次体验</span>
+                      {item.rating_summary.sample_status === 'insufficient' && <span style={{ color: '#b45309' }}>样本较少</span>}
                     </div>
                   )}
-                  {item.tags && item.tags.length > 0 && (
+                  {displayTags.length > 0 && (
                     <div className="dm-dossier-tags" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-                      {item.tags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
+                      {displayTags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
                     </div>
                   )}
                   <div className="dm-dossier-actions" style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'nowrap', marginTop: 'auto' }}>
-                    {kind === 'dm' && <Link to={`/dm/${item.id}`} title="查看评分" style={compactPrimaryButton}>评分</Link>}
                     {kind === 'dm' && <Link to={`/dm/rate?dmId=${encodeURIComponent(item.id)}`} title="写一条评价" style={compactGhostButton}>＋评价</Link>}
                     {item.profile_url && <SocialPlatformLink url={item.profile_url} />}
                     {item.claim_status === 'approved' && item.claimed_by
@@ -545,27 +644,10 @@ export default function DmWall() {
           .dm-dossier-tags > :nth-child(n + 3) {
             display: none !important;
           }
-          .dm-dossier-stats {
-            display: flex !important;
-            align-items: center;
-            gap: 12px !important;
-            margin: 0 0 4px !important;
-            padding: 0 2px;
-          }
-          .dm-mini-stat {
-            display: flex;
-            align-items: baseline;
-            gap: 4px;
-            padding: 0 !important;
-            border: 0 !important;
-            background: transparent !important;
-            text-align: left !important;
-          }
-          .dm-mini-stat-label,
-          .dm-mini-stat-value {
-            margin: 0 !important;
-            font-size: 11px !important;
-            line-height: 1.35 !important;
+          .dm-dossier-rating-line {
+            margin-bottom: 4px !important;
+            overflow-x: auto;
+            scrollbar-width: none;
           }
           .dm-dossier-tags {
             margin-bottom: 4px !important;
@@ -580,11 +662,20 @@ export default function DmWall() {
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
+function ViewModeSwitch({ value, onChange }: { value: ViewMode; onChange: (value: ViewMode) => void }) {
   return (
-    <div className="dm-mini-stat" style={{ minWidth: 0, padding: '8px 6px', borderRadius: 7, background: '#fffaf2', border: '1px solid rgba(166,106,31,0.10)', textAlign: 'center' }}>
-      <div className="dm-mini-stat-label" style={{ color: MUTED, fontSize: 11, fontWeight: 800 }}>{label}</div>
-      <div className="dm-mini-stat-value" style={{ marginTop: 3, color: INK, fontSize: 14, fontWeight: 900 }}>{value}</div>
+    <div aria-label="展示方式" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', width: 152, height: 42, padding: 3, borderRadius: 8, border: '1px solid rgba(31,41,55,0.12)', background: '#f8fafc' }}>
+      {([['cards', '卡片'], ['graph', '关系图']] as const).map(([mode, label]) => (
+        <button
+          key={mode}
+          type="button"
+          aria-pressed={value === mode}
+          onClick={() => onChange(mode)}
+          style={{ border: 0, borderRadius: 6, background: value === mode ? '#fff' : 'transparent', color: value === mode ? INK : MUTED, boxShadow: value === mode ? '0 1px 4px rgba(15,23,42,0.10)' : 'none', fontSize: 12, fontWeight: 850, cursor: 'pointer' }}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -719,7 +810,6 @@ const segmentButton = (active: boolean): React.CSSProperties => ({
 });
 const primaryButton: React.CSSProperties = { ...jumuluPrimaryLinkStyle, minHeight: 36, padding: '0 12px' };
 const ghostButton: React.CSSProperties = { ...jumuluSecondaryLinkStyle, minHeight: 36, padding: '0 12px' };
-const compactPrimaryButton: React.CSSProperties = { ...jumuluPrimaryLinkStyle, minHeight: 28, padding: '0 8px', borderRadius: 7, fontSize: 11 };
 const compactGhostButton: React.CSSProperties = { ...jumuluSecondaryLinkStyle, minHeight: 28, padding: '0 8px', borderRadius: 7, fontSize: 11 };
 const formCard: React.CSSProperties = { ...jumuluCardStyle, padding: 16 };
 const cardStyle: React.CSSProperties = { ...jumuluCardStyle, position: 'relative', display: 'flex', flexDirection: 'column', padding: 14, minHeight: 0 };

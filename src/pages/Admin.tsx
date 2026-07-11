@@ -627,13 +627,75 @@ function publicReviewTags(item: PublicReview) {
     if (payload.spoiler_level) tags.push(`剧透:${String(payload.spoiler_level)}`);
   } else if (item.target_type === 'dossier_update') {
     if (payload.entity_type) tags.push(payload.entity_type === 'store' ? '店家档案' : 'DM档案');
-    const fieldLabels: Record<string, string> = {
-      dm_name: '名称', city: '城市', workplace: '店家 / 地址', employment_status: '受雇状态',
-      employer_store_id: '受雇店家', profile_url: '主页链接', photo_url: '照片', note: '档案说明', tags: '标签',
-    };
-    if (Array.isArray(payload.changed_fields)) tags.push(...payload.changed_fields.slice(0, 4).map(field => `修改：${fieldLabels[String(field)] || '资料'}`));
+    if (Array.isArray(payload.changed_fields)) tags.push(...payload.changed_fields.slice(0, 4).map(field => `修改：${DOSSIER_EDIT_FIELD_LABELS[String(field)] || '资料'}`));
   }
   return Array.from(new Set(tags.filter(Boolean))).slice(0, 6);
+}
+
+const DOSSIER_EDIT_FIELD_LABELS: Record<string, string> = {
+  dm_name: '名称',
+  city: '城市',
+  workplace: '店家 / 地址',
+  employment_status: '受雇状态',
+  employer_store_id: '受雇店家',
+  profile_url: '主页链接',
+  photo_url: '封面照片',
+  photo_files: '照片图库',
+  note: '档案说明',
+  tags: '标签',
+  dm_started_month: 'DM 入行时间',
+  birth_year: '出生年份',
+  height_cm: '身高',
+  weight_kg: '体重',
+  bio: '人物简介',
+  common_scripts: '常开剧本',
+  career_history: '任职履历',
+  related_profiles: '圈人',
+  related_stores: '圈店',
+};
+
+function publicReviewValueText(key: string, value: unknown, phase: 'before' | 'after', dossiers: DossierOption[]) {
+  if (key === 'employer_store_id' && !value) return '无关联店家';
+  if (key === 'photo_url' && !value) return '无照片';
+  if (value === null || value === undefined || value === '') return '留空';
+  if (key === 'employment_status') {
+    if (value === 'store_affiliated') return '已受雇于店家';
+    if (value === 'freelance') return '无受雇店家（自由DM）';
+    if (value === 'unknown') return '受雇状态待核对';
+  }
+  if (key === 'employer_store_id') {
+    const store = dossiers.find(item => item.entity_type === 'store' && item.id === String(value));
+    return store?.dm_name || (phase === 'before' ? '原关联店家' : '待核对店家');
+  }
+  if (key === 'photo_url') return phase === 'before' ? '原照片' : '已上传新照片';
+  if (!Array.isArray(value)) return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  if (value.length === 0) return '留空';
+  if (value.every(item => typeof item !== 'object' || item === null)) return value.join('、');
+  return value.map((raw, index) => {
+    if (!raw || typeof raw !== 'object') return String(raw);
+    const item = raw as Record<string, unknown>;
+    if (item.url) return `${index + 1}.${String(item.caption || item.name || '照片')}`;
+    if (item.store_name) {
+      const period = [item.started_month, item.ended_month || (item.started_month ? '至今' : '')].filter(Boolean).join('~');
+      return `${String(item.store_name)}${period ? `(${period})` : ''}`;
+    }
+    return String(item.name || item.label || item.id || `第${index + 1}项`);
+  }).join('、');
+}
+
+function publicReviewSensitiveState(item: PublicReview) {
+  if (item.target_type !== 'dossier_update') return { sensitiveFields: [] as string[], warning: '', blocked: false };
+  const payload = item.payload || {};
+  const sensitiveFields = Array.isArray(payload.sensitive_fields) ? payload.sensitive_fields.map(String) : [];
+  if (sensitiveFields.length === 0) return { sensitiveFields, warning: '', blocked: false };
+  const ownerStatus = String(payload.owner_response_status || 'not_required');
+  const ownerConsented = Boolean(payload.submitter_is_owner) || ownerStatus === 'agreed';
+  if (ownerConsented) return { sensitiveFields, warning: '包含敏感资料，DM 本人已明确同意公开。', blocked: false };
+  if (ownerStatus === 'pending') return { sensitiveFields, warning: '包含敏感资料，正在等待 DM 本人确认。', blocked: true };
+  const changedFields = Array.isArray(payload.changed_fields) ? payload.changed_fields.map(String) : [];
+  const sensitiveOnly = changedFields.length > 0 && changedFields.every(field => sensitiveFields.includes(field));
+  if (sensitiveOnly) return { sensitiveFields, warning: '仅包含敏感资料，未获得 DM 本人同意，不能公开。', blocked: true };
+  return { sensitiveFields, warning: '未获得 DM 本人同意；通过时只应用其他资料，敏感字段会自动略过。', blocked: false };
 }
 
 function summarizePublicReviewPayload(
@@ -645,29 +707,7 @@ function summarizePublicReviewPayload(
   if (payload.patch && typeof payload.patch === 'object') {
     const patch = payload.patch as Record<string, unknown>;
     const before = payload.before_snapshot && typeof payload.before_snapshot === 'object' ? payload.before_snapshot as Record<string, unknown> : {};
-    const labels: Record<string, string> = {
-      dm_name: '名称', city: '城市', workplace: '店家 / 地址', employment_status: '受雇状态', employer_store_id: '受雇店家',
-      profile_url: '主页链接', photo_url: '照片', note: '档案说明', tags: '标签',
-    };
-    const valueText = (key: string, value: unknown, phase: 'before' | 'after') => {
-      if (key === 'employment_status') {
-        if (value === 'store_affiliated') return '已受雇于店家';
-        if (value === 'freelance') return '无受雇店家（自由DM）';
-        if (value === 'unknown') return '受雇状态待核对';
-      }
-      if (key === 'employer_store_id') {
-        if (!value) return '无关联店家';
-        const store = dossiers.find(item => item.entity_type === 'store' && item.id === String(value));
-        return store?.dm_name || (phase === 'before' ? '原关联店家' : '待核对店家');
-      }
-      if (key === 'photo_url') {
-        if (!value) return '无照片';
-        return phase === 'before' ? '原照片' : '已上传新照片';
-      }
-      if (Array.isArray(value)) return value.join('、') || '留空';
-      return value === null || value === undefined || value === '' ? '留空' : String(value);
-    };
-    const lines = Object.entries(patch).map(([key, value]) => `${labels[key] || '资料'}：${valueText(key, before[key], 'before')} → ${valueText(key, value, 'after')}`);
+    const lines = Object.entries(patch).map(([key, value]) => `${DOSSIER_EDIT_FIELD_LABELS[key] || '资料'}：${publicReviewValueText(key, before[key], 'before', dossiers)} → ${publicReviewValueText(key, value, 'after', dossiers)}`);
     if (payload.edit_reason) lines.unshift(`修改依据: ${String(payload.edit_reason)}`);
     if (payload.owner_response_status === 'pending') lines.push(`认领人状态: 等待确认，截止 ${String(payload.owner_response_due_at || '')}`);
     if (payload.owner_response_status === 'agreed') lines.push(`认领人状态: 已同意${payload.owner_response_reason ? `，说明：${String(payload.owner_response_reason)}` : ''}`);
@@ -699,7 +739,15 @@ function publicReviewProofFiles(item: PublicReview): ProofFile[] {
     push((payload.profile_patch as Record<string, unknown>).avatar, '待审公开头像');
   }
   if (payload.patch && typeof payload.patch === 'object') {
-    push((payload.patch as Record<string, unknown>).photo_url, '待审档案照片');
+    const patch = payload.patch as Record<string, unknown>;
+    push(patch.photo_url, '待审档案封面');
+    if (Array.isArray(patch.photo_files)) {
+      patch.photo_files.forEach((raw, index) => {
+        if (!raw || typeof raw !== 'object') return;
+        const photo = raw as Record<string, unknown>;
+        push(photo.url, String(photo.caption || photo.name || `待审档案照片 ${index + 1}`));
+      });
+    }
   }
   push(payload.image_url, '待审作品图片');
   if (Array.isArray(payload.items)) {
@@ -1919,6 +1967,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   const details = summarizePublicReviewPayload(item.payload, fallbackProfile as Record<string, unknown> | undefined, dossierOptions);
                   const proofFiles = publicReviewProofFiles(item);
                   const waitingForDossierOwner = item.target_type === 'dossier_update' && item.payload?.owner_response_status === 'pending';
+                  const sensitiveState = publicReviewSensitiveState(item);
+                  const approvalBlocked = waitingForDossierOwner || sensitiveState.blocked;
                   return (
                     <Row key={item.id} accent="#facc15">
                       <div style={{ minWidth: 0, flex: 1 }}>
@@ -1929,6 +1979,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         </Meta>
                         {item.summary && <ContentBox>{item.summary}</ContentBox>}
                         {waitingForDossierOwner && <Meta>认领人确认期尚未结束，当前不能通过；可以先拒绝明显无效的修改。</Meta>}
+                        {sensitiveState.warning && <Meta>{sensitiveState.warning}</Meta>}
                         {details.length > 0 && (
                           <ReviewSection title={item.target_type === 'profile_update' || item.target_type === 'dossier_update' ? '修改对比' : '提交内容'}>
                             {details.map(line => <div key={line}>{line}</div>)}
@@ -1941,7 +1992,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <ModerationPrecheckBadge value={item.moderation_precheck} />
                       </div>
                       <Actions vertical>
-                        <ActionButton kind="ok" disabled={waitingForDossierOwner} onClick={() => approvePublicReview(item.id)}>{waitingForDossierOwner ? '等待认领人确认' : '通过并公开'}</ActionButton>
+                        <ActionButton kind="ok" disabled={approvalBlocked} onClick={() => approvePublicReview(item.id)}>{waitingForDossierOwner ? '等待认领人确认' : sensitiveState.blocked ? '敏感资料不可公开' : sensitiveState.sensitiveFields.length > 0 && item.payload?.owner_response_status !== 'agreed' && !item.payload?.submitter_is_owner ? '通过其他资料' : '通过并公开'}</ActionButton>
                         <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'publicReview')}>拒绝</ActionButton>
                       </Actions>
                     </Row>

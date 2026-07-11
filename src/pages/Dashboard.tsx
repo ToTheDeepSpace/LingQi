@@ -130,6 +130,8 @@ type DossierEditReview = {
   entity_type: 'dm' | 'store';
   dossier_name: string;
   changed_fields: string[];
+  sensitive_fields?: string[];
+  omitted_sensitive_fields?: string[];
   patch: Record<string, unknown>;
   before_snapshot: Record<string, unknown>;
   edit_reason?: string | null;
@@ -459,9 +461,19 @@ const DOSSIER_EDIT_FIELD_LABELS: Record<string, string> = {
   employment_status: '受雇状态',
   employer_store_id: '受雇店家',
   profile_url: '主页链接',
-  photo_url: '照片',
+  photo_url: '封面照片',
+  photo_files: '照片图库',
   note: '档案说明',
   tags: '标签',
+  dm_started_month: 'DM 入行时间',
+  birth_year: '出生年份',
+  height_cm: '身高',
+  weight_kg: '体重',
+  bio: '人物简介',
+  common_scripts: '常开剧本',
+  career_history: '任职履历',
+  related_profiles: '圈人',
+  related_stores: '圈店',
 };
 
 function certTone(status: Certification['status']): ToneName {
@@ -478,12 +490,25 @@ async function fetchDmIdentityManagement(token: string) {
 }
 
 function dossierEditDisplayValue(value: unknown) {
-  if (Array.isArray(value)) return value.length > 0 ? value.join('、') : '留空';
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '留空';
+    if (value.every(item => typeof item !== 'object' || item === null)) return value.join('、');
+    return value.map((raw, index) => {
+      if (!raw || typeof raw !== 'object') return String(raw);
+      const item = raw as Record<string, unknown>;
+      if (item.url) return `${index + 1}.${String(item.caption || item.name || '照片')}`;
+      if (item.store_name) {
+        const period = [item.started_month, item.ended_month || (item.started_month ? '至今' : '')].filter(Boolean).join('~');
+        return `${String(item.store_name)}${period ? `(${period})` : ''}`;
+      }
+      return String(item.name || item.label || item.id || `第${index + 1}项`);
+    }).join('、');
+  }
   if (value === null || value === undefined || value === '') return '留空';
   if (value === 'store_affiliated') return '关联店家';
   if (value === 'freelance') return '自由DM';
   if (value === 'unknown') return '待核验';
-  return String(value);
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
 function dossierEditStatusLabel(status: DossierEditReview['owner_response_status']) {
@@ -2518,6 +2543,11 @@ export default function Dashboard() {
                               </div>
                             ))}
                           </div>
+                          {(item.sensitive_fields?.length || 0) > 0 && (
+                            <p style={{ margin: '9px 0 0', padding: '8px 10px', borderRadius: 7, background: '#fff7ed', color: '#9a5f18', fontSize: 12, fontWeight: 750, lineHeight: 1.55 }}>
+                              包含{item.sensitive_fields?.map(field => DOSSIER_EDIT_FIELD_LABELS[field] || field).join('、')}；点击“同意修改”即表示你明确同意这些资料公开。
+                            </p>
+                          )}
                           <textarea
                             value={ownerResponseNotes[item.id] || ''}
                             onChange={event => setOwnerResponseNotes(current => ({ ...current, [item.id]: event.target.value.slice(0, 500) }))}
@@ -2664,6 +2694,9 @@ export default function Dashboard() {
                           <div style={{ minWidth: 0 }}>
                             <p style={{ color: INK, fontSize: 13, fontWeight: 850, marginBottom: 3 }}>{item.dossier_name}</p>
                             <p style={{ color: MUTED, fontSize: 12 }}>{item.changed_fields.map(field => DOSSIER_EDIT_FIELD_LABELS[field] || field).join('、')}</p>
+                            {(item.sensitive_fields?.length || 0) > 0 && item.owner_response_status === 'pending' && (
+                              <p style={{ color: '#9a5f18', fontSize: 11, marginTop: 3 }}>敏感资料须由 DM 本人明确同意后才能公开</p>
+                            )}
                           </div>
                           <span style={{ color: '#8a5a19', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>
                             {dossierEditStatusLabel(item.owner_response_status)}
