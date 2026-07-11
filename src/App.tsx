@@ -30,6 +30,8 @@ const Wallet = lazy(pageLoaders.wallet);
 const Referrals = lazy(pageLoaders.referrals);
 const Roadmap = lazy(pageLoaders.roadmap);
 const Scripts = lazy(pageLoaders.scripts);
+const RoleRatingDetail = lazy(pageLoaders.roleRatingDetail);
+const RateScriptRole = lazy(pageLoaders.rateScriptRole);
 const ScriptContribute = lazy(pageLoaders.scriptContribute);
 const Guides = lazy(pageLoaders.guides);
 const CreateGuide = lazy(pageLoaders.createGuide);
@@ -94,6 +96,8 @@ function AppLayout() {
           <Route path="/referrals" element={<Referrals />} />
           <Route path="/roadmap" element={<Roadmap />} />
           <Route path="/scripts" element={<Scripts />} />
+          <Route path="/scripts/roles/:targetId" element={<RoleRatingDetail />} />
+          <Route path="/scripts/rate" element={<RateScriptRole />} />
           <Route path="/scripts/contribute" element={<ScriptContribute />} />
           <Route path="/guides" element={<Guides />} />
           <Route path="/guides/new" element={<CreateGuide />} />

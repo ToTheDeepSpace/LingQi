@@ -485,6 +485,8 @@ function locationLabelFor(pathname: string) {
   if (pathname.startsWith('/rankings')) return '红黑榜';
   if (pathname.startsWith('/reputation/city')) return '城市口碑';
   if (pathname.startsWith('/reputation/dossier')) return '口碑档案';
+  if (pathname.startsWith('/scripts/rate')) return '添加角色评分';
+  if (pathname.startsWith('/scripts/roles/')) return '角色评分详情';
   if (pathname.startsWith('/scripts/contribute')) return '维护剧本库';
   if (pathname.startsWith('/scripts')) return '角色点评';
   if (pathname.startsWith('/guides/new')) return '发布攻略';
@@ -514,7 +516,7 @@ function fallbackPathFor(pathname: string) {
   if (pathname.startsWith('/reputation/dossier')) return '/reputation/city';
   if (pathname.startsWith('/reputation')) return '/rankings';
   if (pathname.startsWith('/explore/')) return '/explore';
-  if (pathname.startsWith('/scripts/contribute')) return '/scripts';
+  if (pathname.startsWith('/scripts/')) return '/scripts';
   if (pathname.startsWith('/boundary-votes')) return '/roadmap';
   if (pathname.startsWith('/wallet') || pathname.startsWith('/referrals') || pathname.startsWith('/certification')) return '/dashboard';
   if (pathname.startsWith('/shop/dashboard')) return '/dashboard';

@@ -22,6 +22,8 @@ export const pageLoaders = {
   referrals: () => import('../pages/Referrals'),
   roadmap: () => import('../pages/Roadmap'),
   scripts: () => import('../pages/Scripts'),
+  roleRatingDetail: () => import('../pages/RoleRatingDetail'),
+  rateScriptRole: () => import('../pages/RateScriptRole'),
   scriptContribute: () => import('../pages/ScriptContribute'),
   guides: () => import('../pages/Guides'),
   createGuide: () => import('../pages/CreateGuide'),
@@ -67,6 +69,8 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/referrals': pageLoaders.referrals,
   '/roadmap': pageLoaders.roadmap,
   '/scripts': pageLoaders.scripts,
+  '/scripts/roles/:targetId': pageLoaders.roleRatingDetail,
+  '/scripts/rate': pageLoaders.rateScriptRole,
   '/scripts/contribute': pageLoaders.scriptContribute,
   '/guides': pageLoaders.guides,
   '/guides/new': pageLoaders.createGuide,
@@ -88,6 +92,7 @@ function routeKey(path: string) {
   const pathname = path.split('?')[0].split('#')[0];
   if (pathname.startsWith('/explore/') && pathname !== '/explore') return '/explore/:id';
   if (pathname.startsWith('/dm/') && pathname !== '/dm/rate') return '/dm/:id';
+  if (pathname.startsWith('/scripts/roles/')) return '/scripts/roles/:targetId';
   return pathname || '/';
 }
 
