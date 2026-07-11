@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isStoreConfirmedAffiliation, preferredPublicDmAffiliation } from '../api/dmAffiliationWorkflow.js';
+import {
+  conflictsWhenMergingDmDossiers,
+  conflictsWhenMergingStoreDossiers,
+  isStoreConfirmedAffiliation,
+  preferredPublicDmAffiliation,
+} from '../api/dmAffiliationWorkflow.js';
 
 test('prefers a store-confirmed relationship over pending and historical rows', () => {
   const selected = preferredPublicDmAffiliation([
@@ -29,4 +34,30 @@ test('does not expose rejected, ended or cancelled rows as current affiliation',
     { status: 'ended' },
     { status: 'cancelled' },
   ]), null);
+});
+
+test('keeps the target active relationship when duplicate DM dossiers are merged', () => {
+  assert.equal(conflictsWhenMergingDmDossiers(
+    { status: 'approved', store_dossier_id: 'store-b' },
+    [{ status: 'approved', store_dossier_id: 'store-a' }],
+  ), true);
+  assert.equal(conflictsWhenMergingDmDossiers(
+    { status: 'pending', store_dossier_id: 'store-b' },
+    [{ status: 'approved', store_dossier_id: 'store-a' }],
+  ), false);
+});
+
+test('deduplicates only the same historical DM-store pair during dossier merges', () => {
+  assert.equal(conflictsWhenMergingDmDossiers(
+    { status: 'legacy_unverified', store_dossier_id: 'store-a' },
+    [{ status: 'legacy_unverified', store_dossier_id: 'store-a' }],
+  ), true);
+  assert.equal(conflictsWhenMergingDmDossiers(
+    { status: 'legacy_unverified', store_dossier_id: 'store-b' },
+    [{ status: 'legacy_unverified', store_dossier_id: 'store-a' }],
+  ), false);
+  assert.equal(conflictsWhenMergingStoreDossiers(
+    { status: 'legacy_unverified', dm_dossier_id: 'dm-a' },
+    [{ status: 'legacy_unverified', dm_dossier_id: 'dm-a' }],
+  ), true);
 });

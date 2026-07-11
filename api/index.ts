@@ -5,7 +5,11 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { createTencentPgClient, tencentPgPool } from './tencentPgSupabase.js';
 import { summarizeDmRatingRows } from './dmRatingSummary.js';
-import { preferredPublicDmAffiliation } from './dmAffiliationWorkflow.js';
+import {
+  conflictsWhenMergingDmDossiers,
+  conflictsWhenMergingStoreDossiers,
+  preferredPublicDmAffiliation,
+} from './dmAffiliationWorkflow.js';
 import { hasRankingEvidence, normalizeRankingRevisionKind } from './rankingWorkflow.js';
 import {
   findSharedRole,
@@ -7317,6 +7321,29 @@ async function mergeDmDossierInto(sourceId: string, targetId: string, reviewerId
         [sourceId, targetId, target.dm_name, target.city],
       );
       await client.query(
+        `delete from lc_dm_store_affiliations source_affiliation
+          where source_affiliation.dm_dossier_id = $1
+            and exists (
+              select 1 from lc_dm_store_affiliations target_affiliation
+               where target_affiliation.dm_dossier_id = $2
+                 and target_affiliation.status = source_affiliation.status
+                 and (
+                   source_affiliation.status in ('approved', 'pending')
+                   or (
+                     source_affiliation.status = 'legacy_unverified'
+                     and target_affiliation.store_dossier_id = source_affiliation.store_dossier_id
+                   )
+                 )
+            )`,
+        [sourceId, targetId],
+      );
+      await client.query(
+        `update lc_dm_store_affiliations
+            set dm_dossier_id = $2, updated_at = now()
+          where dm_dossier_id = $1`,
+        [sourceId, targetId],
+      );
+      await client.query(
         `update lc_dm_dossiers
          set status = 'hidden', merged_into = $2, reject_reason = $3, updated_at = now()
          where id = $1`,
@@ -7384,6 +7411,19 @@ async function mergeDmDossierInto(sourceId: string, targetId: string, reviewerId
     subject_city: target.city || source.city || null,
   }).eq('subject_dossier_id', sourceId);
   if (rankingMove.error) throw rankingMove.error;
+  const sourceAffiliations = await supabase.from('lc_dm_store_affiliations').select('*').eq('dm_dossier_id', sourceId);
+  const targetAffiliations = await supabase.from('lc_dm_store_affiliations').select('*').eq('dm_dossier_id', targetId);
+  if (sourceAffiliations.error && !isMissingRelation(sourceAffiliations.error, 'lc_dm_store_affiliations')) throw sourceAffiliations.error;
+  if (targetAffiliations.error && !isMissingRelation(targetAffiliations.error, 'lc_dm_store_affiliations')) throw targetAffiliations.error;
+  if (!sourceAffiliations.error && !targetAffiliations.error) {
+    for (const affiliation of sourceAffiliations.data || []) {
+      const action = conflictsWhenMergingDmDossiers(affiliation, targetAffiliations.data || [])
+        ? supabase.from('lc_dm_store_affiliations').delete().eq('id', affiliation.id)
+        : supabase.from('lc_dm_store_affiliations').update({ dm_dossier_id: targetId, updated_at: new Date().toISOString() }).eq('id', affiliation.id);
+      const result = await action;
+      if (result.error) throw result.error;
+    }
+  }
   const hiddenResult = await supabase.from('lc_dm_dossiers').update({
     status: 'hidden',
     merged_into: targetId,
@@ -7483,6 +7523,24 @@ async function mergeStoreDossierInto(sourceId: string, targetId: string, reviewe
         [sourceId, targetId, target.dm_name],
       );
       await client.query(
+        `delete from lc_dm_store_affiliations source_affiliation
+          where source_affiliation.store_dossier_id = $1
+            and source_affiliation.status = 'legacy_unverified'
+            and exists (
+              select 1 from lc_dm_store_affiliations target_affiliation
+               where target_affiliation.store_dossier_id = $2
+                 and target_affiliation.dm_dossier_id = source_affiliation.dm_dossier_id
+                 and target_affiliation.status = 'legacy_unverified'
+            )`,
+        [sourceId, targetId],
+      );
+      await client.query(
+        `update lc_dm_store_affiliations
+            set store_dossier_id = $2, updated_at = now()
+          where store_dossier_id = $1`,
+        [sourceId, targetId],
+      );
+      await client.query(
         `update lc_dm_dossiers
          set status = 'hidden', merged_into = $2, reject_reason = $3, updated_at = now()
          where id = $1`,
@@ -7550,6 +7608,19 @@ async function mergeStoreDossierInto(sourceId: string, targetId: string, reviewe
   if (suggestionMove.error) throw suggestionMove.error;
   const dmMove = await supabase.from('lc_dm_dossiers').update({ employer_store_id: targetId, workplace: target.dm_name, updated_at: new Date().toISOString() }).eq('employer_store_id', sourceId);
   if (dmMove.error) throw dmMove.error;
+  const sourceAffiliations = await supabase.from('lc_dm_store_affiliations').select('*').eq('store_dossier_id', sourceId);
+  const targetAffiliations = await supabase.from('lc_dm_store_affiliations').select('*').eq('store_dossier_id', targetId);
+  if (sourceAffiliations.error && !isMissingRelation(sourceAffiliations.error, 'lc_dm_store_affiliations')) throw sourceAffiliations.error;
+  if (targetAffiliations.error && !isMissingRelation(targetAffiliations.error, 'lc_dm_store_affiliations')) throw targetAffiliations.error;
+  if (!sourceAffiliations.error && !targetAffiliations.error) {
+    for (const affiliation of sourceAffiliations.data || []) {
+      const action = conflictsWhenMergingStoreDossiers(affiliation, targetAffiliations.data || [])
+        ? supabase.from('lc_dm_store_affiliations').delete().eq('id', affiliation.id)
+        : supabase.from('lc_dm_store_affiliations').update({ store_dossier_id: targetId, updated_at: new Date().toISOString() }).eq('id', affiliation.id);
+      const result = await action;
+      if (result.error) throw result.error;
+    }
+  }
   const hiddenResult = await supabase.from('lc_dm_dossiers').update({
     status: 'hidden',
     merged_into: targetId,
