@@ -4577,15 +4577,16 @@ app.get('/api/lc/creators/:id', async (req, res) => {
     const viewerId = getOptionalCreatorId(req);
     const profilePayload = sanitizeProfile(profile, viewerId === profile.id);
 
-    const [{ data: services }, { data: portfolio }, { data: pendingCerts }, rolePreferences] = await Promise.all([
+    const [{ data: services }, { data: portfolio }, { data: pendingCerts }, { data: pendingDmClaims }, rolePreferences] = await Promise.all([
       supabase.from('lc_services').select('*').eq('creator_id', req.params.id).eq('is_active', true),
       supabase.from('lc_portfolio').select('*').eq('creator_id', req.params.id).order('created_at', { ascending: false }),
       supabase.from('lc_certifications').select('type, status').eq('profile_id', req.params.id).eq('status', 'pending'),
+      supabase.from('lc_dm_dossier_claims').select('id').eq('claimant_id', req.params.id).eq('entity_type', 'dm').eq('status', 'pending').limit(1),
       loadProfileRolePreferences(req.params.id),
     ]);
 
     const hasPendingShopCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'shop');
-    const hasPendingDmCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'dm');
+    const hasPendingDmCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'dm') || (pendingDmClaims || []).length > 0;
     const serviceRoles = identityRolesFromServices((services || []).map((service: { service_type?: string | null }) => service.service_type || ''));
 
     res.json(ok({
@@ -8588,6 +8589,8 @@ async function finalizeDossierClaimReview(input: {
         [input.dossierId],
       );
       const claim = claimResult.rows[0] || null;
+      const claimantId = claim?.claimant_id || dossier.claimed_by || null;
+      const entityType = claim?.entity_type || dossier.entity_type || 'dm';
       if (claim) {
         await client.query(
           `update lc_dm_dossier_claims
@@ -8610,6 +8613,28 @@ async function finalizeDossierClaimReview(input: {
           returning *`,
         [input.dossierId, input.outcome, rejectReason, Boolean(claim), reviewedAt],
       );
+      if (input.outcome === 'approved' && entityType === 'dm' && claimantId) {
+        const profileResult = await client.query(
+          `select role, role_type, identity_roles, verified_dm, verified_shop
+             from lc_profiles
+            where id = $1
+            for update`,
+          [claimantId],
+        );
+        const profile = profileResult.rows[0] || null;
+        if (profile) {
+          const identityPatch = profileIdentityPatch(profile, ['dm']);
+          await client.query(
+            `update lc_profiles
+                set verified_dm = true,
+                    identity_roles = $2,
+                    role_type = $3,
+                    updated_at = $4
+              where id = $1`,
+            [claimantId, identityPatch.identity_roles, identityPatch.role_type, reviewedAt],
+          );
+        }
+      }
       await client.query('COMMIT');
       return { dossier: updatedResult.rows[0], claimId: claim?.id || null };
     } catch (error) {
@@ -8658,6 +8683,33 @@ async function finalizeDossierClaimReview(input: {
       }).eq('id', claim.id);
     }
     throw dossierUpdate.error;
+  }
+  const claimantId = claim?.claimant_id || dossierUpdate.data?.claimed_by || null;
+  const entityType = claim?.entity_type || dossierUpdate.data?.entity_type || 'dm';
+  if (input.outcome === 'approved' && entityType === 'dm' && claimantId) {
+    const { data: profile, error: profileErr } = await supabase.from('lc_profiles')
+      .select('role, role_type, identity_roles, verified_dm, verified_shop')
+      .eq('id', claimantId)
+      .maybeSingle();
+    const identityPatch = profile ? profileIdentityPatch(profile, ['dm']) : null;
+    const { error: identityErr } = identityPatch
+      ? await supabase.from('lc_profiles').update({
+        verified_dm: true,
+        ...identityPatch,
+        updated_at: reviewedAt,
+      }).eq('id', claimantId)
+      : { error: null };
+    if (profileErr || identityErr) {
+      await supabase.from('lc_dm_dossiers').update({
+        claim_status: 'pending', reject_reason: null, updated_at: new Date().toISOString(),
+      }).eq('id', input.dossierId).eq('claim_status', input.outcome);
+      if (claim) {
+        await supabase.from('lc_dm_dossier_claims').update({
+          status: 'pending', reviewed_by: null, reviewed_at: null, reject_reason: null, updated_at: new Date().toISOString(),
+        }).eq('id', claim.id).eq('status', input.outcome);
+      }
+      throw profileErr || identityErr;
+    }
   }
   return { dossier: dossierUpdate.data, claimId: claim?.id || null };
 }
