@@ -91,7 +91,10 @@ type ModerationPrecheck = {
 type Profile = {
   id: string;
   display_name: string;
-  phone: string;
+  phone?: string | null;
+  email?: string | null;
+  auth_provider?: string | null;
+  wechat_nickname?: string | null;
   created_at: string;
   updated_at?: string;
   is_visible: boolean;
@@ -103,6 +106,34 @@ type Profile = {
   role_type?: string;
   avatar?: string | null;
 };
+
+function profileNickname(profile: Profile) {
+  const name = profile.display_name?.trim();
+  if (!name) return '未设置昵称';
+  if (name.includes('\uFFFD') || /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(name)) return '昵称编码异常，待修复';
+  return name;
+}
+
+function profileAccountSummary(profile: Profile) {
+  const accounts: string[] = [];
+  if (profile.phone) accounts.push(`手机 ${profile.phone}`);
+  if (profile.email) accounts.push(`邮箱 ${profile.email}`);
+  if (accounts.length === 0 && profile.wechat_nickname) accounts.push(`微信 ${profile.wechat_nickname}`);
+  return accounts.length > 0 ? accounts.join(' · ') : '未绑定手机号或邮箱';
+}
+
+function profileAuthProviderLabel(provider?: string | null) {
+  if (!provider) return '';
+  const labels: Record<string, string> = {
+    phone: '手机注册',
+    email: '邮箱注册',
+    wechat: '微信登录',
+    wechat_miniapp: '微信小程序',
+    juzhanggui_actor: '剧司辰同步',
+    codex_framer_snapshot: '内部测试账号',
+  };
+  return labels[provider] || '其他来源';
+}
 
 type ContactReq = {
   id: string;
@@ -1115,8 +1146,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       id: `profile-${p.id}`,
       tab: 'pending' as const,
       category: '创作者资料',
-      title: p.display_name || '未命名用户',
-      meta: `${p.phone || '未绑定手机号'}${p.role_type ? ` · ${p.role_type}` : ''}`,
+      title: profileNickname(p),
+      meta: `${profileAccountSummary(p)}${p.role_type ? ` · ${p.role_type}` : ''}`,
       createdAt: p.created_at,
       accent: '#b91c1c',
     })),
@@ -1418,8 +1449,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {pendingProfiles.map(p => (
                   <Row key={p.id}>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 4 }}>{p.display_name}</div>
-                      <div style={{ fontSize: '0.78rem', color: MUTED }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.role_type && ` · ${p.role_type}`}</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 4 }}>{profileNickname(p)}</div>
+                      <div style={{ fontSize: '0.78rem', color: MUTED }}>{profileAccountSummary(p)} · 注册于 {p.created_at?.slice(0, 10)}{p.role_type && ` · ${p.role_type}`}</div>
                       {p.avatar && <AdminAttachmentLinks files={[{ name: '公开头像', url: p.avatar, type: 'image/*' }]} />}
                     </div>
                     <Actions>
@@ -1437,13 +1468,17 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   <Row key={p.id}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{p.display_name}</span>
+                        <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>{profileAccountSummary(p)}</span>
                         {p.is_realname && <span style={{ fontSize: '0.72rem', color: GOLD }}>⭐ 实名</span>}
                         {!p.is_visible && !p.reject_reason && <span style={{ fontSize: '0.72rem', color: '#925f18' }}>待审</span>}
                         {p.reject_reason && <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>已驳回</span>}
                         {p.is_banned && <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>已限制</span>}
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: MUTED }}>{p.phone} · 注册于 {p.created_at?.slice(0, 10)}{p.banned_at ? ` · 限制于 ${p.banned_at.slice(0, 10)}` : ''}</div>
+                      <div style={{ fontSize: '0.78rem', color: MUTED }}>
+                        昵称：{profileNickname(p)} · 注册于 {p.created_at?.slice(0, 10)}
+                        {profileAuthProviderLabel(p.auth_provider) && ` · ${profileAuthProviderLabel(p.auth_provider)}`}
+                        {p.banned_at ? ` · 限制于 ${p.banned_at.slice(0, 10)}` : ''}
+                      </div>
                       {p.reject_reason && <Proof>驳回原因：{p.reject_reason}</Proof>}
                       {p.ban_reason && <Proof>限制原因：{p.ban_reason}</Proof>}
                     </div>
