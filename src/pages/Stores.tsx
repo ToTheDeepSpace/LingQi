@@ -54,7 +54,7 @@ export default function Stores() {
       .catch(fetchError => {
         if (fetchError?.name === 'AbortError') return;
         setItems([]);
-        setError(fetchError instanceof Error ? fetchError.message : '店家评分加载失败');
+        setError(fetchError instanceof SyntaxError ? '店家评分加载失败，请稍后重试' : fetchError instanceof Error ? fetchError.message : '店家评分加载失败');
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoadedKey(requestKey);
@@ -73,7 +73,6 @@ export default function Stores() {
   return (
     <JumuluPageFrame
       currentLabel="店家评分"
-      maxWidth={1160}
     >
       <JumuluCompactHeader
         eyebrow="沉浸式娱乐店家评分"
@@ -143,13 +142,13 @@ function StatePanel({ children, tone = 'normal' }: { children: React.ReactNode; 
 }
 
 const filterRowStyle: React.CSSProperties = { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' };
-const inputStyle: React.CSSProperties = { flex: '2 1 260px', minWidth: 200, minHeight: 40, border: '1px solid rgba(39,83,137,0.18)', borderRadius: 7, padding: '0 12px', background: '#fff', color: INK, fontSize: 14 };
-const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: 10 };
-const cardStyle: React.CSSProperties = { ...jumuluCardStyle, position: 'relative', minHeight: 180, display: 'grid', alignContent: 'space-between', gap: 14, padding: 16 };
+const inputStyle: React.CSSProperties = { flex: '2 1 260px', minWidth: 200, minHeight: 44, border: '1px solid rgba(39,83,137,0.18)', borderRadius: 10, padding: '0 12px', background: '#fff', color: INK, fontSize: 14 };
+const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))', gap: 12 };
+const cardStyle: React.CSSProperties = { ...jumuluCardStyle, position: 'relative', minHeight: 156, display: 'grid', alignContent: 'space-between', gap: 10, padding: 14 };
 const cardOverlayLinkStyle: React.CSSProperties = { position: 'absolute', inset: 0, zIndex: 1, borderRadius: 8 };
-const cardHeadStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 };
-const nameStyle: React.CSSProperties = { margin: 0, fontSize: 20, lineHeight: 1.25, overflowWrap: 'anywhere' };
-const metaStyle: React.CSSProperties = { margin: '8px 0 0', color: MUTED, fontSize: 13, lineHeight: 1.55 };
+const cardHeadStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 };
+const nameStyle: React.CSSProperties = { margin: 0, fontSize: 17, lineHeight: 1.3, overflowWrap: 'anywhere' };
+const metaStyle: React.CSSProperties = { margin: '6px 0 0', color: MUTED, fontSize: 13, lineHeight: 1.55 };
 const scoreStyle: React.CSSProperties = { flex: '0 0 auto', minWidth: 76, textAlign: 'right', color: INK };
 const tagRowStyle: React.CSSProperties = { display: 'flex', gap: 6, flexWrap: 'wrap' };
 const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: '#eef6ff', color: BLUE, fontSize: 11, fontWeight: 800 };

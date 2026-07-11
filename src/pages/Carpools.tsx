@@ -321,7 +321,7 @@ export default function Carpools() {
               <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
             </div>
             <div>
-              <Label>本名</Label>
+              <Label>剧本</Label>
               <input value={script} onChange={e => setScript(e.target.value)} placeholder="搜剧本名" style={inputStyle} />
             </div>
             <div style={{ position: 'relative' }}>
@@ -336,14 +336,16 @@ export default function Carpools() {
                 </div>
               )}
             </div>
+            <div>
+              <Label>状态</Label>
+              <div style={viewSwitchStyle} role="group" aria-label="拼车状态">
+                <ViewButton active={view === 'active'} onClick={() => setView('active')}>招募中 {activeItems.length}</ViewButton>
+                <ViewButton active={view === 'expired'} onClick={() => setView('expired')}>已过期 {expiredItems.length}</ViewButton>
+              </div>
+            </div>
             <button onClick={() => void loadPublic()} style={{ ...jumuluPrimaryLinkStyle, width: '100%', minHeight: 44 }}>筛选</button>
           </div>
         </section>
-
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: 18 }}>
-          <ViewButton active={view === 'active'} onClick={() => setView('active')}>招募中 {activeItems.length}</ViewButton>
-          <ViewButton active={view === 'expired'} onClick={() => setView('expired')}>已过期 {expiredItems.length}</ViewButton>
-        </div>
 
         {loading && <StateText text="正在找车..." />}
         {error && <StateText text={error} danger />}
@@ -365,7 +367,7 @@ export default function Carpools() {
         )}
 
         {!loading && !error && visibleItems.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
             {visibleItems.map(item => (
               <CarpoolCard
                 key={item.id}
@@ -482,8 +484,8 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
   const totalSlots = Math.max(roleRows.length, seatedCount + (item.needed_count || 1), 1);
   const full = roleRows.length > 0 && (acceptedCount >= Math.max(1, item.needed_count || 1) || occupiedCount >= totalSlots);
   return (
-    <article className="content-card" style={{ ...jumuluCardStyle, padding: 16, borderColor: item.boost_amount > 0 ? 'rgba(217,168,87,0.45)' : 'rgba(31,41,55,0.08)' }}>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+    <article className="content-card" style={{ ...jumuluCardStyle, padding: 14, borderColor: item.boost_amount > 0 ? 'rgba(217,168,87,0.45)' : 'rgba(31,41,55,0.08)' }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
         {showStatus && <StatusPill status={item.status} />}
         {expired && <ExpiredPill />}
         {item.boost_amount > 0 && <Pill>置顶加权 {item.boost_amount}</Pill>}
@@ -492,11 +494,11 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
         <Pill>{item.city}</Pill>
         <Pill>{subsidyText}</Pill>
       </div>
-      <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.13rem', fontWeight: 900, marginBottom: 8, color: INK }}>{item.title}</h2>
+      <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 17, lineHeight: 1.3, fontWeight: 900, marginBottom: 6, color: INK }}>{item.title}</h2>
       <Meta>{item.script_name}{item.role_name ? ` · ${item.role_name}` : ''}{item.start_time ? ` · ${item.start_time}` : ''}</Meta>
       <SeatBoard item={item} />
-      <p style={{ color: MUTED, lineHeight: 1.75, fontSize: '0.9rem', margin: '12px 0 14px', whiteSpace: 'pre-wrap' }}>{item.content}</p>
-      <div style={{ display: 'grid', gap: 7, fontSize: '0.8rem', color: 'rgba(71,85,105,0.66)' }}>
+      <p style={{ color: MUTED, lineHeight: 1.65, fontSize: 13, margin: '10px 0 12px', whiteSpace: 'pre-wrap' }}>{item.content}</p>
+      <div style={{ display: 'grid', gap: 6, fontSize: 12, lineHeight: 1.55, color: 'rgba(71,85,105,0.66)' }}>
         {item.role_note && <span>角色说明：{item.role_note}</span>}
         <span>上车：{occupiedCount}/{totalSlots}</span>
         {item.store_name && <span>店家：{item.store_name}{item.store_address ? ` · ${item.store_address}` : ''}</span>}
@@ -504,21 +506,21 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
         {showStatus && item.contact_note && <span>联系说明：{item.contact_note}</span>}
         {item.juzhanggui_sync_status === 'synced' && <span>已同步到剧司辰排期草稿</span>}
       </div>
-      <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(217,168,87,0.16)', display: 'flex', justifyContent: 'space-between', gap: 12, color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem' }}>
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(217,168,87,0.16)', display: 'flex', justifyContent: 'space-between', gap: 12, color: 'rgba(71,85,105,0.58)', fontSize: 12 }}>
         <span>{item.poster_is_realname ? '⭐ ' : ''}{item.poster_name}</span>
         <span>{item.created_at?.slice(0, 10)}</span>
       </div>
       {(onApply || onContact || onReport) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))', gap: 10, marginTop: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))', gap: 8, marginTop: 12 }}>
           {onApply && (
             <button onClick={onApply} disabled={applied || ownItem || full || expired}
               style={{
-                padding: '10px 14px', borderRadius: 10,
+                minHeight: 36, padding: '0 12px', borderRadius: 8,
                 border: applied || ownItem || full || expired ? '1px solid rgba(125,147,170,0.18)' : '1px solid rgba(217,168,87,0.28)',
                 background: applied || ownItem || full || expired ? 'rgba(241,245,249,0.8)' : 'linear-gradient(135deg, rgba(217,168,87,0.22), rgba(217,168,87,0.12))',
                 color: applied || ownItem || full || expired ? 'rgba(71,85,105,0.52)' : '#925f18',
                 cursor: applied || ownItem || full || expired ? 'not-allowed' : 'pointer',
-                fontWeight: 900,
+                fontSize: 13, fontWeight: 900,
               }}>
               {expired ? '已过期' : ownItem ? '自己的拼车' : applicationStatus === 'accepted' ? '已上车' : applicationStatus === 'rejected' ? '未通过' : applied ? '待车头确认' : full ? '已满' : '我要上车'}
             </button>
@@ -526,11 +528,11 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
           {onContact && (
             <button onClick={onContact} disabled={expired}
               style={{
-                padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(39,83,137,0.24)',
+                minHeight: 36, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(39,83,137,0.24)',
                 background: expired ? 'rgba(241,245,249,0.8)' : 'rgba(239,246,255,0.86)',
                 color: expired ? 'rgba(71,85,105,0.52)' : '#275389',
                 cursor: expired ? 'not-allowed' : 'pointer',
-                fontWeight: 900,
+                fontSize: 13, fontWeight: 900,
               }}>
               {expired ? '已过期' : '联系车头'}
             </button>
@@ -538,8 +540,8 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
           {onReport && (
             <button onClick={onReport}
               style={{
-                padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(185,28,28,0.18)',
-                background: 'rgba(254,242,242,0.82)', color: '#b91c1c', cursor: 'pointer', fontWeight: 900,
+                minHeight: 36, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(185,28,28,0.18)',
+                background: 'rgba(254,242,242,0.82)', color: '#b91c1c', cursor: 'pointer', fontSize: 13, fontWeight: 900,
               }}>
               举报
             </button>
@@ -574,7 +576,7 @@ function SeatBoard({ item }: { item: Carpool }) {
         return (
           <div key={`${role.role_name}-${index}`} style={{
             minHeight: 112,
-            borderRadius: 12,
+            borderRadius: 8,
             border: occupied ? '1px solid rgba(22,163,74,0.24)' : '1px dashed rgba(125,147,170,0.24)',
             background: occupied ? 'rgba(240,253,244,0.9)' : 'rgba(248,250,252,0.86)',
             padding: 10,
@@ -650,12 +652,16 @@ function ExpiredPill() {
 function ViewButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick} style={{
-      padding: '9px 14px',
-      borderRadius: 999,
-      border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.18)',
-      background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.86)',
-      color: active ? '#925f18' : 'rgba(71,85,105,0.72)',
+      flex: 1,
+      minWidth: 0,
+      minHeight: 36,
+      padding: '0 8px',
+      borderRadius: 7,
+      border: 'none',
+      background: active ? 'rgba(217,168,87,0.18)' : 'transparent',
+      color: active ? '#925f18' : 'rgba(71,85,105,0.68)',
       cursor: 'pointer',
+      fontSize: 13,
       fontWeight: 900,
       whiteSpace: 'nowrap',
     }}>
@@ -696,12 +702,27 @@ function cityButton(active: boolean): React.CSSProperties {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
-  borderRadius: 11,
+  minHeight: 44,
+  borderRadius: 10,
   border: '1px solid rgba(217,168,87,0.25)',
   background: '#fff',
   color: INK,
-  padding: '10px 12px',
+  padding: '0 12px',
+  fontSize: 14,
   outline: 'none',
+};
+
+const viewSwitchStyle: React.CSSProperties = {
+  width: '100%',
+  minHeight: 44,
+  boxSizing: 'border-box',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 3,
+  padding: 3,
+  borderRadius: 10,
+  border: '1px solid rgba(217,168,87,0.25)',
+  background: '#fff',
 };
 
 const smallActionStyle: React.CSSProperties = {
