@@ -28,3 +28,18 @@ test('marks the score stable from three independent players', () => {
   assert.equal(summary.player_count, 3);
   assert.equal(summary.sample_status, 'stable');
 });
+
+test('uses one player weight across repeated store visits', () => {
+  const summary = summarizeDmRatingRows([
+    { id: 'visit-a-1', profile_id: 'player-a', rating: 5 },
+    { id: 'visit-a-2', profile_id: 'player-a', rating: 3 },
+    { id: 'visit-b-1', profile_id: 'player-b', rating: 2 },
+  ]);
+
+  assert.deepEqual(summary, {
+    avg: 3,
+    review_count: 3,
+    player_count: 2,
+    sample_status: 'insufficient',
+  });
+});

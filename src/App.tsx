@@ -20,6 +20,9 @@ const ReputationDossier = lazy(pageLoaders.reputationDossier);
 const DmWall = lazy(pageLoaders.dmWall);
 const DmRating = lazy(pageLoaders.dmRating);
 const DmProfile = lazy(pageLoaders.dmProfile);
+const Stores = lazy(pageLoaders.stores);
+const StoreRating = lazy(pageLoaders.storeRating);
+const StoreProfile = lazy(pageLoaders.storeProfile);
 const BoundaryVotes = lazy(pageLoaders.boundaryVotes);
 const CreateRanking = lazy(pageLoaders.createRanking);
 const Commissions = lazy(pageLoaders.commissions);
@@ -86,6 +89,9 @@ function AppLayout() {
           <Route path="/dm" element={<DmWall />} />
           <Route path="/dm/rate" element={<DmRating />} />
           <Route path="/dm/:id" element={<DmProfile />} />
+          <Route path="/stores" element={<Stores />} />
+          <Route path="/stores/rate" element={<StoreRating />} />
+          <Route path="/stores/:id" element={<StoreProfile />} />
           <Route path="/boundary-votes" element={<BoundaryVotes />} />
           <Route path="/rankings/new" element={<CreateRanking />} />
           <Route path="/commissions" element={<Commissions />} />

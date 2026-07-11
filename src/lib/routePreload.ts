@@ -12,6 +12,9 @@ export const pageLoaders = {
   dmWall: () => import('../pages/DmWall'),
   dmRating: () => import('../pages/DmRating'),
   dmProfile: () => import('../pages/DmProfile'),
+  stores: () => import('../pages/Stores'),
+  storeRating: () => import('../pages/StoreRating'),
+  storeProfile: () => import('../pages/StoreProfile'),
   boundaryVotes: () => import('../pages/BoundaryVotes'),
   createRanking: () => import('../pages/CreateRanking'),
   commissions: () => import('../pages/Commissions'),
@@ -59,6 +62,9 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/dm': pageLoaders.dmWall,
   '/dm/rate': pageLoaders.dmRating,
   '/dm/:id': pageLoaders.dmProfile,
+  '/stores': pageLoaders.stores,
+  '/stores/rate': pageLoaders.storeRating,
+  '/stores/:id': pageLoaders.storeProfile,
   '/boundary-votes': pageLoaders.boundaryVotes,
   '/rankings/new': pageLoaders.createRanking,
   '/commissions': pageLoaders.commissions,
@@ -92,6 +98,7 @@ function routeKey(path: string) {
   const pathname = path.split('?')[0].split('#')[0];
   if (pathname.startsWith('/explore/') && pathname !== '/explore') return '/explore/:id';
   if (pathname.startsWith('/dm/') && pathname !== '/dm/rate') return '/dm/:id';
+  if (pathname.startsWith('/stores/') && pathname !== '/stores/rate') return '/stores/:id';
   if (pathname.startsWith('/scripts/roles/')) return '/scripts/roles/:targetId';
   return pathname || '/';
 }

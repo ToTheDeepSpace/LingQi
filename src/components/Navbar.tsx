@@ -87,6 +87,7 @@ export default function Navbar() {
           + (data.siteMessages || []).length
           + (data.scriptContributions || []).length
           + (data.dmRatings || []).length
+          + (data.storeRatings || []).length
           + (data.guides || []).length
           + (data.guideWithdrawals || []).length;
         const dmDossierCount = (data.dmDossiers || []).length;
@@ -168,6 +169,7 @@ export default function Navbar() {
           whiteSpace: 'nowrap',
         }}>
           <NavLink to="/dm">DM评分</NavLink>
+          <NavLink to="/stores">店家评分</NavLink>
           <NavLink to="/commissions">委托需求</NavLink>
           <NavLink to="/carpools">拼车区</NavLink>
           <NavLink to="/rankings">红黑榜</NavLink>
@@ -267,6 +269,7 @@ export default function Navbar() {
         }}>
           <MobileLink to="/dm" onClick={() => setMenuOpen(false)}>DM评分</MobileLink>
           <MobileLink to="/dm/rate" onClick={() => setMenuOpen(false)}>给DM评分</MobileLink>
+          <MobileLink to="/stores" onClick={() => setMenuOpen(false)}>店家评分</MobileLink>
           <MobileLink to="/commissions" onClick={() => setMenuOpen(false)}>委托需求</MobileLink>
           <MobileLink to="/carpools" onClick={() => setMenuOpen(false)}>拼车区</MobileLink>
           <MobileLink to="/rankings" onClick={() => setMenuOpen(false)}>红黑榜</MobileLink>
@@ -477,6 +480,9 @@ function locationLabelFor(pathname: string) {
   if (pathname.startsWith('/dm/rate')) return '给DM评分';
   if (pathname.startsWith('/dm/') && pathname !== '/dm-wall') return 'DM档案';
   if (pathname === '/dm' || pathname === '/dm-wall') return 'DM评分';
+  if (pathname.startsWith('/stores/rate')) return '给店家评分';
+  if (pathname.startsWith('/stores/')) return '店家详情';
+  if (pathname === '/stores') return '店家评分';
   if (pathname.startsWith('/commissions/new')) return '发布委托';
   if (pathname.startsWith('/commissions')) return '委托需求';
   if (pathname.startsWith('/carpools/new')) return '发布拼车';
@@ -513,6 +519,7 @@ function locationLabelFor(pathname: string) {
 
 function fallbackPathFor(pathname: string) {
   if (pathname.startsWith('/dm/rate') || (pathname.startsWith('/dm/') && pathname !== '/dm-wall')) return '/dm';
+  if (pathname.startsWith('/stores/')) return '/stores';
   if (pathname.startsWith('/reputation/dossier')) return '/reputation/city';
   if (pathname.startsWith('/reputation')) return '/rankings';
   if (pathname.startsWith('/explore/')) return '/explore';

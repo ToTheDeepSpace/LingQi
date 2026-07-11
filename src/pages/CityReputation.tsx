@@ -45,6 +45,13 @@ type ReputationItem = {
   comment_count: number;
   latest_at?: string | null;
   tags?: string[];
+  subject_dossier_id?: string | null;
+  rating_summary?: {
+    avg: number | null;
+    review_count: number;
+    player_count: number;
+    sample_status: 'insufficient' | 'stable';
+  } | null;
 };
 
 function dossierUrl(item: ReputationItem) {
@@ -189,6 +196,14 @@ export default function CityReputation() {
                   <span style={metricChipStyle}>{item.praise_people} 人参与</span>
                 </div>
 
+                {item.subject_type === 'store' && (
+                  <p style={storeRatingLineStyle}>
+                    {item.rating_summary?.avg
+                      ? `${item.rating_summary.avg.toFixed(1)} ★ · ${item.rating_summary.player_count} 人评分 · ${item.rating_summary.review_count} 条到店记录`
+                      : '店家综合五星：暂无评分'}
+                  </p>
+                )}
+
                 <p style={eventLineStyle}>
                   {item.event_count} 条事件 · 红 {item.red_count} · 白 {item.white_count} · 黑 {item.black_count} · 评论 {item.comment_count}
                 </p>
@@ -201,7 +216,19 @@ export default function CityReputation() {
 
                 <div style={cardFooterStyle}>
                   <span style={{ color: 'rgba(71,85,105,0.48)', fontSize: 12 }}>{formatDate(item.latest_at)}</span>
-                  <Link to={dossierUrl(item)} style={primaryButtonStyle}>查看档案</Link>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {item.subject_type === 'store' && item.subject_dossier_id && (
+                      <Link to={`/stores/rate?storeId=${encodeURIComponent(item.subject_dossier_id)}`} style={secondaryButtonStyle}>评分</Link>
+                    )}
+                    <Link
+                      to={item.subject_type === 'store' && item.subject_dossier_id
+                        ? `/stores/${encodeURIComponent(item.subject_dossier_id)}`
+                        : dossierUrl(item)}
+                      style={primaryButtonStyle}
+                    >
+                      查看档案
+                    </Link>
+                  </div>
                 </div>
               </article>
             ))}
@@ -266,9 +293,11 @@ const typeBadgeStyle: React.CSSProperties = { display: 'inline-flex', flexShrink
 const metricRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const metricChipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', minHeight: 30, padding: '0 11px', borderRadius: 999, border: '1px solid rgba(31,41,55,0.10)', background: '#fff', color: BLUE, fontSize: 12, fontWeight: 900 };
 const goldMetricChipStyle: React.CSSProperties = { ...metricChipStyle, background: '#fff8e8', color: GOLD, borderColor: 'rgba(217,168,87,0.30)' };
+const storeRatingLineStyle: React.CSSProperties = { margin: 0, padding: '9px 0', borderTop: '1px solid rgba(31,41,55,0.06)', borderBottom: '1px solid rgba(31,41,55,0.06)', color: GOLD, fontSize: 13, fontWeight: 900, lineHeight: 1.55 };
 const eventLineStyle: React.CSSProperties = { margin: 0, color: MUTED, fontSize: 13, lineHeight: 1.7 };
 const tagRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' };
 const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.88)', color: BLUE, fontSize: 12, fontWeight: 800 };
 const cardFooterStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid rgba(31,41,55,0.06)' };
 const primaryButtonStyle: React.CSSProperties = { minHeight: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, background: BLUE, color: '#fff', padding: '0 12px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', fontSize: 12 };
+const secondaryButtonStyle: React.CSSProperties = { ...primaryButtonStyle, background: '#fff', color: GOLD, border: '1px solid rgba(166,106,31,0.22)' };
 const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 12, border: '1px dashed rgba(31,41,55,0.14)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };
