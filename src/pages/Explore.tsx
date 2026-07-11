@@ -412,7 +412,7 @@ function CreatorCard({ creator }: { creator: Creator }) {
           <img
             src={creator.avatar || generatedAvatarDataUrl(creator.display_name, creator.id)}
             alt=""
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${creator.avatar_focus_x ?? 50}% ${creator.avatar_focus_y ?? 25}%` }}
           />
         </div>
         <div style={{ minWidth: 0 }}>

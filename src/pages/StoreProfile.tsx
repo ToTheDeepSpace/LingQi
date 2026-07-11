@@ -19,6 +19,8 @@ type StoreDetail = {
     address?: string | null;
     profile_url?: string | null;
     photo_url?: string | null;
+    photo_focus_x?: number | null;
+    photo_focus_y?: number | null;
     note?: string | null;
     tags?: string[];
     claim_status?: string;
@@ -71,7 +73,7 @@ export default function StoreProfile() {
       {!loading && data && (
         <>
           <section style={heroStyle}>
-            <img src={data.dossier.photo_url || generatedAvatarDataUrl(data.dossier.name, `store:${id}`)} alt="" style={avatarStyle} />
+            <img src={data.dossier.photo_url || generatedAvatarDataUrl(data.dossier.name, `store:${id}`)} alt="" style={{ ...avatarStyle, objectPosition: `${data.dossier.photo_focus_x ?? 50}% ${data.dossier.photo_focus_y ?? 25}%` }} />
             <div style={{ minWidth: 0, flex: '1 1 260px' }}>
               <p style={eyebrowStyle}>店家档案{data.dossier.claim_status === 'approved' ? ' · 已认领' : ' · 未认领'}</p>
               <h1 style={titleStyle}>{data.dossier.name}</h1>

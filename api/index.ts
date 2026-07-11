@@ -43,6 +43,7 @@ import {
   identityRolesFromServices,
   mergeIdentityRoles,
 } from '../src/lib/serviceCategories.js';
+import { extractSharedUrl } from '../src/lib/socialLinks.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -1541,21 +1542,27 @@ function cleanText(value: unknown, max = 1200) {
 const OPTIONAL_URL_PLACEHOLDERS = new Set(['?', '？', '-', '—', '无', '没有', '暂无', '待补', '不填']);
 
 function normalizeOptionalPublicUrl(value: unknown, max: number, allowUploadPath = false) {
-  const raw = cleanText(value, max);
+  const raw = cleanText(value, Math.max(max, 4000));
   if (!raw || OPTIONAL_URL_PLACEHOLDERS.has(raw)) return '';
   if (allowUploadPath && /^\/uploads\/[A-Za-z0-9%_./-]+(?:\?[^\s]*)?$/i.test(raw)) return raw;
-  const candidate = /^https?:\/\//i.test(raw)
-    ? raw
-    : /^(?:www\.)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/:?#]|$)/.test(raw)
-      ? `https://${raw}`
-      : '';
-  if (!candidate) return '';
-  try {
-    const parsed = new URL(candidate);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.toString() : '';
-  } catch {
-    return '';
-  }
+  return extractSharedUrl(raw, max);
+}
+
+function normalizeImageFocus(value: unknown, fallback: number) {
+  const parsed = typeof value === 'number' ? value : Number.parseFloat(cleanText(value, 20));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(100, Math.max(0, Math.round(parsed * 100) / 100));
+}
+
+function normalizeProfileSocialLinks(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, string>>((result, [key, raw]) => {
+    const safeKey = cleanText(key, 40).toLowerCase();
+    if (!['douyin', 'xiaohongshu', 'weibo', 'dianping'].includes(safeKey)) return result;
+    const url = normalizeOptionalPublicUrl(raw, 1000);
+    if (url) result[safeKey] = url;
+    return result;
+  }, {});
 }
 
 function isOptionalUrlPlaceholder(value: unknown) {
@@ -4625,14 +4632,18 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
       display_name, avatar, bio, tags, city, social_links, wechat,
       available_cities, travel_status, contact_unlock_enabled, contact_intent_amount,
       gender, sexual_orientation, preferred_story_lines, role_preferences,
+      avatar_focus_x, avatar_focus_y,
     } = req.body;
-    const socialSnapshots = makeSocialSnapshots(social_links);
+    const normalizedSocialLinks = normalizeProfileSocialLinks(social_links);
+    const socialSnapshots = makeSocialSnapshots(normalizedSocialLinks);
     const rolePreferences = await sanitizeProfileRolePreferences(role_preferences);
     const normalizedTravelStatus = travel_status === '常驻本地'
       ? '常驻所在城市'
       : (travel_status || '常驻所在城市');
     const profilePatch = {
-      display_name, avatar, bio, tags, city, social_links, wechat,
+      display_name, avatar, bio, tags, city, social_links: normalizedSocialLinks, wechat,
+      avatar_focus_x: normalizeImageFocus(avatar_focus_x, 50),
+      avatar_focus_y: normalizeImageFocus(avatar_focus_y, 25),
       gender: cleanChoice(gender, PROFILE_GENDER_OPTIONS),
       sexual_orientation: cleanChoice(sexual_orientation, PROFILE_ORIENTATION_OPTIONS),
       preferred_story_lines: cleanTextArray(preferred_story_lines),
@@ -4651,7 +4662,7 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
         tags: Array.isArray(tags) ? tags.join(' ') : '',
         city,
         wechat,
-        social_links: JSON.stringify(social_links || {}),
+        social_links: JSON.stringify(normalizedSocialLinks),
         preferred_story_lines: cleanTextArray(preferred_story_lines).join(' '),
         available_cities: Array.isArray(available_cities) ? available_cities.join(' ') : '',
         role_preferences: rolePreferences.map(item => `${item.script_name} ${item.role_name} ${item.note || ''}`).join('\n'),
@@ -8711,6 +8722,8 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
         affiliation: publicAffiliation,
         profile_url: row.profile_url,
         photo_url: row.photo_url,
+        photo_focus_x: normalizeImageFocus(row.photo_focus_x, 50),
+        photo_focus_y: normalizeImageFocus(row.photo_focus_y, 25),
         note: row.note,
         tags: row.tags || [],
         claim_status: row.claim_status,
@@ -8792,6 +8805,8 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
         affiliation: publicAffiliation,
         profile_url: dossier.profile_url,
         photo_url: dossier.photo_url,
+        photo_focus_x: normalizeImageFocus(dossier.photo_focus_x, 50),
+        photo_focus_y: normalizeImageFocus(dossier.photo_focus_y, 25),
         note: dossier.note,
         tags: dossier.tags || [],
         claim_status: dossier.claim_status,
@@ -8857,6 +8872,8 @@ app.get('/api/lc/store-dossiers/:id', async (req, res) => {
         address: dossier.workplace,
         profile_url: dossier.profile_url,
         photo_url: dossier.photo_url,
+        photo_focus_x: normalizeImageFocus(dossier.photo_focus_x, 50),
+        photo_focus_y: normalizeImageFocus(dossier.photo_focus_y, 25),
         note: dossier.note,
         tags: dossier.tags || [],
         claim_status: dossier.claim_status,
@@ -8904,6 +8921,8 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     })).filter((file: { url: string }) => file.url);
     const rawPhotoUrl = req.body?.photoUrl ?? req.body?.photo_url;
     const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true) || photoFiles[0]?.url || '';
+    const photoFocusX = normalizeImageFocus(req.body?.photoFocusX ?? req.body?.photo_focus_x, 50);
+    const photoFocusY = normalizeImageFocus(req.body?.photoFocusY ?? req.body?.photo_focus_y, 25);
     const employment = entityType === 'dm'
       ? await resolveDmEmployment(req.body as Record<string, unknown>, requestedWorkplace)
       : { employment_status: 'unknown', employer_store_id: null, workplace: requestedWorkplace || null };
@@ -8931,6 +8950,8 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
       employer_store_id: employment.employer_store_id,
       profile_url: profileUrl || null,
       photo_url: photoUrl || null,
+      photo_focus_x: photoFocusX,
+      photo_focus_y: photoFocusY,
       photo_files: photoFiles,
       note,
       tags,
@@ -9027,6 +9048,8 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
       const rawPhotoUrl = newDm.photoUrl ?? newDm.photo_url;
       const profileUrl = normalizeOptionalPublicUrl(rawProfileUrl, 600);
       const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true);
+      const photoFocusX = normalizeImageFocus(newDm.photoFocusX ?? newDm.photo_focus_x, 50);
+      const photoFocusY = normalizeImageFocus(newDm.photoFocusY ?? newDm.photo_focus_y, 25);
       const photoFiles = photoUrl ? [{ name: `${dmName || 'DM'}照片`, url: photoUrl, type: 'image/jpeg' }] : [];
       if (!dmName) return res.status(400).json(err(new Error('请填写DM名称')));
       if (!city) return res.status(400).json(err(new Error('请填写DM所在城市')));
@@ -9047,6 +9070,8 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
         employer_store_id: employment.employer_store_id,
         profile_url: profileUrl || null,
         photo_url: photoUrl || null,
+        photo_focus_x: photoFocusX,
+        photo_focus_y: photoFocusY,
         photo_files: photoFiles,
         note: cleanText(newDm.note, 600) || null,
         tags: cleanTextArray(newDm.tags, 8, 18),
@@ -9253,6 +9278,8 @@ app.post('/api/lc/store-ratings', authMiddleware, async (req, res) => {
       const rawPhotoUrl = newStore.photoUrl ?? newStore.photo_url;
       const profileUrl = normalizeOptionalPublicUrl(rawProfileUrl, 600);
       const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true);
+      const photoFocusX = normalizeImageFocus(newStore.photoFocusX ?? newStore.photo_focus_x, 50);
+      const photoFocusY = normalizeImageFocus(newStore.photoFocusY ?? newStore.photo_focus_y, 25);
       const photoFiles = photoUrl ? [{ name: `${storeName || '店家'}照片`, url: photoUrl, type: 'image/jpeg' }] : [];
       if (!storeName) return res.status(400).json(err(new Error('请填写店家名称')));
       if (!city) return res.status(400).json(err(new Error('请选择店家所在城市')));
@@ -9274,6 +9301,8 @@ app.post('/api/lc/store-ratings', authMiddleware, async (req, res) => {
         employer_store_id: null,
         profile_url: profileUrl || null,
         photo_url: photoUrl || null,
+        photo_focus_x: photoFocusX,
+        photo_focus_y: photoFocusY,
         photo_files: photoFiles,
         note: cleanText(newStore.note, 600) || null,
         tags: cleanTextArray(newStore.tags, 8, 18),

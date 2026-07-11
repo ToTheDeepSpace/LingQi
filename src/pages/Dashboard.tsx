@@ -3,12 +3,14 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import ImageFocusPicker from '../components/ImageFocusPicker';
 import InfoTip from '../components/InfoTip';
 import ImageUpload from '../components/ImageUpload';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { isTokenExpired, readStoredCreatorAuth } from '../lib/authSession';
 import { SERVICE_CATEGORY_OPTIONS, normalizeServiceCategory, serviceCategoryLabel } from '../lib/serviceCategories';
 import { RESIDENT_TRAVEL_STATUS, formatTravelStatus, normalizeTravelStatus } from '../lib/travelStatus';
+import { extractSharedUrl } from '../lib/socialLinks';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePreference, ScriptCatalogItem, Certification } from '../types';
 
@@ -203,6 +205,8 @@ type RolePreferenceDraft = {
 type ProfileForm = {
   display_name: string;
   avatar: string;
+  avatar_focus_x: number;
+  avatar_focus_y: number;
   bio: string;
   city: string;
   wechat: string;
@@ -309,6 +313,8 @@ function blankProfileForm(): ProfileForm {
   return {
     display_name: '',
     avatar: '',
+    avatar_focus_x: 50,
+    avatar_focus_y: 25,
     bio: '',
     city: '',
     wechat: '',
@@ -330,6 +336,8 @@ function profileToForm(profile: Creator | null): ProfileForm {
   return {
     display_name: profile.display_name || '',
     avatar: profile.avatar || '',
+    avatar_focus_x: Number.isFinite(profile.avatar_focus_x) ? Number(profile.avatar_focus_x) : 50,
+    avatar_focus_y: Number.isFinite(profile.avatar_focus_y) ? Number(profile.avatar_focus_y) : 25,
     bio: profile.bio || '',
     city: profile.city || '',
     wechat: profile.wechat || '',
@@ -745,8 +753,8 @@ export default function Dashboard() {
       const available_cities = form.available_cities.split(',').map((t: string) => t.trim()).filter(Boolean);
       const preferred_story_lines = form.preferred_story_lines.split(/[，,、/]/).map((t: string) => t.trim()).filter(Boolean);
       const social_links = {
-        douyin: form.douyin.trim(),
-        xiaohongshu: form.xiaohongshu.trim(),
+        douyin: extractSharedUrl(form.douyin),
+        xiaohongshu: extractSharedUrl(form.xiaohongshu),
       };
       const r = await fetch(`${API}/lc/creators/${creator.id}`, {
         method: 'PUT',
@@ -754,6 +762,8 @@ export default function Dashboard() {
         body: JSON.stringify({
           display_name: form.display_name,
           avatar: avatarOverride ?? form.avatar,
+          avatar_focus_x: form.avatar_focus_x,
+          avatar_focus_y: form.avatar_focus_y,
           bio: form.bio,
           city: form.city,
           wechat: form.wechat,
@@ -790,8 +800,14 @@ export default function Dashboard() {
   };
 
   const handleAvatarUploaded = (url: string) => {
-    setForm(prev => ({ ...prev, avatar: url }));
-    void saveProfile(url);
+    setForm(prev => ({ ...prev, avatar: url, avatar_focus_x: 50, avatar_focus_y: 25 }));
+    setMsg('图片已上传，请调整展示位置后点击保存资料');
+    setTimeout(() => setMsg(''), 3200);
+  };
+
+  const normalizeSocialField = (field: 'douyin' | 'xiaohongshu', raw: string) => {
+    const normalized = extractSharedUrl(raw);
+    setForm(prev => ({ ...prev, [field]: normalized || raw }));
   };
 
   const refreshStoredAuth = (patch: Partial<AuthData>) => {
@@ -1542,13 +1558,24 @@ export default function Dashboard() {
               <div className="dashboard-card profile-editor-card" style={card}>
                 <h2 style={{ fontWeight: 900, fontSize: '1.05rem', marginBottom: 16, color: INK }}>公开主页资料</h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 8, border: '1px solid rgba(31,41,55,0.08)', background: '#FFFDF8', marginBottom: 14 }}>
-                  <img src={profileAvatarUrl} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(39,83,137,0.16)', background: '#EEF6FF' }} />
+                  <img src={profileAvatarUrl} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', objectPosition: `${form.avatar_focus_x}% ${form.avatar_focus_y}%`, border: '1px solid rgba(39,83,137,0.16)', background: '#EEF6FF' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ color: INK, fontSize: 13, fontWeight: 900, marginBottom: 5 }}>公开头像</p>
                     <p style={{ color: MUTED, fontSize: 12, fontWeight: 650, lineHeight: 1.5 }}>头像上传后会提交审核，通过后显示在公开页。</p>
                   </div>
                   <ImageUpload onUploaded={handleAvatarUploaded} token={token} api={API} scope="avatar" label="更换头像" variant="compact" hidePreview />
                 </div>
+                {form.avatar && (
+                  <div style={{ margin: '-2px 0 14px' }}>
+                    <ImageFocusPicker
+                      src={form.avatar}
+                      focusX={form.avatar_focus_x}
+                      focusY={form.avatar_focus_y}
+                      label="头像展示位置"
+                      onChange={({ x, y }) => setForm(prev => ({ ...prev, avatar_focus_x: x, avatar_focus_y: y }))}
+                    />
+                  </div>
+                )}
                 <div className="dashboard-panel account-panel" style={{
                   padding: '16px',
                   borderRadius: 14,
@@ -1789,11 +1816,11 @@ export default function Dashboard() {
                 <div className="profile-grid-2 social-link-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
                   <div>
                     <label style={labelStyle}>抖音主页链接</label>
-                    <input type="url" value={form.douyin} onChange={e => setForm({ ...form, douyin: e.target.value })} placeholder="https://v.douyin.com/..." style={inputStyle} />
+                    <input type="text" value={form.douyin} onChange={e => setForm({ ...form, douyin: e.target.value })} onBlur={e => normalizeSocialField('douyin', e.target.value)} onPaste={e => { const url = extractSharedUrl(e.clipboardData.getData('text')); if (url) { e.preventDefault(); normalizeSocialField('douyin', url); } }} placeholder="可直接粘贴整段抖音分享文案" style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>小红书主页链接</label>
-                    <input type="url" value={form.xiaohongshu} onChange={e => setForm({ ...form, xiaohongshu: e.target.value })} placeholder="https://www.xiaohongshu.com/..." style={inputStyle} />
+                    <input type="text" value={form.xiaohongshu} onChange={e => setForm({ ...form, xiaohongshu: e.target.value })} onBlur={e => normalizeSocialField('xiaohongshu', e.target.value)} onPaste={e => { const url = extractSharedUrl(e.clipboardData.getData('text')); if (url) { e.preventDefault(); normalizeSocialField('xiaohongshu', url); } }} placeholder="可直接粘贴整段小红书分享文案" style={inputStyle} />
                   </div>
                 </div>
                 <div className="profile-grid-compact" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 0.7fr) minmax(190px, 1.2fr) minmax(150px, 0.9fr)', gap: 12, marginBottom: 16 }}>

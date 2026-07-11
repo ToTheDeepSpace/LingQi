@@ -18,6 +18,8 @@ type DmDetail = {
     workplace?: string | null;
     employment_status?: 'unknown' | 'store_affiliated' | 'freelance';
     photo_url?: string | null;
+    photo_focus_x?: number | null;
+    photo_focus_y?: number | null;
     note?: string | null;
     tags?: string[];
     claim_status?: string;
@@ -87,7 +89,7 @@ export default function DmProfile() {
     <main style={{ minHeight: '100vh', background: BG, color: INK }}>
       <section style={{ padding: '34px 20px 28px', borderBottom: '1px solid rgba(31,41,55,0.09)', background: '#fff' }}>
         <div style={{ maxWidth: 960, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 18, alignItems: 'center' }}>
-          <img src={dossier.photo_url || generatedAvatarDataUrl(dossier.dm_name, dossier.id)} alt="" style={{ width: 112, height: 112, objectFit: 'cover', borderRadius: 8, background: '#fffaf2' }} />
+          <img src={dossier.photo_url || generatedAvatarDataUrl(dossier.dm_name, dossier.id)} alt="" style={{ width: 112, height: 112, objectFit: 'cover', objectPosition: `${dossier.photo_focus_x ?? 50}% ${dossier.photo_focus_y ?? 25}%`, borderRadius: 8, background: '#fffaf2' }} />
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
               <p style={{ margin: 0, color: GOLD, fontSize: 13, fontWeight: 900 }}>{claimStatusLabel}</p>

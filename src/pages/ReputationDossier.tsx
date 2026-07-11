@@ -58,6 +58,8 @@ type DossierData = {
     id: string;
     display_name: string;
     avatar?: string | null;
+    avatar_focus_x?: number | null;
+    avatar_focus_y?: number | null;
     bio?: string | null;
     tags?: string[];
     verified_dm?: boolean;
@@ -122,7 +124,7 @@ export default function ReputationDossier() {
         <div style={{ maxWidth: 1080, margin: '0 auto' }}>
           <Link to={cityReputationHref} style={topLink}>返回{cityReputationTitle(city)}</Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 20 }}>
-            <img className="reputation-dossier-avatar" src={data?.profile?.avatar || generatedAvatarDataUrl(subjectName, `${subjectType}:${subjectName}:${city}`)} alt="" style={{ width: 84, height: 84, borderRadius: 18, objectFit: 'cover', border: '1px solid rgba(166,106,31,0.20)', background: '#fffaf2' }} />
+            <img className="reputation-dossier-avatar" src={data?.profile?.avatar || generatedAvatarDataUrl(subjectName, `${subjectType}:${subjectName}:${city}`)} alt="" style={{ width: 84, height: 84, borderRadius: 18, objectFit: 'cover', objectPosition: `${data?.profile?.avatar_focus_x ?? 50}% ${data?.profile?.avatar_focus_y ?? 25}%`, border: '1px solid rgba(166,106,31,0.20)', background: '#fffaf2' }} />
             <div style={{ minWidth: 0 }}>
               <p style={{ margin: '0 0 6px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>{subjectType === 'dm' ? '卡司档案' : '对象档案'}</p>
               <h1 className="reputation-dossier-title" style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3rem)', lineHeight: 1.15, overflowWrap: 'anywhere' }}>{subjectName}</h1>

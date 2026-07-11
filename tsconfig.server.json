@@ -12,5 +12,5 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["api/**/*.ts", "server/**/*.ts"]
+  "include": ["api/**/*.ts", "server/**/*.ts", "src/lib/serviceCategories.ts", "src/lib/socialLinks.ts"]
 }

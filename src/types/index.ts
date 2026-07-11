@@ -7,6 +7,8 @@ export interface Creator {
   has_password?: boolean;
   display_name: string;
   avatar: string | null;
+  avatar_focus_x?: number | null;
+  avatar_focus_y?: number | null;
   bio: string | null;
   tags: string[];
   city: string | null;

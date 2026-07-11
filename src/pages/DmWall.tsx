@@ -4,7 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import CitySearchSelect from '../components/CitySearchSelect';
 import DossierClaimModal from '../components/DossierClaimModal';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import ImageFocusPicker from '../components/ImageFocusPicker';
 import ImageUpload from '../components/ImageUpload';
+import SocialPlatformLink, { InternalProfileLink } from '../components/SocialPlatformLink';
 import {
   JumuluCompactHeader,
   JumuluPageFrame,
@@ -12,6 +14,7 @@ import {
 import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import { extractSharedUrl } from '../lib/socialLinks';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
@@ -29,6 +32,8 @@ type DossierDraft = {
   workplace: string;
   profileUrl: string;
   photoUrl: string;
+  photoFocusX: number;
+  photoFocusY: number;
   note: string;
   tags: string;
   employmentStatus: 'store_affiliated' | 'freelance';
@@ -45,6 +50,8 @@ type DmDossier = {
   employer_store_id?: string | null;
   profile_url?: string | null;
   photo_url?: string | null;
+  photo_focus_x?: number | null;
+  photo_focus_y?: number | null;
   note?: string | null;
   tags?: string[];
   claim_status?: 'unclaimed' | 'pending' | 'approved' | 'rejected' | 'withdrawn';
@@ -115,19 +122,14 @@ function getAuth(): AuthSession | null {
   return { token: data.token, displayName: data.display_name || '用户', userId: data.id };
 }
 
-function normalizeUrl(url: string) {
-  if (/^https?:\/\//i.test(url)) return url;
-  return `https://${url}`;
-}
-
 function normalizeEntityType(value?: string | null): DossierEntityType {
   return value === 'store' ? 'store' : 'dm';
 }
 
 function dossierClaimLabel(status?: DmDossier['claim_status']) {
-  if (status === 'approved') return '身份已认证';
-  if (status === 'pending') return '身份审核中';
-  if (status === 'withdrawn') return '原认证已撤销';
+  if (status === 'approved') return '已认证';
+  if (status === 'pending') return '审核中';
+  if (status === 'withdrawn') return '已撤销';
   return '未认证';
 }
 
@@ -161,7 +163,7 @@ export default function DmWall() {
   const [entityType, setEntityType] = useState<EntityFilter>('dm');
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<DossierDraft>({ entityType: 'dm', dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '', employmentStatus: 'store_affiliated', employerStoreId: '' });
+  const [form, setForm] = useState<DossierDraft>({ entityType: 'dm', dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', photoFocusX: 50, photoFocusY: 25, note: '', tags: '', employmentStatus: 'store_affiliated', employerStoreId: '' });
   const [storeOptions, setStoreOptions] = useState<DmDossier[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
@@ -185,6 +187,8 @@ export default function DmWall() {
         workplace: data.workplace || '',
         profileUrl: data.profileUrl || '',
         photoUrl: data.photoUrl || '',
+        photoFocusX: Number.isFinite(data.photoFocusX) ? data.photoFocusX : 50,
+        photoFocusY: Number.isFinite(data.photoFocusY) ? data.photoFocusY : 25,
         note: data.note || '',
         tags: data.tags || '',
         employmentStatus: data.employmentStatus === 'freelance' ? 'freelance' : 'store_affiliated',
@@ -261,6 +265,8 @@ export default function DmWall() {
           employerStoreId: form.entityType === 'dm' && form.employmentStatus === 'store_affiliated' ? form.employerStoreId : null,
           profileUrl: form.profileUrl.trim(),
           photoUrl: form.photoUrl.trim(),
+          photoFocusX: form.photoFocusX,
+          photoFocusY: form.photoFocusY,
           note: form.note.trim(),
           tags: form.tags.split(/[，,、/\n]/).map(tag => tag.trim()).filter(Boolean),
           photoFiles: form.photoUrl ? [{ name: `${ENTITY_COPY[form.entityType].kindLabel} 照片`, url: form.photoUrl, type: 'image/*' }] : [],
@@ -275,7 +281,7 @@ export default function DmWall() {
       setMessage({ text: '已提交，管理员审核通过后会公开到档案墙。', ok: true });
       dossierDraft.clearDraft();
       setShowForm(false);
-      setForm({ entityType: form.entityType, dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', note: '', tags: '', employmentStatus: 'store_affiliated', employerStoreId: '' });
+      setForm({ entityType: form.entityType, dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', photoFocusX: 50, photoFocusY: 25, note: '', tags: '', employmentStatus: 'store_affiliated', employerStoreId: '' });
       loadDossiers();
     } catch {
       setMessage({ text: '网络错误，请稍后再试', ok: false });
@@ -352,7 +358,7 @@ export default function DmWall() {
               />
               <Field label={activeFormCopy.nameLabel} value={form.dmName} onChange={value => updateForm({ dmName: value })} />
               {form.entityType === 'store' && <Field label={activeFormCopy.workplaceLabel} value={form.workplace} onChange={value => updateForm({ workplace: value })} />}
-              <Field label={activeFormCopy.profileLabel} value={form.profileUrl} onChange={value => updateForm({ profileUrl: value })} placeholder={form.entityType === 'store' ? '大众点评 / 小红书 / 抖音店铺主页，可后补' : '抖音 / 小红书 / 微博主页'} />
+              <SocialShareLinkField label={activeFormCopy.profileLabel} value={form.profileUrl} onChange={value => updateForm({ profileUrl: value })} placeholder={form.entityType === 'store' ? '可直接粘贴大众点评 / 小红书 / 抖音分享文案' : '可直接粘贴抖音 / 小红书分享文案'} />
             </div>
             {form.entityType === 'dm' && (
               <div style={{ marginTop: 12 }}>
@@ -378,6 +384,16 @@ export default function DmWall() {
               <Field label={activeFormCopy.photoLabel} value={form.photoUrl} onChange={value => updateForm({ photoUrl: value })} placeholder="上传后自动填入，也可粘贴图片链接" />
               {auth && <ImageUpload token={auth.token} scope="dm-dossier" label="上传照片" onUploaded={url => updateForm({ photoUrl: url })} />}
             </div>
+            {form.photoUrl && (
+              <div style={{ marginTop: 10 }}>
+                <ImageFocusPicker
+                  src={form.photoUrl}
+                  focusX={form.photoFocusX}
+                  focusY={form.photoFocusY}
+                  onChange={({ x, y }) => updateForm({ photoFocusX: x, photoFocusY: y })}
+                />
+              </div>
+            )}
             <label style={{ display: 'block', marginTop: 12 }}>
               <span style={labelStyle}>补充说明</span>
               <textarea value={form.note} onChange={e => updateForm({ note: e.target.value })} rows={4} placeholder={activeFormCopy.notePlaceholder} style={{ ...inputStyle, width: '100%', resize: 'vertical' }} />
@@ -402,7 +418,7 @@ export default function DmWall() {
               return (
                 <article key={item.id} className="dm-dossier-card" style={cardStyle}>
                   <div className="dm-dossier-summary">
-                    <img className="dm-dossier-photo" src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" />
+                    <img className="dm-dossier-photo" src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" style={{ objectPosition: `${item.photo_focus_x ?? 50}% ${item.photo_focus_y ?? 25}%` }} />
                     <div className="dm-dossier-summary-copy">
                       <div className="dm-dossier-title-row" style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
                         <span style={{ ...badgeStyle, color: '#275389', background: 'rgba(239,246,255,0.88)' }}>{copy.kindLabel}</span>
@@ -434,12 +450,12 @@ export default function DmWall() {
                       {item.tags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
                     </div>
                   )}
-                  <div className="dm-dossier-actions" style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 'auto' }}>
-                    {kind === 'dm' && <Link to={`/dm/${item.id}`} style={primaryButton}>查看评分</Link>}
-                    {kind === 'dm' && <Link to={`/dm/rate?dmId=${encodeURIComponent(item.id)}`} style={ghostButton}>给TA评分</Link>}
-                    {item.profile_url && <a href={normalizeUrl(item.profile_url)} target="_blank" rel="noreferrer" style={ghostButton}>{kind === 'store' ? '店铺主页' : '个人主页'}</a>}
+                  <div className="dm-dossier-actions" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'nowrap', marginTop: 'auto' }}>
+                    {kind === 'dm' && <Link to={`/dm/${item.id}`} title="查看评分" style={compactPrimaryButton}>评分</Link>}
+                    {kind === 'dm' && <Link to={`/dm/rate?dmId=${encodeURIComponent(item.id)}`} title="写一条评价" style={compactGhostButton}>＋评价</Link>}
+                    {item.profile_url && <SocialPlatformLink url={item.profile_url} />}
                     {item.claim_status === 'approved' && item.claimed_by
-                      ? (kind === 'dm' ? <Link to={`/explore/${item.claimed_by}`} style={ghostButton}>公开主页</Link> : <span style={ghostStatic}>已绑定店家账号</span>)
+                      ? (kind === 'dm' ? <InternalProfileLink to={`/explore/${item.claimed_by}`} /> : null)
                       : null}
                   </div>
                 </article>
@@ -486,18 +502,18 @@ export default function DmWall() {
             gap: 9px !important;
           }
           .dm-dossier-card {
-            padding: 10px !important;
+            padding: 8px !important;
           }
           .dm-dossier-summary {
             display: grid;
-            grid-template-columns: 84px minmax(0, 1fr);
-            gap: 10px;
+            grid-template-columns: 72px minmax(0, 1fr);
+            gap: 8px;
             align-items: start;
-            margin-bottom: 8px;
+            margin-bottom: 5px;
           }
           .dm-dossier-photo {
-            width: 84px;
-            height: 84px;
+            width: 72px;
+            height: 72px;
             aspect-ratio: 1;
             margin: 0;
           }
@@ -517,14 +533,22 @@ export default function DmWall() {
             font-size: 12px !important;
             line-height: 1.45 !important;
           }
-          .dm-dossier-tags > :nth-child(n + 4) {
+          .dm-dossier-location {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .dm-dossier-note {
+            -webkit-line-clamp: 1 !important;
+          }
+          .dm-dossier-tags > :nth-child(n + 3) {
             display: none !important;
           }
           .dm-dossier-stats {
             display: flex !important;
             align-items: center;
             gap: 12px !important;
-            margin: 0 0 7px !important;
+            margin: 0 0 4px !important;
             padding: 0 2px;
           }
           .dm-mini-stat {
@@ -543,14 +567,11 @@ export default function DmWall() {
             line-height: 1.35 !important;
           }
           .dm-dossier-tags {
-            margin-bottom: 7px !important;
+            margin-bottom: 4px !important;
           }
-          .dm-dossier-actions a,
-          .dm-dossier-actions button,
-          .dm-dossier-actions span {
-            min-height: 32px !important;
-            padding: 0 10px !important;
-            font-size: 12px !important;
+          .dm-dossier-actions {
+            overflow-x: auto;
+            scrollbar-width: none;
           }
         }
       `}</style>
@@ -623,6 +644,29 @@ function Field({ label, value, onChange, placeholder = '' }: { label: string; va
   );
 }
 
+function SocialShareLinkField({ label, value, onChange, placeholder = '' }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+  const normalize = (raw: string) => onChange(extractSharedUrl(raw) || raw);
+  return (
+    <label style={{ display: 'block' }}>
+      <span style={labelStyle}>{label}</span>
+      <input
+        type="text"
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        onBlur={event => normalize(event.target.value)}
+        onPaste={event => {
+          const extracted = extractSharedUrl(event.clipboardData.getData('text'));
+          if (!extracted) return;
+          event.preventDefault();
+          onChange(extracted);
+        }}
+        placeholder={placeholder}
+        style={{ ...inputStyle, width: '100%' }}
+      />
+    </label>
+  );
+}
+
 const labelStyle: React.CSSProperties = { display: 'block', color: 'rgba(71,85,105,0.72)', fontSize: 13, fontWeight: 800, marginBottom: 6 };
 const inputStyle: React.CSSProperties = { boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: '1px solid rgba(166,106,31,0.20)', background: '#fff', color: INK, outline: 'none', fontSize: 14 };
 const segmentShell = (count: number): React.CSSProperties => ({
@@ -674,7 +718,8 @@ const segmentButton = (active: boolean): React.CSSProperties => ({
 });
 const primaryButton: React.CSSProperties = { ...jumuluPrimaryLinkStyle, minHeight: 36, padding: '0 12px' };
 const ghostButton: React.CSSProperties = { ...jumuluSecondaryLinkStyle, minHeight: 36, padding: '0 12px' };
-const ghostStatic: React.CSSProperties = { ...ghostButton, cursor: 'default' };
+const compactPrimaryButton: React.CSSProperties = { ...jumuluPrimaryLinkStyle, minHeight: 28, padding: '0 8px', borderRadius: 7, fontSize: 11 };
+const compactGhostButton: React.CSSProperties = { ...jumuluSecondaryLinkStyle, minHeight: 28, padding: '0 8px', borderRadius: 7, fontSize: 11 };
 const formCard: React.CSSProperties = { ...jumuluCardStyle, padding: 16 };
 const cardStyle: React.CSSProperties = { ...jumuluCardStyle, display: 'flex', flexDirection: 'column', padding: 14, minHeight: 0 };
 const badgeStyle: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.14)', fontSize: 12, fontWeight: 900 };

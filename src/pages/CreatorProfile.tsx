@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { Availability, Creator, Service, Portfolio, ProfileRolePreference, SocialSnapshot } from '../types';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal from '../components/ReportModal';
+import SocialPlatformLink from '../components/SocialPlatformLink';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { normalizeServiceCategory, primaryDisplayIdentityRole, serviceCategoryLabel } from '../lib/serviceCategories';
@@ -210,7 +211,7 @@ export default function CreatorProfile() {
               <img
                 src={creator.avatar || generatedAvatarDataUrl(creator.display_name, creator.id)}
                 alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${creator.avatar_focus_x ?? 50}% ${creator.avatar_focus_y ?? 25}%` }}
               />
             </div>
             <div className="creator-profile-title-block">
@@ -656,15 +657,14 @@ function Badge({ children }: { children: React.ReactNode }) {
 function SocialCard({ kind, url, snapshot }: { kind: string; url: string; snapshot?: SocialSnapshot }) {
   const platform = kind === 'douyin' ? '抖音' : kind === 'xiaohongshu' ? '小红书' : '社交主页';
   return (
-    <a href={url} target="_blank" rel="noreferrer"
-      style={{ display: 'block', padding: 12, borderRadius: 8, border: '1px solid rgba(31,41,55,0.08)', background: '#fff', textDecoration: 'none' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-        <strong style={{ color: INK, fontSize: '0.86rem' }}>{snapshot?.title || `${platform}主页`}</strong>
-        <span style={{ color: '#925f18', fontSize: '0.74rem' }}>{platform}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, borderRadius: 8, border: '1px solid rgba(31,41,55,0.08)', background: '#fff' }}>
+      <SocialPlatformLink url={url} compact={false} />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <strong style={{ display: 'block', color: INK, fontSize: '0.84rem', marginBottom: 3 }}>{snapshot?.title || `${platform}主页`}</strong>
+        <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.73rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {snapshot?.description || '点击左侧图标打开主页'}
+        </p>
       </div>
-      <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.55, wordBreak: 'break-all' }}>
-        {snapshot?.description || url}
-      </p>
-    </a>
+    </div>
   );
 }
