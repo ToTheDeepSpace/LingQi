@@ -1381,16 +1381,6 @@ export default function Rankings() {
         cityTitle={cityReputationLabel}
         cityHref={cityReputationHref}
         currentLabel="红黑榜"
-        actions={(
-          <>
-            {auth && (
-              <Link to="/wallet" style={walletChipStyle}>
-                {walletLoading ? '契约币 ...' : `契约币 ${balance || 0}`}
-              </Link>
-            )}
-            <ReputationButton to="/rankings/new">发布评价</ReputationButton>
-          </>
-        )}
       >
         <section style={compactHeroStyle}>
           <div>
@@ -1398,6 +1388,11 @@ export default function Rankings() {
             <p style={compactLeadStyle}>红黑榜是评分榜的事件媒介。口碑票看真实人数，真金打榜看契约币加权；两套数据分开判断。</p>
           </div>
           <div style={filterGroupStyle}>
+            {auth && (
+              <Link to="/wallet" style={walletChipStyle}>
+                {walletLoading ? '契约币 ...' : `契约币 ${balance || 0}`}
+              </Link>
+            )}
             <button onClick={() => setBoardMode('reputation')} style={hubToggleStyle(boardMode === 'reputation', '#275389')}>口碑榜</button>
             <button onClick={() => setBoardMode('money')} style={hubToggleStyle(boardMode === 'money', GOLD)}>真金榜</button>
             <ReputationButton to="/rankings/new">发布评价</ReputationButton>

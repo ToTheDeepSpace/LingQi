@@ -124,7 +124,6 @@ export default function CityReputation() {
       cityTitle={pageTitle}
       cityHref={cityHref}
       currentLabel={pageTitle}
-      actions={<ReputationButton to="/rankings/new">发布城市口碑</ReputationButton>}
     >
       <section style={cityHeroStyle}>
         <div>
@@ -133,6 +132,7 @@ export default function CityReputation() {
           <p style={leadStyle}>
             城市页聚合店家、卡司、外卖和角色的对象档案，不替代红黑榜事件主榜。
           </p>
+          <div style={{ marginTop: 12 }}><ReputationButton to="/rankings/new">发布城市口碑</ReputationButton></div>
         </div>
         <aside style={adInlineStyle}>
           <strong>广告位招租</strong>

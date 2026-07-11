@@ -246,19 +246,17 @@ export default function Commissions() {
   };
 
   return (
-    <JumuluPageFrame
-      currentLabel="委托需求"
-      actions={
-        <>
-          <Link to="/commissions/new" style={jumuluPrimaryLinkStyle}>发布委托需求</Link>
-          <Link to="/explore" style={jumuluSecondaryLinkStyle}>找服务者</Link>
-        </>
-      }
-    >
+    <JumuluPageFrame currentLabel="委托需求">
       <JumuluCompactHeader
         eyebrow="委托需求墙"
         title="写下想见的角色"
         description="明确日期、城市和角色，或者只留下一段愿望，等待合适的服务者回应。"
+        aside={
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Link to="/commissions/new" style={jumuluPrimaryLinkStyle}>发布委托需求</Link>
+            <Link to="/explore" style={jumuluSecondaryLinkStyle}>找服务者</Link>
+          </div>
+        }
       />
         {submitted && (
           <div style={{ marginBottom: 18, borderRadius: 12, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(217,168,87,0.12)', padding: '14px 16px', color: '#65401c', lineHeight: 1.7 }}>

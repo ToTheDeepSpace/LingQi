@@ -4,33 +4,15 @@ const INK = '#1f2937';
 
 type FrameProps = {
   currentLabel: string;
-  navigation?: React.ReactNode;
-  actions?: React.ReactNode;
   children: React.ReactNode;
   maxWidth?: number;
 };
 
-export function JumuluPageFrame({ currentLabel, navigation, actions, children, maxWidth = 1440 }: FrameProps) {
-  const hasTools = !!(navigation || actions);
+export function JumuluPageFrame({ currentLabel, children, maxWidth = 1440 }: FrameProps) {
   return (
-    <main style={pageStyle}>
+    <main data-page-label={currentLabel} style={pageStyle}>
       <section style={{ ...shellStyle, maxWidth }}>
-        {hasTools && (
-          <div className="jumulu-page-tools" style={toolsStyle}>
-            {navigation && <nav aria-label={`${currentLabel}分区`} style={navigationStyle}>{navigation}</nav>}
-            {actions && <div className="jumulu-page-actions" style={actionStyle}>{actions}</div>}
-          </div>
-        )}
-        <div style={{ ...mainStyle, paddingTop: hasTools ? 8 : 0 }}>{children}</div>
-        <style>{`
-          @media (max-width: 640px) {
-            .jumulu-page-actions {
-              width: 100%;
-              margin-left: 0 !important;
-              justify-content: flex-start !important;
-            }
-          }
-        `}</style>
+        <div style={mainStyle}>{children}</div>
       </section>
     </main>
   );
@@ -56,15 +38,6 @@ export function JumuluCompactHeader({ eyebrow, title, description, aside }: {
 
 const pageStyle: React.CSSProperties = { minHeight: '100vh', background: '#fffdf8', color: INK };
 const shellStyle: React.CSSProperties = { margin: '0 auto', background: '#fffdf8', padding: '12px clamp(12px, 2vw, 20px) 36px' };
-const toolsStyle: React.CSSProperties = {
-  minHeight: 38,
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexWrap: 'wrap',
-};
-const navigationStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
-const actionStyle: React.CSSProperties = { marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' };
 const mainStyle: React.CSSProperties = { display: 'grid', gap: 12 };
 const headerStyle: React.CSSProperties = {
   minHeight: 96,

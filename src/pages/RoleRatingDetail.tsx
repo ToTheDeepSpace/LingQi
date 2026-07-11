@@ -75,7 +75,6 @@ export default function RoleRatingDetail() {
     <ReputationHubShell
       active="roles"
       currentLabel="角色评分详情"
-      actions={<ReputationButton to={`/scripts/rate?role=${encodeURIComponent(targetId)}`} tone="gold">添加评分</ReputationButton>}
     >
       <Link to="/scripts" style={backLinkStyle}>返回全部角色</Link>
 
@@ -91,13 +90,16 @@ export default function RoleRatingDetail() {
               <h1 style={titleStyle}>{role.role_name}</h1>
               <p style={scriptStyle}>《{role.script_name}》</p>
             </div>
-            <div style={scoreStyle}>
-              {ratingCount > 0 && ratingAverage ? (
-                <div><strong style={{ fontSize: 34, lineHeight: 1 }}>{Number(ratingAverage).toFixed(1)}</strong><span style={{ marginLeft: 5, color: GOLD, fontSize: 20 }}>★</span></div>
-              ) : (
-                <strong style={{ fontSize: 16 }}>暂无评分</strong>
-              )}
-              <small style={{ display: 'block', marginTop: 7, color: MUTED, fontWeight: 800 }}>{ratingCount} 人评分</small>
+            <div style={{ display: 'grid', gap: 10, justifyItems: 'end' }}>
+              <div style={scoreStyle}>
+                {ratingCount > 0 && ratingAverage ? (
+                  <div><strong style={{ fontSize: 34, lineHeight: 1 }}>{Number(ratingAverage).toFixed(1)}</strong><span style={{ marginLeft: 5, color: GOLD, fontSize: 20 }}>★</span></div>
+                ) : (
+                  <strong style={{ fontSize: 16 }}>暂无评分</strong>
+                )}
+                <small style={{ display: 'block', marginTop: 7, color: MUTED, fontWeight: 800 }}>{ratingCount} 人评分</small>
+              </div>
+              <ReputationButton to={`/scripts/rate?role=${encodeURIComponent(targetId)}`} tone="gold">添加评分</ReputationButton>
             </div>
           </section>
 

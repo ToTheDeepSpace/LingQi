@@ -68,12 +68,6 @@ export default function StoreProfile() {
     <JumuluPageFrame
       currentLabel="店家详情"
       maxWidth={1080}
-      actions={
-        <>
-          <Link to={`/stores/rate?storeId=${encodeURIComponent(id)}`} style={jumuluPrimaryLinkStyle}>给店家评分</Link>
-          <Link to="/stores" style={jumuluSecondaryLinkStyle}>返回店家列表</Link>
-        </>
-      }
     >
       {loading && <StatePanel>正在加载店家档案...</StatePanel>}
       {!loading && error && <StatePanel tone="error">{error}</StatePanel>}
@@ -91,6 +85,10 @@ export default function StoreProfile() {
               <h1 style={titleStyle}>{data.dossier.name}</h1>
               <p style={metaStyle}>{data.dossier.city || '城市待补'}{data.dossier.address ? ` · ${data.dossier.address}` : ''}</p>
               {editMessage && <p style={{ margin: '7px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{editMessage}</p>}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                <Link to={`/stores/rate?storeId=${encodeURIComponent(id)}`} style={jumuluPrimaryLinkStyle}>给店家评分</Link>
+                <Link to="/stores" style={jumuluSecondaryLinkStyle}>返回店家列表</Link>
+              </div>
             </div>
             <div style={heroScoreStyle}>
               {data.summary.avg ? <><strong>{data.summary.avg.toFixed(1)}</strong><span>★</span></> : <strong style={{ fontSize: 16 }}>暂无评分</strong>}

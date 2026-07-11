@@ -14,7 +14,6 @@ type ShellProps = {
   cityTitle?: string;
   cityHref?: string;
   currentLabel?: string;
-  actions?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -22,15 +21,11 @@ export function ReputationHubShell({
   active,
   cityTitle = '城市口碑',
   currentLabel,
-  actions,
   children,
 }: ShellProps) {
   const label = currentLabel || (active === 'rankings' ? '红黑榜' : active === 'roles' ? '角色点评' : cityTitle);
   return (
-    <JumuluPageFrame
-      currentLabel={label}
-      actions={actions}
-    >
+    <JumuluPageFrame currentLabel={label}>
       {children}
     </JumuluPageFrame>
   );

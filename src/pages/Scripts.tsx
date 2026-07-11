@@ -54,10 +54,7 @@ export default function Scripts() {
   );
 
   return (
-    <ReputationHubShell
-      active="roles"
-      actions={<ReputationButton to="/scripts/rate" tone="gold">添加角色评分</ReputationButton>}
-    >
+    <ReputationHubShell active="roles">
       <section className="role-rating-header" style={headerStyle}>
         <div style={{ display: 'grid', gap: 10 }}>
           <ReputationBadge>角色口碑</ReputationBadge>
@@ -66,15 +63,20 @@ export default function Scripts() {
             <p style={descriptionStyle}>先看角色的综合评分和评价人数，点击角色再查看全部评价。</p>
           </div>
         </div>
-        <label style={searchLabelStyle}>
-          <span style={searchCaptionStyle}>搜索角色或剧本</span>
-          <input
-            value={query}
-            onChange={event => setQuery(event.target.value)}
-            placeholder="例如：祝魇 / 琳琅"
-            style={searchInputStyle}
-          />
-        </label>
+        <div style={{ display: 'grid', gap: 9 }}>
+          <label style={searchLabelStyle}>
+            <span style={searchCaptionStyle}>搜索角色或剧本</span>
+            <input
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              placeholder="例如：祝魇 / 琳琅"
+              style={searchInputStyle}
+            />
+          </label>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <ReputationButton to="/scripts/rate" tone="gold">添加角色评分</ReputationButton>
+          </div>
+        </div>
       </section>
 
       {loading && <StatePanel>正在加载角色评分...</StatePanel>}

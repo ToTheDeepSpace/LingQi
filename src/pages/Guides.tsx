@@ -127,19 +127,17 @@ export default function Guides() {
   };
 
   return (
-    <JumuluPageFrame
-      currentLabel="攻略交易"
-      actions={
-        <>
-          <Link to="/guides/new" style={jumuluPrimaryLinkStyle}>发布攻略</Link>
-          <Link to="/guides/income" style={jumuluSecondaryLinkStyle}>创作者收入</Link>
-        </>
-      }
-    >
+    <JumuluPageFrame currentLabel="攻略交易">
       <JumuluCompactHeader
         eyebrow="攻略交易"
         title="把打本经验写成攻略"
         description="选本、角色、城市路线、成车话术和出片清单，都可以沉淀为可检索、可购买的经验。"
+        aside={
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Link to="/guides/new" style={jumuluPrimaryLinkStyle}>发布攻略</Link>
+            <Link to="/guides/income" style={jumuluSecondaryLinkStyle}>创作者收入</Link>
+          </div>
+        }
       />
       <section style={jumuluFilterPanelStyle}>
         <div className="jumulu-guide-filters" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 170px', gap: 10 }}>

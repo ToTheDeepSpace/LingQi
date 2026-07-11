@@ -300,19 +300,17 @@ export default function DmWall() {
   };
 
   return (
-    <JumuluPageFrame
-      currentLabel="DM评分"
-      actions={
-        <>
-          <Link to="/dm/rate" style={jumuluPrimaryLinkStyle}>给 DM 评分</Link>
-          <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={jumuluSecondaryLinkStyle}>{showForm ? '收起建档' : '创建档案'}</button>
-        </>
-      }
-    >
+    <JumuluPageFrame currentLabel="DM评分">
       <JumuluCompactHeader
         eyebrow="剧本杀 DM 评分"
         title="查 DM，评体验"
         description="每次体验都可以留下评分；综合分按独立玩家计算，多次体验完整展示但不重复增加计分权重。"
+        aside={
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Link to="/dm/rate" style={jumuluPrimaryLinkStyle}>给 DM 评分</Link>
+            <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={jumuluSecondaryLinkStyle}>{showForm ? '收起建档' : '创建档案'}</button>
+          </div>
+        }
       />
 
       <section style={jumuluFilterPanelStyle}>

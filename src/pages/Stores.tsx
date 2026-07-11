@@ -74,17 +74,17 @@ export default function Stores() {
     <JumuluPageFrame
       currentLabel="店家评分"
       maxWidth={1160}
-      actions={
-        <>
-          <Link to="/stores/rate" style={jumuluPrimaryLinkStyle}>给店家评分</Link>
-          <Link to="/reputation/city" style={jumuluSecondaryLinkStyle}>看城市口碑</Link>
-        </>
-      }
     >
       <JumuluCompactHeader
         eyebrow="沉浸式娱乐店家评分"
         title="查店家，评到店体验"
         description="每次真实到店都可以留下综合五星；同一玩家多次体验会完整展示，但综合分只占一个玩家权重。"
+        aside={
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Link to="/stores/rate" style={jumuluPrimaryLinkStyle}>给店家评分</Link>
+            <Link to="/reputation/city" style={jumuluSecondaryLinkStyle}>看城市口碑</Link>
+          </div>
+        }
       />
 
       <section style={jumuluFilterPanelStyle}>
