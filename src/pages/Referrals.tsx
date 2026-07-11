@@ -188,11 +188,11 @@ export default function Referrals() {
           <div>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.55rem', marginBottom: 6 }}>我的邀请</h1>
             <p style={{ color: MUTED, fontSize: '0.86rem', lineHeight: 1.7, maxWidth: 620 }}>
-              邀请新朋友来到剧幕录，双方都拿契约币；邀请人还会随有效邀请获得社区荣誉。
+              邀请新朋友来到剧幕录，双方都拿榜金；邀请人还会随有效邀请获得社区荣誉。
             </p>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Link to="/wallet" style={ghostButtonStyle}>契约币记录</Link>
+            <Link to="/wallet" style={ghostButtonStyle}>榜金记录</Link>
             <Link to="/dashboard" style={ghostButtonStyle}>个人后台</Link>
           </div>
         </div>
@@ -251,7 +251,7 @@ export default function Referrals() {
               <StatCard label="已邀请注册" value={data.stats.registered_invites} />
               <StatCard label="有效邀请" value={data.stats.valid_invites} />
               <StatCard label="完成有效互动" value={data.stats.converted_invites} />
-              <StatCard label="邀请奖励合计" value={data.stats.referrer_reward_total} suffix=" 契约币" />
+              <StatCard label="邀请奖励合计" value={data.stats.referrer_reward_total} suffix=" 榜金" />
             </section>
 
             <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 18 }} className="referral-two-col">

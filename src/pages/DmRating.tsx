@@ -4,6 +4,7 @@ import type React from 'react';
 import CitySearchSelect from '../components/CitySearchSelect';
 import ImageUpload from '../components/ImageUpload';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import { CHANTO_FREEZE_DAYS, CHANTO_MAX_AMOUNT } from '../lib/chanto';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -12,7 +13,7 @@ const MUTED = 'rgba(71,85,105,0.74)';
 const GOLD = '#a66a1f';
 
 type AuthSession = { token: string; displayName: string };
-type DmOption = { id: string; dm_name: string; city?: string | null; workplace?: string | null; employment_status?: 'unknown' | 'store_affiliated' | 'freelance' };
+type DmOption = { id: string; dm_name: string; city?: string | null; workplace?: string | null; employment_status?: 'unknown' | 'store_affiliated' | 'freelance'; claim_status?: string; claimed_by?: string | null };
 type LibraryOption = { id: string; name: string; city?: string | null };
 type StoreOption = LibraryOption & { linkedStoreId?: string | null };
 
@@ -64,6 +65,10 @@ export default function DmRating() {
   const [rating, setRating] = useState(0);
   const [content, setContent] = useState('');
   const [tags, setTags] = useState('');
+  const [chantoAmount, setChantoAmount] = useState('0');
+  const [chantoMessage, setChantoMessage] = useState('');
+  const [chantoAnonymous, setChantoAnonymous] = useState(false);
+  const [paidBalance, setPaidBalance] = useState<number | null>(null);
   const [website, setWebsite] = useState('');
   const [formStartedAt] = useState(() => Date.now());
 
@@ -92,9 +97,20 @@ export default function DmRating() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (!auth?.token) return;
+    const controller = new AbortController();
+    fetch(`${API}/lc/wallet`, { headers: { Authorization: `Bearer ${auth.token}` }, signal: controller.signal })
+      .then(response => response.json())
+      .then(body => { if (body.success) setPaidBalance(Number(body.data?.paid_balance || 0)); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [auth?.token]);
+
   const selectedDm = useMemo(() => dms.find(item => item.id === dmId) || null, [dmId, dms]);
   const selectedScript = useMemo(() => scripts.find(item => item.id === scriptId) || null, [scriptId, scripts]);
   const selectedStore = useMemo(() => stores.find(item => item.id === storeId) || null, [storeId, stores]);
+  const selectedDmCanReceiveChanto = Boolean(selectedDm?.claim_status === 'approved' && selectedDm.claimed_by);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -138,8 +154,32 @@ export default function DmRating() {
         return;
       }
       const candidateCount = Array.isArray(data.data?.similar_candidates) ? data.data.similar_candidates.length : 0;
+      let chantoResult = '';
+      const giftAmount = Number(chantoAmount || 0);
+      if (giftAmount > 0 && selectedDmCanReceiveChanto && data.data?.dm_id) {
+        const giftResponse = await fetch(`${API}/lc/dm-dossiers/${encodeURIComponent(data.data.dm_id)}/gifts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+          body: JSON.stringify({
+            amount: giftAmount,
+            message: chantoMessage.trim() || null,
+            isAnonymous: chantoAnonymous,
+            ratingId: data.data.id,
+            requestKey: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `dm-rating-gift-${Date.now()}`,
+          }),
+        });
+        const giftData = await giftResponse.json();
+        if (giftResponse.ok && giftData.success) {
+          chantoResult = `；${giftAmount} 缠头已送出`;
+          setPaidBalance(Number(giftData.data?.paid_balance || 0));
+          setChantoAmount('0');
+          setChantoMessage('');
+        } else {
+          chantoResult = `；评分已提交，但缠头未送出：${responseError(giftData.error, '发送失败')}`;
+        }
+      }
       setMessage({
-        text: `${data.data?.message || '已提交审核'}${candidateCount ? `；后台发现 ${candidateCount} 个相似DM档案，会在审核时创建或合并。` : ''}`,
+        text: `${data.data?.message || '已提交审核'}${candidateCount ? `；后台发现 ${candidateCount} 个相似DM档案，会在审核时创建或合并。` : ''}${chantoResult}`,
         ok: true,
       });
       setContent('');
@@ -248,6 +288,20 @@ export default function DmRating() {
           <Field label="标签（可选）"><input value={tags} onChange={event => setTags(event.target.value)} placeholder="例：节奏稳、信息清楚、情绪承接" style={inputStyle} /></Field>
         </Section>
 
+        {!createNewDm && selectedDm && <Section title="4. 顺便送缠头（可选）" description="缠头是给已认证 DM 的自愿支持，与评分结果、审核和口碑排序完全分开。">
+          {selectedDmCanReceiveChanto ? <>
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+              {[0, 10, 30, 50, 100].map(value => <button key={value} type="button" onClick={() => setChantoAmount(String(value))} style={chantoButton(Number(chantoAmount) === value)}>{value === 0 ? '不送' : `${value} 缠头`}</button>)}
+            </div>
+            {Number(chantoAmount) > 0 && <div style={{ ...responsiveGrid, marginTop: 12 }}>
+              <Field label={`自定义数量（1-${CHANTO_MAX_AMOUNT}）`}><input inputMode="numeric" value={chantoAmount} onChange={event => setChantoAmount(event.target.value.replace(/\D/g, '').slice(0, 4))} style={inputStyle} /></Field>
+              <Field label="附言（选填，仅收款方可见）"><input value={chantoMessage} maxLength={200} onChange={event => setChantoMessage(event.target.value)} style={inputStyle} /></Field>
+            </div>}
+            {Number(chantoAmount) > 0 && <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, color: MUTED, fontSize: 13 }}><input type="checkbox" checked={chantoAnonymous} onChange={event => setChantoAnonymous(event.target.checked)} />公开记录中匿名</label>}
+            <p style={{ margin: '10px 0 0', color: MUTED, fontSize: 12, lineHeight: 1.65 }}>只使用充值榜金，赠送榜金不能转为可提现收入。可用充值榜金 {paidBalance ?? '查询中'}；平台服务费 20%，DM 收入 T+{CHANTO_FREEZE_DAYS} 可提现。</p>
+          </> : <p style={{ margin: 0, color: MUTED, fontSize: 13 }}>这位 DM 尚未完成本人认领与收款身份认证，当前只提交评分。</p>}
+        </Section>}
+
         <label aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
           Website<input value={website} onChange={event => setWebsite(event.target.value)} tabIndex={-1} autoComplete="off" />
         </label>
@@ -349,5 +403,6 @@ const suggestionButtonStyle: React.CSSProperties = { display: 'flex', alignItems
 const switchStyle: React.CSSProperties = { display: 'inline-grid', gridTemplateColumns: '1fr 1fr', gap: 4, padding: 4, borderRadius: 8, background: '#f3f4f6', marginBottom: 14, maxWidth: '100%' };
 const switchButton = (active: boolean): React.CSSProperties => ({ border: 0, borderRadius: 6, padding: '9px 12px', background: active ? '#fff' : 'transparent', color: active ? INK : MUTED, fontWeight: 850, cursor: 'pointer', boxShadow: active ? '0 1px 4px rgba(31,41,55,0.10)' : 'none' });
 const starButton = (active: boolean): React.CSSProperties => ({ minWidth: 64, minHeight: 42, borderRadius: 7, border: `1px solid ${active ? '#a66a1f' : 'rgba(31,41,55,0.14)'}`, background: active ? '#fff4d6' : '#fff', color: active ? '#8a5a19' : MUTED, fontWeight: 900, cursor: 'pointer' });
+const chantoButton = (active: boolean): React.CSSProperties => ({ minHeight: 38, borderRadius: 7, border: `1px solid ${active ? '#a66a1f' : 'rgba(31,41,55,0.14)'}`, background: active ? '#fff4d6' : '#fff', color: active ? '#8a5a19' : MUTED, padding: '8px 11px', fontWeight: 900, cursor: 'pointer' });
 const primaryButton: React.CSSProperties = { border: 0, borderRadius: 7, background: INK, color: '#fff', padding: '12px 20px', fontWeight: 900, cursor: 'pointer' };
 const secondaryButton: React.CSSProperties = { border: '1px solid rgba(31,41,55,0.14)', borderRadius: 7, background: '#fff', color: INK, padding: '11px 16px', fontWeight: 850, textDecoration: 'none' };

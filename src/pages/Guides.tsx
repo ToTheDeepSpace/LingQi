@@ -171,7 +171,7 @@ export default function Guides() {
                   {guide.target_name || '未绑定对象'} · {guide.author_name || '匿名作者'} · {shortDate(guide.created_at)}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                  <strong style={{ color: '#925f18' }}>{guide.price > 0 ? `${guide.price} 契约币` : '免费'}</strong>
+                  <strong style={{ color: '#925f18' }}>{guide.price > 0 ? `${guide.price} 榜金` : '免费'}</strong>
                   <button type="button" onClick={() => void loadDetail(guide)} style={smallButton}>查看</button>
                 </div>
               </article>
@@ -199,12 +199,12 @@ export default function Guides() {
               <div style={{ ...emptyStyle, textAlign: 'left' }}>
                 <h3 style={{ marginBottom: 8 }}>购买后解锁正文</h3>
                 <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 14 }}>
-                  本攻略价格为 {selected.price} 契约币。购买后可查看完整内容；礼物赞赏不是解锁条件。
+                  本攻略价格为 {selected.price} 榜金。购买后可查看完整内容；礼物赞赏不是解锁条件。
                 </p>
                 <button type="button" onClick={() => void purchaseGuide()} disabled={purchaseLoading} style={goldButton}>
-                  {purchaseLoading ? '处理中...' : selected.price > 0 ? `购买攻略 · ${selected.price} 契约币` : '免费解锁'}
+                  {purchaseLoading ? '处理中...' : selected.price > 0 ? `购买攻略 · ${selected.price} 榜金` : '免费解锁'}
                 </button>
-                <Link to="/wallet" style={{ ...ghostButton, marginLeft: 10 }}>查看契约币</Link>
+                <Link to="/wallet" style={{ ...ghostButton, marginLeft: 10 }}>查看榜金</Link>
               </div>
             )}
           </div>

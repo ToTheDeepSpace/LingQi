@@ -172,7 +172,7 @@ export default function ReputationDossier() {
                       <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.86)', lineHeight: 1.75 }}>{event.content}</p>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: 'rgba(71,85,105,0.68)', fontSize: 13 }}>
                         <span>打榜 {event.boost_amount ?? (event.type === 'black' ? 0 : event.likes || 0)}</span>
-                        <span>踩榜 {event.negative_boost_amount || 0}</span>
+                        {!!event.negative_boost_amount && <span>历史踩榜 {event.negative_boost_amount}</span>}
                         <span>同意 {event.agree_count ?? 0}</span>
                         <span>反对 {event.oppose_count ?? 0}</span>
                         <span>离谱 {event.joys || 0}</span>

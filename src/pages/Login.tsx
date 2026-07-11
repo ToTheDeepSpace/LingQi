@@ -489,7 +489,7 @@ export default function Login() {
 
             {referralCode && (
               <div className="referral-banner" style={{ padding: '10px 12px', borderRadius: 12, marginBottom: 14, background: 'rgba(240,253,244,0.88)', border: '1px solid rgba(22,163,74,0.18)', color: '#166534', fontSize: '0.8rem', lineHeight: 1.55, fontWeight: 750 }}>
-                {referralOwner ? `${referralOwner} 邀请你加入剧幕录` : '已识别邀请链接'}，注册后额外赠送 10 契约币。
+                {referralOwner ? `${referralOwner} 邀请你加入剧幕录` : '已识别邀请链接'}，注册后额外赠送 10 榜金。
               </div>
             )}
 
@@ -606,7 +606,7 @@ export default function Login() {
                   <Link to="/terms" target="_blank" style={{ color: '#925f18', fontWeight: 850, textDecoration: 'none', margin: '0 4px' }}>《用户协议》</Link>
                   和
                   <Link to="/privacy" target="_blank" style={{ color: '#925f18', fontWeight: 850, textDecoration: 'none', margin: '0 4px' }}>《隐私政策》</Link>
-                  <span className="terms-extra">，知悉红黑白榜、委托、拼车、契约币、审核和线下合作责任规则。</span>
+                  <span className="terms-extra">，知悉红黑白榜、委托、拼车、榜金、审核和线下合作责任规则。</span>
                 </span>
               </label>
 

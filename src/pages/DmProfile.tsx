@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DossierClaimModal from '../components/DossierClaimModal';
 import DossierEditModal from '../components/DossierEditModal';
+import DmGiftModal from '../components/DmGiftModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 
@@ -38,6 +39,7 @@ type DmDetail = {
   ratings: Array<{ id: string; profile_name: string; script_name: string; store_name: string; played_on: string; replay_number: number; rating: number; content: string; tags?: string[] }>;
   reputation_summary: { event_count: number; red_count: number; black_count: number; white_count: number };
   reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; event_date?: string | null; event_script_name?: string | null; event_store_name?: string | null; created_at: string }>;
+  chanto_summary?: { total: number; gift_count: number; supporter_count: number; recent: Array<{ id: string; amount: number; supporter_name: string; created_at: string }> };
 };
 
 export default function DmProfile() {
@@ -47,8 +49,10 @@ export default function DmProfile() {
   const [error, setError] = useState('');
   const [claimOpen, setClaimOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [giftOpen, setGiftOpen] = useState(false);
   const [claimMessage, setClaimMessage] = useState('');
   const [editMessage, setEditMessage] = useState('');
+  const [giftMessage, setGiftMessage] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,7 +71,7 @@ export default function DmProfile() {
   if (error) return <main style={{ minHeight: '72vh', padding: '84px 20px', background: BG, color: INK }}><div style={{ maxWidth: 760, margin: '0 auto' }}>{error}</div></main>;
   if (!data) return <main style={{ minHeight: '72vh', padding: '84px 20px', background: BG, color: MUTED }}><div style={{ maxWidth: 760, margin: '0 auto' }}>加载中...</div></main>;
 
-  const { dossier, summary, ratings, reputation_summary: reputationSummary = { event_count: 0, red_count: 0, black_count: 0, white_count: 0 }, reputation_events: reputationEvents = [] } = data;
+  const { dossier, summary, ratings, reputation_summary: reputationSummary = { event_count: 0, red_count: 0, black_count: 0, white_count: 0 }, reputation_events: reputationEvents = [], chanto_summary: chantoSummary = { total: 0, gift_count: 0, supporter_count: 0, recent: [] } } = data;
   const scoreText = summary.player_count === 0 ? '暂无评分' : `${summary.avg?.toFixed(1)} / 5`;
   const auth = readStoredCreatorAuth();
   const isOwner = Boolean(dossier.claimed_by && dossier.claimed_by === auth?.id);
@@ -115,9 +119,12 @@ export default function DmProfile() {
             </div>
             {claimMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{claimMessage}</p>}
             {editMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{editMessage}</p>}
+            {giftMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{giftMessage}</p>}
             <div className="dm-profile-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto', paddingTop: 20 }}>
               <Link to={`/dm/rate?dmId=${encodeURIComponent(dossier.id)}`} style={primaryButton}>给TA评分</Link>
+              {dossier.claim_status === 'approved' && dossier.claimed_by && !isOwner && <button type="button" onClick={() => auth?.token ? setGiftOpen(true) : navigate(`/login?redirect=${encodeURIComponent(`/dm/${dossier.id}`)}`)} style={giftButton}>送缠头</button>}
               <Link to={`/rankings/new?subjectType=dm&subjectDossierId=${encodeURIComponent(dossier.id)}`} style={secondaryButton}>发布红黑榜记录</Link>
+              {isOwner && <Link to="/income" style={secondaryButton}>我的收入</Link>}
             </div>
           </div>
         </div>
@@ -129,6 +136,19 @@ export default function DmProfile() {
           <Stat label="体验评价" value={`${summary.review_count} 条`} />
           <Stat label="独立玩家" value={`${summary.player_count} 人`} />
           <Stat label="红黑榜记录" value={`${reputationSummary?.event_count || 0} 条`} />
+          <Stat label="收到缠头" value={`${chantoSummary.total || 0}`} />
+        </section>
+        <section style={cardStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <h2 style={{ ...headingStyle, marginBottom: 4 }}>缠头支持</h2>
+              <p style={{ margin: 0, color: MUTED, fontSize: 13 }}>{chantoSummary.supporter_count || 0} 人支持 · {chantoSummary.gift_count || 0} 次缠头</p>
+            </div>
+            <Link to={`/chanto?city=${encodeURIComponent(dossier.city || '')}`} style={smallLinkStyle}>查看缠头榜</Link>
+          </div>
+          {chantoSummary.recent.length > 0 && <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 12 }}>
+            {chantoSummary.recent.map(item => <span key={item.id} style={supportChipStyle}>{item.supporter_name} · {item.amount}</span>)}
+          </div>}
         </section>
         {summary.sample_status === 'insufficient' && summary.player_count > 0 && <div style={noticeStyle}>当前少于3名独立玩家，分数会正常显示，但同时标记为样本较少。综合分始终按独立玩家计权。</div>}
         {dossier.note && <section style={cardStyle}><h2 style={headingStyle}>档案说明</h2><p style={{ margin: 0, lineHeight: 1.75, color: MUTED }}>{dossier.note}</p></section>}
@@ -198,6 +218,25 @@ export default function DmProfile() {
           setEditMessage(message);
         }}
       />}
+      <DmGiftModal
+        open={giftOpen}
+        token={auth?.token || ''}
+        dossierId={dossier.id}
+        dmName={dossier.dm_name}
+        onClose={() => setGiftOpen(false)}
+        onSuccess={({ amount }) => {
+          setGiftMessage(`已送出 ${amount} 缠头。`);
+          setData(current => current ? {
+            ...current,
+            chanto_summary: {
+              total: (current.chanto_summary?.total || 0) + amount,
+              gift_count: (current.chanto_summary?.gift_count || 0) + 1,
+              supporter_count: current.chanto_summary?.supporter_count || 1,
+              recent: current.chanto_summary?.recent || [],
+            },
+          } : current);
+        }}
+      />
       <style>{`
         @media (max-width: 700px) {
           .dm-profile-hero {
@@ -229,7 +268,8 @@ export default function DmProfile() {
             padding-top: 0 !important;
             flex-wrap: nowrap !important;
           }
-          .dm-profile-actions a {
+          .dm-profile-actions a,
+          .dm-profile-actions button {
             flex: 1 1 0 !important;
             min-width: 0 !important;
             text-align: center !important;
@@ -266,6 +306,9 @@ const headingStyle = { margin: '0 0 14px', fontSize: 18 };
 const noticeStyle = { padding: '11px 13px', borderRadius: 7, background: '#fff7ed', color: '#9a5b18', border: '1px solid rgba(154,91,24,0.18)', lineHeight: 1.65, fontSize: 13 };
 const primaryButton = { borderRadius: 7, background: INK, color: '#fff', padding: '10px 14px', fontWeight: 900, textDecoration: 'none' };
 const secondaryButton = { borderRadius: 7, border: '1px solid rgba(31,41,55,0.14)', background: '#fff', color: INK, padding: '9px 13px', fontWeight: 850, textDecoration: 'none' };
+const giftButton = { borderRadius: 7, border: '1px solid rgba(166,106,31,0.28)', background: '#fff4d6', color: '#8a5a19', padding: '9px 13px', fontWeight: 900, cursor: 'pointer' };
 const claimButtonStyle = { padding: '4px 7px', borderRadius: 5, border: '1px solid rgba(166,106,31,0.22)', background: '#fff', color: '#8a5a19', fontSize: 11, fontWeight: 900, cursor: 'pointer' };
 const editButtonStyle = { padding: '3px 5px', border: 0, background: 'transparent', color: '#64748b', fontSize: 11, fontWeight: 800, textDecoration: 'underline', textUnderlineOffset: 3, cursor: 'pointer' };
 const tagStyle = { padding: '3px 7px', borderRadius: 999, background: '#eff6ff', color: '#275389', fontSize: 12, fontWeight: 800 };
+const smallLinkStyle = { color: '#8a5a19', fontSize: 12, fontWeight: 900, textDecoration: 'none' };
+const supportChipStyle = { padding: '5px 8px', borderRadius: 999, background: '#fff8e8', border: '1px solid rgba(166,106,31,0.14)', color: '#8a5a19', fontSize: 12, fontWeight: 800 };

@@ -499,7 +499,7 @@ export default function CreateCarpool() {
     const finalContent = content.trim() || currentGeneratedMessage.replace(/联系：.+$/m, '').trim();
     if (!finalContent) return setError('请填写公开说明，联系方式不会公开展示');
     if (boostAmount > 0 && balance !== null && balance < boostAmount) {
-      return setError('契约币不足，请先充值');
+      return setError('榜金不足，请先充值');
     }
     setSubmitting(true);
     setError('');
@@ -573,7 +573,7 @@ export default function CreateCarpool() {
             </h1>
           </div>
           <Link to="/wallet" style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)', background: 'rgba(255,255,255,0.78)', color: '#925f18', textDecoration: 'none', fontWeight: 700, fontSize: '0.85rem' }}>
-            契约币 {balance ?? '...'}
+            榜金 {balance ?? '...'}
           </Link>
         </div>
       </div>
@@ -786,7 +786,7 @@ export default function CreateCarpool() {
                     </Field>
                   </>
                 )}
-                <Field label={`加权展示 · ${boostAmount} 契约币`}>
+                <Field label={`加权展示 · ${boostAmount} 榜金`}>
                   <input type="range" min={0} max={100} step={10} value={boostAmount} onChange={e => setBoostAmount(Number(e.target.value))} style={{ width: '100%', accentColor: GOLD }} />
                   <p style={{ marginTop: 6, color: 'rgba(71,85,105,0.66)', fontSize: '0.76rem' }}>加权展示是平台排序功能，和拼车现金补贴不是一回事。</p>
                 </Field>
@@ -830,7 +830,7 @@ export default function CreateCarpool() {
               color: submitting ? 'rgba(201,146,46,0.4)' : INK,
               border: 'none',
             }}>
-            {submitting ? '发布中...' : (boostAmount > 0 ? `发布拼车 · 扣 ${boostAmount} 契约币` : '发布拼车')}
+            {submitting ? '发布中...' : (boostAmount > 0 ? `发布拼车 · 扣 ${boostAmount} 榜金` : '发布拼车')}
           </button>
         </div>
       </div>

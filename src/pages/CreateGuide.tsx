@@ -126,7 +126,7 @@ export default function CreateGuide() {
                 {spoilerLevels.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
               </select>
               <input value={form.targetName} onChange={e => update('targetName', e.target.value)} placeholder="绑定对象：剧本/角色/城市/店家" style={inputStyle} />
-              <input value={form.price} onChange={e => update('price', e.target.value.replace(/[^\d]/g, '').slice(0, 3))} placeholder="价格，0-500 契约币" style={inputStyle} />
+              <input value={form.price} onChange={e => update('price', e.target.value.replace(/[^\d]/g, '').slice(0, 3))} placeholder="价格，0-500 榜金" style={inputStyle} />
               <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', color: MUTED, fontSize: '0.82rem', lineHeight: 1.65 }}>
                 <input type="checkbox" checked={form.copyrightConfirmed} onChange={e => update('copyrightConfirmed', e.target.checked)} style={{ marginTop: 4 }} />
                 <span>我确认本文为自己的经验输出，不含盗版、谜底、线索卡、未授权素材或侵犯隐私内容。</span>

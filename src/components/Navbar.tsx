@@ -481,6 +481,7 @@ function locationLabelFor(pathname: string) {
   if (pathname.startsWith('/dm/rate')) return '给DM评分';
   if (pathname.startsWith('/dm/') && pathname !== '/dm-wall') return 'DM档案';
   if (pathname === '/dm' || pathname === '/dm-wall') return 'DM评分';
+  if (pathname.startsWith('/chanto')) return '缠头榜';
   if (pathname.startsWith('/stores/rate')) return '给店家评分';
   if (pathname.startsWith('/stores/')) return '店家详情';
   if (pathname === '/stores') return '店家评分';
@@ -498,6 +499,7 @@ function locationLabelFor(pathname: string) {
   if (pathname.startsWith('/scripts')) return '角色点评';
   if (pathname.startsWith('/guides/new')) return '发布攻略';
   if (pathname.startsWith('/guides/income')) return '创作者收入';
+  if (pathname.startsWith('/income')) return '创作者收入';
   if (pathname.startsWith('/guides')) return '攻略交易';
   if (pathname.startsWith('/dashboard/services/availability')) return '可约档期';
   if (pathname.startsWith('/dashboard/services/works')) return '作品集';
@@ -519,14 +521,14 @@ function locationLabelFor(pathname: string) {
 }
 
 function fallbackPathFor(pathname: string) {
-  if (pathname.startsWith('/dm/rate') || (pathname.startsWith('/dm/') && pathname !== '/dm-wall')) return '/dm';
+  if (pathname.startsWith('/dm/rate') || (pathname.startsWith('/dm/') && pathname !== '/dm-wall') || pathname.startsWith('/chanto')) return '/dm';
   if (pathname.startsWith('/stores/')) return '/stores';
   if (pathname.startsWith('/reputation/dossier')) return '/reputation/city';
   if (pathname.startsWith('/reputation')) return '/rankings';
   if (pathname.startsWith('/explore/')) return '/explore';
   if (pathname.startsWith('/scripts/')) return '/scripts';
   if (pathname.startsWith('/boundary-votes')) return '/roadmap';
-  if (pathname.startsWith('/wallet') || pathname.startsWith('/referrals') || pathname.startsWith('/certification')) return '/dashboard';
+  if (pathname.startsWith('/wallet') || pathname.startsWith('/referrals') || pathname.startsWith('/certification') || pathname.startsWith('/income')) return '/dashboard';
   if (pathname.startsWith('/shop/dashboard')) return '/dashboard';
   if (pathname.startsWith('/commissions/new')) return '/commissions';
   if (pathname.startsWith('/carpools/new')) return '/carpools';

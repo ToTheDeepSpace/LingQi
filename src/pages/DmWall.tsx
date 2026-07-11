@@ -308,6 +308,7 @@ export default function DmWall() {
         aside={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <Link to="/dm/rate" style={jumuluPrimaryLinkStyle}>给 DM 评分</Link>
+            <Link to="/chanto" style={jumuluSecondaryLinkStyle}>缠头榜</Link>
             <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={jumuluSecondaryLinkStyle}>{showForm ? '收起建档' : '创建档案'}</button>
           </div>
         }

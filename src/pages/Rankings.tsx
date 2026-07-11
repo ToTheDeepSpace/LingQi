@@ -118,7 +118,7 @@ type BoostRecord = {
 };
 
 type VoteModal = { id: string; voteType: 'like' | 'dislike' | 'joy' } | null;
-type PaidBoostModal = { id: string; direction: 'boost' | 'negative_boost' } | null;
+type PaidBoostModal = { id: string; direction: 'boost' } | null;
 type CommentModal = { rankingId: string } | null;
 type RelatedFile = { name: string; url: string; type?: string };
 type RelatedCertModal = { rankingId: string; commentId: string } | null;
@@ -338,18 +338,12 @@ function voteCopy(voteType: MyVote['vote_type'], rankingType?: Ranking['type']) 
   return { label: '欢乐', icon: '😂' };
 }
 
-function paidBoostCopy(direction: 'boost' | 'negative_boost') {
-  return direction === 'negative_boost'
-    ? { label: '踩榜', icon: '踩' }
-    : { label: '打榜', icon: '榜' };
+function paidBoostCopy() {
+  return { label: '打榜', icon: '榜' };
 }
 
 function boostAmount(item: Ranking) {
   return item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0);
-}
-
-function negativeBoostAmount(item: Ranking) {
-  return item.negative_boost_amount ?? 0;
 }
 
 function agreeCount(item: Ranking) {
@@ -382,7 +376,7 @@ function reputationParticipation(item: Ranking) {
 }
 
 function moneyScore(item: Ranking) {
-  return boostAmount(item) + negativeBoostAmount(item);
+  return boostAmount(item);
 }
 
 function boardRankScore(item: Ranking, mode: BoardMode) {
@@ -847,8 +841,8 @@ export default function Rankings() {
         if (byParticipation !== 0) return byParticipation;
       }
       if (boardMode === 'money') {
-        const byNetBoost = (boostAmount(b) - negativeBoostAmount(b)) - (boostAmount(a) - negativeBoostAmount(a));
-        if (byNetBoost !== 0) return byNetBoost;
+        const byBoost = boostAmount(b) - boostAmount(a);
+        if (byBoost !== 0) return byBoost;
       }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
@@ -1154,10 +1148,10 @@ export default function Rankings() {
 		    setVoteError('');
 		  };
 
-  const openPaidBoostModal = (id: string, direction: 'boost' | 'negative_boost') => {
+  const openPaidBoostModal = (id: string) => {
     const current = requireAuth();
     if (!current) return;
-    setPaidBoostModal({ id, direction });
+    setPaidBoostModal({ id, direction: 'boost' });
     setPaidBoostAmount('10');
     setPaidBoostComment('');
     setPaidBoostError('');
@@ -1274,7 +1268,7 @@ export default function Rankings() {
 	  const canCancelExistingVote = voteCanCancel(existingMyVote);
 	  const isChangingVote = !!existingMyVote && !!voteModal && existingMyVote.vote_type !== voteModal.voteType;
   const paidBoostItem = paidBoostModal ? items.find(item => item.id === paidBoostModal.id) : undefined;
-  const paidBoostRequestCopy = paidBoostModal ? paidBoostCopy(paidBoostModal.direction) : null;
+  const paidBoostRequestCopy = paidBoostModal ? paidBoostCopy() : null;
   const paidBoostAmountNumber = Number.parseInt(paidBoostAmount, 10);
   const paidBoostAmountValid = Number.isFinite(paidBoostAmountNumber) && paidBoostAmountNumber > 0;
   const paidBoostBalanceNotEnough = paidBoostAmountValid && balance !== null && balance < paidBoostAmountNumber;
@@ -1289,7 +1283,7 @@ export default function Rankings() {
 	        onChange={e => setVoteCommentText(e.target.value)}
 	        rows={3}
 	        maxLength={600}
-	        placeholder="可以顺手补一句你的理由。评论会进入审核队列，不扣契约币。"
+	        placeholder="可以顺手补一句你的理由。评论会进入审核队列，不扣榜金。"
 	        style={{ ...inputStyle, resize: 'none' }}
 	      />
 	    </div>
@@ -1385,12 +1379,12 @@ export default function Rankings() {
         <section style={compactHeroStyle}>
           <div>
             <h1 style={compactTitleStyle}>剧幕录·红黑榜</h1>
-            <p style={compactLeadStyle}>红黑榜是评分榜的事件媒介。口碑票看真实人数，真金打榜看契约币加权；两套数据分开判断。</p>
+            <p style={compactLeadStyle}>红黑榜是评分榜的事件媒介。口碑票看真实人数，真金榜只看用户自愿投入的正向榜金；两套数据分开判断。</p>
           </div>
           <div style={filterGroupStyle}>
             {auth && (
               <Link to="/wallet" style={walletChipStyle}>
-                {walletLoading ? '契约币 ...' : `契约币 ${balance || 0}`}
+                {walletLoading ? '榜金 ...' : `榜金 ${balance || 0}`}
               </Link>
             )}
             <button onClick={() => setBoardMode('reputation')} style={hubToggleStyle(boardMode === 'reputation', '#275389')}>口碑榜</button>
@@ -1431,7 +1425,7 @@ export default function Rankings() {
           <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.7 }}>
             {TAB_HINT[tab]} {boardMode === 'reputation'
               ? '口碑榜按口碑票排序，优先看一人一票的真实参与人数。'
-              : '真金榜按付费打榜和踩榜排序，只代表契约币加权热度。'}
+              : '真金榜只按正向打榜值排序，不提供付费踩榜，也不影响口碑榜。'}
           </span>
           {tab === 'black' && (
             <span style={{ display: 'inline-flex', gap: 6 }}>
@@ -1451,7 +1445,7 @@ export default function Rankings() {
               lineHeight: 1.7,
               maxWidth: 860,
             }}>
-              主帖证据首次提交选填；审核员认为内容不足时可以打回并要求补充。涉及第三方隐私的信息请先打码。口碑票一人一票，可改票；真金打榜和踩榜按实际契约币金额累计，影响热度，不代表平台事实裁判。发布者对事实、证据、隐私打码和言论后果负责。
+              主帖证据首次提交选填；审核员认为内容不足时可以打回并要求补充。涉及第三方隐私的信息请先打码。口碑票一人一票，可改票；榜金只用于正向打榜，不提供付费踩榜，也不代表平台事实裁判。发布者对事实、证据、隐私打码和言论后果负责。
             </div>
           </details>
         </div>
@@ -1634,15 +1628,10 @@ export default function Rankings() {
                     <div style={paidVoteZoneStyle}>
                       <span style={{ ...voteZoneKickerStyle, color: GOLD }}>真金打榜</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', flexWrap: 'wrap' }}>
-                        <button onClick={() => openPaidBoostModal(item.id, 'boost')}
+                        <button onClick={() => openPaidBoostModal(item.id)}
                           aria-label={`给事件「${heading}」打榜`}
                           style={{ ...compactActionButtonStyle, color: boostStats.total > 0 ? GOLD : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
                           打榜 {boostStats.total}
-                        </button>
-                        <button onClick={() => openPaidBoostModal(item.id, 'negative_boost')}
-                          aria-label={`给事件「${heading}」踩榜`}
-                          style={{ ...compactActionButtonStyle, color: negativeBoostAmount(item) > 0 ? '#475569' : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
-                          踩榜 {negativeBoostAmount(item)}
                         </button>
                         <button type="button" onClick={() => toggleBoosts(item.id)} style={{ ...compactActionButtonStyle, marginLeft: 'auto' }}>
                           {showBoosts ? '收起记录' : '打榜记录'}
@@ -1915,10 +1904,10 @@ export default function Rankings() {
               {paidBoostRequestCopy.icon} {paidBoostRequestCopy.label}
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 14 }}>
-              {paidBoostItem?.content ? `给事件「${eventTitle(paidBoostItem.content)}」` : '给这条事件'}投入契约币。金额按实际输入累计，没有单次 1 币限制。
+              {paidBoostItem?.content ? `给事件「${eventTitle(paidBoostItem.content)}」` : '给这条事件'}投入榜金。榜金只用于正向打榜，不提供付费踩榜。
             </p>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>契约币数量</label>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>榜金数量</label>
               <input
                 value={paidBoostAmount}
                 onChange={e => setPaidBoostAmount(e.target.value.replace(/[^\d]/g, ''))}
@@ -1944,12 +1933,12 @@ export default function Rankings() {
                 onChange={e => setPaidBoostComment(e.target.value)}
                 rows={3}
                 maxLength={600}
-                placeholder="可以补一句为什么打榜或踩榜。评论会进入审核队列。"
+                placeholder="可以补一句为什么打榜。评论会进入审核队列。"
                 style={{ ...inputStyle, resize: 'none' }}
               />
             </div>
             <p style={{ fontSize: '0.85rem', color: paidBoostBalanceNotEnough ? RED : '#219669', lineHeight: 1.7, marginBottom: 12 }}>
-              当前契约币：{walletLoading ? '...' : balance ?? 0} {paidBoostBalanceNotEnough && <Link to="/wallet" style={{ color: GOLD }}>（契约币不足，去充值）</Link>}
+              当前榜金：{walletLoading ? '...' : balance ?? 0} {paidBoostBalanceNotEnough && <Link to="/wallet" style={{ color: GOLD }}>（榜金不足，去充值）</Link>}
             </p>
             {paidBoostError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{paidBoostError}</p>}
             <div style={{ display: 'flex', gap: 10 }}>

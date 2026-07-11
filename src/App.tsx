@@ -20,6 +20,7 @@ const ReputationDossier = lazy(pageLoaders.reputationDossier);
 const DmWall = lazy(pageLoaders.dmWall);
 const DmRating = lazy(pageLoaders.dmRating);
 const DmProfile = lazy(pageLoaders.dmProfile);
+const ChantoLeaderboard = lazy(pageLoaders.chantoLeaderboard);
 const Stores = lazy(pageLoaders.stores);
 const StoreRating = lazy(pageLoaders.storeRating);
 const StoreProfile = lazy(pageLoaders.storeProfile);
@@ -89,6 +90,7 @@ function AppLayout() {
           <Route path="/dm" element={<DmWall />} />
           <Route path="/dm/rate" element={<DmRating />} />
           <Route path="/dm/:id" element={<DmProfile />} />
+          <Route path="/chanto" element={<ChantoLeaderboard />} />
           <Route path="/stores" element={<Stores />} />
           <Route path="/stores/rate" element={<StoreRating />} />
           <Route path="/stores/:id" element={<StoreProfile />} />
@@ -108,6 +110,7 @@ function AppLayout() {
           <Route path="/guides" element={<Guides />} />
           <Route path="/guides/new" element={<CreateGuide />} />
           <Route path="/guides/income" element={<GuideIncome />} />
+          <Route path="/income" element={<GuideIncome />} />
           <Route path="/certification" element={<CertificationPage />} />
           <Route path="/shop/dashboard" element={<ShopDashboard />} />
           <Route path="/contact" element={<Contact />} />

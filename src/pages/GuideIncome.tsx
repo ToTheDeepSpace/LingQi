@@ -20,6 +20,7 @@ type IncomeEntry = {
   status: string;
   available_at: string;
   created_at: string;
+  metadata?: { dm_name?: string; guide_title?: string; gift_message?: string; is_anonymous?: boolean } | null;
 };
 
 type Withdrawal = {
@@ -64,7 +65,7 @@ export default function GuideIncome() {
   }, [auth]);
 
   useEffect(() => {
-    if (!auth) { navigate('/login?redirect=/guides/income'); return; }
+    if (!auth) { navigate('/login?redirect=/income'); return; }
     const timer = window.setTimeout(() => void loadData(), 0);
     return () => window.clearTimeout(timer);
   }, [auth, navigate, loadData]);
@@ -98,13 +99,13 @@ export default function GuideIncome() {
       <section style={{ maxWidth: 980, margin: '0 auto', padding: '24px 18px 70px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 18 }}>
           <div>
-            <Link to="/guides" style={{ color: '#275389', textDecoration: 'none', fontWeight: 850 }}>‹ 返回攻略交易</Link>
+            <Link to="/dashboard" style={{ color: '#275389', textDecoration: 'none', fontWeight: 850 }}>‹ 返回我的主页</Link>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.7rem', marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               创作者收入
-              <InfoTip>这里是攻略和礼物产生的创作者收入，不是你的契约币钱包。</InfoTip>
+              <InfoTip>这里汇总攻略销售、攻略礼物和 DM 缠头产生的可提现收入，不是普通榜金钱包。</InfoTip>
             </h1>
           </div>
-          <Link to="/guides/new" style={goldButton}>发布攻略</Link>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Link to="/chanto" style={ghostLink}>缠头榜</Link><Link to="/guides/new" style={goldButton}>发布攻略</Link></div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
@@ -128,10 +129,11 @@ export default function GuideIncome() {
               <div style={{ display: 'grid', gap: 8 }}>
                 {entries.map(entry => (
                   <div key={entry.id} style={{ borderBottom: '1px solid rgba(201,146,46,0.12)', paddingBottom: 8 }}>
-                    <strong>{entry.creator_amount} 创作者收入</strong>
+                    <strong>{incomeSourceLabel(entry.source_type)} · {entry.creator_amount} 收入</strong>
                     <div style={{ color: MUTED, fontSize: '0.8rem', lineHeight: 1.7 }}>
-                      毛额 {entry.gross_amount} · 平台服务费 {entry.platform_fee} · 状态 {statusLabel(entry.status)} · 可用时间 {entry.available_at?.slice(0, 10)}
+                      毛额 {entry.gross_amount} · 平台服务费 {entry.platform_fee} · 状态 {statusLabel(entry.status)} · 可提现日期 {entry.available_at?.slice(0, 10)}
                     </div>
+                    {entry.metadata?.gift_message && <div style={{ marginTop: 4, color: '#475569', fontSize: '0.8rem', lineHeight: 1.65 }}>附言：{entry.metadata.gift_message}</div>}
                   </div>
                 ))}
               </div>
@@ -181,6 +183,13 @@ function statusLabel(status: string) {
   return labels[status] || status;
 }
 
+function incomeSourceLabel(sourceType: string) {
+  if (sourceType === 'dm_gift') return 'DM 缠头';
+  if (sourceType === 'guide_gift') return '攻略礼物';
+  if (sourceType === 'guide_purchase') return '攻略销售';
+  return '创作者';
+}
+
 const cardStyle: React.CSSProperties = {
   border: '1px solid rgba(201,146,46,0.16)',
   borderRadius: 14,
@@ -214,3 +223,4 @@ const goldButton: React.CSSProperties = {
   textDecoration: 'none',
   cursor: 'pointer',
 };
+const ghostLink: React.CSSProperties = { ...goldButton, border: '1px solid rgba(39,83,137,0.18)', background: '#fff', color: '#275389' };

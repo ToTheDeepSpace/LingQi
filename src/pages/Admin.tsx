@@ -1425,7 +1425,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       id: `transaction-${tx.id}`,
       tab: 'wallet' as const,
       category: '充值',
-      title: `充值 ${tx.amount} 契约币`,
+      title: `充值 ${tx.amount} 榜金`,
       meta: `用户：${tx.lc_profiles?.display_name || tx.profile_id}`,
       createdAt: tx.created_at,
       accent: '#15803d',
@@ -1444,7 +1444,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       tab: 'guides' as const,
       category: '攻略',
       title: item.title,
-      meta: `作者：${item.author_name || '未知用户'} · ${item.price || 0} 契约币`,
+      meta: `作者：${item.author_name || '未知用户'} · ${item.price || 0} 榜金`,
       createdAt: item.created_at,
       accent: '#be123c',
       tags: [item.guide_type, `剧透:${item.spoiler_level}`],
@@ -1701,7 +1701,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {transactions.map(tx => (
                   <Row key={tx.id} accent="#22c55e">
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={`充值 ${tx.amount} 契约币`} pill="钱包充值" />
+                      <TitleLine title={`充值 ${tx.amount} 榜金`} pill="钱包充值" />
                       <Meta>
                         用户：{tx.lc_profiles?.display_name || '未知用户'}
                         {tx.lc_profiles?.phone ? ` · ${tx.lc_profiles.phone}` : ''}
@@ -1729,7 +1729,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   <Row key={r.id} accent={r.type === 'red' ? '#dc2626' : r.type === 'black' ? '#475569' : '#d9a857'}>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <TitleLine title={r.subject_name} pill={r.type === 'red' ? '🏅 红榜' : r.type === 'black' ? '👎 黑榜' : '✨ 白榜'} />
-                      <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · {r.type === 'white' && r.initial_amount === 0 ? '免费发布' : `初始：${r.initial_amount} 契约币`} · {r.created_at?.slice(0, 10)}</Meta>
+                      <Meta>{SUBJECT_LABEL[r.subject_type] || r.subject_type} · {r.subject_city || '未知'} · 作者：{r.author_name} · {r.initial_amount === 0 ? '免费发布' : `历史初始：${r.initial_amount} 榜金`} · {r.created_at?.slice(0, 10)}</Meta>
                       {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
                       {['dm', 'store'].includes(r.subject_type) && (
                         <Proof>
@@ -1834,7 +1834,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <TitleLine title={item.title} pill="攻略审核" />
                       <Meta>
                         作者：{item.author_name || '未知用户'}
-                        {` · ${item.price || 0} 契约币`}
+                        {` · ${item.price || 0} 榜金`}
                         {item.target_name ? ` · 对象：${item.target_name}` : ''}
                         {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
                       </Meta>
@@ -1958,7 +1958,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <TitleLine title={item.script_name || '未命名剧本'} pill="剧本库维护" />
                         <Meta>
                           提交人：{item.profile_name || item.profile_id || '未知用户'}
-                          {` · 奖励：${item.reward_amount || 0} 契约币`}
+                          {` · 奖励：${item.reward_amount || 0} 榜金`}
                           {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
                         </Meta>
                         <Meta>基础有效维护：剧本名 + 角色名 + 角色性别；作品资料和 tag 作为补充。</Meta>
@@ -2490,8 +2490,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             <p style={{ fontSize: '0.8rem', color: MUTED, marginBottom: 16 }}>
               {rejectModal.type === 'ranking'
                 ? rejectModal.revisionKind === 'evidence'
-                  ? '用户重新提交时必须至少上传一张证据图片；原帖和已扣契约币都会保留。'
-                  : '用户可以修改原帖后重新提交，证据仍然选填；不会重复扣除契约币。'
+                  ? '用户重新提交时必须至少上传一张证据图片；原帖和历史互动都会保留。'
+                  : '用户可以修改原帖后重新提交，证据仍然选填；发布和重新提交都不扣榜金。'
                 : '原因可不填，主要给自己留审核记录。'}
             </p>
             <textarea value={rejectModal.reason} onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}

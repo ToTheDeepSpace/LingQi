@@ -255,7 +255,7 @@ export default function ScriptContribute() {
         setError(d.error || '提交失败');
         return;
       }
-      setMessage('已提交剧本库维护，后台通过后会发放 5 契约币。');
+      setMessage('已提交剧本库维护，后台通过后会发放 5 榜金。');
       scriptDraft.clearDraft();
       setScriptId('');
       setScriptName('');
@@ -279,7 +279,7 @@ export default function ScriptContribute() {
           <Link to="/carpools/new" style={{ color: '#275389', textDecoration: 'none', fontSize: '0.84rem', fontWeight: 800 }}>返回发布拼车</Link>
           <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 950, fontSize: 'clamp(1.9rem, 5vw, 2.7rem)', margin: '18px 0 10px' }}>维护剧本库</h1>
           <p style={{ color: MUTED, lineHeight: 1.8, maxWidth: 760, margin: 0 }}>
-            维护剧本名称、角色名和角色性别即可算一条基础有效维护。角色 tag 和作品资料可以补充，后台审核通过后会写入共用剧本库，并奖励 5 契约币。
+            维护剧本名称、角色名和角色性别即可算一条基础有效维护。角色 tag 和作品资料可以补充，后台审核通过后会写入共用剧本库，并奖励 5 榜金。
           </p>
         </div>
       </section>
@@ -392,7 +392,7 @@ export default function ScriptContribute() {
         <aside style={{ display: 'grid', gap: 14, alignSelf: 'start' }}>
           <section style={cardStyle}>
             <p style={{ color: GOLD, fontSize: '0.78rem', fontWeight: 900, margin: '0 0 8px' }}>共建奖励</p>
-            <h2 style={{ margin: '0 0 10px', fontSize: '1.08rem', fontWeight: 950 }}>通过后 +5 契约币</h2>
+            <h2 style={{ margin: '0 0 10px', fontSize: '1.08rem', fontWeight: 950 }}>通过后 +5 榜金</h2>
             <p style={{ margin: 0, color: MUTED, lineHeight: 1.75, fontSize: '0.86rem' }}>
               第一版标准放宽：剧本名、角色名、角色性别齐了就算基础有效维护。作品资料和 tag 是补充项，不单独触发奖励。
             </p>

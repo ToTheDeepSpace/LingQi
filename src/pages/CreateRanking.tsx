@@ -39,7 +39,6 @@ type RankingDraft = {
   selectedProvince: string;
   subjectUrl: string;
   content: string;
-  initialAmount: number;
   subjectDossierId: string;
   subjectMode: 'existing' | 'new';
   newSubjectWorkplace: string;
@@ -79,13 +78,11 @@ export default function CreateRanking() {
   const [cityQuery, setCityQuery] = useState('');
   const [subjectUrl, setSubjectUrl] = useState('');
   const [content, setContent] = useState('');
-  const [initialAmount, setInitialAmount] = useState(10);
   const [files, setFiles] = useState<EvidenceFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
-  const [balance, setBalance] = useState<number | null>(null);
   const [rulesAccepted, setRulesAccepted] = useState(false);
   const [dmOptions, setDmOptions] = useState<DossierOption[]>([]);
   const [storeOptions, setStoreOptions] = useState<DossierOption[]>([]);
@@ -105,13 +102,8 @@ export default function CreateRanking() {
   const [evidenceRequired, setEvidenceRequired] = useState(false);
   const [resubmitLoaded, setResubmitLoaded] = useState(!resubmitId);
 
-  const effectiveAmount = type === 'red' ? initialAmount : 0;
   const selectedDm = subjectType === 'dm' ? dmOptions.find(item => item.id === subjectDossierId) : undefined;
-  const publishCostText = type === 'red'
-    ? '契约币 10 起发'
-    : type === 'black'
-      ? '黑榜免费提交'
-      : '白榜免费发布';
+  const publishCostText = '红榜、白榜、黑榜均免费提交';
 
   const draftValue = useMemo<RankingDraft>(() => ({
     type,
@@ -121,7 +113,6 @@ export default function CreateRanking() {
     selectedProvince,
     subjectUrl,
     content,
-    initialAmount,
     subjectDossierId,
     subjectMode,
     newSubjectWorkplace,
@@ -134,7 +125,7 @@ export default function CreateRanking() {
     eventScriptName,
     eventStoreDossierId,
     eventStoreName,
-  }), [content, employmentStatus, employerStoreId, eventDate, eventScriptId, eventScriptName, eventStoreDossierId, eventStoreName, initialAmount, newSubjectWorkplace, selectedProvince, subjectCity, subjectDossierId, subjectEmploymentUpdate, subjectEmployerStoreId, subjectMode, subjectName, subjectType, subjectUrl, type]);
+  }), [content, employmentStatus, employerStoreId, eventDate, eventScriptId, eventScriptName, eventStoreDossierId, eventStoreName, newSubjectWorkplace, selectedProvince, subjectCity, subjectDossierId, subjectEmploymentUpdate, subjectEmployerStoreId, subjectMode, subjectName, subjectType, subjectUrl, type]);
 
   const rankingDraft = useDraftAutosave<RankingDraft>({
     key: 'lc:draft:ranking:new',
@@ -150,7 +141,6 @@ export default function CreateRanking() {
       setSelectedProvince(data.selectedProvince || PROVINCES[0] || '');
       setSubjectUrl(data.subjectUrl || '');
       setContent(data.content || '');
-      setInitialAmount(data.type === 'red' ? Math.max(10, data.initialAmount || 10) : 10);
       setSubjectDossierId(data.subjectDossierId || '');
       setSubjectMode(data.subjectMode === 'new' ? 'new' : 'existing');
       setNewSubjectWorkplace(data.newSubjectWorkplace || '');
@@ -171,9 +161,6 @@ export default function CreateRanking() {
       navigate('/login');
       return;
     }
-    fetch(`${API}/lc/wallet`, { headers: { Authorization: `Bearer ${auth.token || ''}` } })
-      .then(r => r.json())
-      .then(d => { if (d.success) setBalance(d.data.balance); });
   }, [auth, navigate]);
 
   useEffect(() => {
@@ -232,7 +219,6 @@ export default function CreateRanking() {
       setSubjectMode(item.subject_dossier_id ? 'existing' : 'new');
       setContent(item.content || '');
       setFiles(Array.isArray(item.files) ? item.files : []);
-      setInitialAmount(item.type === 'red' ? Math.max(10, Number(item.initial_amount || 10)) : 10);
       setEventDate(item.event_date || '');
       setEventScriptId(item.event_script_id || '');
       setEventScriptName(item.event_script_name || '');
@@ -328,7 +314,6 @@ export default function CreateRanking() {
     if (subjectType === 'store' && subjectMode === 'new' && !newSubjectWorkplace.trim()) return setError('请填写店家地址、商圈或常驻位置');
     if (evidenceRequired && files.length === 0) return setError('管理员要求补充证据，请至少上传一张证据图片');
     if (!rulesAccepted) return setError('请先阅读并确认发布规则');
-    if (!resubmitId && effectiveAmount > 0 && (balance || 0) < effectiveAmount) return setError('契约币不足，请先充值');
 
     setSubmitting(true);
     setError('');
@@ -357,7 +342,7 @@ export default function CreateRanking() {
         eventStoreDossierId: eventStoreDossierId || null,
         eventStoreName: (selectedEventStore?.dm_name || eventStoreName).trim() || null,
         content: content.trim(),
-        initialAmount: effectiveAmount,
+        initialAmount: 0,
         files,
       };
       const r = await fetch(resubmitId ? `${API}/lc/rankings/${encodeURIComponent(resubmitId)}/resubmit` : `${API}/lc/rankings`, {
@@ -369,7 +354,6 @@ export default function CreateRanking() {
       if (d.success) {
         setDone(true);
         rankingDraft.clearDraft();
-        if (!resubmitId) setBalance(prev => Math.max(0, (prev || 0) - effectiveAmount));
       } else {
         const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '提交失败');
         setError(msg);
@@ -391,7 +375,7 @@ export default function CreateRanking() {
           <Link to="/rankings" className="ranking-new-back">← 返回红黑榜</Link>
           <div className="ranking-new-title-row">
             <h1 className="ranking-new-title">{resubmitId ? '修改并重新提交' : '发布红黑榜'}</h1>
-            <Link to="/wallet" className="ranking-new-coin"><span>◉</span> 契约币 {balance ?? '...'}</Link>
+            <span className="ranking-new-coin"><span>✓</span> 免费发布</span>
           </div>
           <p className="ranking-new-subtitle">口碑票一人一票 · 真实口碑 · {publishCostText}</p>
         </div>
@@ -401,7 +385,6 @@ export default function CreateRanking() {
         {done ? (
           <SuccessState
             type={type}
-            effectiveAmount={effectiveAmount}
             resubmitted={!!resubmitId}
             onReset={() => {
               setDone(false);
@@ -418,7 +401,6 @@ export default function CreateRanking() {
           <div className="ranking-new-column">
             <RankingTypeSelector type={type} disabled={!!resubmitId} onTypeChange={(next) => {
               setType(next);
-              setInitialAmount(prev => next === 'red' ? Math.max(10, prev || 10) : 10);
             }} />
 
             <div className="ranking-new-main-grid">
@@ -573,11 +555,11 @@ export default function CreateRanking() {
 
               <aside className="ranking-new-right">
                 <RankingRulesNotice type={type} accepted={rulesAccepted} onAcceptedChange={setRulesAccepted} />
-                <AmountSection type={type} effectiveAmount={effectiveAmount} setInitialAmount={setInitialAmount} disabled={!!resubmitId} />
+                <AmountSection type={type} />
                 {evidenceRequired && <div className="ranking-error">本次为审核要求补证据，重新提交前必须至少上传一张证据图片。</div>}
                 {(error || rankingDraft.error) && <div className="ranking-error">{error || rankingDraft.error}</div>}
                 <button className="ranking-submit" onClick={submit} disabled={submitting || !rulesAccepted}>
-                  {submitting ? '提交中...' : !rulesAccepted ? '请先确认发布规则' : resubmitId ? '重新提交审核（不重复扣币）' : (effectiveAmount > 0 ? `发布 · 扣 ${effectiveAmount} 契约币` : `免费发布${type === 'black' ? '黑榜' : '白榜'}`)}
+                  {submitting ? '提交中...' : !rulesAccepted ? '请先确认发布规则' : resubmitId ? '重新提交审核' : `免费发布${type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}`}
                 </button>
               </aside>
             </div>
@@ -743,36 +725,8 @@ function UploadField({
   );
 }
 
-function AmountSection({ type, effectiveAmount, setInitialAmount, disabled = false }: { type: RankingType; effectiveAmount: number; setInitialAmount: (value: number) => void; disabled?: boolean }) {
-  if (type !== 'red') {
-    return (
-      <div className="ranking-free-note">
-        {type === 'black'
-          ? '黑榜免费提交，进入人工审核；它是公共风险记录，不开放砸币攻击。'
-          : '白榜免费发布，适合奇闻、笑料、怪事和中性观察。'}
-      </div>
-    );
-  }
-
-  return (
-    <section className="ranking-amount">
-      <label className="ranking-amount-label">初始投入 · {effectiveAmount} 契约币</label>
-      <input
-        className="ranking-range"
-        type="range"
-        min={10}
-        max={100}
-        step={10}
-        value={effectiveAmount}
-        disabled={disabled}
-        onChange={e => setInitialAmount(Number(e.target.value))}
-      />
-      <div className="ranking-range-labels">
-        <span>10 契约币（最低）</span>
-        <span>100 契约币（最高）</span>
-      </div>
-    </section>
-  );
+function AmountSection({ type }: { type: RankingType }) {
+  return <div className="ranking-free-note">{type === 'black' ? '黑榜免费提交并进入人工审核；不开放付费踩榜或付费攻击。' : `${type === 'red' ? '红榜' : '白榜'}免费提交；通过审核后，其他用户可以自愿投入榜金正向打榜。`}</div>;
 }
 
 function Input({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
@@ -805,7 +759,7 @@ function RankingRulesNotice({ type, accepted, onAcceptedChange }: { type: Rankin
         <RuleLine><strong>写什么</strong> — {typeTip}</RuleLine>
         <RuleLine><strong>上传证据</strong> — 红榜、黑榜、白榜首次提交都不强制上传；审核员认为现有内容不足时，可以打回并要求补证据。</RuleLine>
         <RuleLine><strong>保护隐私</strong> — 聊天记录、订单、群聊、照片等第三方信息请先打码，否则可能被驳回。</RuleLine>
-        <RuleLine><strong>口碑票</strong> — 同一账号对同一帖只保留一张口碑票；打榜、踩榜按契约币金额累计，禁止多号刷票或重复提交同一事件。</RuleLine>
+        <RuleLine><strong>口碑票</strong> — 同一账号对同一帖只保留一张口碑票；榜金只用于正向打榜，不开放付费踩榜，禁止多号刷票或重复提交同一事件。</RuleLine>
         <RuleLine><strong>审核边界</strong> — 审核通过仅代表符合展示规则，不代表平台已核实全部陈述。</RuleLine>
         <RuleLine><strong>相关方回应</strong> — 回应不是删帖入口；先发普通评论，通过后再提交关系材料申请置顶。</RuleLine>
         <RuleLine><strong>黑榜期限</strong> — 黑榜默认公开展示 30 天后进入已过期记录，后续可去标识化沉淀为共性问题和礼仪建议。</RuleLine>
@@ -833,13 +787,13 @@ function RuleLine({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SuccessState({ type, effectiveAmount, onReset, resubmitted = false }: { type: RankingType; effectiveAmount: number; onReset: () => void; resubmitted?: boolean }) {
+function SuccessState({ type, onReset, resubmitted = false }: { type: RankingType; onReset: () => void; resubmitted?: boolean }) {
   return (
     <div className="ranking-success-card">
       <div className="ranking-success-icon">✓</div>
       <h2 className="ranking-success-title">发布成功</h2>
       <p className="ranking-success-copy">
-        你的{type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}已提交审核。{resubmitted ? '本次重新提交不会重复扣除契约币。' : effectiveAmount > 0 ? `${effectiveAmount} 契约币已扣除。` : `${type === 'black' ? '黑榜' : '白榜'}本次免费发布。`}
+        你的{type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}已提交审核。{resubmitted ? '审核通过后会恢复公开。' : '发布评价不扣榜金。'}
       </p>
       <div className="ranking-success-actions">
         <Link to="/rankings" className="ranking-success-link">回红黑榜</Link>

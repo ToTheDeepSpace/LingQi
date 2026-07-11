@@ -1511,7 +1511,7 @@ export default function Dashboard() {
               {[
                 ['看红黑白榜', '夸人、避雷、记录离谱事；主帖进入审核，证据初次提交选填，相关方可以回应。'],
                 ['给万物评分', '剧本、角色、店家、DM/卡司、玩家等都可以沉淀口碑和 tag。'],
-                ['打榜与投票', '契约币表达支持或反对强度；同意、反对、离谱这类态度投票单独保留。'],
+                ['打榜与投票', '榜金只表达正向支持强度；同意、反对、离谱这类一人一票态度单独保留。'],
                 ['讨论圈内行为', '比如睡车、加戏、拒绝边界等，可以通过投票和口碑记录形成共识。'],
                 ['设置个人主页', '头像、昵称、常用城市先补上；公开资料提交后会进入审核。'],
                 ['成为服务者', '只有填写并通过服务审核的人，才会出现在服务大厅。'],
@@ -2443,8 +2443,8 @@ export default function Dashboard() {
                 <PageIntro
                   eyebrow="WALLET"
                   title="钱包余额"
-                  subtitle="契约币余额、充值币、赠币和最近流水统一放在后台里查看。"
-                  action={<Link to="/wallet" style={darkActionStyle}>充值 / 完整流水</Link>}
+                  subtitle="榜金余额、充值榜金、赠送榜金和最近流水统一放在后台里查看。"
+                  action={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Link to="/income" style={secondaryActionStyle}>创作者收入</Link><Link to="/wallet" style={darkActionStyle}>充值 / 完整流水</Link></div>}
                 />
                 {moduleError && <ModuleNotice tone="red">{moduleError}</ModuleNotice>}
                 {moduleLoading && !walletData ? (
@@ -2452,15 +2452,15 @@ export default function Dashboard() {
                 ) : (
                   <>
                     <div className="dashboard-metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-                      <MetricCard label="总契约币" value={`${walletData?.balance ?? 0}`} tone="gold" />
-                      <MetricCard label="充值币" value={`${walletData?.paid_balance ?? 0}`} tone="green" />
-                      <MetricCard label="赠币" value={`${walletData?.bonus_balance ?? 0}`} tone="blue" />
+                      <MetricCard label="总榜金" value={`${walletData?.balance ?? 0}`} tone="gold" />
+                      <MetricCard label="充值榜金" value={`${walletData?.paid_balance ?? 0}`} tone="green" />
+                      <MetricCard label="赠送榜金" value={`${walletData?.bonus_balance ?? 0}`} tone="blue" />
                     </div>
                     <section style={card}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
                         <div>
                           <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>最近流水</h2>
-                          <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>消费默认先扣赠币，再扣充值币。</p>
+                          <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>消费默认先扣赠送榜金，再扣充值榜金。</p>
                         </div>
                         <Link to="/wallet" style={secondaryActionStyle}>查看全部</Link>
                       </div>
@@ -2682,7 +2682,7 @@ export default function Dashboard() {
                   eyebrow="REFERRALS"
                   title="邀请奖励"
                   subtitle="邀请码、邀请链接、奖励规则和邀请记录统一收在个人后台。"
-                  action={<Link to="/wallet" style={secondaryActionStyle}>契约币记录</Link>}
+                  action={<Link to="/wallet" style={secondaryActionStyle}>榜金记录</Link>}
                 />
                 {moduleError && <ModuleNotice tone="red">{moduleError}</ModuleNotice>}
                 {moduleLoading && !referralData ? (
@@ -2765,7 +2765,7 @@ export default function Dashboard() {
                   {myRankings.map(item => (
                     <MineRow key={item.id}
                       title={item.subject_name}
-                      meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · ${item.initial_amount === 0 ? '免费发布' : `初始 ${item.initial_amount} 契约币`} · 打榜${item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0)} 踩榜${item.negative_boost_amount || 0} 同意${item.agree_count ?? 0} 反对${item.oppose_count ?? 0} 离谱${item.joys || 0}`}
+                      meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · 免费发布 · 打榜${item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0)}${item.negative_boost_amount ? ` · 历史踩榜${item.negative_boost_amount}` : ''} · 同意${item.agree_count ?? 0} 反对${item.oppose_count ?? 0} 离谱${item.joys || 0}`}
                       status={item.status}
                       note={item.status === 'rejected' && item.reject_reason ? `${item.evidence_required ? '需补证据' : '打回修改'}：${item.reject_reason}` : undefined}
                       to="/rankings"

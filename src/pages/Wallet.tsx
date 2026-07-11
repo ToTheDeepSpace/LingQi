@@ -62,7 +62,7 @@ export default function Wallet() {
   const rechargeAmount = Number(amountInput);
   const amountValid = Number.isInteger(rechargeAmount) && rechargeAmount >= 10 && rechargeAmount <= MAX_RECHARGE_AMOUNT;
   const amountError = amountInput.trim() && !amountValid
-    ? (rechargeAmount > MAX_RECHARGE_AMOUNT ? `单次最多 ${MAX_RECHARGE_AMOUNT} 契约币` : '最低 10 契约币，且只能输入整数')
+    ? (rechargeAmount > MAX_RECHARGE_AMOUNT ? `单次最多 ${MAX_RECHARGE_AMOUNT} 榜金` : '最低 10 榜金，且只能输入整数')
     : '';
 
   const fetchWallet = useCallback((silent = false) => {
@@ -181,8 +181,8 @@ export default function Wallet() {
 	    const bonusBefore = typeof tx.bonus_balance_before === 'number' ? tx.bonus_balance_before : null;
 	    const bonusAfter = typeof tx.bonus_balance_after === 'number' ? tx.bonus_balance_after : null;
 	    const parts: string[] = [];
-	    if (paidBefore !== null && paidAfter !== null) parts.push(`充值币 ${paidBefore} -> ${paidAfter}`);
-	    if (bonusBefore !== null && bonusAfter !== null) parts.push(`赠币 ${bonusBefore} -> ${bonusAfter}`);
+	    if (paidBefore !== null && paidAfter !== null) parts.push(`充值榜金 ${paidBefore} -> ${paidAfter}`);
+	    if (bonusBefore !== null && bonusAfter !== null) parts.push(`赠送榜金 ${bonusBefore} -> ${bonusAfter}`);
 	    return parts.join(' · ');
 	  };
 
@@ -190,8 +190,8 @@ export default function Wallet() {
 	    const paid = typeof tx.paid_amount === 'number' ? tx.paid_amount : 0;
 	    const bonus = typeof tx.bonus_amount === 'number' ? tx.bonus_amount : 0;
 	    const parts: string[] = [];
-	    if (paid !== 0) parts.push(`充值币 ${paid > 0 ? '+' : ''}${paid}`);
-	    if (bonus !== 0) parts.push(`赠币 ${bonus > 0 ? '+' : ''}${bonus}`);
+	    if (paid !== 0) parts.push(`充值榜金 ${paid > 0 ? '+' : ''}${paid}`);
+	    if (bonus !== 0) parts.push(`赠送榜金 ${bonus > 0 ? '+' : ''}${bonus}`);
 	    return parts.join(' / ');
 	  };
 
@@ -208,17 +208,17 @@ export default function Wallet() {
 	      <div style={{ background: 'linear-gradient(135deg, #eef6ff, #fffaf2)', borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '32px 20px' }}>
 	        <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
 	          <div>
-	            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的契约币</h1>
-	            <p style={{ fontSize: '0.82rem', color: MUTED }}>充值币来自支付充值；赠币来自注册、邀请和维护奖励。消费默认先用赠币，再用充值币。</p>
+	            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>我的榜金</h1>
+	            <p style={{ fontSize: '0.82rem', color: MUTED }}>充值榜金来自支付充值；赠送榜金来自注册、邀请和维护奖励。消费默认先用赠送榜金，再用充值榜金。</p>
 	            <Link to="/referrals" style={{ display: 'inline-flex', marginTop: 10, padding: '6px 10px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.24)', color: '#925f18', background: 'rgba(255,255,255,0.78)', textDecoration: 'none', fontSize: '0.78rem', fontWeight: 850 }}>
 	              查看邀请奖励
 	            </Link>
 	          </div>
 	          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(88px, 1fr))', gap: 8, flex: '1 1 340px', maxWidth: 420 }}>
 	            {[
-	              { label: '总契约币', value: balance, color: GOLD },
-	              { label: '充值币', value: paidBalance, color: '#166534' },
-	              { label: '赠币', value: bonusBalance, color: '#275389' },
+	              { label: '总榜金', value: balance, color: GOLD },
+	              { label: '充值榜金', value: paidBalance, color: '#166534' },
+	              { label: '赠送榜金', value: bonusBalance, color: '#275389' },
 	            ].map(item => (
 	              <div key={item.label} style={{
 	                padding: '13px 12px', borderRadius: 12,
@@ -244,7 +244,7 @@ export default function Wallet() {
         }}>
 	          <h2 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 8 }}>充值</h2>
 	          <p style={{ fontSize: '0.82rem', color: MUTED, lineHeight: 1.7, marginBottom: 20 }}>
-	            输入充值金额后选择微信扫码或支付宝电脑支付，支付成功后进入充值币。支付订单 {PAYMENT_ORDER_TTL_MINUTES} 分钟内有效。最低 10 契约币，单次最多 {MAX_RECHARGE_AMOUNT} 契约币。建议按实际需要小额充值。
+	            输入充值金额后选择微信扫码或支付宝电脑支付，支付成功后进入充值榜金。支付订单 {PAYMENT_ORDER_TTL_MINUTES} 分钟内有效。最低 10 榜金，单次最多 {MAX_RECHARGE_AMOUNT} 榜金。建议按实际需要小额充值。
           </p>
 
           {showReturnNotice && (
@@ -264,7 +264,7 @@ export default function Wallet() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
 	              <p style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: 8, color: 'rgba(71,85,105,0.78)' }}>
-	                充值币 · <span style={{ color: GOLD }}>{amountInput || '--'}</span>
+	                充值榜金 · <span style={{ color: GOLD }}>{amountInput || '--'}</span>
               </p>
               <input
                 type="number"
@@ -296,7 +296,7 @@ export default function Wallet() {
                       border: rechargeAmount === a ? `1px solid ${GOLD}` : '1px solid rgba(201,146,46,0.15)',
                       background: rechargeAmount === a ? 'rgba(201,146,46,0.12)' : '#fff',
                       color: rechargeAmount === a ? '#925f18' : 'rgba(71,85,105,0.66)',
-	                    }}>{a} 充值币</button>
+	                    }}>{a} 充值榜金</button>
                 ))}
               </div>
               {amountError && <p style={{ color: RED, fontSize: '0.76rem', fontWeight: 700 }}>{amountError}</p>}
@@ -304,7 +304,7 @@ export default function Wallet() {
 
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: MUTED, fontSize: '0.8rem', lineHeight: 1.6, marginBottom: 2 }}>
               按需充值，充值入账后原则上不支持提现或无理由退款。
-              <InfoTip>只有支付平台异步通知验签通过后才会入账。充值所得为充值币，赠送和奖励所得为赠币；站内消费默认先扣赠币，再扣充值币。契约币是站内服务预付额度，充值入账后会产生支付通道、开票和账务处理成本；如遇重复扣款、支付成功未到账、平台原因无法使用等异常，可联系平台核查处理。发票可按实际支付金额申请，企业用户可按公司开票规则提交专票信息。</InfoTip>
+              <InfoTip>只有支付平台异步通知验签通过后才会入账。充值所得为充值榜金，赠送和奖励所得为赠送榜金；站内消费默认先扣赠送榜金，再扣充值榜金。榜金是站内服务预付额度，充值入账后会产生支付通道、开票和账务处理成本；如遇重复扣款、支付成功未到账、平台原因无法使用等异常，可联系平台核查处理。发票可按实际支付金额申请，企业用户可按公司开票规则提交专票信息。</InfoTip>
             </div>
 
             {wechatOrder && (
@@ -324,7 +324,7 @@ export default function Wallet() {
                   style={{ width: '100%', maxWidth: 220, aspectRatio: '1 / 1', borderRadius: 8, background: '#fff', border: '1px solid rgba(21,128,61,0.16)' }}
                 />
                 <div>
-	                  <p style={{ margin: '0 0 6px', fontWeight: 900, color: '#166534' }}>微信扫码支付 · {wechatOrder.amount} 充值币</p>
+	                  <p style={{ margin: '0 0 6px', fontWeight: 900, color: '#166534' }}>微信扫码支付 · {wechatOrder.amount} 充值榜金</p>
                   <p style={{ margin: '0 0 12px', color: '#166534', fontSize: '0.8rem', lineHeight: 1.7 }}>
                     使用微信扫码完成支付，二维码 {PAYMENT_ORDER_TTL_MINUTES} 分钟内有效。支付成功后通常会自动到账；如果余额暂时没变，等一分钟再刷新。
                   </p>
@@ -355,7 +355,7 @@ export default function Wallet() {
                   background: payingGateway || !amountValid ? 'rgba(21,128,61,0.12)' : '#16a34a',
                   color: payingGateway || !amountValid ? 'rgba(22,101,52,0.38)' : '#fff', border: 'none',
                 }}>
-	                {payingGateway === 'wechat_pay' ? '正在创建微信订单...' : `微信扫码支付 · ${amountValid ? rechargeAmount : '--'} 充值币`}
+	                {payingGateway === 'wechat_pay' ? '正在创建微信订单...' : `微信扫码支付 · ${amountValid ? rechargeAmount : '--'} 充值榜金`}
               </button>
               <button onClick={startAlipayRecharge} disabled={Boolean(payingGateway) || !amountValid}
                 style={{
@@ -364,7 +364,7 @@ export default function Wallet() {
                   background: payingGateway || !amountValid ? 'rgba(201,146,46,0.15)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
                   color: payingGateway || !amountValid ? 'rgba(201,146,46,0.4)' : INK, border: 'none',
                 }}>
-	                {payingGateway === 'alipay' ? '正在创建支付宝订单...' : `支付宝电脑支付 · ${amountValid ? rechargeAmount : '--'} 充值币`}
+	                {payingGateway === 'alipay' ? '正在创建支付宝订单...' : `支付宝电脑支付 · ${amountValid ? rechargeAmount : '--'} 充值榜金`}
               </button>
             </div>
           </div>
@@ -436,7 +436,7 @@ export default function Wallet() {
                         ? '#15803d'
                         : (tx.type === 'recharge' && tx.status === 'pending' ? '#925f18' : RED),
 	                  }}>
-	                    {tx.amount > 0 ? '+' : ''}{tx.amount} 契约币
+	                    {tx.amount > 0 ? '+' : ''}{tx.amount} 榜金
 	                  </p>
 	                  {getSplitAmountText(tx) && (
 	                    <p style={{ fontSize: '0.7rem', color: 'rgba(71,85,105,0.58)', marginTop: 2 }}>{getSplitAmountText(tx)}</p>

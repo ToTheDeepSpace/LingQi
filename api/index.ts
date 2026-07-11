@@ -49,6 +49,7 @@ import {
   mergeIdentityRoles,
 } from '../src/lib/serviceCategories.js';
 import { extractSharedUrl } from '../src/lib/socialLinks.js';
+import { CHANTO_MAX_AMOUNT, CHANTO_MIN_AMOUNT, isValidChantoAmount } from '../src/lib/chanto.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -233,10 +234,11 @@ app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 // --- 工具函数 ---
 function ok(d?: unknown) { return { success: true, data: d }; }
 function err(e: unknown) {
-  if (e instanceof Error) return { success: false, error: e.message };
-  if (typeof e === 'string') return { success: false, error: e };
+  const publicMessage = (value: string) => value.replaceAll('契约币', '榜金');
+  if (e instanceof Error) return { success: false, error: publicMessage(e.message) };
+  if (typeof e === 'string') return { success: false, error: publicMessage(e) };
   if (e && typeof e === 'object' && 'message' in (e as Record<string,unknown>)) {
-    return { success: false, error: String((e as Record<string,unknown>).message) };
+    return { success: false, error: publicMessage(String((e as Record<string,unknown>).message)) };
   }
   return { success: false, error: '服务器错误' };
 }
@@ -573,6 +575,20 @@ type GuidePurchaseResult = {
   already_purchased: boolean;
 };
 
+type DmGiftRpcResult = {
+  gift_id: string;
+  transaction_id: string;
+  income_entry_id: string;
+  balance: number;
+  paid_balance: number;
+  bonus_balance: number;
+  gross_amount: number;
+  platform_fee: number;
+  receiver_amount: number;
+  available_at: string;
+  applied: boolean;
+};
+
 function normalizeReferralCode(input: unknown) {
   return cleanText(input, 40).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
 }
@@ -748,7 +764,7 @@ async function registerReferralForNewProfile(profile: ReferralProfile, referralC
   const credit = await applyWalletCredit({
     profileId: profile.id,
     amount: 10,
-    description: '受邀注册额外赠送 10 契约币',
+    description: '受邀注册额外赠送 10 榜金',
     refType: 'referral_invitee_bonus',
     refId: referral.id,
     idempotencyKey: `referral:invitee:${referral.id}`,
@@ -787,7 +803,7 @@ async function maybeAwardReferralStage1(inviteeId: string) {
   const credit = await applyWalletCredit({
     profileId: referral.referrer_id,
     amount: 10,
-    description: '邀请好友完成手机号验证奖励 10 契约币',
+    description: '邀请好友完成手机号验证奖励 10 榜金',
     refType: 'referral_stage1',
     refId: referral.id,
     idempotencyKey: `referral:stage1:${referral.id}`,
@@ -811,7 +827,7 @@ async function maybeAwardReferralStage2(inviteeId: string | null | undefined, re
   const credit = await applyWalletCredit({
     profileId: referral.referrer_id,
     amount: 20,
-    description: '邀请好友完成有效互动奖励 20 契约币',
+    description: '邀请好友完成有效互动奖励 20 榜金',
     refType: 'referral_stage2',
     refId: referral.id,
     idempotencyKey: `referral:stage2:${referral.id}`,
@@ -1274,8 +1290,8 @@ function makeAlipayOrderNo() {
 
 function parseRechargeAmount(input: unknown) {
   const amount = Number(input);
-  if (!Number.isInteger(amount) || amount < 10) throw new Error('充值最低 10 契约币');
-  if (amount > 500) throw new Error('单次充值最多 500 契约币');
+  if (!Number.isInteger(amount) || amount < 10) throw new Error('充值最低 10 榜金');
+  if (amount > 500) throw new Error('单次充值最多 500 榜金');
   return amount;
 }
 
@@ -1288,7 +1304,7 @@ function formatWechatPayTimeExpire(date: Date) {
 }
 
 function makeAlipayPayUrl(outTradeNo: string, amount: number) {
-  const subject = `剧幕录契约币充值 ${amount}`;
+  const subject = `剧幕录榜金充值 ${amount}`;
   const params: Record<string, string> = {
     app_id: ALIPAY_APP_ID,
     method: 'alipay.trade.page.pay',
@@ -1418,7 +1434,7 @@ async function wechatPayRequest<T>(method: 'GET' | 'POST', pathWithQuery: string
 }
 
 function makeWechatPayDescription(amount: number) {
-  return `剧幕录契约币充值 ${amount}`;
+  return `剧幕录榜金充值 ${amount}`;
 }
 
 async function createWechatPayNativeOrder(outTradeNo: string, amount: number, expiresAt = makePaymentExpiresAt()) {
@@ -3877,7 +3893,7 @@ function firstRpcRow<T>(data: T | T[] | null): T | null {
 }
 
 function rankingVoteRpcStatus(message: string) {
-  if (message.includes('契约币不足')) return 402;
+  if (message.includes('榜金不足') || message.includes('契约币不足')) return 402;
   if (message.includes('不存在') || message.includes('未上线') || message.includes('还没有')) return 404;
   if (message.includes('无效') || message.includes('超过24小时')) return 400;
   return 500;
@@ -4056,7 +4072,7 @@ app.post('/api/lc/auth/phone', async (req, res) => {
       amount: 30,
       paid_amount: 0,
       bonus_amount: 30,
-      description: '新用户注册赠送 30 契约币',
+      description: '新用户注册赠送 30 榜金',
       status: 'approved',
       balance_before: 0,
       balance_after: 30,
@@ -4133,7 +4149,7 @@ app.post('/api/lc/auth/email', async (req, res) => {
       amount: 30,
       paid_amount: 0,
       bonus_amount: 30,
-      description: '新用户注册赠送 30 契约币',
+      description: '新用户注册赠送 30 榜金',
       status: 'approved',
       balance_before: 0,
       balance_after: 30,
@@ -4448,7 +4464,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
         amount: 30,
         paid_amount: 0,
         bonus_amount: 30,
-        description: '新用户注册赠送 30 契约币',
+        description: '新用户注册赠送 30 榜金',
         status: 'approved',
         balance_before: 0,
         balance_after: 30,
@@ -4576,7 +4592,7 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
         amount: 30,
         paid_amount: 0,
         bonus_amount: 30,
-        description: '新用户注册赠送 30 契约币',
+        description: '新用户注册赠送 30 榜金',
         status: 'approved',
         balance_before: 0,
         balance_after: 30,
@@ -6125,9 +6141,9 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
     if (!city || !eventDate || !deadlineDate || (!scriptName && !scriptIdInput) || !leaderContact || !content) {
       return res.status(400).json(err(new Error('请填写城市、日期、截止日期、本名、车头联系方式和拼车说明')));
     }
-    if (boostAmount > 100) return res.status(400).json(err(new Error('加权展示最多 100 契约币')));
+    if (boostAmount > 100) return res.status(400).json(err(new Error('加权展示最多 100 榜金')));
     if (boostAmount > 0 && (profile.balance || 0) < boostAmount) {
-      return res.status(402).json(err(new Error('契约币不足，请先充值')));
+      return res.status(402).json(err(new Error('榜金不足，请先充值')));
     }
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'carpool_submit',
@@ -9069,6 +9085,71 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+async function loadDmChantoSummary(dmDossierId: string) {
+  if (useTencentPg) {
+    const [summaryResult, recentResult] = await Promise.all([
+      tencentPgPool.query(
+        `select coalesce(sum(g.amount), 0)::integer as total,
+                count(*)::integer as gift_count,
+                count(distinct g.sender_id)::integer as supporter_count
+           from lc_dm_gifts g
+          where g.dm_dossier_id = $1 and g.status = 'approved'`,
+        [dmDossierId],
+      ),
+      tencentPgPool.query(
+        `select g.id, g.amount, g.is_anonymous, g.created_at,
+                case when g.is_anonymous then null else p.display_name end as supporter_name
+           from lc_dm_gifts g
+           left join lc_profiles p on p.id = g.sender_id
+          where g.dm_dossier_id = $1 and g.status = 'approved'
+          order by g.created_at desc
+          limit 10`,
+        [dmDossierId],
+      ),
+    ]);
+    return {
+      total: Number(summaryResult.rows[0]?.total || 0),
+      gift_count: Number(summaryResult.rows[0]?.gift_count || 0),
+      supporter_count: Number(summaryResult.rows[0]?.supporter_count || 0),
+      recent: recentResult.rows.map(row => ({
+        id: row.id,
+        amount: Number(row.amount || 0),
+        supporter_name: row.supporter_name || '匿名支持者',
+        created_at: row.created_at,
+      })),
+    };
+  }
+
+  const giftResult = await supabase.from('lc_dm_gifts')
+    .select('id, sender_id, amount, is_anonymous, created_at')
+    .eq('dm_dossier_id', dmDossierId)
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (giftResult.error && isMissingRelation(giftResult.error, 'lc_dm_gifts')) {
+    return { total: 0, gift_count: 0, supporter_count: 0, recent: [] };
+  }
+  if (giftResult.error) throw giftResult.error;
+  const gifts = (giftResult.data || []) as Record<string, unknown>[];
+  const senderIds = Array.from(new Set(gifts.filter(gift => !gift.is_anonymous).map(gift => cleanText(gift.sender_id, 80)).filter(Boolean)));
+  const profileResult = senderIds.length > 0
+    ? await supabase.from('lc_profiles').select('id, display_name').in('id', senderIds)
+    : { data: [], error: null };
+  if (profileResult.error) throw profileResult.error;
+  const nameById = new Map(((profileResult.data || []) as Record<string, unknown>[]).map(profile => [String(profile.id), cleanText(profile.display_name, 80)]));
+  return {
+    total: gifts.reduce((sum, gift) => sum + Number(gift.amount || 0), 0),
+    gift_count: gifts.length,
+    supporter_count: new Set(gifts.map(gift => String(gift.sender_id))).size,
+    recent: gifts.slice(0, 10).map(gift => ({
+      id: gift.id,
+      amount: Number(gift.amount || 0),
+      supporter_name: gift.is_anonymous ? '匿名支持者' : nameById.get(String(gift.sender_id)) || '用户',
+      created_at: gift.created_at,
+    })),
+  };
+}
+
 app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
   try {
     const { data: dossier, error: dossierErr } = await supabase.from('lc_dm_dossiers')
@@ -9124,6 +9205,7 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
     const employmentStatus = confirmedStore
       ? 'store_affiliated'
       : dossier.employment_status === 'freelance' ? 'freelance' : 'unknown';
+    const chantoSummary = await loadDmChantoSummary(req.params.id);
     res.json(ok({
       dossier: {
         id: dossier.id,
@@ -9145,6 +9227,7 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
       summary: summarizeDmRatingRows(rows),
       reputation_summary: buildReputationSummary(rankingRows),
       reputation_events: rankingRows.map(publicRankingPayload),
+      chanto_summary: chantoSummary,
       ratings: rows.map(row => ({
         id: row.id,
         profile_name: row.profile_name || '匿名玩家',
@@ -9160,6 +9243,158 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
         created_at: row.created_at,
       })),
     }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/dm-dossiers/:id/gifts', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+
+    const amount = parseCoinAmount(req.body?.amount, 0);
+    const message = cleanText(req.body?.message, 200);
+    const ratingId = cleanText(req.body?.ratingId ?? req.body?.rating_id, 80) || null;
+    const requestKey = cleanText(req.body?.requestKey ?? req.body?.request_key, 100);
+    if (!isValidChantoAmount(amount)) {
+      return res.status(400).json(err(new Error(`单次缠头须为 ${CHANTO_MIN_AMOUNT}-${CHANTO_MAX_AMOUNT} 榜金`)));
+    }
+    if (!requestKey) return res.status(400).json(err(new Error('缺少请求标识，请刷新后重试')));
+
+    const { data, error: giftErr } = await supabase.rpc('lc_send_dm_gift', {
+      p_sender_id: profile.id,
+      p_dm_dossier_id: req.params.id,
+      p_amount: amount,
+      p_message: message || null,
+      p_is_anonymous: !!req.body?.isAnonymous,
+      p_rating_id: ratingId,
+      p_idempotency_key: requestKey,
+    });
+    if (giftErr) {
+      const messageText = giftErr.message || '缠头发送失败';
+      const status = /不足/.test(messageText) ? 402 : /上限/.test(messageText) ? 429 : 400;
+      return res.status(status).json(err(new Error(messageText)));
+    }
+    const result = firstRpcRow<DmGiftRpcResult>(data);
+    if (!result) throw new Error('缠头入账结果为空');
+
+    await logSecurityEvent(req, {
+      action: result.applied ? 'dm_gift_sent' : 'dm_gift_duplicate_request',
+      targetType: 'dm_dossier',
+      targetId: req.params.id,
+      metadata: {
+        gift_id: result.gift_id,
+        amount: result.gross_amount,
+        platform_fee: result.platform_fee,
+        receiver_amount: result.receiver_amount,
+        rating_id: ratingId,
+        anonymous: !!req.body?.isAnonymous,
+      },
+    });
+    res.json(ok(result));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/dm-gifts/leaderboard', async (req, res) => {
+  try {
+    const city = cleanText(req.query.city, 80);
+    const period = cleanText(req.query.period, 20) === 'all' ? 'all' : 'month';
+    const limit = Math.min(100, Math.max(1, parseCoinAmount(req.query.limit, 50)));
+
+    if (useTencentPg) {
+      const values: unknown[] = [];
+      const conditions = [`g.status = 'approved'`, `d.entity_type = 'dm'`, `d.status = 'approved'`, `d.claim_status = 'approved'`];
+      if (city) {
+        values.push(city);
+        conditions.push(`d.city = $${values.length}`);
+      }
+      if (period === 'month') {
+        conditions.push(`g.created_at >= (date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai')`);
+      }
+      values.push(limit);
+      const result = await tencentPgPool.query(
+        `select d.id, d.dm_name, d.city, d.workplace, d.photo_url, d.photo_focus_x, d.photo_focus_y,
+                sum(g.amount)::integer as chanto_total,
+                count(*)::integer as gift_count,
+                count(distinct g.sender_id)::integer as supporter_count
+           from lc_dm_gifts g
+           join lc_dm_dossiers d on d.id = g.dm_dossier_id
+          where ${conditions.join(' and ')}
+          group by d.id, d.dm_name, d.city, d.workplace, d.photo_url, d.photo_focus_x, d.photo_focus_y
+          order by chanto_total desc, supporter_count desc, d.dm_name asc
+          limit $${values.length}`,
+        values,
+      );
+      return res.json(ok({
+        period,
+        city: city || null,
+        items: result.rows.map((row, index) => ({
+          rank: index + 1,
+          id: row.id,
+          dm_name: row.dm_name,
+          city: row.city,
+          workplace: row.workplace,
+          photo_url: row.photo_url,
+          photo_focus_x: normalizeImageFocus(row.photo_focus_x, 50),
+          photo_focus_y: normalizeImageFocus(row.photo_focus_y, 25),
+          chanto_total: Number(row.chanto_total || 0),
+          gift_count: Number(row.gift_count || 0),
+          supporter_count: Number(row.supporter_count || 0),
+        })),
+      }));
+    }
+
+    let giftQuery = supabase.from('lc_dm_gifts')
+      .select('dm_dossier_id, sender_id, amount, created_at')
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(5000);
+    if (period === 'month') {
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      giftQuery = giftQuery.gte('created_at', start);
+    }
+    const giftResult = await giftQuery;
+    if (giftResult.error && isMissingRelation(giftResult.error, 'lc_dm_gifts')) return res.json(ok({ period, city: city || null, items: [] }));
+    if (giftResult.error) throw giftResult.error;
+    const gifts = (giftResult.data || []) as Record<string, unknown>[];
+    const dossierIds = Array.from(new Set(gifts.map(gift => cleanText(gift.dm_dossier_id, 80)).filter(Boolean)));
+    if (dossierIds.length === 0) return res.json(ok({ period, city: city || null, items: [] }));
+    let dossierQuery = supabase.from('lc_dm_dossiers')
+      .select('id, dm_name, city, workplace, photo_url, photo_focus_x, photo_focus_y')
+      .in('id', dossierIds)
+      .eq('entity_type', 'dm')
+      .eq('status', 'approved')
+      .eq('claim_status', 'approved');
+    if (city) dossierQuery = dossierQuery.eq('city', city);
+    const dossierResult = await dossierQuery;
+    if (dossierResult.error) throw dossierResult.error;
+    const dossierById = new Map(((dossierResult.data || []) as Record<string, unknown>[]).map(dossier => [String(dossier.id), dossier]));
+    const aggregate = new Map<string, { total: number; count: number; supporters: Set<string> }>();
+    for (const gift of gifts) {
+      const dossierId = String(gift.dm_dossier_id || '');
+      if (!dossierById.has(dossierId)) continue;
+      const current = aggregate.get(dossierId) || { total: 0, count: 0, supporters: new Set<string>() };
+      current.total += Number(gift.amount || 0);
+      current.count += 1;
+      current.supporters.add(String(gift.sender_id || ''));
+      aggregate.set(dossierId, current);
+    }
+    const items = Array.from(aggregate.entries())
+      .map(([dossierId, value]) => ({ dossier: dossierById.get(dossierId) || {}, value }))
+      .sort((a, b) => b.value.total - a.value.total || b.value.supporters.size - a.value.supporters.size)
+      .slice(0, limit)
+      .map(({ dossier, value }, index) => ({
+        rank: index + 1,
+        ...dossier,
+        photo_focus_x: normalizeImageFocus(dossier.photo_focus_x, 50),
+        photo_focus_y: normalizeImageFocus(dossier.photo_focus_y, 25),
+        chanto_total: value.total,
+        gift_count: value.count,
+        supporter_count: value.supporters.size,
+      }));
+    res.json(ok({ period, city: city || null, items }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -10689,7 +10924,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     if (subjectType && subjectType !== 'all') query = query.eq('subject_type', subjectType);
     if (cities.length > 0) query = query.in('subject_city', cities);
     else if (city && city !== 'all') query = query.eq('subject_city', city);
-    if (type === 'black') query = query.order('boost_amount', { ascending: false }).order('negative_boost_amount', { ascending: false }).order('agree_count', { ascending: false }).order('created_at', { ascending: false });
+    if (type === 'black') query = query.order('boost_amount', { ascending: false }).order('agree_count', { ascending: false }).order('created_at', { ascending: false });
     else query = query.order('boost_amount', { ascending: false }).order('created_at', { ascending: false });
 
     const { data, error } = await query;
@@ -10766,21 +11001,19 @@ app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
 
 app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
   try {
-    const { type, subjectName, subjectType, subjectCity, subjectUrl, content, initialAmount, paymentProof, newSubject } = req.body;
+    const { type, subjectName, subjectType, subjectCity, subjectUrl, content, paymentProof, newSubject } = req.body;
     if (!type || !subjectName || !subjectType || !content) {
       return res.status(400).json(err(new Error('缺少必填字段')));
     }
     if (!['red', 'black', 'white'].includes(type)) return res.status(400).json(err(new Error('无效榜单类型')));
     if (!RANKING_SUBJECT_TYPES.includes(subjectType)) return res.status(400).json(err(new Error('无效对象分类')));
-    const amount = type === 'red' ? parseInt(initialAmount) : 0;
-    if (type === 'red' && (!Number.isFinite(amount) || amount < 10 || amount > 100)) return res.status(400).json(err(new Error('红榜初始投入须在10~100契约币之间')));
+    const amount = 0;
 
-    // 契约币支付
+    // 榜金支付
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
-    if (amount > 0 && (profile.balance || 0) < amount) return res.status(402).json(err(new Error('契约币不足，请先充值')));
     const files = normalizeRankingEvidenceFiles(req.body?.files);
     const subjectDossier = await resolveRankingSubjectDossier({
       subjectType,
@@ -10804,16 +11037,6 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
 
     const posterId = getReq(req, 'creatorId');
 
-    if (amount > 0) {
-      await spendWalletBalance({
-        profileId: profile.id,
-        amount,
-        description: `发布红榜：${subjectName}`,
-        refType: 'ranking_submit',
-        metadata: { ranking_type: type, subject_type: subjectType, subject_city: subjectCity || null, subject_name: subjectName },
-      });
-    }
-
     const row: Record<string, unknown> = {
       type, subject_name: finalSubjectName, subject_type: subjectType, subject_city: finalSubjectCity || null,
       subject_url: subjectUrl || null, content,
@@ -10830,11 +11053,11 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       is_realname: !!profile.is_realname, real_name: null,
       files: files || [],
       moderation_precheck: moderationPrecheck,
-      boost_amount: type === 'red' ? amount : 0,
+      boost_amount: 0,
       negative_boost_amount: 0,
       agree_count: 0,
       oppose_count: 0,
-      likes: type === 'red' ? amount : 0,
+      likes: 0,
       dislikes: 0,
       joys: 0,
     };
@@ -10936,7 +11159,7 @@ app.put('/api/lc/rankings/:id/resubmit', authMiddleware, async (req, res) => {
       actorRole: profile.role || 'creator',
       metadata: { prior_revision_kind: existing.revision_kind || null, evidence_count: files.length, subject_dossier_id: subjectDossier?.id || null, moderation: moderationPrecheck },
     });
-    res.json(ok({ id: updated?.id, status: updated?.status, message: '已重新提交审核，不会重复扣除契约币' }));
+    res.json(ok({ id: updated?.id, status: updated?.status, message: '已重新提交审核，发布评价不扣榜金' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -10951,7 +11174,7 @@ app.put('/api/lc/rankings/:id/withdraw', authMiddleware, async (req, res) => {
     if (!ranking) return res.status(404).json(err(new Error('内容不存在')));
     if (ranking.poster_id !== profile.id) return res.status(403).json(err(new Error('只能撤回自己的内容')));
     if (ranking.status !== 'pending') return res.status(400).json(err(new Error('只有待审核内容可以撤回')));
-    if ((ranking.initial_amount || 0) > 0) return res.status(400).json(err(new Error('付费内容撤回涉及契约币退款，请联系管理员处理')));
+    if ((ranking.initial_amount || 0) > 0) return res.status(400).json(err(new Error('付费内容撤回涉及榜金退款，请联系管理员处理')));
     const metrics = rankingMetrics(ranking as Record<string, unknown>);
     if (metrics.likes > 0 || metrics.dislikes > 0 || metrics.joys > 0) {
       return res.status(400).json(err(new Error('已有互动记录的内容不能自助撤回')));
@@ -10977,8 +11200,8 @@ app.post('/api/lc/rankings/:id/paid-boost', authMiddleware, async (req, res) => 
     const direction = cleanText(req.body?.direction, 40);
     const amount = parseCoinAmount(req.body?.amount, 0);
     const attachedComment = cleanText(req.body?.comment, 600);
-    if (!['boost', 'negative_boost'].includes(direction)) return res.status(400).json(err(new Error('无效打榜方向')));
-    if (amount <= 0) return res.status(400).json(err(new Error('请输入大于 0 的契约币数量')));
+    if (direction !== 'boost') return res.status(400).json(err(new Error('踩榜功能已下线；榜金只用于正向打榜')));
+    if (amount <= 0) return res.status(400).json(err(new Error('请输入大于 0 的榜金数量')));
 
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -11027,7 +11250,7 @@ app.post('/api/lc/rankings/:id/paid-boost', authMiddleware, async (req, res) => 
     }
 
     await logSecurityEvent(req, {
-      action: direction === 'negative_boost' ? 'ranking_negative_boost_applied' : 'ranking_paid_boost_applied',
+      action: 'ranking_paid_boost_applied',
       targetType: 'ranking',
       targetId: req.params.id,
       metadata: {
@@ -11996,12 +12219,12 @@ app.get('/api/lc/wallet', authMiddleware, async (req, res) => {
 app.post('/api/lc/wallet/recharge', authMiddleware, async (req, res) => {
   try {
     const { amount, paymentProof } = req.body;
-    if (!amount || amount < 10) return res.status(400).json(err(new Error('充值金额最低 10 契约币')));
+    if (!amount || amount < 10) return res.status(400).json(err(new Error('充值金额最低 10 榜金')));
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const { data: tx, error: txErr } = await supabase.from('lc_transactions').insert({
       profile_id: profile.id, type: 'recharge', amount: parseInt(amount),
-      description: '契约币充值', payment_proof: paymentProof || null,
+      description: '榜金充值', payment_proof: paymentProof || null,
       status: 'pending',
     }).select('id, amount').single();
     if (txErr) throw txErr;
@@ -12029,7 +12252,7 @@ app.post('/api/lc/wallet/alipay/create', authMiddleware, async (req, res) => {
       profile_id: profile.id,
       type: 'recharge',
       amount,
-      description: `支付宝充值 · ${amount} 契约币`,
+      description: `支付宝充值 · ${amount} 榜金`,
       payment_proof: null,
       status: 'pending',
       gateway: 'alipay',
@@ -12090,7 +12313,7 @@ app.post('/api/lc/wallet/wechat/create', authMiddleware, async (req, res) => {
       profile_id: profile.id,
       type: 'recharge',
       amount,
-      description: `微信支付充值 · ${amount} 契约币`,
+      description: `微信支付充值 · ${amount} 榜金`,
       payment_proof: null,
       status: 'pending',
       gateway: 'wechat_pay',
