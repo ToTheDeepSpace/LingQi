@@ -1,7 +1,6 @@
 import type React from 'react';
 
 const INK = '#1f2937';
-const BLUE = '#275389';
 
 type FrameProps = {
   currentLabel: string;
@@ -12,19 +11,17 @@ type FrameProps = {
 };
 
 export function JumuluPageFrame({ currentLabel, navigation, actions, children, maxWidth = 1440 }: FrameProps) {
+  const hasTools = !!(navigation || actions);
   return (
     <main style={pageStyle}>
       <section style={{ ...shellStyle, maxWidth }}>
-        <div className="jumulu-page-topbar" style={topbarStyle}>
-          <div style={brandCrumbStyle}>
-            <strong style={brandStyle}>剧幕录</strong>
-            <span style={slashStyle}>/</span>
-            <span style={currentStyle}>{currentLabel}</span>
+        {hasTools && (
+          <div className="jumulu-page-tools" style={toolsStyle}>
+            {navigation && <nav aria-label={`${currentLabel}分区`} style={navigationStyle}>{navigation}</nav>}
+            {actions && <div className="jumulu-page-actions" style={actionStyle}>{actions}</div>}
           </div>
-          {navigation && <nav aria-label={`${currentLabel}分区`} style={navigationStyle}>{navigation}</nav>}
-          {actions && <div className="jumulu-page-actions" style={actionStyle}>{actions}</div>}
-        </div>
-        <div style={mainStyle}>{children}</div>
+        )}
+        <div style={{ ...mainStyle, paddingTop: hasTools ? 8 : 0 }}>{children}</div>
         <style>{`
           @media (max-width: 640px) {
             .jumulu-page-actions {
@@ -58,25 +55,17 @@ export function JumuluCompactHeader({ eyebrow, title, description, aside }: {
 }
 
 const pageStyle: React.CSSProperties = { minHeight: '100vh', background: '#fffdf8', color: INK };
-const shellStyle: React.CSSProperties = { margin: '0 auto', background: '#fffdf8', padding: '16px clamp(12px, 2vw, 20px) 36px' };
-const topbarStyle: React.CSSProperties = {
-  minHeight: 54,
+const shellStyle: React.CSSProperties = { margin: '0 auto', background: '#fffdf8', padding: '12px clamp(12px, 2vw, 20px) 36px' };
+const toolsStyle: React.CSSProperties = {
+  minHeight: 38,
   display: 'flex',
   alignItems: 'center',
-  gap: 14,
-  padding: '8px 12px',
+  gap: 8,
   flexWrap: 'wrap',
-  borderRadius: 8,
-  border: '1px solid rgba(31,41,55,0.08)',
-  background: '#fff',
 };
-const brandCrumbStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 34, whiteSpace: 'nowrap' };
-const brandStyle: React.CSSProperties = { fontFamily: 'var(--font-serif)', fontSize: 19, color: INK, lineHeight: 1 };
-const slashStyle: React.CSSProperties = { color: 'rgba(31,41,55,0.36)', fontWeight: 900 };
-const currentStyle: React.CSSProperties = { color: BLUE, fontSize: 13, fontWeight: 950 };
 const navigationStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const actionStyle: React.CSSProperties = { marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' };
-const mainStyle: React.CSSProperties = { paddingTop: 12, display: 'grid', gap: 12 };
+const mainStyle: React.CSSProperties = { display: 'grid', gap: 12 };
 const headerStyle: React.CSSProperties = {
   minHeight: 96,
   display: 'flex',

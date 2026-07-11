@@ -46,7 +46,11 @@ export default function Navbar() {
   const isLoggedIn = !!creatorAuth;
   const isAdmin = !!adminToken;
   const isShop = creatorAuth?.role === 'shop';
-  const isHome = pathname === '/';
+  const showBack = ![
+    '/', '/dm', '/dm-wall', '/commissions', '/carpools', '/rankings',
+    '/reputation/city', '/scripts', '/guides', '/explore', '/dashboard',
+    '/admin', '/login', '/shop/dashboard', '/roadmap',
+  ].includes(pathname);
   const mobileIdentity = creatorAuth?.display_name || creatorAuth?.phone || creatorAuth?.email || (isAdmin ? '管理员' : '');
   const currentPageLabel = locationLabelFor(pathname);
   const adminActive = pathname.startsWith('/admin');
@@ -128,8 +132,8 @@ export default function Navbar() {
         gap: 16,
       }}>
 
-        {/* 左上角：首页显示品牌，其他页面显示上一级返回 */}
-        {isHome ? (
+        {/* 主入口保留品牌；只有真正的下级页面显示返回上一级。 */}
+        {!showBack ? (
           <Link
             className="home-return-link"
             to="/"
@@ -171,7 +175,6 @@ export default function Navbar() {
           <NavLink to="/commissions">委托需求</NavLink>
           <NavLink to="/carpools">拼车区</NavLink>
           <NavLink to="/rankings">红黑榜</NavLink>
-          <NavLink to="/scripts">角色点评</NavLink>
           <NavLink to="/guides">攻略交易</NavLink>
           {creatorAuth && <IdentityChip tone="user">用户：{creatorAuth.display_name || creatorAuth.phone || creatorAuth.email || '已登录'}</IdentityChip>}
           {isLoggedIn
@@ -270,7 +273,6 @@ export default function Navbar() {
           <MobileLink to="/commissions" onClick={() => setMenuOpen(false)}>委托需求</MobileLink>
           <MobileLink to="/carpools" onClick={() => setMenuOpen(false)}>拼车区</MobileLink>
           <MobileLink to="/rankings" onClick={() => setMenuOpen(false)}>红黑榜</MobileLink>
-          <MobileLink to="/scripts" onClick={() => setMenuOpen(false)}>角色点评</MobileLink>
           <MobileLink to="/guides" onClick={() => setMenuOpen(false)}>攻略交易</MobileLink>
           {creatorAuth && <MobileStatus tone="user">当前用户：{creatorAuth.display_name || creatorAuth.phone || creatorAuth.email || '已登录'}</MobileStatus>}
           {isAdmin && <MobileStatus tone="admin">管理员已登录{pendingCount > 0 ? `，待审 ${pendingCount}` : ''}</MobileStatus>}
