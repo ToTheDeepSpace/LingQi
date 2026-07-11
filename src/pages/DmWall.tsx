@@ -5,12 +5,16 @@ import CitySearchSelect from '../components/CitySearchSelect';
 import DossierClaimModal from '../components/DossierClaimModal';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ImageUpload from '../components/ImageUpload';
+import {
+  JumuluCompactHeader,
+  JumuluPageFrame,
+} from '../components/JumuluPageChrome';
+import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
-const BG = '#fffdf8';
 const GOLD = '#a66a1f';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
@@ -270,25 +274,23 @@ export default function DmWall() {
   };
 
   return (
-    <main style={{ minHeight: '100vh', background: BG, color: INK }}>
-      <section style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '44px 20px 30px' }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
-          <div style={{ maxWidth: 760 }}>
-            <p style={{ margin: '0 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>剧本杀DM评分系统</p>
-            <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3.1rem)', lineHeight: 1.15 }}>查 DM，评体验</h1>
-            <p style={{ margin: '14px 0 0', color: MUTED, lineHeight: 1.8 }}>
-              每玩一次都可以新增一条评价。综合分按独立玩家计算，同一个人多次体验会全部展示，但不会获得更多计分权重。
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Link to="/dm/rate" style={primaryButton}>给 DM 评分</Link>
-            <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={ghostButton}>{showForm ? '收起建档' : '创建档案'}</button>
-          </div>
-        </div>
-      </section>
+    <JumuluPageFrame
+      currentLabel="DM评分"
+      actions={
+        <>
+          <Link to="/dm/rate" style={jumuluPrimaryLinkStyle}>给 DM 评分</Link>
+          <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={jumuluSecondaryLinkStyle}>{showForm ? '收起建档' : '创建档案'}</button>
+        </>
+      }
+    >
+      <JumuluCompactHeader
+        eyebrow="剧本杀 DM 评分"
+        title="查 DM，评体验"
+        description="每次体验都可以留下评分；综合分按独立玩家计算，多次体验完整展示但不重复增加计分权重。"
+      />
 
-      <section style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 20px 82px' }}>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+      <section style={jumuluFilterPanelStyle}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <CitySearchSelect
             value={city}
             onChange={setCity}
@@ -300,6 +302,7 @@ export default function DmWall() {
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索 DM / 店家名称" style={{ ...inputStyle, minWidth: 180, flex: '1 1 220px' }} />
           <Link to="/reputation/city" style={ghostButton}>看城市口碑</Link>
         </div>
+      </section>
 
         {message && (
           <div style={{ marginBottom: 16, borderRadius: 12, padding: '12px 14px', border: `1px solid ${message.ok ? 'rgba(22,163,74,0.24)' : 'rgba(220,38,38,0.22)'}`, background: message.ok ? 'rgba(220,252,231,0.72)' : 'rgba(254,226,226,0.62)', color: message.ok ? '#15803d' : '#b91c1c', fontSize: 14, fontWeight: 700 }}>
@@ -420,7 +423,6 @@ export default function DmWall() {
             })}
           </div>
         )}
-      </section>
       <DossierClaimModal
         open={!!claimTarget}
         dossier={claimTarget}
@@ -433,7 +435,7 @@ export default function DmWall() {
           loadDossiers();
         }}
       />
-    </main>
+    </JumuluPageFrame>
   );
 }
 
@@ -551,12 +553,12 @@ const segmentButton = (active: boolean): React.CSSProperties => ({
   zIndex: 1,
   transition: 'color 180ms ease, background 180ms ease, transform 140ms ease, box-shadow 180ms ease',
 });
-const primaryButton: React.CSSProperties = { border: 'none', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: '#fffdf8', padding: '11px 18px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
-const ghostButton: React.CSSProperties = { border: '1px solid rgba(166,106,31,0.22)', borderRadius: 10, background: '#fffaf2', color: GOLD, padding: '9px 13px', fontWeight: 800, cursor: 'pointer', textDecoration: 'none', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+const primaryButton: React.CSSProperties = { ...jumuluPrimaryLinkStyle, minHeight: 36, padding: '0 12px' };
+const ghostButton: React.CSSProperties = { ...jumuluSecondaryLinkStyle, minHeight: 36, padding: '0 12px' };
 const ghostStatic: React.CSSProperties = { ...ghostButton, cursor: 'default' };
-const formCard: React.CSSProperties = { marginBottom: 18, padding: 18, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)' };
-const cardStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', padding: 14, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)', minHeight: 0 };
+const formCard: React.CSSProperties = { ...jumuluCardStyle, padding: 16 };
+const cardStyle: React.CSSProperties = { ...jumuluCardStyle, display: 'flex', flexDirection: 'column', padding: 14, minHeight: 0 };
 const badgeStyle: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.14)', fontSize: 12, fontWeight: 900 };
 const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.88)', color: '#275389', fontSize: 12, fontWeight: 800 };
 const claimButtonStyle: React.CSSProperties = { padding: '4px 7px', borderRadius: 5, border: '1px solid rgba(166,106,31,0.22)', background: '#fffdf8', color: '#8a5a19', fontSize: 11, fontWeight: 900, cursor: 'pointer' };
-const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 14, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };
+const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 8, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };

@@ -1,5 +1,6 @@
 import type React from 'react';
 import { Link } from 'react-router-dom';
+import { JumuluPageFrame } from './JumuluPageChrome';
 
 export type ReputationHubActive = 'rankings' | 'roles' | 'city';
 
@@ -27,24 +28,19 @@ export function ReputationHubShell({
 }: ShellProps) {
   const label = currentLabel || (active === 'rankings' ? '红黑榜' : active === 'roles' ? '角色点评' : cityTitle);
   return (
-    <main style={pageStyle}>
-      <section style={shellStyle}>
-        <div style={subnavStyle}>
-          <div style={brandCrumbStyle}>
-            <strong style={brandStyle}>剧幕录</strong>
-            <span style={slashStyle}>/</span>
-            <span style={currentStyle}>{label}</span>
-          </div>
-          <div style={subnavLeftStyle}>
+    <JumuluPageFrame
+      currentLabel={label}
+      navigation={
+        <>
             <SubnavLink active={active === 'rankings'} to="/rankings">红黑榜</SubnavLink>
             <SubnavLink active={active === 'roles'} to="/scripts">角色点评</SubnavLink>
             <SubnavLink active={active === 'city'} to={cityHref}>{cityTitle}</SubnavLink>
-          </div>
-          {actions && <div style={actionStyle}>{actions}</div>}
-        </div>
-        <div style={mainStyle}>{children}</div>
-      </section>
-    </main>
+        </>
+      }
+      actions={actions}
+    >
+      {children}
+    </JumuluPageFrame>
   );
 }
 
@@ -114,27 +110,7 @@ function SubnavLink({ active, to, children }: { active: boolean; to: string; chi
   );
 }
 
-const pageStyle: React.CSSProperties = { minHeight: '100vh', background: '#fffdf8', color: INK };
-const shellStyle: React.CSSProperties = { maxWidth: 1440, margin: '0 auto', background: '#fffdf8', padding: '16px clamp(12px, 2vw, 20px) 28px' };
-const subnavStyle: React.CSSProperties = {
-  minHeight: 54,
-  display: 'flex',
-  alignItems: 'center',
-  gap: 14,
-  padding: '8px 12px',
-  flexWrap: 'wrap',
-  borderRadius: 12,
-  border: '1px solid rgba(31,41,55,0.08)',
-  background: '#fff',
-};
-const brandCrumbStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 34, whiteSpace: 'nowrap' };
-const brandStyle: React.CSSProperties = { fontFamily: 'var(--font-serif)', fontSize: 19, color: INK, lineHeight: 1 };
-const slashStyle: React.CSSProperties = { color: 'rgba(31,41,55,0.36)', fontWeight: 900 };
-const currentStyle: React.CSSProperties = { color: BLUE, fontSize: 13, fontWeight: 950 };
-const subnavLeftStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const subnavItemStyle: React.CSSProperties = { minHeight: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, border: '1px solid', padding: '0 12px', textDecoration: 'none', fontSize: 12, fontWeight: 900 };
-const actionStyle: React.CSSProperties = { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
-const mainStyle: React.CSSProperties = { paddingTop: 12, display: 'grid', gap: 12 };
 const badgeStyle: React.CSSProperties = { width: 'fit-content', display: 'inline-flex', alignItems: 'center', borderRadius: 999, border: '1px solid', padding: '8px 12px', fontSize: 12, fontWeight: 900, lineHeight: 1 };
 const buttonStyle: React.CSSProperties = { minHeight: 42, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: '1px solid', padding: '0 16px', textDecoration: 'none', fontSize: 13, fontWeight: 900 };
 const statStyle: React.CSSProperties = { minHeight: 94, borderRadius: 10, border: '1px solid rgba(31,41,55,0.06)', padding: 16, display: 'grid', alignContent: 'start', gap: 7 };

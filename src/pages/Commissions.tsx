@@ -5,13 +5,15 @@ import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
-import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import ReportModal from '../components/ReportModal';
+import {
+  JumuluCompactHeader,
+  JumuluPageFrame,
+} from '../components/JumuluPageChrome';
+import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
-const C = '#fffdf8';
-const C2 = '#eef6ff';
 const GOLD = '#d9a857';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
@@ -244,40 +246,28 @@ export default function Commissions() {
   };
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
-      <div style={{ background: `radial-gradient(circle at 20% 0%, rgba(217,168,87,0.16), transparent 34%), linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '52px 20px 42px' }}>
-        <div style={{ maxWidth: 1040, margin: '0 auto' }}>
-          <div className="gold-line" style={{ marginBottom: 16 }} />
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 4vw, 2.7rem)', marginBottom: 10 }}>
-            委托需求墙
-          </h1>
-          <p style={{ color: MUTED, fontSize: '1rem', lineHeight: 1.8, maxWidth: 680 }}>
-            委托人可以在这里写下想见的角色、日期和地点。也可以只留一段愿望，等待合适的服务者回应。
-          </p>
-          <div style={{ marginTop: 22, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Link to="/commissions/new" className="btn-gold" style={{ padding: '10px 22px', textDecoration: 'none', fontSize: '0.92rem' }}>
-              发布委托需求
-            </Link>
-            <Link to="/explore" style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.32)', color: '#925f18', background: 'rgba(255,255,255,0.72)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 700 }}>
-              找服务者
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ maxWidth: 1040, margin: '0 auto', padding: '28px 20px 80px' }}>
+    <JumuluPageFrame
+      currentLabel="委托需求"
+      actions={
+        <>
+          <Link to="/commissions/new" style={jumuluPrimaryLinkStyle}>发布委托需求</Link>
+          <Link to="/explore" style={jumuluSecondaryLinkStyle}>找服务者</Link>
+        </>
+      }
+    >
+      <JumuluCompactHeader
+        eyebrow="委托需求墙"
+        title="写下想见的角色"
+        description="明确日期、城市和角色，或者只留下一段愿望，等待合适的服务者回应。"
+      />
         {submitted && (
           <div style={{ marginBottom: 18, borderRadius: 12, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(217,168,87,0.12)', padding: '14px 16px', color: '#65401c', lineHeight: 1.7 }}>
             已提交成功，正在等待人工审核。审核通过后会公开展示在委托需求墙；在此之前，只有你能在下方“我的委托进度”看到它。
           </div>
         )}
 
-        <div style={{ marginBottom: 18 }}>
-          <ResponsibilityNotice compact />
-        </div>
-
         {privateItems.length > 0 && (
-          <section style={{ marginBottom: 26, borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'rgba(255,250,242,0.86)', padding: 18, boxShadow: '0 12px 30px rgba(31,41,55,0.06)' }}>
+          <section style={{ ...jumuluCardStyle, padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 14 }}>
               <div>
                 <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 900, marginBottom: 6 }}>我的委托进度</h2>
@@ -294,7 +284,7 @@ export default function Commissions() {
         )}
 
         {receivedApplications.length > 0 && (
-          <section style={{ marginBottom: 26, borderRadius: 16, border: '1px solid rgba(125,211,252,0.32)', background: 'rgba(239,246,255,0.9)', padding: 18, boxShadow: '0 12px 30px rgba(31,41,55,0.05)' }}>
+          <section style={{ ...jumuluCardStyle, padding: 16, borderColor: 'rgba(39,83,137,0.16)', background: '#f8fbff' }}>
             <div style={{ marginBottom: 14 }}>
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 900, marginBottom: 6 }}>收到的接单申请</h2>
               <p style={{ color: MUTED, fontSize: '0.86rem', lineHeight: 1.7 }}>
@@ -303,7 +293,7 @@ export default function Commissions() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
               {receivedApplications.map(app => (
-                <article key={app.id} style={{ borderRadius: 14, border: '1px solid rgba(125,211,252,0.24)', background: '#fff', padding: 16 }}>
+                <article key={app.id} style={{ borderRadius: 8, border: '1px solid rgba(39,83,137,0.14)', background: '#fff', padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 10, color: 'rgba(71,85,105,0.6)', fontSize: '0.76rem' }}>
                     <span>{app.commission?.title || '委托需求'}</span>
                     <span>{app.created_at?.slice(0, 10)}</span>
@@ -318,7 +308,8 @@ export default function Commissions() {
           </section>
         )}
 
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 22 }}>
+        <section style={jumuluFilterPanelStyle}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {[
             ['all', '全部'],
             ['creator', '服务者'],
@@ -357,7 +348,7 @@ export default function Commissions() {
           </div>
         </div>
 
-        <section style={{ borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'rgba(255,255,255,0.72)', padding: 16, marginBottom: 20 }}>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.08)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, alignItems: 'end' }}>
             <div>
               <Label>剧本选单</Label>
@@ -371,12 +362,13 @@ export default function Commissions() {
               <ViewButton active={view === 'expired'} onClick={() => setView('expired')}>已过期 {expiredItems.length}</ViewButton>
             </div>
           </div>
+        </div>
         </section>
 
         {loading && <StateText text="正在展开委托卷轴..." />}
         {error && <StateText text={error} danger />}
         {!loading && !error && items.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '92px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 16, background: 'rgba(255,250,242,0.82)' }}>
+          <div style={{ textAlign: 'center', padding: '92px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 8, background: 'rgba(255,250,242,0.82)' }}>
             <div style={{ fontSize: 48, opacity: 0.45, marginBottom: 14 }}>✦</div>
             <p style={{ color: MUTED, marginBottom: 20 }}>这里还没有公开委托</p>
             <Link to="/commissions/new" className="btn-gold" style={{ padding: '10px 22px', textDecoration: 'none' }}>发布第一条</Link>
@@ -384,7 +376,7 @@ export default function Commissions() {
         )}
 
         {!loading && !error && items.length > 0 && visibleItems.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '76px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 16, background: 'rgba(255,250,242,0.82)' }}>
+          <div style={{ textAlign: 'center', padding: '76px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 8, background: 'rgba(255,250,242,0.82)' }}>
             <p style={{ color: MUTED, marginBottom: 16 }}>{view === 'active' ? '这个筛选下没有进行中的委托' : '这个筛选下没有已过期委托'}</p>
             <button onClick={() => setView(view === 'active' ? 'expired' : 'active')} style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(255,255,255,0.82)', color: '#925f18', cursor: 'pointer', fontWeight: 800 }}>
               看看{view === 'active' ? '已过期' : '进行中'}
@@ -406,8 +398,6 @@ export default function Commissions() {
             ))}
           </div>
         )}
-      </div>
-
       {applicationModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ width: '100%', maxWidth: 520, borderRadius: 18, border: '1px solid rgba(217,168,87,0.28)', background: '#fffdf8', boxShadow: '0 24px 70px rgba(31,41,55,0.24)', padding: 28 }}>
@@ -464,14 +454,14 @@ export default function Commissions() {
           onClose={() => setReportTarget(null)}
         />
       )}
-    </div>
+    </JumuluPageFrame>
   );
 }
 
 function CommissionCard({ item, showStatus, onDelete, onApply, onReport, applied, ownItem }: { item: Commission; showStatus?: boolean; onDelete?: () => void; onApply?: () => void; onReport?: () => void; applied?: boolean; ownItem?: boolean }) {
   const expired = !!item.is_expired;
   return (
-    <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: '0 12px 30px rgba(31,41,55,0.06)' }}>
+    <article className="content-card" style={{ ...jumuluCardStyle, padding: 16 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {showStatus && <StatusPill status={item.status} />}
         {expired && <ExpiredPill />}

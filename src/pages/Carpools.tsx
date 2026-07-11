@@ -7,13 +7,15 @@ import { formatDetailedSubsidy } from '../lib/carpoolMessage';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
-import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import ReportModal from '../components/ReportModal';
+import {
+  JumuluCompactHeader,
+  JumuluPageFrame,
+} from '../components/JumuluPageChrome';
+import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
-const C = '#fffdf8';
-const C2 = '#eef6ff';
 const GOLD = '#d9a857';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
@@ -249,22 +251,20 @@ export default function Carpools() {
   }) : [];
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
-      <div style={{ background: `radial-gradient(circle at 18% 0%, rgba(217,168,87,0.16), transparent 34%), linear-gradient(135deg, ${C2}, #fffaf2)`, borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '52px 20px 42px' }}>
-        <div style={{ maxWidth: 1060, margin: '0 auto' }}>
-          <div className="gold-line" style={{ marginBottom: 16 }} />
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 4vw, 2.7rem)', marginBottom: 10 }}>拼车区</h1>
-          <p style={{ color: MUTED, fontSize: '1rem', lineHeight: 1.8, maxWidth: 720 }}>
-            情感本、演绎本、缺角色、缺搭子、需要现金补贴或票价折扣，都先丢到这里。每条拼车会沉淀城市、日期、剧本、角色和补贴数据，后面直接接剧司辰拼车日历。
-          </p>
-          <div style={{ marginTop: 22, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Link to="/carpools/new" className="btn-gold" style={{ padding: '10px 22px', textDecoration: 'none', fontSize: '0.92rem' }}>发布拼车</Link>
-            <Link to="/rankings" style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.32)', color: '#925f18', background: 'rgba(255,255,255,0.72)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 700 }}>看看红黑榜</Link>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ maxWidth: 1060, margin: '0 auto', padding: '28px 20px 80px' }}>
+    <JumuluPageFrame
+      currentLabel="拼车区"
+      actions={
+        <>
+          <Link to="/carpools/new" style={jumuluPrimaryLinkStyle}>发布拼车</Link>
+          <Link to="/rankings" style={jumuluSecondaryLinkStyle}>看看红黑榜</Link>
+        </>
+      }
+    >
+      <JumuluCompactHeader
+        eyebrow="同城拼车"
+        title="找角色，找搭子"
+        description="按日期、城市、剧本和角色寻找正在招募的车；补贴与票价折扣保持原始口径展示。"
+      />
         {submitted && (
           <div style={{ marginBottom: 18, borderRadius: 12, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(217,168,87,0.12)', padding: '14px 16px', color: '#65401c', lineHeight: 1.7 }}>
             拼车已提交审核，通过后才会进入拼车区并同步剧司辰。急单会优先处理，平台会保留提交与审核记录。
@@ -272,7 +272,7 @@ export default function Carpools() {
         )}
 
         {privateItems.length > 0 && (
-          <section style={{ marginBottom: 24, borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'rgba(255,250,242,0.86)', padding: 18 }}>
+          <section style={{ ...jumuluCardStyle, padding: 16 }}>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', fontWeight: 900, marginBottom: 12 }}>我的拼车进度</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
               {privateItems.map(item => <CarpoolCard key={item.id} item={item} showStatus />)}
@@ -281,11 +281,11 @@ export default function Carpools() {
         )}
 
         {receivedApplications.length > 0 && (
-          <section style={{ marginBottom: 24, borderRadius: 16, border: '1px solid rgba(59,130,246,0.2)', background: 'rgba(239,246,255,0.8)', padding: 18 }}>
+          <section style={{ ...jumuluCardStyle, padding: 16, borderColor: 'rgba(39,83,137,0.16)', background: '#f8fbff' }}>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', fontWeight: 900, marginBottom: 12 }}>收到的上车申请</h2>
             <div style={{ display: 'grid', gap: 10 }}>
               {receivedApplications.map(app => (
-                <article key={app.id} style={{ borderRadius: 12, background: '#fff', border: '1px solid rgba(59,130,246,0.16)', padding: 14 }}>
+                <article key={app.id} style={{ borderRadius: 8, background: '#fff', border: '1px solid rgba(39,83,137,0.14)', padding: 14 }}>
                   <Meta>{app.carpool?.title || '未知拼车'} · {app.created_at?.slice(0, 10)}</Meta>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0' }}>
                     <img
@@ -316,7 +316,7 @@ export default function Carpools() {
           </section>
         )}
 
-        <section style={{ borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'rgba(255,255,255,0.72)', padding: 16, marginBottom: 20 }}>
+        <section style={jumuluFilterPanelStyle}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignItems: 'end' }}>
             <div>
               <Label>日期</Label>
@@ -338,7 +338,7 @@ export default function Carpools() {
                 </div>
               )}
             </div>
-            <button onClick={() => void loadPublic()} className="btn-gold" style={{ padding: '11px 18px' }}>筛选</button>
+            <button onClick={() => void loadPublic()} style={{ ...jumuluPrimaryLinkStyle, width: '100%', minHeight: 44 }}>筛选</button>
           </div>
         </section>
 
@@ -347,26 +347,10 @@ export default function Carpools() {
           <ViewButton active={view === 'expired'} onClick={() => setView('expired')}>已过期 {expiredItems.length}</ViewButton>
         </div>
 
-        <div style={{ marginBottom: 22 }}>
-          <ResponsibilityNotice />
-        </div>
-
-        <section style={{ borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(135deg, rgba(255,250,242,0.9), rgba(239,246,255,0.78))', padding: 18, marginBottom: 22 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', fontWeight: 900, marginBottom: 6 }}>AI 现金补贴助手接口</h2>
-              <p style={{ color: MUTED, lineHeight: 1.7, fontSize: '0.86rem', margin: 0 }}>
-                已预留 `/api/lc/carpools/assistant/compensation`。等拼车数据够多，就能按城市、本名、角色给出近期现金补贴和票价折扣参考。
-              </p>
-            </div>
-            <span style={{ alignSelf: 'center', color: '#925f18', fontSize: '0.82rem', fontWeight: 900 }}>先收数据，再让 AI 有话可说</span>
-          </div>
-        </section>
-
         {loading && <StateText text="正在找车..." />}
         {error && <StateText text={error} danger />}
         {!loading && !error && items.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '92px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 16, background: 'rgba(255,250,242,0.82)' }}>
+          <div style={{ textAlign: 'center', padding: '92px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 8, background: 'rgba(255,250,242,0.82)' }}>
             <div style={{ fontSize: 48, opacity: 0.45, marginBottom: 14 }}>🚗</div>
             <p style={{ color: MUTED, marginBottom: 20 }}>这里还没有公开拼车</p>
             <Link to="/carpools/new" className="btn-gold" style={{ padding: '10px 22px', textDecoration: 'none' }}>发布第一辆车</Link>
@@ -374,7 +358,7 @@ export default function Carpools() {
         )}
 
         {!loading && !error && items.length > 0 && visibleItems.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '76px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 16, background: 'rgba(255,250,242,0.82)' }}>
+          <div style={{ textAlign: 'center', padding: '76px 20px', border: '1px dashed rgba(217,168,87,0.26)', borderRadius: 8, background: 'rgba(255,250,242,0.82)' }}>
             <p style={{ color: MUTED, marginBottom: 16 }}>{view === 'active' ? '这个筛选下没有招募中的拼车' : '这个筛选下没有已过期拼车'}</p>
             <button onClick={() => setView(view === 'active' ? 'expired' : 'active')} style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.28)', background: 'rgba(255,255,255,0.82)', color: '#925f18', cursor: 'pointer', fontWeight: 800 }}>
               看看{view === 'active' ? '已过期' : '招募中'}
@@ -398,8 +382,6 @@ export default function Carpools() {
             ))}
           </div>
         )}
-      </div>
-
       {applyModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ width: '100%', maxWidth: 520, borderRadius: 18, border: '1px solid rgba(217,168,87,0.28)', background: '#fffdf8', boxShadow: '0 24px 70px rgba(31,41,55,0.24)', padding: 28 }}>
@@ -488,7 +470,7 @@ export default function Carpools() {
           onClose={() => setReportModal(null)}
         />
       )}
-    </div>
+    </JumuluPageFrame>
   );
 }
 
@@ -502,7 +484,7 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
   const totalSlots = Math.max(roleRows.length, seatedCount + (item.needed_count || 1), 1);
   const full = roleRows.length > 0 && (acceptedCount >= Math.max(1, item.needed_count || 1) || occupiedCount >= totalSlots);
   return (
-    <article className="content-card" style={{ borderRadius: 16, padding: 20, border: '1px solid rgba(217,168,87,0.2)', background: 'linear-gradient(180deg, #ffffff, #fffaf2)', boxShadow: item.boost_amount > 0 ? '0 16px 36px rgba(217,168,87,0.18)' : '0 12px 30px rgba(31,41,55,0.06)' }}>
+    <article className="content-card" style={{ ...jumuluCardStyle, padding: 16, borderColor: item.boost_amount > 0 ? 'rgba(217,168,87,0.45)' : 'rgba(31,41,55,0.08)' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {showStatus && <StatusPill status={item.status} />}
         {expired && <ExpiredPill />}

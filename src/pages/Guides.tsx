@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import InfoTip from '../components/InfoTip';
+import {
+  JumuluCompactHeader,
+  JumuluPageFrame,
+} from '../components/JumuluPageChrome';
+import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { readStoredCreatorAuth } from '../lib/authSession';
 
 const API = '/api';
@@ -123,31 +127,29 @@ export default function Guides() {
   };
 
   return (
-    <main style={{ minHeight: '100vh', background: BG, color: INK }}>
-      <section style={{ background: 'linear-gradient(135deg, #eef6ff 0%, #fffaf2 100%)', borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '28px 20px' }}>
-        <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ maxWidth: 680 }}>
-            <p style={{ color: '#925f18', fontWeight: 900, fontSize: '0.78rem', marginBottom: 8 }}>攻略交易</p>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 4vw, 3.4rem)', marginBottom: 10, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              把打本经验变成可购买攻略
-              <InfoTip>选本、角色、城市路线、成车话术、出片清单都可以沉淀。购买是购买，礼物只是看完后的自愿赞赏，不能用礼物解锁内容。</InfoTip>
-            </h1>
-          </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Link to="/guides/income" style={ghostButton}>创作者收入</Link>
-            <Link to="/guides/new" style={goldButton}>发布攻略</Link>
-          </div>
-        </div>
-      </section>
-
-      <section style={{ maxWidth: 1120, margin: '0 auto', padding: '20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 170px', gap: 10, marginBottom: 16 }}>
+    <JumuluPageFrame
+      currentLabel="攻略交易"
+      actions={
+        <>
+          <Link to="/guides/new" style={jumuluPrimaryLinkStyle}>发布攻略</Link>
+          <Link to="/guides/income" style={jumuluSecondaryLinkStyle}>创作者收入</Link>
+        </>
+      }
+    >
+      <JumuluCompactHeader
+        eyebrow="攻略交易"
+        title="把打本经验写成攻略"
+        description="选本、角色、城市路线、成车话术和出片清单，都可以沉淀为可检索、可购买的经验。"
+      />
+      <section style={jumuluFilterPanelStyle}>
+        <div className="jumulu-guide-filters" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 170px', gap: 10 }}>
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索剧本、角色、城市、作者" style={inputStyle} />
           <select value={type} onChange={e => setType(e.target.value)} style={inputStyle}>
             <option value="all">全部攻略</option>
             {Object.entries(typeLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
         </div>
+      </section>
         {message && <p style={{ color: message.includes('失败') || message.includes('错误') || message.includes('不足') ? '#b91c1c' : '#166534', marginBottom: 12 }}>{message}</p>}
         {loading ? (
           <p style={{ color: MUTED }}>加载中...</p>
@@ -178,8 +180,6 @@ export default function Guides() {
             ))}
           </div>
         )}
-      </section>
-
       {selected && (
         <div style={modalBackdrop} onClick={() => setSelected(null)}>
           <div style={modalCard} onClick={e => e.stopPropagation()}>
@@ -212,7 +212,8 @@ export default function Guides() {
           </div>
         </div>
       )}
-    </main>
+      <style>{`@media (max-width: 640px) { .jumulu-guide-filters { grid-template-columns: 1fr !important; } }`}</style>
+    </JumuluPageFrame>
   );
 }
 
@@ -226,18 +227,13 @@ const inputStyle: React.CSSProperties = {
 };
 
 const cardStyle: React.CSSProperties = {
-  border: '1px solid rgba(201,146,46,0.16)',
-  borderRadius: 14,
+  ...jumuluCardStyle,
   padding: 16,
-  background: 'rgba(255,255,255,0.84)',
-  boxShadow: '0 14px 32px rgba(31,41,55,0.06)',
 };
 
 const emptyStyle: React.CSSProperties = {
-  border: '1px solid rgba(201,146,46,0.16)',
-  borderRadius: 16,
+  ...jumuluCardStyle,
   padding: 24,
-  background: 'rgba(255,255,255,0.78)',
   textAlign: 'center',
 };
 
@@ -257,7 +253,7 @@ const goldButton: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   padding: '10px 16px',
-  borderRadius: 12,
+  borderRadius: 7,
   border: 'none',
   background: `linear-gradient(135deg, ${GOLD}, #c9922e)`,
   color: INK,
@@ -271,7 +267,7 @@ const ghostButton: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   padding: '10px 14px',
-  borderRadius: 12,
+  borderRadius: 7,
   border: '1px solid rgba(201,146,46,0.24)',
   background: 'rgba(255,255,255,0.72)',
   color: '#925f18',
