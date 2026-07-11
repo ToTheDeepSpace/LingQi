@@ -124,6 +124,27 @@ type WalletDashboardData = {
   transactions?: WalletTransaction[];
 };
 
+type DossierEditReview = {
+  id: string;
+  dossier_id: string;
+  entity_type: 'dm' | 'store';
+  dossier_name: string;
+  changed_fields: string[];
+  patch: Record<string, unknown>;
+  before_snapshot: Record<string, unknown>;
+  edit_reason?: string | null;
+  submitter_name: string;
+  owner_response_status: 'not_required' | 'pending' | 'agreed' | 'opposed' | 'expired';
+  owner_response_due_at?: string | null;
+  owner_response_reason?: string | null;
+  created_at: string;
+};
+
+type DossierEditDashboardData = {
+  awaiting_owner_response: DossierEditReview[];
+  my_submissions: DossierEditReview[];
+};
+
 type ReferralDashboardItem = {
   id: string;
   status: 'registered' | 'qualified' | 'converted' | 'rejected';
@@ -431,6 +452,18 @@ const CERT_STATUS_LABELS: Record<Certification['status'], string> = {
   rejected: '未通过',
 };
 
+const DOSSIER_EDIT_FIELD_LABELS: Record<string, string> = {
+  dm_name: '名称',
+  city: '城市',
+  workplace: '店家 / 地址',
+  employment_status: '受雇状态',
+  employer_store_id: '受雇店家',
+  profile_url: '主页链接',
+  photo_url: '照片',
+  note: '档案说明',
+  tags: '标签',
+};
+
 function certTone(status: Certification['status']): ToneName {
   if (status === 'approved') return 'green';
   if (status === 'rejected') return 'red';
@@ -442,6 +475,23 @@ async function fetchDmIdentityManagement(token: string) {
   const data = await response.json().catch(() => null);
   if (!response.ok || !data?.success) throw new Error(data?.error || 'DM 身份与店家关系加载失败');
   return (data.data || { dossiers: [], stores: [] }) as DmIdentityManagementData;
+}
+
+function dossierEditDisplayValue(value: unknown) {
+  if (Array.isArray(value)) return value.length > 0 ? value.join('、') : '留空';
+  if (value === null || value === undefined || value === '') return '留空';
+  if (value === 'store_affiliated') return '关联店家';
+  if (value === 'freelance') return '自由DM';
+  if (value === 'unknown') return '待核验';
+  return String(value);
+}
+
+function dossierEditStatusLabel(status: DossierEditReview['owner_response_status']) {
+  if (status === 'pending') return '等待认领人确认';
+  if (status === 'agreed') return '认领人已同意 · 待平台审核';
+  if (status === 'opposed') return '认领人有异议 · 待平台审核';
+  if (status === 'expired') return '确认期已过 · 待平台审核';
+  return '待平台审核';
 }
 
 function getProfileCompletion(form: ProfileForm, services: Service[], portfolio: Portfolio[], rolePreferences: RolePreferenceDraft[]) {
@@ -510,6 +560,9 @@ export default function Dashboard() {
   const [dmIdentityData, setDmIdentityData] = useState<DmIdentityManagementData>({ dossiers: [], stores: [] });
   const [dmStoreChoices, setDmStoreChoices] = useState<Record<string, string>>({});
   const [identityAction, setIdentityAction] = useState('');
+  const [dossierEditData, setDossierEditData] = useState<DossierEditDashboardData>({ awaiting_owner_response: [], my_submissions: [] });
+  const [ownerResponseNotes, setOwnerResponseNotes] = useState<Record<string, string>>({});
+  const [respondingDossierEditId, setRespondingDossierEditId] = useState('');
   const [moduleLoading, setModuleLoading] = useState(false);
   const [moduleError, setModuleError] = useState('');
   const [copiedInvite, setCopiedInvite] = useState('');
@@ -665,15 +718,21 @@ export default function Dashboard() {
           if (!cancelled) setReferralData(data.data || null);
         }
         if (activeSection === 'identity') {
-          const [certificationResponse, identityData] = await Promise.all([
+          const [certificationResponse, identityData, editResponse] = await Promise.all([
             fetch(`${API}/lc/certifications/my`, { headers: { Authorization: `Bearer ${token}` } }),
             fetchDmIdentityManagement(token),
+            fetch(`${API}/lc/dossier-edits/my`, { headers: { Authorization: `Bearer ${token}` } }),
           ]);
-          const data = await certificationResponse.json().catch(() => null);
+          const [data, editData] = await Promise.all([
+            certificationResponse.json().catch(() => null),
+            editResponse.json().catch(() => null),
+          ]);
           if (!certificationResponse.ok || !data?.success) throw new Error(data?.error || '认证记录加载失败');
+          if (!editResponse.ok || !editData?.success) throw new Error(editData?.error || '档案修改记录加载失败');
           if (!cancelled) {
             setCertifications(data.data || []);
             setDmIdentityData(identityData);
+            setDossierEditData(editData.data || { awaiting_owner_response: [], my_submissions: [] });
           }
         }
       } catch (moduleErr) {
@@ -685,6 +744,35 @@ export default function Dashboard() {
     void loadModule();
     return () => { cancelled = true; };
   }, [activeSection, creator, token]);
+
+  const respondToDossierEdit = async (item: DossierEditReview, decision: 'agree' | 'oppose') => {
+    const reason = (ownerResponseNotes[item.id] || '').trim();
+    if (decision === 'oppose' && reason.length < 4) {
+      setModuleError('反对修改时请写明原因');
+      return;
+    }
+    setRespondingDossierEditId(item.id);
+    setModuleError('');
+    try {
+      const response = await fetch(`${API}/lc/dossier-edits/${encodeURIComponent(item.id)}/owner-response`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ decision, reason }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(typeof data.error === 'string' ? data.error : data.error?.message || '确认失败');
+      setDossierEditData(current => ({
+        ...current,
+        awaiting_owner_response: current.awaiting_owner_response.filter(edit => edit.id !== item.id),
+      }));
+      setOwnerResponseNotes(current => ({ ...current, [item.id]: '' }));
+      setMsg(decision === 'agree' ? '已同意这次资料修改，等待管理员最终审核。' : '已提交反对意见，管理员会结合修改依据最终审核。');
+    } catch (responseError) {
+      setModuleError(responseError instanceof Error ? responseError.message : '确认失败');
+    } finally {
+      setRespondingDossierEditId('');
+    }
+  };
 
   const selectRoleScript = (scriptId: string) => {
     const script = scripts.find(item => item.id === scriptId);
@@ -2408,6 +2496,44 @@ export default function Dashboard() {
                   action={<Link to="/certification" style={darkActionStyle}>提交认证材料</Link>}
                 />
                 {moduleError && <ModuleNotice tone="red">{moduleError}</ModuleNotice>}
+                {dossierEditData.awaiting_owner_response.length > 0 && (
+                  <section style={{ ...card, borderColor: 'rgba(166,106,31,0.32)', background: '#fffdf8' }}>
+                    <div style={{ marginBottom: 10 }}>
+                      <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>待你确认的档案修改</h2>
+                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>你有7天优先表达意见；无论同意或反对，管理员都会最终审核。</p>
+                    </div>
+                    <div style={{ display: 'grid', gap: 12 }}>
+                      {dossierEditData.awaiting_owner_response.map(item => (
+                        <div key={item.id} style={{ paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.09)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                            <strong style={{ color: INK, fontSize: 14 }}>{item.dossier_name} · {item.entity_type === 'store' ? '店家档案' : 'DM档案'}</strong>
+                            <span style={{ color: '#8a5a19', fontSize: 12, fontWeight: 850 }}>确认截止：{item.owner_response_due_at?.slice(0, 10) || '7天内'}</span>
+                          </div>
+                          <p style={{ margin: '6px 0 0', color: MUTED, fontSize: 12 }}>提交人：{item.submitter_name} · 依据：{item.edit_reason || '未填写'}</p>
+                          <div style={{ display: 'grid', gap: 5, marginTop: 9 }}>
+                            {item.changed_fields.map(field => (
+                              <div key={field} style={{ color: '#475569', fontSize: 12, lineHeight: 1.55 }}>
+                                <strong>{DOSSIER_EDIT_FIELD_LABELS[field] || field}：</strong>
+                                {dossierEditDisplayValue(item.before_snapshot[field])} → {dossierEditDisplayValue(item.patch[field])}
+                              </div>
+                            ))}
+                          </div>
+                          <textarea
+                            value={ownerResponseNotes[item.id] || ''}
+                            onChange={event => setOwnerResponseNotes(current => ({ ...current, [item.id]: event.target.value.slice(0, 500) }))}
+                            rows={2}
+                            placeholder="可补充说明；反对时请写明原因"
+                            style={{ boxSizing: 'border-box', width: '100%', minHeight: 62, marginTop: 9, padding: '8px 10px', borderRadius: 7, border: '1px solid rgba(31,41,55,0.13)', background: '#fff', color: INK, resize: 'vertical' }}
+                          />
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                            <button type="button" disabled={respondingDossierEditId === item.id} onClick={() => respondToDossierEdit(item, 'agree')} style={darkActionStyle}>同意修改</button>
+                            <button type="button" disabled={respondingDossierEditId === item.id} onClick={() => respondToDossierEdit(item, 'oppose')} style={secondaryActionStyle}>反对并提交说明</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 <div className="dashboard-metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
                   <MetricCard label="实名状态" value={creator.is_realname ? '已认证' : '未认证'} tone={creator.is_realname ? 'green' : 'gold'} />
                   <MetricCard label="DM 认证" value={creator.verified_dm ? '已认证' : creator.has_pending_dm_cert ? '审核中' : '未认证'} tone={creator.verified_dm ? 'green' : creator.has_pending_dm_cert ? 'gold' : 'gray'} />
@@ -2526,6 +2652,27 @@ export default function Dashboard() {
                     </div>
                   )}
                 </section>
+                {dossierEditData.my_submissions.length > 0 && (
+                  <section style={card}>
+                    <div style={{ marginBottom: 10 }}>
+                      <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>我提交的档案修改</h2>
+                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>当前只展示仍在审核中的修改。</p>
+                    </div>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {dossierEditData.my_submissions.map(item => (
+                        <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, paddingTop: 10, borderTop: '1px solid rgba(31,41,55,0.09)' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ color: INK, fontSize: 13, fontWeight: 850, marginBottom: 3 }}>{item.dossier_name}</p>
+                            <p style={{ color: MUTED, fontSize: 12 }}>{item.changed_fields.map(field => DOSSIER_EDIT_FIELD_LABELS[field] || field).join('、')}</p>
+                          </div>
+                          <span style={{ color: '#8a5a19', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>
+                            {dossierEditStatusLabel(item.owner_response_status)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
               </div>
             )}
 

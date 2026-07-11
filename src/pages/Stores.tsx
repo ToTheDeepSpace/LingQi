@@ -110,6 +110,7 @@ export default function Stores() {
             const summary = item.rating_summary || { avg: null, review_count: 0, player_count: 0, sample_status: 'insufficient' as const };
             return (
               <article key={item.id} style={cardStyle}>
+                <Link to={`/stores/${encodeURIComponent(item.id)}`} aria-label={`查看${item.dm_name}店家专属页`} style={cardOverlayLinkStyle} />
                 <div style={cardHeadStyle}>
                   <div style={{ minWidth: 0 }}>
                     <h2 style={nameStyle}>{item.dm_name}</h2>
@@ -121,7 +122,7 @@ export default function Stores() {
                   </div>
                 </div>
                 {item.tags && item.tags.length > 0 && <div style={tagRowStyle}>{item.tags.slice(0, 4).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}</div>}
-                <div style={cardFooterStyle}>
+                <div style={{ ...cardFooterStyle, position: 'relative', zIndex: 2 }}>
                   <span style={{ color: MUTED, fontSize: 12 }}>{summary.review_count || 0} 条到店记录{summary.sample_status === 'insufficient' && summary.player_count > 0 ? ' · 样本较少' : ''}</span>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Link to={`/stores/rate?storeId=${encodeURIComponent(item.id)}`} style={smallSecondaryStyle}>评分</Link>
@@ -144,7 +145,8 @@ function StatePanel({ children, tone = 'normal' }: { children: React.ReactNode; 
 const filterRowStyle: React.CSSProperties = { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' };
 const inputStyle: React.CSSProperties = { flex: '2 1 260px', minWidth: 200, minHeight: 40, border: '1px solid rgba(39,83,137,0.18)', borderRadius: 7, padding: '0 12px', background: '#fff', color: INK, fontSize: 14 };
 const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: 10 };
-const cardStyle: React.CSSProperties = { ...jumuluCardStyle, minHeight: 180, display: 'grid', alignContent: 'space-between', gap: 14, padding: 16 };
+const cardStyle: React.CSSProperties = { ...jumuluCardStyle, position: 'relative', minHeight: 180, display: 'grid', alignContent: 'space-between', gap: 14, padding: 16 };
+const cardOverlayLinkStyle: React.CSSProperties = { position: 'absolute', inset: 0, zIndex: 1, borderRadius: 8 };
 const cardHeadStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 };
 const nameStyle: React.CSSProperties = { margin: 0, fontSize: 20, lineHeight: 1.25, overflowWrap: 'anywhere' };
 const metaStyle: React.CSSProperties = { margin: '8px 0 0', color: MUTED, fontSize: 13, lineHeight: 1.55 };

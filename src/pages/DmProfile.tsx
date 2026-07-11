@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DossierClaimModal from '../components/DossierClaimModal';
+import DossierEditModal from '../components/DossierEditModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 
@@ -17,12 +18,15 @@ type DmDetail = {
     city?: string | null;
     workplace?: string | null;
     employment_status?: 'unknown' | 'store_affiliated' | 'freelance';
+    employer_store_id?: string | null;
+    profile_url?: string | null;
     photo_url?: string | null;
     photo_focus_x?: number | null;
     photo_focus_y?: number | null;
     note?: string | null;
     tags?: string[];
     claim_status?: string;
+    claimed_by?: string | null;
     affiliation?: {
       status: 'approved' | 'pending' | 'legacy_unverified';
       store_dossier_id?: string | null;
@@ -43,7 +47,9 @@ export default function DmProfile() {
   const [data, setData] = useState<DmDetail | null>(null);
   const [error, setError] = useState('');
   const [claimOpen, setClaimOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [claimMessage, setClaimMessage] = useState('');
+  const [editMessage, setEditMessage] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -65,6 +71,7 @@ export default function DmProfile() {
   const { dossier, summary, ratings, reputation_summary: reputationSummary = { event_count: 0, red_count: 0, black_count: 0, white_count: 0 }, reputation_events: reputationEvents = [] } = data;
   const scoreText = summary.player_count === 0 ? '暂无评分' : `${summary.avg?.toFixed(1)} / 5`;
   const auth = readStoredCreatorAuth();
+  const isOwner = Boolean(dossier.claimed_by && dossier.claimed_by === auth?.id);
   const claimStatusLabel = dossier.claim_status === 'approved'
     ? 'DM 身份已认证'
     : dossier.claim_status === 'pending' ? '身份认证审核中'
@@ -94,6 +101,9 @@ export default function DmProfile() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
               <p style={{ margin: 0, color: GOLD, fontSize: 13, fontWeight: 900 }}>{claimStatusLabel}</p>
               {dossier.claim_status !== 'approved' && dossier.claim_status !== 'pending' && dossier.claim_status !== 'withdrawn' && <button type="button" onClick={openClaim} style={claimButtonStyle}>本人认领</button>}
+              <button type="button" onClick={() => auth?.token ? setEditOpen(true) : navigate(`/login?redirect=${encodeURIComponent(`/dm/${dossier.id}`)}`)} style={editButtonStyle}>
+                {isOwner ? '编辑我的档案' : '补充 / 纠错资料'}
+              </button>
             </div>
             <h1 style={{ margin: 0, fontSize: 'clamp(1.8rem, 4vw, 2.6rem)', fontFamily: 'var(--font-serif)' }}>{dossier.dm_name}</h1>
             <p style={{ margin: '9px 0 0', color: MUTED }}>{dossier.city || '城市待补'}</p>
@@ -102,10 +112,10 @@ export default function DmProfile() {
               {dossier.affiliation?.status === 'approved' && dossier.affiliation.confirmed_at && <span style={{ color: MUTED, fontSize: 11 }}>确认于 {dossier.affiliation.confirmed_at.slice(0, 10)}</span>}
             </div>
             {claimMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{claimMessage}</p>}
+            {editMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{editMessage}</p>}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
               <Link to={`/dm/rate?dmId=${encodeURIComponent(dossier.id)}`} style={primaryButton}>给TA评分</Link>
               <Link to={`/rankings/new?subjectType=dm&subjectDossierId=${encodeURIComponent(dossier.id)}`} style={secondaryButton}>发布红黑榜记录</Link>
-              <Link to="/contact?category=dm_correction" style={secondaryButton}>资料纠错 / 申诉</Link>
             </div>
           </div>
         </div>
@@ -162,6 +172,30 @@ export default function DmProfile() {
           setData(current => current ? { ...current, dossier: { ...current.dossier, claim_status: 'pending' } } : current);
         }}
       />
+      {editOpen && <DossierEditModal
+        open={editOpen}
+        dossier={{
+          id: dossier.id,
+          entityType: 'dm',
+          name: dossier.dm_name,
+          city: dossier.city,
+          workplace: dossier.workplace,
+          employmentStatus: dossier.employment_status,
+          employerStoreId: dossier.employer_store_id,
+          profileUrl: dossier.profile_url,
+          photoUrl: dossier.photo_url,
+          note: dossier.note,
+          tags: dossier.tags,
+          claimedBy: dossier.claimed_by,
+        }}
+        token={auth?.token || ''}
+        currentUserId={auth?.id}
+        onClose={() => setEditOpen(false)}
+        onSubmitted={message => {
+          setEditOpen(false);
+          setEditMessage(message);
+        }}
+      />}
     </main>
   );
 }
@@ -190,4 +224,5 @@ const noticeStyle = { padding: '11px 13px', borderRadius: 7, background: '#fff7e
 const primaryButton = { borderRadius: 7, background: INK, color: '#fff', padding: '10px 14px', fontWeight: 900, textDecoration: 'none' };
 const secondaryButton = { borderRadius: 7, border: '1px solid rgba(31,41,55,0.14)', background: '#fff', color: INK, padding: '9px 13px', fontWeight: 850, textDecoration: 'none' };
 const claimButtonStyle = { padding: '4px 7px', borderRadius: 5, border: '1px solid rgba(166,106,31,0.22)', background: '#fff', color: '#8a5a19', fontSize: 11, fontWeight: 900, cursor: 'pointer' };
+const editButtonStyle = { padding: '3px 5px', border: 0, background: 'transparent', color: '#64748b', fontSize: 11, fontWeight: 800, textDecoration: 'underline', textUnderlineOffset: 3, cursor: 'pointer' };
 const tagStyle = { padding: '3px 7px', borderRadius: 999, background: '#eff6ff', color: '#275389', fontSize: 12, fontWeight: 800 };

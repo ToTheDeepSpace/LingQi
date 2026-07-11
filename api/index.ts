@@ -33,6 +33,11 @@ import {
   type DossierClaimProofFile,
 } from './dossierClaimStorage.js';
 import {
+  dossierEditAdminReviewReady,
+  effectiveDossierOwnerResponseStatus,
+  initialDossierEditWorkflow,
+} from './dossierEditWorkflow.js';
+import {
   buildLingqiCosObjectKey,
   createTencentCosUploadTransport,
   getLingqiCosUploadConfig,
@@ -1769,6 +1774,7 @@ function storeRatingIpHash(req: express.Request) {
 
 type PublicReviewTargetType =
   | 'profile_update'
+  | 'dossier_update'
   | 'service_create'
   | 'portfolio_create'
   | 'availability_create'
@@ -1945,11 +1951,102 @@ async function applyProfileUpdateReview(review: PublicReviewRecord) {
   }
 }
 
+const DOSSIER_EDIT_FIELD_LABELS: Record<string, string> = {
+  dm_name: '名称',
+  city: '城市',
+  workplace: '店家 / 地址',
+  employment_status: '受雇状态',
+  employer_store_id: '受雇店家',
+  profile_url: '主页链接',
+  photo_url: '照片',
+  note: '档案说明',
+  tags: '标签',
+};
+
+function dossierEditComparableValue(value: unknown) {
+  if (Array.isArray(value)) return JSON.stringify(value.map(item => String(item || '').trim()).filter(Boolean));
+  if (value === null || value === undefined || value === '') return '';
+  return String(value);
+}
+
+function dossierEditAdminBlockReason(payload: Record<string, unknown>, now = new Date()) {
+  const status = effectiveDossierOwnerResponseStatus({
+    status: cleanText(payload.owner_response_status, 40),
+    dueAt: cleanText(payload.owner_response_due_at, 80),
+    now,
+  });
+  if (status !== 'pending') return '';
+  const dueAt = cleanText(payload.owner_response_due_at, 80);
+  return dueAt ? `仍在等待认领人确认，截止时间为 ${dueAt}` : '仍在等待认领人确认';
+}
+
+async function applyDossierUpdateReview(review: PublicReviewRecord, payload: Record<string, unknown>) {
+  const dossierId = cleanText(payload.dossier_id, 80);
+  const entityType = cleanText(payload.entity_type, 20) === 'store' ? 'store' : 'dm';
+  const patch = objectPayload(payload.patch);
+  const beforeSnapshot = objectPayload(payload.before_snapshot);
+  if (!dossierId || Object.keys(patch).length === 0) throw new Error('档案修改审核缺少必要数据');
+  const blockReason = dossierEditAdminBlockReason(payload);
+  if (blockReason) throw new Error(blockReason);
+
+  const { data: dossier, error: dossierErr } = await supabase.from('lc_dm_dossiers')
+    .select('*')
+    .eq('id', dossierId)
+    .eq('entity_type', entityType)
+    .eq('status', 'approved')
+    .maybeSingle();
+  if (dossierErr) throw dossierErr;
+  if (!dossier) throw new Error(entityType === 'store' ? '店家档案不存在或已下架' : 'DM档案不存在或已下架');
+
+  const originalOwnerId = cleanText(payload.owner_profile_id, 80);
+  const currentOwnerId = dossier.claim_status === 'approved' ? cleanText(dossier.claimed_by, 80) : '';
+  if (currentOwnerId && currentOwnerId !== originalOwnerId && currentOwnerId !== cleanText(review.profile_id, 80)) {
+    throw new Error('档案认领人已经变化，需要由新认领人重新确认');
+  }
+
+  const allowedFields = Object.keys(DOSSIER_EDIT_FIELD_LABELS);
+  const safePatch: Record<string, unknown> = {};
+  for (const field of allowedFields) {
+    if (!(field in patch)) continue;
+    if (dossierEditComparableValue(dossier[field]) !== dossierEditComparableValue(beforeSnapshot[field])) {
+      throw new Error(`${DOSSIER_EDIT_FIELD_LABELS[field]}已被其他审核更新，请重新提交修改`);
+    }
+    safePatch[field] = patch[field];
+  }
+  if (Object.keys(safePatch).length === 0) throw new Error('没有可应用的档案修改');
+  if ('photo_url' in safePatch) {
+    safePatch.photo_files = safePatch.photo_url
+      ? [{ name: `${entityType === 'store' ? '店家' : 'DM'}照片`, url: safePatch.photo_url, type: 'image/*' }]
+      : [];
+  }
+
+  const effectiveOwnerStatus = effectiveDossierOwnerResponseStatus({
+    status: cleanText(payload.owner_response_status, 40),
+    dueAt: cleanText(payload.owner_response_due_at, 80),
+  });
+  if (effectiveOwnerStatus === 'expired' && payload.owner_response_status !== 'expired') {
+    payload.owner_response_status = 'expired';
+    payload.owner_responded_at = null;
+    const payloadUpdate = await supabase.from('lc_public_reviews').update({ payload, updated_at: new Date().toISOString() }).eq('id', review.id);
+    if (payloadUpdate.error) throw payloadUpdate.error;
+  }
+
+  const { error: updateErr } = await supabase.from('lc_dm_dossiers').update({
+    ...safePatch,
+    updated_at: new Date().toISOString(),
+  }).eq('id', dossierId).eq('status', 'approved');
+  if (updateErr) throw updateErr;
+}
+
 async function applyPublicReview(review: PublicReviewRecord) {
   const payload = objectPayload(review.payload);
   if (review.target_type === 'profile_update') {
     await applyProfileUpdateReview(review);
     if (review.profile_id) await runReferralSideEffect('stage1-after-profile-review-approved', () => maybeAwardReferralStage1(String(review.profile_id)));
+    return;
+  }
+  if (review.target_type === 'dossier_update') {
+    await applyDossierUpdateReview(review, payload);
     return;
   }
   if (review.target_type === 'service_create') {
@@ -7040,7 +7137,20 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       dmRatings: pendingDmRatings,
       storeRatings: pendingStoreRatings,
       dmIdentityWithdrawals: pendingDmIdentityWithdrawals,
-      publicReviews: publicReviewsResult.error ? [] : (publicReviewsResult.data || []),
+      publicReviews: publicReviewsResult.error ? [] : (publicReviewsResult.data || []).map((review: Record<string, unknown>) => {
+        if (review.target_type !== 'dossier_update') return review;
+        const payload = objectPayload(review.payload);
+        return {
+          ...review,
+          payload: {
+            ...payload,
+            owner_response_status: effectiveDossierOwnerResponseStatus({
+              status: cleanText(payload.owner_response_status, 40),
+              dueAt: cleanText(payload.owner_response_due_at, 80),
+            }),
+          },
+        };
+      }),
       guides: guidesResult.error ? [] : (guidesResult.data || []),
       guideWithdrawals: withdrawalsResult.error ? [] : (withdrawalsResult.data || []),
     }));
@@ -7176,6 +7286,15 @@ app.put('/api/lc/admin/public-reviews/:id/approve', authMiddleware, adminMiddlew
     if (findErr) throw findErr;
     if (!review) return res.status(404).json(err(new Error('审核记录不存在')));
     if (review.status !== 'pending') return res.status(400).json(err(new Error('这条审核记录已经处理过了')));
+    if (review.target_type === 'dossier_update') {
+      const payload = objectPayload(review.payload);
+      if (!dossierEditAdminReviewReady({
+        status: cleanText(payload.owner_response_status, 40),
+        dueAt: cleanText(payload.owner_response_due_at, 80),
+      })) {
+        return res.status(409).json(err(new Error(dossierEditAdminBlockReason(payload))));
+      }
+    }
 
     await applyPublicReview(review as PublicReviewRecord);
     const { data: updated, error: updErr } = await supabase.from('lc_public_reviews')
@@ -8973,6 +9092,268 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
       metadata: { entity_type: entityType, dm_name: dmName, city, moderation: moderationPrecheck },
     });
     res.json(ok({ id: data?.id, entity_type: entityType, status: 'pending' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+function dossierEditSnapshot(dossier: Record<string, unknown>) {
+  return {
+    dm_name: cleanText(dossier.dm_name, 80),
+    city: cleanText(dossier.city, 80),
+    workplace: cleanText(dossier.workplace, 160) || null,
+    employment_status: cleanText(dossier.employment_status, 40) || 'unknown',
+    employer_store_id: cleanText(dossier.employer_store_id, 80) || null,
+    profile_url: cleanText(dossier.profile_url, 600) || null,
+    photo_url: cleanText(dossier.photo_url, 800) || null,
+    note: cleanText(dossier.note, 600) || null,
+    tags: cleanTextArray(dossier.tags, 10, 18),
+  };
+}
+
+async function normalizeDossierEditProposal(dossier: Record<string, unknown>, body: Record<string, unknown>) {
+  const entityType = dossier.entity_type === 'store' ? 'store' : 'dm';
+  const entityLabel = entityType === 'store' ? '店家' : 'DM';
+  const rawProfileUrl = body.profileUrl ?? body.profile_url;
+  const rawPhotoUrl = body.photoUrl ?? body.photo_url;
+  const profileUrl = normalizeOptionalPublicUrl(rawProfileUrl, 600);
+  const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true);
+  if (!isOptionalUrlPlaceholder(rawProfileUrl) && !profileUrl) throw new Error('主页链接格式不正确，不填写时请直接留空');
+  if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) throw new Error('照片链接格式不正确，也可以直接使用上传按钮');
+
+  const proposed: Record<string, unknown> = {
+    dm_name: cleanText(body.dmName ?? body.dm_name ?? body.name, 80),
+    city: cleanText(body.city, 80),
+    profile_url: profileUrl || null,
+    photo_url: photoUrl || null,
+    note: cleanText(body.note, 600) || null,
+    tags: cleanTextArray(body.tags, 10, 18),
+  };
+  if (!proposed.dm_name) throw new Error(`请填写${entityLabel}名称`);
+  if (!proposed.city) throw new Error('请选择城市');
+
+  if (entityType === 'store') {
+    const workplace = cleanText(body.workplace ?? body.address, 160);
+    if (!workplace) throw new Error('请填写店家地址、商圈或常驻位置');
+    proposed.workplace = workplace;
+  } else {
+    const requestedStatus = cleanText(body.employmentStatus ?? body.employment_status, 40);
+    const employment = requestedStatus === 'unknown'
+      ? { employment_status: 'unknown', employer_store_id: null, workplace: cleanText(body.workplace, 160) || null }
+      : await resolveDmEmployment(body, cleanText(dossier.workplace, 160));
+    proposed.workplace = employment.workplace || null;
+    proposed.employment_status = employment.employment_status;
+    proposed.employer_store_id = employment.employer_store_id || null;
+  }
+
+  const beforeSnapshot = dossierEditSnapshot(dossier);
+  const patch: Record<string, unknown> = {};
+  const changedFields: string[] = [];
+  for (const [field, value] of Object.entries(proposed)) {
+    if (dossierEditComparableValue(beforeSnapshot[field as keyof typeof beforeSnapshot]) === dossierEditComparableValue(value)) continue;
+    patch[field] = value;
+    changedFields.push(field);
+  }
+  if (changedFields.length === 0) throw new Error('资料没有发生变化');
+  return { entityType, entityLabel, beforeSnapshot, patch, changedFields };
+}
+
+function publicDossierEditReview(review: Record<string, unknown>) {
+  const payload = objectPayload(review.payload);
+  return {
+    id: review.id,
+    dossier_id: payload.dossier_id,
+    entity_type: payload.entity_type,
+    dossier_name: payload.dossier_name,
+    changed_fields: Array.isArray(payload.changed_fields) ? payload.changed_fields : [],
+    patch: objectPayload(payload.patch),
+    before_snapshot: objectPayload(payload.before_snapshot),
+    edit_reason: payload.edit_reason,
+    submitter_name: review.profile_name || '用户',
+    owner_response_status: effectiveDossierOwnerResponseStatus({
+      status: cleanText(payload.owner_response_status, 40),
+      dueAt: cleanText(payload.owner_response_due_at, 80),
+    }),
+    owner_response_due_at: payload.owner_response_due_at || null,
+    owner_response_reason: payload.owner_response_reason || null,
+    created_at: review.created_at,
+  };
+}
+
+app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const editReason = cleanText(req.body?.editReason ?? req.body?.edit_reason, 600);
+    if (editReason.length < 6) return res.status(400).json(err(new Error('请至少写6个字说明修改依据')));
+
+    const { data: dossier, error: dossierErr } = await supabase.from('lc_dm_dossiers')
+      .select('*')
+      .eq('id', req.params.dossierId)
+      .eq('status', 'approved')
+      .maybeSingle();
+    if (dossierErr && isMissingRelation(dossierErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('档案表尚未初始化')));
+    if (dossierErr) throw dossierErr;
+    if (!dossier) return res.status(404).json(err(new Error('档案不存在或尚未公开')));
+
+    const existingResult = await supabase.from('lc_public_reviews')
+      .select('id, payload')
+      .eq('target_type', 'dossier_update')
+      .eq('profile_id', profile.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (existingResult.error && !isMissingRelation(existingResult.error, 'lc_public_reviews')) throw existingResult.error;
+    const hasExisting = (existingResult.data || []).some((item: Record<string, unknown>) => cleanText(objectPayload(item.payload).dossier_id, 80) === dossier.id);
+    if (hasExisting) return res.status(409).json(err(new Error('你已经提交过这份档案的修改，审核完成前无需重复提交')));
+
+    const normalized = await normalizeDossierEditProposal(dossier as Record<string, unknown>, req.body as Record<string, unknown>);
+    const ownerProfileId = dossier.claim_status === 'approved' ? cleanText(dossier.claimed_by, 80) : '';
+    const workflow = initialDossierEditWorkflow({
+      ownerProfileId: ownerProfileId || null,
+      submitterProfileId: profile.id,
+    });
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: normalized.entityType === 'store' ? 'store_dossier_update_submit' : 'dm_dossier_update_submit',
+      targetType: 'dossier_update',
+      texts: {
+        name: normalized.patch.dm_name,
+        city: normalized.patch.city,
+        workplace: normalized.patch.workplace,
+        profileUrl: normalized.patch.profile_url,
+        note: normalized.patch.note,
+        tags: Array.isArray(normalized.patch.tags) ? normalized.patch.tags.join(' ') : '',
+        editReason,
+      },
+      files: normalized.patch.photo_url ? [{ url: normalized.patch.photo_url, type: 'image/*' }] : [],
+    });
+    const review = await createPublicReview({
+      targetType: 'dossier_update',
+      profile,
+      title: `${cleanText(dossier.dm_name, 80)} · ${normalized.entityLabel}档案修改`,
+      summary: `${workflow.requiresOwnerResponse ? '等待认领人优先确认；' : ''}修改字段：${normalized.changedFields.map(field => DOSSIER_EDIT_FIELD_LABELS[field] || field).join('、')}`,
+      payload: {
+        dossier_id: dossier.id,
+        entity_type: normalized.entityType,
+        dossier_name: dossier.dm_name,
+        before_snapshot: normalized.beforeSnapshot,
+        patch: normalized.patch,
+        changed_fields: normalized.changedFields,
+        edit_reason: editReason,
+        owner_profile_id: ownerProfileId || null,
+        submitter_is_owner: ownerProfileId === profile.id,
+        owner_response_status: workflow.ownerResponseStatus,
+        owner_response_due_at: workflow.ownerResponseDueAt,
+        owner_response_reason: null,
+        owner_responded_at: null,
+      },
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'dossier_update_submitted_for_review',
+      targetType: 'public_review',
+      targetId: review?.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: {
+        dossier_id: dossier.id,
+        entity_type: normalized.entityType,
+        changed_fields: normalized.changedFields,
+        owner_response_status: workflow.ownerResponseStatus,
+        owner_response_due_at: workflow.ownerResponseDueAt,
+        moderation: moderationPrecheck,
+      },
+    });
+    res.json(ok({
+      ...publicReviewAcceptedResponse(review as Record<string, unknown>),
+      owner_response_status: workflow.ownerResponseStatus,
+      owner_response_due_at: workflow.ownerResponseDueAt,
+      message: workflow.requiresOwnerResponse
+        ? '修改已提交，认领人有7天优先确认，之后由管理员最终审核'
+        : '修改已提交，管理员审核通过后才会更新公开资料',
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/dossier-edits/my', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const result = await supabase.from('lc_public_reviews')
+      .select('*')
+      .eq('target_type', 'dossier_update')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (result.error && isMissingRelation(result.error, 'lc_public_reviews')) return res.json(ok({ awaiting_owner_response: [], my_submissions: [] }));
+    if (result.error) throw result.error;
+    const rows = (result.data || []) as Record<string, unknown>[];
+    const awaitingOwnerResponse = rows.filter(row => {
+      const payload = objectPayload(row.payload);
+      return cleanText(payload.owner_profile_id, 80) === profile.id
+        && effectiveDossierOwnerResponseStatus({ status: cleanText(payload.owner_response_status, 40), dueAt: cleanText(payload.owner_response_due_at, 80) }) === 'pending';
+    }).map(publicDossierEditReview);
+    const mySubmissions = rows.filter(row => cleanText(row.profile_id, 80) === profile.id).map(publicDossierEditReview);
+    res.json(ok({ awaiting_owner_response: awaitingOwnerResponse, my_submissions: mySubmissions }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/dossier-edits/:id/owner-response', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const decision = cleanText(req.body?.decision, 20);
+    if (decision !== 'agree' && decision !== 'oppose') return res.status(400).json(err(new Error('请选择同意或反对')));
+    const responseReason = cleanText(req.body?.reason, 500);
+    if (decision === 'oppose' && responseReason.length < 4) return res.status(400).json(err(new Error('请说明反对原因')));
+
+    const { data: review, error: reviewErr } = await supabase.from('lc_public_reviews')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('target_type', 'dossier_update')
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (reviewErr) throw reviewErr;
+    if (!review) return res.status(404).json(err(new Error('档案修改申请不存在或已经处理')));
+    const payload = objectPayload(review.payload);
+    if (cleanText(payload.owner_profile_id, 80) !== profile.id) return res.status(403).json(err(new Error('只有当前档案认领人可以确认')));
+    const effectiveStatus = effectiveDossierOwnerResponseStatus({
+      status: cleanText(payload.owner_response_status, 40),
+      dueAt: cleanText(payload.owner_response_due_at, 80),
+    });
+    if (effectiveStatus === 'expired') {
+      payload.owner_response_status = 'expired';
+      await supabase.from('lc_public_reviews').update({ payload, updated_at: new Date().toISOString() }).eq('id', review.id);
+      return res.status(409).json(err(new Error('7天确认期已经结束，申请已转由管理员兜底审核')));
+    }
+    if (effectiveStatus !== 'pending') return res.status(409).json(err(new Error('这条修改申请已经确认过了')));
+
+    const { data: dossier, error: dossierErr } = await supabase.from('lc_dm_dossiers')
+      .select('id, claim_status, claimed_by')
+      .eq('id', cleanText(payload.dossier_id, 80))
+      .maybeSingle();
+    if (dossierErr) throw dossierErr;
+    if (!dossier || dossier.claim_status !== 'approved' || cleanText(dossier.claimed_by, 80) !== profile.id) {
+      return res.status(409).json(err(new Error('你已不是这份档案的当前认领人')));
+    }
+
+    payload.owner_response_status = decision === 'agree' ? 'agreed' : 'opposed';
+    payload.owner_response_reason = responseReason || null;
+    payload.owner_responded_at = new Date().toISOString();
+    const updateResult = await supabase.from('lc_public_reviews').update({
+      payload,
+      updated_at: new Date().toISOString(),
+    }).eq('id', review.id).eq('status', 'pending');
+    if (updateResult.error) throw updateResult.error;
+    await logSecurityEvent(req, {
+      action: decision === 'agree' ? 'dossier_update_agreed_by_owner' : 'dossier_update_opposed_by_owner',
+      targetType: 'public_review',
+      targetId: review.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { dossier_id: payload.dossier_id, response_reason: responseReason || null },
+    });
+    res.json(ok({ owner_response_status: payload.owner_response_status }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

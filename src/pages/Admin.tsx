@@ -367,7 +367,7 @@ type SiteMessage = {
 
 type PublicReview = {
   id: string;
-  target_type: 'profile_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert' | 'entity_rating_upsert';
+  target_type: 'profile_update' | 'dossier_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert' | 'entity_rating_upsert';
   profile_id?: string | null;
   profile_name?: string | null;
   title?: string | null;
@@ -558,6 +558,7 @@ function certificationTypeLabel(type: string) {
 
 function publicReviewTypeLabel(type: string) {
   if (type === 'profile_update') return '主页资料';
+  if (type === 'dossier_update') return '档案修改';
   if (type === 'service_create') return '服务上线';
   if (type === 'portfolio_create') return '作品图片';
   if (type === 'availability_create') return '公开档期';
@@ -595,12 +596,31 @@ function publicReviewTags(item: PublicReview) {
   } else if (item.target_type === 'script_rating_upsert' || item.target_type === 'entity_rating_upsert') {
     if (Array.isArray(payload.tags)) tags.push(...payload.tags.map(tag => `#${String(tag)}`).slice(0, 4));
     if (payload.spoiler_level) tags.push(`剧透:${String(payload.spoiler_level)}`);
+  } else if (item.target_type === 'dossier_update') {
+    if (payload.entity_type) tags.push(payload.entity_type === 'store' ? '店家档案' : 'DM档案');
+    if (Array.isArray(payload.changed_fields)) tags.push(...payload.changed_fields.slice(0, 4).map(field => `改:${String(field)}`));
   }
   return Array.from(new Set(tags.filter(Boolean))).slice(0, 6);
 }
 
 function summarizePublicReviewPayload(payload?: Record<string, unknown> | null) {
   if (!payload || typeof payload !== 'object') return [];
+  if (payload.patch && typeof payload.patch === 'object') {
+    const patch = payload.patch as Record<string, unknown>;
+    const before = payload.before_snapshot && typeof payload.before_snapshot === 'object' ? payload.before_snapshot as Record<string, unknown> : {};
+    const labels: Record<string, string> = {
+      dm_name: '名称', city: '城市', workplace: '店家 / 地址', employment_status: '受雇状态', employer_store_id: '受雇店家',
+      profile_url: '主页链接', photo_url: '照片', note: '档案说明', tags: '标签',
+    };
+    const valueText = (value: unknown) => Array.isArray(value) ? (value.join('、') || '留空') : value === null || value === undefined || value === '' ? '留空' : String(value);
+    const lines = Object.entries(patch).map(([key, value]) => `${labels[key] || key}: ${valueText(before[key])} → ${valueText(value)}`);
+    if (payload.edit_reason) lines.unshift(`修改依据: ${String(payload.edit_reason)}`);
+    if (payload.owner_response_status === 'pending') lines.push(`认领人状态: 等待确认，截止 ${String(payload.owner_response_due_at || '')}`);
+    if (payload.owner_response_status === 'agreed') lines.push(`认领人状态: 已同意${payload.owner_response_reason ? `，说明：${String(payload.owner_response_reason)}` : ''}`);
+    if (payload.owner_response_status === 'opposed') lines.push(`认领人状态: 反对，说明：${String(payload.owner_response_reason || '未填写')}`);
+    if (payload.owner_response_status === 'expired') lines.push('认领人状态: 7天未响应，平台兜底审核');
+    return lines.slice(0, 16);
+  }
   if (payload.profile_patch && typeof payload.profile_patch === 'object') {
     const patch = payload.profile_patch as Record<string, unknown>;
     return Object.entries(patch)
@@ -622,6 +642,9 @@ function publicReviewProofFiles(item: PublicReview): ProofFile[] {
   };
   if (payload.profile_patch && typeof payload.profile_patch === 'object') {
     push((payload.profile_patch as Record<string, unknown>).avatar, '待审公开头像');
+  }
+  if (payload.patch && typeof payload.patch === 'object') {
+    push((payload.patch as Record<string, unknown>).photo_url, '待审档案照片');
   }
   push(payload.image_url, '待审作品图片');
   if (Array.isArray(payload.items)) {
@@ -1773,6 +1796,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {publicReviews.map(item => {
                   const details = summarizePublicReviewPayload(item.payload);
                   const proofFiles = publicReviewProofFiles(item);
+                  const waitingForDossierOwner = item.target_type === 'dossier_update' && item.payload?.owner_response_status === 'pending';
                   return (
                     <Row key={item.id} accent="#facc15">
                       <div style={{ minWidth: 0, flex: 1 }}>
@@ -1782,6 +1806,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
                         </Meta>
                         {item.summary && <Meta>{item.summary}</Meta>}
+                        {waitingForDossierOwner && <Meta>认领人确认期尚未结束，当前不能通过；可以先拒绝明显无效的修改。</Meta>}
                         <ModerationPrecheckBadge value={item.moderation_precheck} />
                         <TagCloud tags={publicReviewTags(item)} />
                         {details.length > 0 && (
@@ -1792,7 +1817,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <AdminAttachmentLinks files={proofFiles} />
                       </div>
                       <Actions vertical>
-                        <ActionButton kind="ok" onClick={() => approvePublicReview(item.id)}>通过并公开</ActionButton>
+                        <ActionButton kind="ok" disabled={waitingForDossierOwner} onClick={() => approvePublicReview(item.id)}>{waitingForDossierOwner ? '等待认领人确认' : '通过并公开'}</ActionButton>
                         <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'publicReview')}>拒绝</ActionButton>
                       </Actions>
                     </Row>

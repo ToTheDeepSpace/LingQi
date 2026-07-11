@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import type React from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import DossierEditModal from '../components/DossierEditModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
+import { readStoredCreatorAuth } from '../lib/authSession';
 import { JumuluPageFrame } from '../components/JumuluPageChrome';
 import { jumuluCardStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 
@@ -24,6 +26,7 @@ type StoreDetail = {
     note?: string | null;
     tags?: string[];
     claim_status?: string;
+    claimed_by?: string | null;
   };
   summary: { avg: number | null; review_count: number; player_count: number; sample_status: 'insufficient' | 'stable' };
   ratings: Array<{ id: string; profile_name: string; script_name: string; visited_on: string; rating: number; content: string; tags?: string[] }>;
@@ -33,9 +36,13 @@ type StoreDetail = {
 
 export default function StoreProfile() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
+  const auth = readStoredCreatorAuth();
   const [data, setData] = useState<StoreDetail | null>(null);
   const [loadedId, setLoadedId] = useState('');
   const [error, setError] = useState('');
+  const [editOpen, setEditOpen] = useState(false);
+  const [editMessage, setEditMessage] = useState('');
   const loading = loadedId !== id;
 
   useEffect(() => {
@@ -75,9 +82,15 @@ export default function StoreProfile() {
           <section style={heroStyle}>
             <img src={data.dossier.photo_url || generatedAvatarDataUrl(data.dossier.name, `store:${id}`)} alt="" style={{ ...avatarStyle, objectPosition: `${data.dossier.photo_focus_x ?? 50}% ${data.dossier.photo_focus_y ?? 25}%` }} />
             <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-              <p style={eyebrowStyle}>店家档案{data.dossier.claim_status === 'approved' ? ' · 已认领' : ' · 未认领'}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                <p style={eyebrowStyle}>店家档案{data.dossier.claim_status === 'approved' ? ' · 已认领' : ' · 未认领'}</p>
+                <button type="button" onClick={() => auth?.token ? setEditOpen(true) : navigate(`/login?redirect=${encodeURIComponent(`/stores/${id}`)}`)} style={editButtonStyle}>
+                  {data.dossier.claimed_by === auth?.id ? '编辑我的档案' : '补充 / 纠错资料'}
+                </button>
+              </div>
               <h1 style={titleStyle}>{data.dossier.name}</h1>
               <p style={metaStyle}>{data.dossier.city || '城市待补'}{data.dossier.address ? ` · ${data.dossier.address}` : ''}</p>
+              {editMessage && <p style={{ margin: '7px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{editMessage}</p>}
             </div>
             <div style={heroScoreStyle}>
               {data.summary.avg ? <><strong>{data.summary.avg.toFixed(1)}</strong><span>★</span></> : <strong style={{ fontSize: 16 }}>暂无评分</strong>}
@@ -138,6 +151,28 @@ export default function StoreProfile() {
               .store-profile-layout { grid-template-columns: 1fr !important; }
             }
           `}</style>
+          {editOpen && <DossierEditModal
+            open={editOpen}
+            dossier={{
+              id: data.dossier.id,
+              entityType: 'store',
+              name: data.dossier.name,
+              city: data.dossier.city,
+              workplace: data.dossier.address,
+              profileUrl: data.dossier.profile_url,
+              photoUrl: data.dossier.photo_url,
+              note: data.dossier.note,
+              tags: data.dossier.tags,
+              claimedBy: data.dossier.claimed_by,
+            }}
+            token={auth?.token || ''}
+            currentUserId={auth?.id}
+            onClose={() => setEditOpen(false)}
+            onSubmitted={message => {
+              setEditOpen(false);
+              setEditMessage(message);
+            }}
+          />}
         </>
       )}
     </JumuluPageFrame>
@@ -159,6 +194,7 @@ function normalizeExternalUrl(value: string) {
 const heroStyle: React.CSSProperties = { minHeight: 140, display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap', borderRadius: 8, border: '1px solid rgba(31,41,55,0.08)', background: '#fff', padding: 20 };
 const avatarStyle: React.CSSProperties = { width: 88, height: 88, borderRadius: 8, objectFit: 'cover', background: '#fff8e8', border: '1px solid rgba(166,106,31,0.18)' };
 const eyebrowStyle: React.CSSProperties = { margin: 0, color: GOLD, fontSize: 12, fontWeight: 900 };
+const editButtonStyle: React.CSSProperties = { padding: '3px 5px', border: 0, background: 'transparent', color: '#64748b', fontSize: 11, fontWeight: 800, textDecoration: 'underline', textUnderlineOffset: 3, cursor: 'pointer' };
 const titleStyle: React.CSSProperties = { margin: '7px 0 0', fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3rem)', lineHeight: 1.05, overflowWrap: 'anywhere' };
 const metaStyle: React.CSSProperties = { margin: '9px 0 0', color: MUTED, lineHeight: 1.6 };
 const heroScoreStyle: React.CSSProperties = { marginLeft: 'auto', minWidth: 120, textAlign: 'right' };

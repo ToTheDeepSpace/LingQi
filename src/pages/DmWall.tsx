@@ -415,8 +415,10 @@ export default function DmWall() {
             {items.map(item => {
               const kind = normalizeEntityType(item.entity_type);
               const copy = ENTITY_COPY[kind];
+              const dossierHref = kind === 'store' ? `/stores/${encodeURIComponent(item.id)}` : `/dm/${encodeURIComponent(item.id)}`;
               return (
                 <article key={item.id} className="dm-dossier-card" style={cardStyle}>
+                  <Link to={dossierHref} aria-label={`查看${item.dm_name}${copy.kindLabel}专属页`} style={cardOverlayLinkStyle} />
                   <div className="dm-dossier-summary">
                     <img className="dm-dossier-photo" src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" style={{ objectPosition: `${item.photo_focus_x ?? 50}% ${item.photo_focus_y ?? 25}%` }} />
                     <div className="dm-dossier-summary-copy">
@@ -450,7 +452,7 @@ export default function DmWall() {
                       {item.tags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
                     </div>
                   )}
-                  <div className="dm-dossier-actions" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'nowrap', marginTop: 'auto' }}>
+                  <div className="dm-dossier-actions" style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'nowrap', marginTop: 'auto' }}>
                     {kind === 'dm' && <Link to={`/dm/${item.id}`} title="查看评分" style={compactPrimaryButton}>评分</Link>}
                     {kind === 'dm' && <Link to={`/dm/rate?dmId=${encodeURIComponent(item.id)}`} title="写一条评价" style={compactGhostButton}>＋评价</Link>}
                     {item.profile_url && <SocialPlatformLink url={item.profile_url} />}
@@ -721,8 +723,9 @@ const ghostButton: React.CSSProperties = { ...jumuluSecondaryLinkStyle, minHeigh
 const compactPrimaryButton: React.CSSProperties = { ...jumuluPrimaryLinkStyle, minHeight: 28, padding: '0 8px', borderRadius: 7, fontSize: 11 };
 const compactGhostButton: React.CSSProperties = { ...jumuluSecondaryLinkStyle, minHeight: 28, padding: '0 8px', borderRadius: 7, fontSize: 11 };
 const formCard: React.CSSProperties = { ...jumuluCardStyle, padding: 16 };
-const cardStyle: React.CSSProperties = { ...jumuluCardStyle, display: 'flex', flexDirection: 'column', padding: 14, minHeight: 0 };
+const cardStyle: React.CSSProperties = { ...jumuluCardStyle, position: 'relative', display: 'flex', flexDirection: 'column', padding: 14, minHeight: 0 };
+const cardOverlayLinkStyle: React.CSSProperties = { position: 'absolute', inset: 0, zIndex: 1, borderRadius: 8 };
 const badgeStyle: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.14)', fontSize: 12, fontWeight: 900 };
 const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.88)', color: '#275389', fontSize: 12, fontWeight: 800 };
-const claimButtonStyle: React.CSSProperties = { padding: '4px 7px', borderRadius: 5, border: '1px solid rgba(166,106,31,0.22)', background: '#fffdf8', color: '#8a5a19', fontSize: 11, fontWeight: 900, cursor: 'pointer' };
+const claimButtonStyle: React.CSSProperties = { position: 'relative', zIndex: 2, padding: '4px 7px', borderRadius: 5, border: '1px solid rgba(166,106,31,0.22)', background: '#fffdf8', color: '#8a5a19', fontSize: 11, fontWeight: 900, cursor: 'pointer' };
 const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 8, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };
