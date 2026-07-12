@@ -19,6 +19,7 @@ import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import type { DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
 import type { DmGraphDossier } from '../components/DmRelationshipGraph';
 import { dmAffiliationLabel, dmClaimLabel, type PublicDmAffiliation } from '../lib/dmDossierPresentation';
+import { sortDmDossiers, type DmDossierSortMode } from '../lib/dmDossierSort';
 
 const DmRelationshipGraph = lazy(() => import('../components/DmRelationshipGraph'));
 
@@ -80,6 +81,11 @@ type DmDossier = {
     player_count: number;
     sample_status: 'insufficient' | 'stable';
   };
+  chanto_summary?: {
+    total: number;
+    gift_count: number;
+    supporter_count: number;
+  };
 };
 
 const RATING_FILTERS: { value: RatingFilter; label: string }[] = [
@@ -89,6 +95,27 @@ const RATING_FILTERS: { value: RatingFilter; label: string }[] = [
   { value: '4.5', label: '4.5 分以上' },
   { value: 'unrated', label: '暂无评价' },
 ];
+
+const SORT_OPTIONS: { value: DmDossierSortMode; label: string }[] = [
+  { value: 'comprehensive', label: '综合排序' },
+  { value: 'rating', label: '评分最高' },
+  { value: 'verified', label: '已认证优先' },
+  { value: 'photo', label: '有照片优先' },
+  { value: 'newest', label: '最新收录' },
+];
+
+const DM_SORT_STORAGE_KEY = 'jumulu:dm-sort-mode';
+const DM_CHANTO_SORT_STORAGE_KEY = 'jumulu:dm-chanto-first';
+
+function readStoredSortMode(): DmDossierSortMode {
+  if (typeof window === 'undefined') return 'comprehensive';
+  const value = window.localStorage.getItem(DM_SORT_STORAGE_KEY);
+  return SORT_OPTIONS.some(option => option.value === value) ? value as DmDossierSortMode : 'comprehensive';
+}
+
+function readStoredChantoFirst() {
+  return typeof window !== 'undefined' && window.localStorage.getItem(DM_CHANTO_SORT_STORAGE_KEY) === 'true';
+}
 
 const ENTITY_COPY: Record<DossierEntityType, {
   filterLabel: string;
@@ -186,6 +213,8 @@ export default function DmWall() {
   const [query, setQuery] = useState('');
   const [tagFilter, setTagFilter] = useState('all');
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
+  const [sortMode, setSortMode] = useState<DmDossierSortMode>(readStoredSortMode);
+  const [chantoFirst, setChantoFirst] = useState(readStoredChantoFirst);
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<DossierDraft>({ entityType: 'dm', dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', photoFocusX: 50, photoFocusY: 25, note: '', tags: '', employmentStatus: 'store_affiliated', employerStoreId: '' });
@@ -212,7 +241,7 @@ export default function DmWall() {
 
   const visibleItems = useMemo(() => {
     const normalizedQuery = normalizeDossierSearch(query);
-    return items.filter(item => {
+    const filtered = items.filter(item => {
       const displayTags = dossierDisplayTags(item);
       if (tagFilter !== 'all' && !displayTags.some(tag => normalizeDossierSearch(tag) === tagFilter)) return false;
       if (!matchesRatingFilter(item, ratingFilter)) return false;
@@ -227,7 +256,18 @@ export default function DmWall() {
       ].filter(Boolean).join(' ');
       return normalizeDossierSearch(searchable).includes(normalizedQuery);
     });
-  }, [items, query, ratingFilter, tagFilter]);
+    return sortDmDossiers(filtered, sortMode, chantoFirst);
+  }, [chantoFirst, items, query, ratingFilter, sortMode, tagFilter]);
+
+  const changeSortMode = (value: DmDossierSortMode) => {
+    setSortMode(value);
+    window.localStorage.setItem(DM_SORT_STORAGE_KEY, value);
+  };
+
+  const changeChantoFirst = (value: boolean) => {
+    setChantoFirst(value);
+    window.localStorage.setItem(DM_CHANTO_SORT_STORAGE_KEY, String(value));
+  };
 
   const dossierDraft = useDraftAutosave<DossierDraft>({
     key: 'lc:draft:dm-wall:dossier-form',
@@ -370,7 +410,7 @@ export default function DmWall() {
       />
 
       <section style={jumuluFilterPanelStyle}>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div className="dm-filter-primary" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <CitySearchSelect
             value={city}
             onChange={value => {
@@ -382,9 +422,9 @@ export default function DmWall() {
             style={{ minWidth: 190, flex: '1 1 190px' }}
           />
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索名称、标签或常开剧本" style={{ ...inputStyle, minWidth: 190, flex: '1 1 230px' }} />
-          <Link to="/reputation/city" style={ghostButton}>看城市口碑</Link>
+          <Link className="dm-filter-city-link" to="/reputation/city" style={ghostButton}>看城市口碑</Link>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+        <div className="dm-filter-secondary" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
           <select aria-label="按标签筛选" value={tagFilter} onChange={event => setTagFilter(event.target.value)} style={{ ...inputStyle, minWidth: 170, flex: '1 1 190px' }}>
             <option value="all">全部标签</option>
             {availableTags.map(tag => <option key={tag.value} value={tag.value}>{tag.label}（{tag.count}）</option>)}
@@ -392,8 +432,12 @@ export default function DmWall() {
           <select aria-label="按评价筛选" value={ratingFilter} onChange={event => setRatingFilter(event.target.value as RatingFilter)} style={{ ...inputStyle, minWidth: 150, flex: '0 1 180px' }}>
             {RATING_FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
+          <select aria-label="选择排序方式" value={sortMode} onChange={event => changeSortMode(event.target.value as DmDossierSortMode)} style={{ ...inputStyle, minWidth: 140, flex: '0 1 160px' }}>
+            {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <ChantoSortSwitch checked={chantoFirst} onChange={changeChantoFirst} />
           <ViewModeSwitch value={viewMode} onChange={setViewMode} />
-          <span style={{ color: MUTED, fontSize: 12, marginLeft: 'auto' }}>共 {visibleItems.length} 个档案</span>
+          <span className="dm-filter-count" style={{ color: MUTED, fontSize: 12, marginLeft: 'auto' }}>共 {visibleItems.length} 个档案</span>
         </div>
       </section>
 
@@ -576,6 +620,29 @@ export default function DmWall() {
           -webkit-line-clamp: 2;
         }
         @media (max-width: 640px) {
+          .dm-filter-primary,
+          .dm-filter-secondary {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px !important;
+          }
+          .dm-filter-secondary {
+            margin-top: 8px !important;
+          }
+          .dm-filter-primary > *,
+          .dm-filter-secondary > * {
+            box-sizing: border-box;
+            min-width: 0 !important;
+            width: 100% !important;
+          }
+          .dm-filter-city-link {
+            grid-column: 1 / -1;
+            justify-content: center;
+          }
+          .dm-filter-count {
+            margin-left: 0 !important;
+            text-align: right;
+          }
           .dm-dossier-grid {
             grid-template-columns: 1fr !important;
             gap: 9px !important;
@@ -656,6 +723,23 @@ function ViewModeSwitch({ value, onChange }: { value: ViewMode; onChange: (value
         </button>
       ))}
     </div>
+  );
+}
+
+function ChantoSortSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      style={{ height: 42, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '0 11px', borderRadius: 8, border: `1px solid ${checked ? 'rgba(166,106,31,0.38)' : 'rgba(31,41,55,0.12)'}`, background: checked ? 'rgba(255,248,235,0.96)' : '#fff', color: checked ? '#8a5417' : MUTED, fontSize: 12, fontWeight: 850, cursor: 'pointer', whiteSpace: 'nowrap' }}
+    >
+      <span aria-hidden="true" style={{ width: 30, height: 18, padding: 2, boxSizing: 'border-box', borderRadius: 9, background: checked ? GOLD : 'rgba(100,116,139,0.28)', display: 'flex', justifyContent: checked ? 'flex-end' : 'flex-start', transition: 'background 160ms ease' }}>
+        <span style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(15,23,42,0.22)' }} />
+      </span>
+      缠头优先
+    </button>
   );
 }
 

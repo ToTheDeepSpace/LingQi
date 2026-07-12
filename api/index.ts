@@ -9864,6 +9864,55 @@ async function createRatingDiscussionNode(req: express.Request, res: express.Res
   }
 }
 
+async function loadDmChantoListSummaries(dossierIds: string[]) {
+  if (dossierIds.length === 0) return [] as Record<string, unknown>[];
+  if (useTencentPg) {
+    const result = await tencentPgPool.query(
+      `select dm_dossier_id,
+              coalesce(sum(amount), 0)::integer as total,
+              count(*)::integer as gift_count,
+              count(distinct sender_id)::integer as supporter_count
+         from lc_dm_gifts
+        where status = 'approved' and dm_dossier_id = any($1::uuid[])
+        group by dm_dossier_id`,
+      [dossierIds],
+    );
+    return result.rows as Record<string, unknown>[];
+  }
+
+  const rows: Record<string, unknown>[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const result = await supabase.from('lc_dm_gifts')
+      .select('dm_dossier_id, sender_id, amount')
+      .in('dm_dossier_id', dossierIds)
+      .eq('status', 'approved')
+      .range(offset, offset + pageSize - 1);
+    if (result.error && isMissingRelation(result.error, 'lc_dm_gifts')) return [];
+    if (result.error) throw result.error;
+    const page = (result.data || []) as Record<string, unknown>[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  const aggregate = new Map<string, { total: number; giftCount: number; supporters: Set<string> }>();
+  rows.forEach(row => {
+    const dossierId = String(row.dm_dossier_id || '');
+    if (!dossierId) return;
+    const current = aggregate.get(dossierId) || { total: 0, giftCount: 0, supporters: new Set<string>() };
+    current.total += Number(row.amount || 0);
+    current.giftCount += 1;
+    if (row.sender_id) current.supporters.add(String(row.sender_id));
+    aggregate.set(dossierId, current);
+  });
+  return Array.from(aggregate.entries()).map(([dmDossierId, value]) => ({
+    dm_dossier_id: dmDossierId,
+    total: value.total,
+    gift_count: value.giftCount,
+    supporter_count: value.supporters.size,
+  }));
+}
+
 app.get('/api/lc/dm-dossiers', async (req, res) => {
   try {
     await processDueDossierOwnerReviews();
@@ -9898,8 +9947,9 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
     let storeRatingRows: Record<string, unknown>[] = [];
     let affiliationRows: Record<string, unknown>[] = [];
     let affiliationStores: Record<string, unknown>[] = [];
+    let chantoRows: Record<string, unknown>[] = [];
     if (dossierIds.length > 0) {
-      const [dmRatingResult, storeRatingResult, affiliationResult] = await Promise.all([
+      const [dmRatingResult, storeRatingResult, affiliationResult, chantoSummaryRows] = await Promise.all([
         supabase.from('lc_dm_ratings')
           .select('id, dm_dossier_id, profile_id, rating, tags')
           .in('dm_dossier_id', dossierIds)
@@ -9916,6 +9966,7 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
           .in('status', ['approved', 'pending', 'legacy_unverified'])
           .order('created_at', { ascending: false })
           .limit(1000),
+        entityType === 'dm' ? loadDmChantoListSummaries(dossierIds) : Promise.resolve([]),
       ]);
       if (dmRatingResult.error && !isMissingRelation(dmRatingResult.error, 'lc_dm_ratings')) throw dmRatingResult.error;
       if (storeRatingResult.error && !isMissingRelation(storeRatingResult.error, 'lc_store_ratings')) throw storeRatingResult.error;
@@ -9923,6 +9974,7 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       dmRatingRows = dmRatingResult.error ? [] : (dmRatingResult.data || []) as Record<string, unknown>[];
       storeRatingRows = storeRatingResult.error ? [] : (storeRatingResult.data || []) as Record<string, unknown>[];
       affiliationRows = affiliationResult.error ? [] : (affiliationResult.data || []) as Record<string, unknown>[];
+      chantoRows = chantoSummaryRows;
       const storeIds = Array.from(new Set(affiliationRows.map(row => String(row.store_dossier_id || '')).filter(Boolean)));
       if (storeIds.length > 0) {
         const storeResult = await supabase.from('lc_dm_dossiers')
@@ -9954,6 +10006,7 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       values.push(row);
       affiliationsByDm.set(key, values);
     });
+    const chantoByDm = new Map(chantoRows.map(row => [String(row.dm_dossier_id || ''), row]));
     const storesById = new Map(affiliationStores.map(store => [String(store.id || ''), store]));
     res.json(ok(dossierRows.map((row: Record<string, unknown>) => {
       const isDm = (row.entity_type || 'dm') === 'dm';
@@ -9966,6 +10019,7 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       const ratingRows = row.entity_type === 'store'
         ? storeRatingsByDossier.get(String(row.id || '')) || []
         : dmRatingsByDossier.get(String(row.id || '')) || [];
+      const chanto = chantoByDm.get(String(row.id || ''));
       return {
         id: row.id,
         entity_type: row.entity_type || 'dm',
@@ -9986,6 +10040,11 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
         claimed_by: row.claim_status === 'approved' ? row.claimed_by : null,
         created_at: row.created_at,
         rating_summary: summarizeDmRatingRows(ratingRows),
+        chanto_summary: {
+          total: Number(chanto?.total || 0),
+          gift_count: Number(chanto?.gift_count || 0),
+          supporter_count: Number(chanto?.supporter_count || 0),
+        },
         rating_tags: collectPublicRatingTags(ratingRows),
       };
     })));
