@@ -5,6 +5,7 @@ import { ReputationButton, ReputationHubShell } from '../components/ReputationHu
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { flattenScriptRoles, roleKindLabel } from '../lib/scriptRoleCatalog';
 import type { ScriptCatalogItem } from '../types';
+import ProfileNameLink from '../components/ProfileNameLink';
 
 const API = '/api';
 const INK = '#1f2937';
@@ -15,6 +16,7 @@ const MUTED = 'rgba(71,85,105,0.7)';
 type RatingItem = {
   id: string;
   profile_name: string;
+  profile_id?: string | null;
   rating: number;
   content?: string | null;
   spoiler_level?: string | null;
@@ -115,7 +117,7 @@ export default function RoleRatingDetail() {
                 return (
                   <article key={item.id} style={reviewStyle}>
                     <div style={reviewHeadStyle}>
-                      <strong>{item.profile_name || '用户'}</strong>
+                      <strong><ProfileNameLink profileId={item.profile_id}>{item.profile_name || '用户'}</ProfileNameLink></strong>
                       <span style={reviewScoreStyle}>{item.rating} 分</span>
                     </div>
                     {showContent ? (

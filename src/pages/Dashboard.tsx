@@ -139,6 +139,8 @@ type DossierEditReview = {
   owner_response_status: 'not_required' | 'pending' | 'agreed' | 'opposed' | 'expired';
   owner_response_due_at?: string | null;
   owner_response_reason?: string | null;
+  review_mode?: 'direct' | 'owner' | 'admin';
+  owner_login_detected?: boolean;
   created_at: string;
 };
 
@@ -469,6 +471,8 @@ const DOSSIER_EDIT_FIELD_LABELS: Record<string, string> = {
   birth_year: '出生年份',
   height_cm: '身高',
   weight_kg: '体重',
+  mbti: 'MBTI',
+  zodiac: '星座',
   bio: '人物简介',
   common_scripts: '常开剧本',
   career_history: '任职履历',
@@ -513,9 +517,9 @@ function dossierEditDisplayValue(value: unknown) {
 
 function dossierEditStatusLabel(status: DossierEditReview['owner_response_status']) {
   if (status === 'pending') return '等待认领人确认';
-  if (status === 'agreed') return '认领人已同意 · 待平台审核';
-  if (status === 'opposed') return '认领人有异议 · 待平台审核';
-  if (status === 'expired') return '确认期已过 · 待平台审核';
+  if (status === 'agreed') return '认领人已同意';
+  if (status === 'opposed') return '认领人已反对';
+  if (status === 'expired') return '3天未上线 · 已自动处理';
   return '待平台审核';
 }
 
@@ -791,7 +795,7 @@ export default function Dashboard() {
         awaiting_owner_response: current.awaiting_owner_response.filter(edit => edit.id !== item.id),
       }));
       setOwnerResponseNotes(current => ({ ...current, [item.id]: '' }));
-      setMsg(decision === 'agree' ? '已同意这次资料修改，等待管理员最终审核。' : '已提交反对意见，管理员会结合修改依据最终审核。');
+      setMsg(decision === 'agree' ? '已同意，这次资料修改已经生效。' : '已反对，这次资料修改不会生效。');
     } catch (responseError) {
       setModuleError(responseError instanceof Error ? responseError.message : '确认失败');
     } finally {
@@ -2525,14 +2529,14 @@ export default function Dashboard() {
                   <section style={{ ...card, borderColor: 'rgba(166,106,31,0.32)', background: '#fffdf8' }}>
                     <div style={{ marginBottom: 10 }}>
                       <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>待你确认的档案修改</h2>
-                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>你有7天优先表达意见；无论同意或反对，管理员都会最终审核。</p>
+                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>你上线后需要明确同意或反对；同意后直接生效，不再转管理员审核。</p>
                     </div>
                     <div style={{ display: 'grid', gap: 12 }}>
                       {dossierEditData.awaiting_owner_response.map(item => (
                         <div key={item.id} style={{ paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.09)' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                             <strong style={{ color: INK, fontSize: 14 }}>{item.dossier_name} · {item.entity_type === 'store' ? '店家档案' : 'DM档案'}</strong>
-                            <span style={{ color: '#8a5a19', fontSize: 12, fontWeight: 850 }}>确认截止：{item.owner_response_due_at?.slice(0, 10) || '7天内'}</span>
+                            <span style={{ color: '#8a5a19', fontSize: 12, fontWeight: 850 }}>{item.owner_response_due_at ? `自动生效观察至：${item.owner_response_due_at.slice(0, 10)}` : '已检测到你上线，请明确处理'}</span>
                           </div>
                           <p style={{ margin: '6px 0 0', color: MUTED, fontSize: 12 }}>提交人：{item.submitter_name} · 依据：{item.edit_reason || '未填写'}</p>
                           <div style={{ display: 'grid', gap: 5, marginTop: 9 }}>

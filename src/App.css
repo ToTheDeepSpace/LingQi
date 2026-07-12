@@ -496,6 +496,25 @@ body {
   .jumulu-compact-header-actions > div {
     justify-content: flex-start !important;
   }
+
+  .ranking-city-panel {
+    position: fixed !important;
+    top: var(--ranking-city-panel-top) !important;
+    right: 12px !important;
+    left: 12px !important;
+    width: auto !important;
+    max-height: calc(100dvh - var(--ranking-city-panel-top) - 12px);
+    box-sizing: border-box;
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .ranking-city-scroll {
+    max-height: none !important;
+    min-height: 0;
+    overflow-y: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

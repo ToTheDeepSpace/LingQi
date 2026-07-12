@@ -649,6 +649,8 @@ const DOSSIER_EDIT_FIELD_LABELS: Record<string, string> = {
   birth_year: '出生年份',
   height_cm: '身高',
   weight_kg: '体重',
+  mbti: 'MBTI',
+  zodiac: '星座',
   bio: '人物简介',
   common_scripts: '常开剧本',
   career_history: '任职履历',
@@ -714,7 +716,7 @@ function summarizePublicReviewPayload(
     if (payload.owner_response_status === 'pending') lines.push(`认领人状态: 等待确认，截止 ${String(payload.owner_response_due_at || '')}`);
     if (payload.owner_response_status === 'agreed') lines.push(`认领人状态: 已同意${payload.owner_response_reason ? `，说明：${String(payload.owner_response_reason)}` : ''}`);
     if (payload.owner_response_status === 'opposed') lines.push(`认领人状态: 反对，说明：${String(payload.owner_response_reason || '未填写')}`);
-    if (payload.owner_response_status === 'expired') lines.push('认领人状态: 7天未响应，平台兜底审核');
+    if (payload.owner_response_status === 'expired') lines.push('认领人状态: 3天内未上线，非敏感资料自动生效');
     return lines.slice(0, 16);
   }
   if (payload.profile_patch && typeof payload.profile_patch === 'object') {

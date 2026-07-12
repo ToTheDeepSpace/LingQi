@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
+import ProfileNameLink from '../components/ProfileNameLink';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import {
   nextOnboardingViewCount,
@@ -32,6 +33,7 @@ const SUBJECT_LABEL: Record<string, string> = {
 
 const SUBJECT_TYPES = ['creator', 'dm', 'store', 'takeaway', 'player'] as const;
 const POPULAR_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '重庆', '武汉', '南京', '长沙', '西安', '天津'];
+const RANKING_CITY_STORAGE_PREFIX = 'lc:rankings:last-city';
 const TAB_HINT: Record<'red' | 'white' | 'black', string> = {
   red: '红榜：记录让人觉得值得推荐、值得记住的具体事件。',
   white: '白榜：免费发帖，适合记录事实、补充线索、普通提醒，先留下公开记录。',
@@ -149,6 +151,26 @@ type AuditData = {
 };
 type AuditModal = { item: Ranking; loading: boolean; error: string; data?: AuditData } | null;
 type BoardMode = 'reputation' | 'money';
+
+function rankingCityStorageKey(userId?: string) {
+  return `${RANKING_CITY_STORAGE_PREFIX}:${userId || 'guest'}`;
+}
+
+function readStoredRankingCity(userId?: string) {
+  try {
+    return localStorage.getItem(rankingCityStorageKey(userId)) || '';
+  } catch {
+    return '';
+  }
+}
+
+function storeRankingCity(city: string, userId?: string) {
+  try {
+    localStorage.setItem(rankingCityStorageKey(userId), city);
+  } catch {
+    // Browser storage is optional; the current selection still works in memory.
+  }
+}
 
 const card: React.CSSProperties = {
   background: '#fff',
@@ -523,13 +545,30 @@ function CityFilter({
   onSelect: (city: string) => void;
   onClose: () => void;
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [mobilePanelTop, setMobilePanelTop] = useState(0);
   const cityLabel = city === 'preferred'
     ? `我的城市${preferredCities.length > 0 ? `：${preferredCities.slice(0, 2).join('、')}${preferredCities.length > 2 ? '等' : ''}` : ''}`
     : city === 'all' ? '全部城市' : city;
 
+  useEffect(() => {
+    if (!open) return;
+    const updatePanelTop = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect) setMobilePanelTop(Math.min(window.innerHeight - 96, Math.max(12, rect.bottom + 8)));
+    };
+    updatePanelTop();
+    window.addEventListener('resize', updatePanelTop);
+    window.addEventListener('scroll', updatePanelTop, true);
+    return () => {
+      window.removeEventListener('resize', updatePanelTop);
+      window.removeEventListener('scroll', updatePanelTop, true);
+    };
+  }, [open]);
+
   return (
     <div style={{ position: 'relative' }}>
-      <button onClick={onToggle}
+      <button ref={triggerRef} onClick={onToggle}
         style={{
           minHeight: 34,
           padding: '7px 13px',
@@ -548,7 +587,7 @@ function CityFilter({
       {open && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={onClose} />
-          <div style={{
+          <div className="ranking-city-panel" style={{
             position: 'absolute',
             right: 0,
             top: 'calc(100% + 8px)',
@@ -559,6 +598,7 @@ function CityFilter({
             background: '#fffdf8',
             border: '1px solid rgba(166,106,31,0.22)',
             boxShadow: '0 18px 48px rgba(102,70,30,0.18)',
+            '--ranking-city-panel-top': `${mobilePanelTop}px`,
           }}
             onWheel={e => e.stopPropagation()}
             onTouchMove={e => e.stopPropagation()}>
@@ -589,7 +629,7 @@ function CityFilter({
               ))}
             </div>
             <div style={{ height: 1, background: 'rgba(217,168,87,0.12)', marginBottom: 8 }} />
-            <div style={{ ...cityPanelScroll, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>
+            <div className="ranking-city-scroll" style={{ ...cityPanelScroll, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>
               {options.length > 0 ? options.map(c => (
                 <button key={c} onClick={() => onSelect(c)}
                   style={{
@@ -620,14 +660,16 @@ function CityFilter({
 
 export default function Rankings() {
   const navigate = useNavigate();
-  const initialPreferredCities = getAuth()?.availableCities || [];
+  const initialAuth = getAuth();
+  const initialPreferredCities = initialAuth?.availableCities || [];
+  const storedCity = readStoredRankingCity(initialAuth?.userId);
   const [tab, setTab] = useState<'red' | 'black' | 'white'>('red');
   const [boardMode, setBoardMode] = useState<BoardMode>('reputation');
   const [blackView, setBlackView] = useState<'active' | 'expired'>('active');
   const [subjectTab, setSubjectTab] = useState<string>('all');
-  const [city, setCity] = useState(initialPreferredCities.length > 0 ? 'preferred' : 'all');
+  const [city, setCity] = useState(storedCity || (initialPreferredCities.length > 0 ? 'preferred' : 'all'));
   const [preferredCities, setPreferredCities] = useState<string[]>(initialPreferredCities);
-  const [cityTouched, setCityTouched] = useState(false);
+  const [cityTouched, setCityTouched] = useState(Boolean(storedCity));
   const [cityOpen, setCityOpen] = useState(false);
   const [cityQuery, setCityQuery] = useState('');
   const [items, setItems] = useState<Ranking[]>([]);
@@ -822,6 +864,7 @@ export default function Rankings() {
   const setCityAndClose = (nextCity: string) => {
     setCityTouched(true);
     setCity(nextCity);
+    storeRankingCity(nextCity, getAuth()?.userId);
     setCityOpen(false);
     setCityQuery('');
   };
@@ -1594,7 +1637,7 @@ export default function Rankings() {
                         fontSize: '0.7rem',
                         fontWeight: 760,
                         }}>
-                        发布人 {renderName(item.author_name, item.is_realname)}
+                        发布人 <ProfileNameLink profileId={item.poster_id}>{renderName(item.author_name, item.is_realname)}</ProfileNameLink>
                       </span>
                       {item.lc_profiles?.verified_shop && (
                         <span style={{ padding: '1px 5px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 900, background: '#3b82f6', color: '#fff' }} title="已认证店家">蓝V</span>
@@ -1697,7 +1740,7 @@ export default function Rankings() {
                               置顶 · {c.pin_label || '相关方回应'}
                             </span>
                             <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.72rem' }}>
-                              {renderName(c.author_name, c.is_realname)} · {c.created_at?.slice(0, 10)}
+                              <ProfileNameLink profileId={c.author_id}>{renderName(c.author_name, c.is_realname)}</ProfileNameLink> · {c.created_at?.slice(0, 10)}
                             </span>
                             {auth?.userId && c.author_id === auth.userId && (
                               <button onClick={() => deleteOwnComment(item.id, c.id)} disabled={deletingComment === c.id}
@@ -1798,7 +1841,7 @@ export default function Rankings() {
                         <div key={c.id} style={{ backgroundColor: '#fff7ed', border: '1px solid rgba(166,106,31,0.12)', borderRadius: 10, padding: '10px 14px', fontSize: '0.84rem' }}>
                           <p style={{ color: 'rgba(31,41,55,0.86)', lineHeight: 1.7, marginBottom: 6 }}>{c.content}</p>
                           <span style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.52)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            — {renderName(c.author_name, c.is_realname)} · {c.created_at?.slice(0, 10)}
+                            — <ProfileNameLink profileId={c.author_id}>{renderName(c.author_name, c.is_realname)}</ProfileNameLink> · {c.created_at?.slice(0, 10)}
                             {auth?.userId && c.author_id === auth.userId && !c.is_pinned && (
                               <button onClick={() => openRelatedCertModal(item.id, c.id)} disabled={certifyingComment === c.id}
                                 style={{ border: '1px solid rgba(166,106,31,0.2)', background: 'rgba(166,106,31,0.08)', color: GOLD, borderRadius: 999, cursor: certifyingComment === c.id ? 'not-allowed' : 'pointer', fontSize: '0.72rem', padding: '2px 8px', fontWeight: 800 }}>

@@ -36,6 +36,8 @@ export type EditableDossier = {
   birthYear?: number | null;
   heightCm?: number | null;
   weightKg?: number | null;
+  mbti?: string | null;
+  zodiac?: string | null;
   bio?: string | null;
   commonScripts?: DossierNamedRef[];
   careerHistory?: DossierCareerEntry[];
@@ -74,6 +76,8 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
     birthYear: dossier.birthYear ? String(dossier.birthYear) : '',
     heightCm: dossier.heightCm ? String(dossier.heightCm) : '',
     weightKg: dossier.weightKg ? String(dossier.weightKg) : '',
+    mbti: dossier.mbti || '',
+    zodiac: dossier.zodiac || '',
     bio: dossier.bio || '',
     commonScripts: normalizeDossierNamedRefs(dossier.commonScripts),
     careerHistory: normalizeDossierCareerHistory(dossier.careerHistory),
@@ -144,6 +148,8 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
           birthYear: dossier.entityType === 'dm' ? wikiDraft.birthYear || null : undefined,
           heightCm: dossier.entityType === 'dm' ? wikiDraft.heightCm || null : undefined,
           weightKg: dossier.entityType === 'dm' ? wikiDraft.weightKg || null : undefined,
+          mbti: dossier.entityType === 'dm' ? wikiDraft.mbti || null : undefined,
+          zodiac: dossier.entityType === 'dm' ? wikiDraft.zodiac || null : undefined,
           bio: dossier.entityType === 'dm' ? wikiDraft.bio.trim() : undefined,
           commonScripts: dossier.entityType === 'dm' ? wikiDraft.commonScripts : undefined,
           careerHistory: dossier.entityType === 'dm' ? wikiDraft.careerHistory : undefined,
@@ -155,8 +161,8 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
       const payload = await response.json();
       if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '修改提交失败');
       onSubmitted(payload.data?.message || (payload.data?.owner_response_status === 'pending'
-        ? '修改已提交，等待认领人确认后由管理员审核。'
-        : '修改已提交，管理员审核通过后会更新公开资料。'));
+        ? '修改已提交，等待认领人处理。'
+        : '修改已提交。'));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '修改提交失败');
     } finally {
@@ -174,7 +180,11 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
             <p style={kickerStyle}>{isOwner ? `编辑我的${entityLabel}档案` : `补充 / 纠正${entityLabel}资料`}</p>
             <h2 id="dossier-edit-title" style={{ margin: 0, fontSize: 22 }}>修改「{dossier.name}」</h2>
             <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 13, lineHeight: 1.6 }}>
-              公开资料在管理员审核通过前不会改变。{dossier.claimedBy && !isOwner ? '认领人有7天优先确认，超时后由管理员兜底。' : ''}
+              {isOwner
+                ? '这是你已认领的档案，提交后会直接更新。'
+                : dossier.claimedBy
+                  ? '认领人3天内上线则由本人确认；3天内未上线，非敏感资料自动生效。'
+                  : '档案尚未认领，提交后由管理员审核。'}
             </p>
           </div>
           <button type="button" onClick={onClose} disabled={submitting} style={closeStyle} aria-label="关闭修改窗口">×</button>
@@ -247,7 +257,7 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
         </div>
         <footer style={footerStyle}>
           <button type="button" onClick={onClose} disabled={submitting} style={secondaryButtonStyle}>取消</button>
-          <button type="button" onClick={submit} disabled={submitting} style={primaryButtonStyle}>{submitting ? '提交中...' : '提交修改审核'}</button>
+          <button type="button" onClick={submit} disabled={submitting} style={primaryButtonStyle}>{submitting ? '提交中...' : isOwner ? '保存修改' : '提交修改'}</button>
         </footer>
       </section>
     </div>

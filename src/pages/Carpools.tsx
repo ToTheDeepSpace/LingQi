@@ -8,6 +8,7 @@ import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal from '../components/ReportModal';
+import ProfileNameLink from '../components/ProfileNameLink';
 import {
   JumuluCompactHeader,
   JumuluPageFrame,
@@ -507,7 +508,7 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
         {item.juzhanggui_sync_status === 'synced' && <span>已同步到剧司辰排期草稿</span>}
       </div>
       <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(217,168,87,0.16)', display: 'flex', justifyContent: 'space-between', gap: 12, color: 'rgba(71,85,105,0.58)', fontSize: 12 }}>
-        <span>{item.poster_is_realname ? '⭐ ' : ''}{item.poster_name}</span>
+        <ProfileNameLink profileId={item.poster_id}>{item.poster_is_realname ? '⭐ ' : ''}{item.poster_name}</ProfileNameLink>
         <span>{item.created_at?.slice(0, 10)}</span>
       </div>
       {(onApply || onContact || onReport) && (

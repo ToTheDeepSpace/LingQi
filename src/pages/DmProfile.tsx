@@ -3,6 +3,7 @@ import type React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DossierClaimModal from '../components/DossierClaimModal';
 import DossierEditModal from '../components/DossierEditModal';
+import ProfileNameLink from '../components/ProfileNameLink';
 import DmGiftModal from '../components/DmGiftModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
@@ -32,6 +33,8 @@ type DmDetail = {
     birth_year?: number | null;
     height_cm?: number | null;
     weight_kg?: number | null;
+    mbti?: string | null;
+    zodiac?: string | null;
     bio?: string | null;
     common_scripts?: DossierNamedRef[];
     career_history?: Array<DossierCareerEntry & { verification_status?: 'store_confirmed' | 'platform_reviewed' }>;
@@ -48,9 +51,9 @@ type DmDetail = {
     } | null;
   };
   summary: { avg: number | null; review_count: number; player_count: number; sample_status: 'insufficient' | 'stable' };
-  ratings: Array<{ id: string; profile_name: string; script_name: string; store_dossier_id?: string | null; store_name: string; played_on: string; replay_number: number; rating: number; content: string; tags?: string[] }>;
+  ratings: Array<{ id: string; profile_id?: string | null; profile_name: string; script_name: string; store_dossier_id?: string | null; store_name: string; played_on: string; replay_number: number; rating: number; content: string; tags?: string[] }>;
   reputation_summary: { event_count: number; red_count: number; black_count: number; white_count: number };
-  reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; event_date?: string | null; event_script_name?: string | null; event_store_name?: string | null; created_at: string }>;
+  reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; poster_id?: string | null; event_date?: string | null; event_script_name?: string | null; event_store_name?: string | null; created_at: string }>;
   chanto_summary?: { total: number; gift_count: number; supporter_count: number; recent: Array<{ id: string; amount: number; supporter_name: string; created_at: string }> };
 };
 
@@ -240,6 +243,8 @@ export default function DmProfile() {
               <InfoRow label="年龄" value={age !== null ? `${age} 岁` : '本人未公开'} />
               <InfoRow label="身高" value={dossier.height_cm ? `${dossier.height_cm} cm` : '本人未公开'} />
               <InfoRow label="体重" value={dossier.weight_kg ? `${dossier.weight_kg} kg` : '本人未公开'} />
+              <InfoRow label="MBTI" value={dossier.mbti || '待补充'} />
+              <InfoRow label="星座" value={dossier.zodiac || '待补充'} />
               <InfoRow label="任职状态" value={affiliationLabel} />
               {dossier.tags && dossier.tags.length > 0 && <div style={{ marginTop: 12 }}><span style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>标签</span><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>{dossier.tags.map(tag => <span key={tag} style={tagStyle}>#{tag}</span>)}</div></div>}
             </aside>
@@ -251,7 +256,7 @@ export default function DmProfile() {
           {ratings.length === 0 ? <p style={{ color: MUTED }}>暂无审核通过的评分。</p> : <div style={{ display: 'grid', gap: 12 }}>
             {ratings.map(item => <article key={item.id} style={{ borderTop: '1px solid rgba(31,41,55,0.09)', paddingTop: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
-                <div><strong>{item.profile_name}</strong><div style={{ color: MUTED, fontSize: 13, marginTop: 4 }}>{item.script_name} · {item.store_dossier_id ? <Link to={`/stores/${item.store_dossier_id}`} style={inlineStoreLinkStyle}>{item.store_name}</Link> : item.store_name} · {item.played_on} · 第{item.replay_number}刷</div></div>
+                <div><strong><ProfileNameLink profileId={item.profile_id}>{item.profile_name}</ProfileNameLink></strong><div style={{ color: MUTED, fontSize: 13, marginTop: 4 }}>{item.script_name} · {item.store_dossier_id ? <Link to={`/stores/${item.store_dossier_id}`} style={inlineStoreLinkStyle}>{item.store_name}</Link> : item.store_name} · {item.played_on} · 第{item.replay_number}刷</div></div>
                 <strong style={{ color: '#8a5a19' }}>{item.rating} / 5</strong>
               </div>
               <p style={{ margin: '10px 0 0', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{item.content}</p>
@@ -267,7 +272,7 @@ export default function DmProfile() {
               <article key={item.id} style={{ borderTop: '1px solid rgba(31,41,55,0.09)', paddingTop: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <strong style={{ color: item.type === 'red' ? '#b91c1c' : item.type === 'black' ? '#334155' : '#8a5a19' }}>{item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'}</strong>
-                  <span style={{ color: MUTED, fontSize: 13 }}>{item.author_name} · {item.created_at?.slice(0, 10)}</span>
+                  <span style={{ color: MUTED, fontSize: 13 }}><ProfileNameLink profileId={item.poster_id}>{item.author_name}</ProfileNameLink> · {item.created_at?.slice(0, 10)}</span>
                 </div>
                 {(item.event_date || item.event_script_name || item.event_store_name) && <div style={{ color: MUTED, fontSize: 13, marginTop: 6 }}>{[item.event_date, item.event_script_name, item.event_store_name].filter(Boolean).join(' · ')}</div>}
                 <p style={{ margin: '9px 0 0', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{item.content}</p>
@@ -308,6 +313,8 @@ export default function DmProfile() {
           birthYear: dossier.birth_year,
           heightCm: dossier.height_cm,
           weightKg: dossier.weight_kg,
+          mbti: dossier.mbti,
+          zodiac: dossier.zodiac,
           bio: dossier.bio,
           commonScripts: dossier.common_scripts,
           careerHistory: dossier.career_history,

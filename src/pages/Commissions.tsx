@@ -6,6 +6,7 @@ import { getJsonCached } from '../lib/apiCache';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal from '../components/ReportModal';
+import ProfileNameLink from '../components/ProfileNameLink';
 import {
   JumuluCompactHeader,
   JumuluPageFrame,
@@ -478,7 +479,7 @@ function CommissionCard({ item, showStatus, onDelete, onApply, onReport, applied
         {showStatus && item.status === 'rejected' && item.reject_reason && <span style={{ color: '#b91c1c' }}>未通过原因：{item.reject_reason}</span>}
       </div>
       <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(217,168,87,0.16)', display: 'flex', justifyContent: 'space-between', gap: 12, color: 'rgba(71,85,105,0.58)', fontSize: '0.78rem' }}>
-        <span>{item.poster_is_realname ? '⭐ ' : ''}{item.poster_name}</span>
+        <ProfileNameLink profileId={item.poster_id}>{item.poster_is_realname ? '⭐ ' : ''}{item.poster_name}</ProfileNameLink>
         <span>{item.created_at?.slice(0, 10)}</span>
       </div>
       {onDelete && (

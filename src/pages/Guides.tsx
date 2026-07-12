@@ -7,6 +7,7 @@ import {
 } from '../components/JumuluPageChrome';
 import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import ProfileNameLink from '../components/ProfileNameLink';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -17,6 +18,7 @@ const MUTED = 'rgba(71,85,105,0.76)';
 type Guide = {
   id: string;
   author_name?: string | null;
+  author_id?: string | null;
   title: string;
   summary: string;
   content?: string;
@@ -168,7 +170,7 @@ export default function Guides() {
                 <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', marginBottom: 8 }}>{guide.title}</h2>
                 <p style={{ color: MUTED, lineHeight: 1.7, minHeight: 72 }}>{guide.summary}</p>
                 <div style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', marginBottom: 14 }}>
-                  {guide.target_name || '未绑定对象'} · {guide.author_name || '匿名作者'} · {shortDate(guide.created_at)}
+                  {guide.target_name || '未绑定对象'} · <ProfileNameLink profileId={guide.author_id}>{guide.author_name || '匿名作者'}</ProfileNameLink> · {shortDate(guide.created_at)}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                   <strong style={{ color: '#925f18' }}>{guide.price > 0 ? `${guide.price} 榜金` : '免费'}</strong>
@@ -189,7 +191,7 @@ export default function Guides() {
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.6rem', marginBottom: 8 }}>{selected.title}</h2>
             <p style={{ color: MUTED, lineHeight: 1.8 }}>{selected.summary}</p>
             <div style={{ color: 'rgba(71,85,105,0.64)', fontSize: '0.82rem', margin: '10px 0 18px' }}>
-              作者：{selected.author_name || '匿名作者'} · 对象：{selected.target_name || '未绑定对象'} · 已购 {selected.purchase_count || 0}
+              作者：<ProfileNameLink profileId={selected.author_id}>{selected.author_name || '匿名作者'}</ProfileNameLink> · 对象：{selected.target_name || '未绑定对象'} · 已购 {selected.purchase_count || 0}
             </div>
             {selected.can_read_content ? (
               <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9, color: INK, background: 'rgba(255,250,242,0.82)', border: '1px solid rgba(201,146,46,0.16)', borderRadius: 14, padding: 16 }}>

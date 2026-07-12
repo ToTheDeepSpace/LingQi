@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DossierEditModal from '../components/DossierEditModal';
+import ProfileNameLink from '../components/ProfileNameLink';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { JumuluPageFrame } from '../components/JumuluPageChrome';
@@ -29,9 +30,9 @@ type StoreDetail = {
     claimed_by?: string | null;
   };
   summary: { avg: number | null; review_count: number; player_count: number; sample_status: 'insufficient' | 'stable' };
-  ratings: Array<{ id: string; profile_name: string; script_name: string; visited_on: string; rating: number; content: string; tags?: string[] }>;
+  ratings: Array<{ id: string; profile_id?: string | null; profile_name: string; script_name: string; visited_on: string; rating: number; content: string; tags?: string[] }>;
   reputation_summary: { event_count: number; red_count: number; black_count: number; white_count: number };
-  reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; event_date?: string | null; event_script_name?: string | null; created_at: string }>;
+  reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; poster_id?: string | null; event_date?: string | null; event_script_name?: string | null; created_at: string }>;
 };
 
 export default function StoreProfile() {
@@ -109,7 +110,7 @@ export default function StoreProfile() {
               <div style={listStyle}>
                 {data.ratings.map(item => (
                   <article key={item.id} style={reviewStyle}>
-                    <div style={reviewHeadStyle}><strong>{item.profile_name || '匿名玩家'}</strong><span style={reviewScoreStyle}>{item.rating} 星</span></div>
+                    <div style={reviewHeadStyle}><strong><ProfileNameLink profileId={item.profile_id}>{item.profile_name || '匿名玩家'}</ProfileNameLink></strong><span style={reviewScoreStyle}>{item.rating} 星</span></div>
                     <p style={proofStyle}>《{item.script_name}》 · {item.visited_on}</p>
                     <p style={contentStyle}>{item.content}</p>
                     {item.tags && item.tags.length > 0 && <div style={tagRowStyle}>{item.tags.map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}</div>}
@@ -136,6 +137,7 @@ export default function StoreProfile() {
                       <strong style={{ color: event.type === 'black' ? '#475569' : event.type === 'red' ? '#b91c1c' : GOLD }}>{event.type === 'red' ? '红榜事件' : event.type === 'black' ? '黑榜事件' : '白榜记录'}</strong>
                       <p style={{ margin: '6px 0 0', color: MUTED, fontSize: 12 }}>{event.event_script_name ? `《${event.event_script_name}》 · ` : ''}{event.event_date || event.created_at?.slice(0, 10)}</p>
                       <p style={{ margin: '8px 0 0', color: INK, fontSize: 13, lineHeight: 1.6 }}>{event.content}</p>
+                      <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 12 }}>发布人：<ProfileNameLink profileId={event.poster_id}>{event.author_name}</ProfileNameLink></p>
                     </article>
                   ))}
                   {data.reputation_events.length === 0 && <div style={emptyStyle}>暂无关联事件。</div>}

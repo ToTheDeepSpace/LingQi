@@ -3,6 +3,7 @@ import type React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { cityReputationTitle } from '../lib/reputationNaming';
+import ProfileNameLink from '../components/ProfileNameLink';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -26,6 +27,7 @@ type DossierEvent = {
   subject_city?: string | null;
   content: string;
   author_name: string;
+  poster_id?: string | null;
   is_realname: boolean;
   initial_amount: number;
   likes: number;
@@ -166,7 +168,7 @@ export default function ReputationDossier() {
                           {event.type === 'red' ? '红榜事件' : event.type === 'black' ? '黑榜事件' : '白榜记录'}
                         </span>
                         <span style={{ color: 'rgba(71,85,105,0.58)', fontSize: 13 }}>
-                          {event.is_realname ? `实名玩家 ${event.author_name}` : event.author_name} · {event.created_at?.slice(0, 10)}
+                          <ProfileNameLink profileId={event.poster_id}>{event.is_realname ? `实名玩家 ${event.author_name}` : event.author_name}</ProfileNameLink> · {event.created_at?.slice(0, 10)}
                         </span>
                       </div>
                       <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.86)', lineHeight: 1.75 }}>{event.content}</p>

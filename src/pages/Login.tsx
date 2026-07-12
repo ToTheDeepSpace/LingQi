@@ -79,6 +79,7 @@ export default function Login() {
   const [code, setCode] = useState('');
   const [setupPassword, setSetupPassword] = useState('');
   const [setupPasswordConfirm, setSetupPasswordConfirm] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [message, setMessage] = useState('');
@@ -344,6 +345,8 @@ export default function Login() {
     if (step === 'password') {
       if (!password.trim() || password.length < 4) { setMessage('密码至少4位'); return; }
     } else {
+      if (step === 'register' && !displayName.trim()) { setMessage('请填写昵称'); return; }
+      if (step === 'register' && displayName.trim().length > 30) { setMessage('昵称最多30个字符'); return; }
       if (!sentToCurrentAccount) { setMessage('请先为当前账号发送验证码'); return; }
       if (!code.trim()) { setMessage('请填写验证码'); return; }
       if (setupPassword.length < 6) { setMessage('密码至少6位'); return; }
@@ -379,6 +382,7 @@ export default function Login() {
               code: code.trim(),
               password: setupPassword,
               passwordConfirm: setupPasswordConfirm,
+              displayName: displayName.trim(),
               referralCode: referralCode || undefined,
             }
             : {
@@ -386,6 +390,7 @@ export default function Login() {
               code: code.trim(),
               password: setupPassword,
               passwordConfirm: setupPasswordConfirm,
+              displayName: displayName.trim(),
               referralCode: referralCode || undefined,
             };
       const r = await fetch(endpoint, {
@@ -532,6 +537,20 @@ export default function Login() {
 
               {(step === 'register' || step === 'reset') && (
                 <>
+                  {step === 'register' && (
+                    <Field label="昵称">
+                      <input
+                        type="text"
+                        value={displayName}
+                        onChange={e => setDisplayName(e.target.value)}
+                        placeholder="填写对外展示的昵称"
+                        required
+                        maxLength={30}
+                        autoComplete="nickname"
+                        style={inputStyle}
+                      />
+                    </Field>
+                  )}
                   <Field label="验证码">
                     <div className="code-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8 }}>
                       <input
@@ -577,7 +596,7 @@ export default function Login() {
 
                   {step === 'register' && (
                     <p className="register-footnote" style={{ margin: 0, color: 'rgba(71,85,105,0.64)', fontSize: '0.76rem', lineHeight: 1.6 }}>
-                      昵称、头像、常用城市进站后再设置。昵称只是公开展示名，不是登录账号；登录账号是手机号或邮箱。
+                      昵称会用于公开主页和你发布的内容；登录账号仍是手机号或邮箱。
                     </p>
                   )}
                 </>

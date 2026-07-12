@@ -1,4 +1,4 @@
-export const DOSSIER_EDIT_OWNER_RESPONSE_DAYS = 7;
+export const DOSSIER_EDIT_OWNER_RESPONSE_DAYS = 3;
 
 export type DossierOwnerResponseStatus = 'not_required' | 'pending' | 'agreed' | 'opposed' | 'expired';
 
@@ -40,4 +40,19 @@ export function dossierEditAdminReviewReady(input: {
   now?: Date;
 }) {
   return effectiveDossierOwnerResponseStatus(input) !== 'pending';
+}
+
+export function ownerLoggedInDuringDossierResponseWindow(input: {
+  createdAt?: string | null;
+  dueAt?: string | null;
+  ownerLastSeenAt?: string | null;
+}) {
+  const createdAt = input.createdAt ? new Date(input.createdAt).getTime() : Number.NaN;
+  const dueAt = input.dueAt ? new Date(input.dueAt).getTime() : Number.NaN;
+  const lastSeenAt = input.ownerLastSeenAt ? new Date(input.ownerLastSeenAt).getTime() : Number.NaN;
+  return Number.isFinite(createdAt)
+    && Number.isFinite(dueAt)
+    && Number.isFinite(lastSeenAt)
+    && lastSeenAt >= createdAt
+    && lastSeenAt <= dueAt;
 }

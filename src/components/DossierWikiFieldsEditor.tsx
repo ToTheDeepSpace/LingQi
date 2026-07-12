@@ -11,12 +11,19 @@ import {
 const API = '/api';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.72)';
+const MBTI_OPTIONS = [
+  'INTJ', 'INTP', 'ENTJ', 'ENTP', 'INFJ', 'INFP', 'ENFJ', 'ENFP',
+  'ISTJ', 'ISFJ', 'ESTJ', 'ESFJ', 'ISTP', 'ISFP', 'ESTP', 'ESFP',
+];
+const ZODIAC_OPTIONS = ['白羊座', '金牛座', '双子座', '巨蟹座', '狮子座', '处女座', '天秤座', '天蝎座', '射手座', '摩羯座', '水瓶座', '双鱼座'];
 
 export type DossierWikiDraft = {
   dmStartedMonth: string;
   birthYear: string;
   heightCm: string;
   weightKg: string;
+  mbti: string;
+  zodiac: string;
   bio: string;
   commonScripts: DossierNamedRef[];
   careerHistory: DossierCareerEntry[];
@@ -85,6 +92,18 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
           </Field>
           <Field label="体重（kg）">
             <input type="number" min={25} max={300} step="0.1" value={value.weightKg} onChange={event => update({ weightKg: event.target.value })} disabled={sensitiveMode === 'unavailable'} style={inputStyle} />
+          </Field>
+          <Field label="MBTI">
+            <select value={value.mbti} onChange={event => update({ mbti: event.target.value })} style={inputStyle}>
+              <option value="">待补充</option>
+              {MBTI_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </Field>
+          <Field label="星座">
+            <select value={value.zodiac} onChange={event => update({ zodiac: event.target.value })} style={inputStyle}>
+              <option value="">待补充</option>
+              {ZODIAC_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
           </Field>
         </div>
         {sensitiveMode !== 'owner' && (
