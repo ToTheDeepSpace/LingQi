@@ -69,6 +69,7 @@ type DmDossier = {
   affiliation?: {
     status: 'approved' | 'pending' | 'legacy_unverified';
     store_name?: string | null;
+    source?: 'store_confirmed' | 'self_declared' | 'community_unverified' | 'legacy_unverified';
     reviewed_at?: string | null;
   } | null;
   created_at?: string;
@@ -171,8 +172,10 @@ function dossierClaimLabel(status?: DmDossier['claim_status']) {
 
 function dmAffiliationLabel(item: DmDossier) {
   if (item.affiliation?.status === 'approved') return `${item.affiliation.store_name || '店家'}已确认任职`;
-  if (item.affiliation?.status === 'pending') return `等待${item.affiliation.store_name || '店家'}确认任职`;
-  if (item.affiliation?.status === 'legacy_unverified') return `${item.affiliation.store_name || '历史店家'}关联待确认`;
+  if (item.affiliation?.status === 'pending') return item.affiliation.source === 'community_unverified'
+    ? `社区补充：${item.affiliation.store_name || '店家'}（未核验）`
+    : `本人声明：${item.affiliation.store_name || '店家'}（未核验）`;
+  if (item.affiliation?.status === 'legacy_unverified') return `历史资料：${item.affiliation.store_name || '店家'}（未核验）`;
   if (item.employment_status === 'freelance') return '自由 DM（本人声明）';
   return '暂无已确认店家';
 }

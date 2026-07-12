@@ -331,13 +331,14 @@ type CertReview = {
 
 type ReportReview = {
   id: string;
-  target_type: 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile';
+  target_type: 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile' | 'dm_affiliation';
   target_id: string;
   target_title?: string | null;
   reporter_name: string;
   reason: string;
   description?: string | null;
   target_snapshot?: Record<string, unknown> | null;
+  evidence_files?: DossierClaimProof[];
   risk_level?: 'normal' | 'high' | 'urgent';
   auto_action?: 'none' | 'temporary_hidden' | 'queued_priority';
   auto_action_reason?: string | null;
@@ -2431,7 +2432,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {reports.map(r => (
                   <Row key={r.id} accent="#f87171">
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={r.target_title || r.target_id} pill={r.target_type === 'carpool' ? '拼车举报' : '举报'} />
+                      <TitleLine title={r.target_title || r.target_id} pill={r.target_type === 'dm_affiliation' ? '任职异议' : r.target_type === 'carpool' ? '拼车举报' : '举报'} />
                       <Meta>
                         举报人：{r.reporter_name}
                         {` · 原因：${r.reason}`}
@@ -2454,6 +2455,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       )}
                       <ModerationPrecheckBadge value={r.moderation_precheck} />
                       {r.description && <ContentBox>{r.description}</ContentBox>}
+                      {r.target_type === 'dm_affiliation' && <AdminPrivateClaimProofs claimId={r.id} files={r.evidence_files || []} route="affiliation" />}
                       {r.target_snapshot && (
                         <Proof>
                           {typeof r.target_snapshot.city === 'string' ? `城市：${r.target_snapshot.city} ` : ''}
@@ -2470,7 +2472,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       {r.auto_action === 'temporary_hidden' && (
                         <ActionButton kind="ok" onClick={() => resolveReport(r.id, 'resolved', false, true)}>复核恢复展示</ActionButton>
                       )}
-                      <ActionButton kind="bad" onClick={() => resolveReport(r.id, 'resolved', true)}>下架并处理</ActionButton>
+                      <ActionButton kind="bad" onClick={() => resolveReport(r.id, 'resolved', true)}>{r.target_type === 'dm_affiliation' ? '确认异议并解除关联' : '下架并处理'}</ActionButton>
                       <ActionButton kind="ok" onClick={() => resolveReport(r.id, 'resolved')}>标记已处理</ActionButton>
                       <ActionButton onClick={() => resolveReport(r.id, 'dismissed')}>暂不处理</ActionButton>
                     </Actions>
@@ -2905,27 +2907,30 @@ function AdminPhotoPreview({ url }: { url?: string | null }) {
   );
 }
 
-function AdminPrivateClaimProofs({ claimId, files }: { claimId: string; files: DossierClaimProof[] }) {
+function AdminPrivateClaimProofs({ claimId, files, route = 'claim' }: { claimId: string; files: DossierClaimProof[]; route?: 'claim' | 'affiliation' }) {
   return (
     <div style={{ marginTop: 12 }}>
       <div style={{ fontSize: '0.78rem', fontWeight: 900, color: INK, marginBottom: 7 }}>私密身份凭证（仅管理员可见）</div>
       {files.length === 0 ? <Meta>没有可读取的凭证截图</Meta> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 180px))', gap: 9 }}>
-          {files.map((file, index) => <AdminPrivateClaimProofImage key={file.id} claimId={claimId} file={file} index={index} />)}
+          {files.map((file, index) => <AdminPrivateClaimProofImage key={file.id} claimId={claimId} file={file} index={index} route={route} />)}
         </div>
       )}
     </div>
   );
 }
 
-function AdminPrivateClaimProofImage({ claimId, file, index }: { claimId: string; file: DossierClaimProof; index: number }) {
+function AdminPrivateClaimProofImage({ claimId, file, index, route }: { claimId: string; file: DossierClaimProof; index: number; route: 'claim' | 'affiliation' }) {
   const [source, setSource] = useState('');
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl = '';
-    fetch(`${API}/lc/admin/dm-dossier-claims/${encodeURIComponent(claimId)}/proofs/${encodeURIComponent(file.id)}`, {
+    const proofPath = route === 'affiliation'
+      ? `${API}/lc/admin/dm-affiliation-reports/${encodeURIComponent(claimId)}/proofs/${encodeURIComponent(file.id)}`
+      : `${API}/lc/admin/dm-dossier-claims/${encodeURIComponent(claimId)}/proofs/${encodeURIComponent(file.id)}`;
+    fetch(proofPath, {
       headers: { Authorization: `Bearer ${getToken()}` },
       signal: controller.signal,
     })
@@ -2944,7 +2949,7 @@ function AdminPrivateClaimProofImage({ claimId, file, index }: { claimId: string
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [claimId, file.id]);
+  }, [claimId, file.id, route]);
 
   if (loadError) return <div style={{ minHeight: 96, padding: 9, border: '1px solid rgba(185,28,28,0.18)', borderRadius: 7, background: '#fff', color: '#991b1b', fontSize: 11 }}>{loadError}</div>;
   if (!source) return <div style={{ minHeight: 96, display: 'grid', placeItems: 'center', border: `1px solid ${LINE}`, borderRadius: 7, background: '#fff', color: MUTED, fontSize: 11 }}>读取中…</div>;

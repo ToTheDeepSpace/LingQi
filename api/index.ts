@@ -878,8 +878,8 @@ type RelatedProofFile = { name: string; url: string; type?: string };
 type SubsidyMode = 'none' | 'asking' | 'offering';
 type CarpoolSubsidyType = 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
 const CARPOOL_SUBSIDY_TYPES: CarpoolSubsidyType[] = ['none', 'half_price', 'free_ticket', 'discount', 'a_subsidy', 'fixed_deduct', 'custom'];
-type ReportTargetType = 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile';
-const REPORT_TARGET_TYPES: ReportTargetType[] = ['carpool', 'ranking', 'comment', 'commission', 'profile'];
+type ReportTargetType = 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile' | 'dm_affiliation';
+const REPORT_TARGET_TYPES: ReportTargetType[] = ['carpool', 'ranking', 'comment', 'commission', 'profile', 'dm_affiliation'];
 type ModerationDecision = 'safe' | 'hide' | 'needs_more_evidence' | 'privacy_risk' | 'legal_risk' | 'duplicate' | 'unclear';
 const MODERATION_DECISIONS: ModerationDecision[] = ['safe', 'hide', 'needs_more_evidence', 'privacy_risk', 'legal_risk', 'duplicate', 'unclear'];
 const TEMPORARY_HIDE_REASON = '收到有效举报后临时折叠，等待管理员复核';
@@ -3663,6 +3663,10 @@ async function moderationEngagement(targetType: ReportTargetType, targetId: stri
 }
 
 async function currentTargetStatus(targetType: ReportTargetType, targetId: string) {
+  if (targetType === 'dm_affiliation') {
+    const { data } = await supabase.from('lc_dm_store_affiliations').select('status').eq('id', targetId).maybeSingle();
+    return cleanText(data?.status, 40) || null;
+  }
   if (targetType === 'ranking') {
     const { data } = await supabase.from('lc_rankings').select('status').eq('id', targetId).maybeSingle();
     return cleanText(data?.status, 40) || null;
@@ -3686,7 +3690,9 @@ async function currentTargetStatus(targetType: ReportTargetType, targetId: strin
 async function setTargetTemporaryHidden(targetType: ReportTargetType, targetId: string, reason = TEMPORARY_HIDE_REASON) {
   const before = await currentTargetStatus(targetType, targetId);
   const now = new Date().toISOString();
-  if (targetType === 'ranking' && before === 'approved') {
+  if (targetType === 'dm_affiliation') {
+    return { before, after: before };
+  } else if (targetType === 'ranking' && before === 'approved') {
     await supabase.from('lc_rankings').update({ status: 'rejected' }).eq('id', targetId);
   } else if (targetType === 'comment' && before === 'approved') {
     await supabase.from('lc_comments').update({ status: 'rejected' }).eq('id', targetId);
@@ -3704,7 +3710,9 @@ async function setTargetTemporaryHidden(targetType: ReportTargetType, targetId: 
 async function restoreTargetAfterReport(targetType: ReportTargetType, targetId: string) {
   const before = await currentTargetStatus(targetType, targetId);
   const now = new Date().toISOString();
-  if (targetType === 'ranking') {
+  if (targetType === 'dm_affiliation') {
+    await supabase.from('lc_dm_store_affiliations').update({ status: 'pending', reject_reason: null, updated_at: now }).eq('id', targetId);
+  } else if (targetType === 'ranking') {
     await supabase.from('lc_rankings').update({ status: 'approved' }).eq('id', targetId);
   } else if (targetType === 'comment') {
     await supabase.from('lc_comments').update({ status: 'approved' }).eq('id', targetId);
@@ -6697,6 +6705,9 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
     if (!targetType || !targetId || !reason) {
       return res.status(400).json(err(new Error('请选择举报对象和举报原因')));
     }
+    if (targetType === 'dm_affiliation') {
+      return res.status(400).json(err(new Error('任职关系异议必须通过专用入口提交证据')));
+    }
 
     let targetTitle = '';
     let snapshot: Record<string, unknown> = {};
@@ -9190,6 +9201,13 @@ function publicDmAffiliationPayload(
     store_dossier_id: affiliation?.store_dossier_id || null,
     store_name: store?.dm_name || null,
     store_city: store?.city || null,
+    source: status === 'approved'
+      ? 'store_confirmed'
+      : affiliation?.requested_by_role === 'dm'
+        ? 'self_declared'
+        : affiliation?.requested_by_role === 'community'
+          ? 'community_unverified'
+          : 'legacy_unverified',
     confirmed_at: status === 'approved' ? affiliation?.started_at || affiliation?.reviewed_at || null : null,
   };
 }
@@ -9725,10 +9743,8 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       const publicAffiliation = affiliation
         ? publicDmAffiliationPayload(affiliation, storesById.get(String(affiliation.store_dossier_id || '')))
         : null;
-      const confirmedStore = publicAffiliation?.status === 'approved' ? storesById.get(String(publicAffiliation.store_dossier_id || '')) : null;
-      const employmentStatus = confirmedStore
-        ? 'store_affiliated'
-        : row.employment_status === 'freelance' ? 'freelance' : 'unknown';
+      const displayStore = publicAffiliation ? storesById.get(String(publicAffiliation.store_dossier_id || '')) : null;
+      const employmentStatus = displayStore ? 'store_affiliated' : row.employment_status === 'freelance' ? 'freelance' : 'unknown';
       const ratingRows = row.entity_type === 'store'
         ? storeRatingsByDossier.get(String(row.id || '')) || []
         : dmRatingsByDossier.get(String(row.id || '')) || [];
@@ -9737,9 +9753,9 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
         entity_type: row.entity_type || 'dm',
         dm_name: row.dm_name,
         city: row.city,
-        workplace: confirmedStore?.dm_name || (employmentStatus === 'freelance' ? null : row.workplace),
+        workplace: displayStore?.dm_name || (employmentStatus === 'freelance' ? null : row.workplace),
         employment_status: employmentStatus,
-        employer_store_id: confirmedStore?.id || null,
+        employer_store_id: displayStore?.id || null,
         affiliation: publicAffiliation,
         profile_url: row.profile_url,
         photo_url: row.photo_url,
@@ -9876,19 +9892,17 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
       affiliationStore = storeResult.data as Record<string, unknown> | null;
     }
     const publicAffiliation = publicDmAffiliationPayload(affiliation, affiliationStore);
-    const confirmedStore = publicAffiliation?.status === 'approved' ? affiliationStore : null;
-    const employmentStatus = confirmedStore
-      ? 'store_affiliated'
-      : dossier.employment_status === 'freelance' ? 'freelance' : 'unknown';
+    const displayStore = publicAffiliation ? affiliationStore : null;
+    const employmentStatus = displayStore ? 'store_affiliated' : dossier.employment_status === 'freelance' ? 'freelance' : 'unknown';
     const chantoSummary = await loadDmChantoSummary(req.params.id);
     res.json(ok({
       dossier: {
         id: dossier.id,
         dm_name: dossier.dm_name,
         city: dossier.city,
-        workplace: confirmedStore?.dm_name || (employmentStatus === 'freelance' ? null : dossier.workplace),
+        workplace: displayStore?.dm_name || (employmentStatus === 'freelance' ? null : dossier.workplace),
         employment_status: employmentStatus,
-        employer_store_id: confirmedStore?.id || null,
+        employer_store_id: displayStore?.id || null,
         affiliation: publicAffiliation,
         profile_url: dossier.profile_url,
         photo_url: dossier.photo_url,
@@ -10540,6 +10554,45 @@ function publicDossierEditReview(review: Record<string, unknown>) {
   };
 }
 
+async function createCommunityDmAffiliation(input: {
+  dossier: Record<string, unknown>;
+  storeDossierId: string;
+  profile: AuthedProfile;
+  note: string;
+}) {
+  const storeResult = await supabase.from('lc_dm_dossiers')
+    .select('id, dm_name, city')
+    .eq('id', input.storeDossierId)
+    .eq('entity_type', 'store')
+    .eq('status', 'approved')
+    .maybeSingle();
+  if (storeResult.error) throw storeResult.error;
+  if (!storeResult.data) throw new Error('选择的店家不存在或尚未公开');
+  const existingResult = await supabase.from('lc_dm_store_affiliations')
+    .select('*')
+    .eq('dm_dossier_id', input.dossier.id)
+    .in('status', ['pending', 'approved'])
+    .order('created_at', { ascending: false });
+  if (existingResult.error && !isMissingRelation(existingResult.error, 'lc_dm_store_affiliations')) throw existingResult.error;
+  const active = ((existingResult.data || []) as Record<string, unknown>[])[0];
+  if (active) {
+    if (String(active.store_dossier_id || '') === input.storeDossierId) return active;
+    throw new Error('这份档案已经关联其他店家；如信息不实，请在公开页发起异议并提交证据');
+  }
+  const insertResult = await supabase.from('lc_dm_store_affiliations').insert({
+    dm_dossier_id: input.dossier.id,
+    store_dossier_id: input.storeDossierId,
+    dm_profile_id: null,
+    requested_by_profile_id: input.profile.id,
+    requested_by_role: 'community',
+    request_kind: 'join',
+    request_note: input.note || '社区用户补充任职信息',
+    status: 'pending',
+  }).select('*').single();
+  if (insertResult.error) throw insertResult.error;
+  return insertResult.data as Record<string, unknown>;
+}
+
 app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
@@ -10567,10 +10620,46 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
       .limit(100);
     if (existingResult.error && !isMissingRelation(existingResult.error, 'lc_public_reviews')) throw existingResult.error;
     const hasExisting = (existingResult.data || []).some((item: Record<string, unknown>) => cleanText(objectPayload(item.payload).dossier_id, 80) === dossier.id);
-    if (hasExisting) return res.status(409).json(err(new Error('你已经提交过这份档案的修改，审核完成前无需重复提交')));
 
     const normalized = await normalizeDossierEditProposal(dossier as Record<string, unknown>, req.body as Record<string, unknown>);
     const ownerProfileId = dossier.claim_status === 'approved' ? cleanText(dossier.claimed_by, 80) : '';
+    let communityAffiliation: Record<string, unknown> | null = null;
+    if (!ownerProfileId && normalized.entityType === 'dm' && normalized.patch.employment_status === 'store_affiliated') {
+      const storeDossierId = cleanText(normalized.patch.employer_store_id, 80);
+      if (storeDossierId) {
+        communityAffiliation = await createCommunityDmAffiliation({
+          dossier: dossier as Record<string, unknown>,
+          storeDossierId,
+          profile,
+          note: editReason,
+        });
+        for (const field of DM_AFFILIATION_EDIT_FIELDS) delete normalized.patch[field];
+        normalized.changedFields = normalized.changedFields.filter(field => !DM_AFFILIATION_EDIT_FIELDS.has(field));
+      }
+    }
+    if (normalized.changedFields.length === 0) {
+      await logSecurityEvent(req, {
+        action: 'dm_store_affiliation_community_added',
+        targetType: 'dm_store_affiliation',
+        targetId: cleanText(communityAffiliation?.id, 80) || undefined,
+        actorId: profile.id,
+        actorRole: profile.role || 'creator',
+        metadata: { dm_dossier_id: dossier.id, store_dossier_id: communityAffiliation?.store_dossier_id },
+      });
+      return res.json(ok({
+        status: 'published',
+        affiliation: communityAffiliation,
+        message: '任职店家已作为社区补充立即展示；如有异议，异议方需提交证据',
+      }));
+    }
+    if (hasExisting) {
+      if (communityAffiliation) return res.json(ok({
+        status: 'partial',
+        affiliation: communityAffiliation,
+        message: '任职店家已立即展示；其他资料已有修改正在审核，本次未重复提交',
+      }));
+      return res.status(409).json(err(new Error('你已经提交过这份档案的修改，审核完成前无需重复提交')));
+    }
     const sensitiveFields = dossierSensitiveFieldsInPatch(normalized.patch);
     if (sensitiveFields.length > 0 && !ownerProfileId) {
       return res.status(400).json(err(new Error('出生年份、身高和体重只能由 DM 本人认领档案后填写或明确同意')));
@@ -11666,6 +11755,110 @@ app.post('/api/lc/dm-dossiers/:id/affiliations', authMiddleware, async (req, res
       metadata: { dm_dossier_id: dossier.id, store_dossier_id: storeDossierId, request_kind: requestKind },
     });
     res.json(ok(insertResult.data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/dm-affiliations/:id/disputes', authMiddleware, upload.array('evidenceFiles', MAX_DOSSIER_CLAIM_PROOFS), async (req, res) => {
+  let savedProofs: DossierClaimProofFile[] = [];
+  let reportId = '';
+  let dmDossierId = '';
+  let committed = false;
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const reason = cleanText(req.body?.reason, 800);
+    const truthConfirmed = String(req.body?.truthConfirmed || '') === 'true';
+    const rawFiles = Array.isArray(req.files) ? req.files : [];
+    if (reason.length < 6) return res.status(400).json(err(new Error('请至少写6个字说明异议原因')));
+    if (!truthConfirmed) return res.status(400).json(err(new Error('请确认异议和证据真实')));
+    if (rawFiles.length < 1 || rawFiles.length > MAX_DOSSIER_CLAIM_PROOFS) {
+      return res.status(400).json(err(new Error(`发起异议必须上传1-${MAX_DOSSIER_CLAIM_PROOFS}张证据截图`)));
+    }
+    const affiliationResult = await supabase.from('lc_dm_store_affiliations').select('*')
+      .eq('id', req.params.id).in('status', ['pending', 'approved', 'legacy_unverified']).maybeSingle();
+    if (affiliationResult.error) throw affiliationResult.error;
+    if (!affiliationResult.data) return res.status(404).json(err(new Error('任职关系不存在或已经结束')));
+    const affiliation = affiliationResult.data as Record<string, unknown>;
+    dmDossierId = String(affiliation.dm_dossier_id || '');
+    const [dmResult, storeResult, existingResult] = await Promise.all([
+      supabase.from('lc_dm_dossiers').select('id, dm_name').eq('id', affiliation.dm_dossier_id).maybeSingle(),
+      supabase.from('lc_dm_dossiers').select('id, dm_name').eq('id', affiliation.store_dossier_id).maybeSingle(),
+      supabase.from('lc_reports').select('*').eq('target_type', 'dm_affiliation').eq('target_id', req.params.id).eq('reporter_id', profile.id).maybeSingle(),
+    ]);
+    if (dmResult.error) throw dmResult.error;
+    if (storeResult.error) throw storeResult.error;
+    if (existingResult.error && !isMissingRelation(existingResult.error, 'evidence_files')) throw existingResult.error;
+    if (existingResult.data?.status === 'pending') return res.status(409).json(err(new Error('你已经提交过这条任职关系的异议')));
+    reportId = String(existingResult.data?.id || randomUUID());
+    if (existingResult.data) removeDossierClaimProofs(PRIVATE_UPLOAD_ROOT, dmDossierId, reportId);
+    const sanitizedFiles = await Promise.all(rawFiles.map(async file => ({
+      originalName: file.originalname,
+      image: await sanitizeUploadedImageFile({ buffer: file.buffer, mimetype: file.mimetype }),
+    })));
+    savedProofs = saveDossierClaimProofs({
+      root: PRIVATE_UPLOAD_ROOT,
+      dossierId: dmDossierId,
+      claimId: reportId,
+      files: sanitizedFiles,
+    });
+    const targetTitle = `${cleanText(dmResult.data?.dm_name, 80) || 'DM'}任职于${cleanText(storeResult.data?.dm_name, 80) || '店家'}`;
+    const reportPayload = {
+      id: reportId,
+      target_type: 'dm_affiliation',
+      target_id: req.params.id,
+      target_title: targetTitle,
+      reporter_id: profile.id,
+      reporter_name: profile.display_name || '用户',
+      reason: '任职关系异议',
+      description: reason,
+      evidence_files: savedProofs,
+      target_snapshot: {
+        dm_dossier_id: affiliation.dm_dossier_id,
+        store_dossier_id: affiliation.store_dossier_id,
+        relation_source: affiliation.requested_by_role,
+      },
+      status: 'pending',
+      updated_at: new Date().toISOString(),
+    };
+    const writeResult = existingResult.data
+      ? await supabase.from('lc_reports').update(reportPayload).eq('id', reportId)
+      : await supabase.from('lc_reports').insert(reportPayload);
+    if (writeResult.error) throw writeResult.error;
+    committed = true;
+    await logSecurityEvent(req, {
+      action: 'dm_store_affiliation_disputed',
+      targetType: 'dm_affiliation',
+      targetId: req.params.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { report_id: reportId, evidence_count: savedProofs.length },
+    });
+    res.json(ok({ id: reportId, status: 'pending', message: '异议和证据已提交，任职关系在管理员处理前继续展示' }));
+  } catch (e) {
+    if (!committed && reportId && savedProofs.length > 0) {
+      try { removeDossierClaimProofs(PRIVATE_UPLOAD_ROOT, dmDossierId, reportId); } catch { /* cleanup best effort */ }
+    }
+    res.status(500).json(err(e));
+  }
+});
+
+app.get('/api/lc/admin/dm-affiliation-reports/:reportId/proofs/:fileId', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const result = await supabase.from('lc_reports').select('id, target_snapshot, evidence_files')
+      .eq('id', req.params.reportId).eq('target_type', 'dm_affiliation').maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('异议证据不存在')));
+    const proof = internalClaimProofFiles(result.data.evidence_files).find(file => file.id === req.params.fileId);
+    if (!proof) return res.status(404).json(err(new Error('异议证据不存在')));
+    const dossierId = cleanText(objectPayload(result.data.target_snapshot).dm_dossier_id, 80);
+    const body = readDossierClaimProof(PRIVATE_UPLOAD_ROOT, proof.relative_path);
+    if (!dossierId) return res.status(404).json(err(new Error('异议证据索引不完整')));
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(body);
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -13111,6 +13304,10 @@ app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, as
       } else if (report.target_type === 'profile') {
         await supabase.from('lc_profiles')
           .update({ is_visible: false, reject_reason: rejectReason, updated_at: new Date().toISOString() })
+          .eq('id', report.target_id);
+      } else if (report.target_type === 'dm_affiliation') {
+        await supabase.from('lc_dm_store_affiliations')
+          .update({ status: 'rejected', reject_reason: rejectReason, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
           .eq('id', report.target_id);
       }
       statusChange = {

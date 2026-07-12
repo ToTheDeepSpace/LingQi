@@ -195,6 +195,7 @@ type DmAffiliationRecord = {
   store_dossier_id: string;
   status: 'pending' | 'approved' | 'rejected' | 'ended' | 'cancelled' | 'legacy_unverified';
   request_kind: 'join' | 'change' | 'legacy';
+  requested_by_role?: 'dm' | 'store' | 'admin' | 'legacy' | 'community';
   request_note?: string | null;
   reject_reason?: string | null;
   end_reason?: string | null;
@@ -1383,7 +1384,7 @@ export default function Dashboard() {
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || '申请提交失败');
       await refreshDmIdentity();
-      setMsg('已提交店家确认；店家通过前，公开档案不会显示为已确认任职。');
+      setMsg('任职店家已按本人声明立即展示；店家认领后可确认或否认。');
     } catch (actionError) {
       setModuleError(actionError instanceof Error ? actionError.message : '申请提交失败');
     } finally {
@@ -2580,7 +2581,7 @@ export default function Dashboard() {
                   <section style={card}>
                     <div style={{ marginBottom: 14 }}>
                       <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>DM 身份与任职店家</h2>
-                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650, lineHeight: 1.65 }}>DM 身份由平台认证；店家只确认任职关系，不代表能力背书。</p>
+                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650, lineHeight: 1.65 }}>DM 可先声明任职店家并立即展示；店家确认只核验任职关系，不代表能力背书。</p>
                     </div>
                     {dmIdentityData.dossiers.length === 0 ? (
                       <p style={{ color: MUTED, fontSize: 13, fontWeight: 700, padding: '14px 0' }}>当前账号已标记为 DM，但尚未找到已绑定的 DM 档案，请通过建议反馈处理。</p>
@@ -2603,7 +2604,7 @@ export default function Dashboard() {
                                     {activeAffiliation
                                       ? `${currentStore?.dm_name || '店家'}已确认任职`
                                       : pendingAffiliation
-                                        ? `等待${pendingAffiliation.store_dossier?.dm_name || '店家'}确认`
+                                        ? `本人声明任职于${pendingAffiliation.store_dossier?.dm_name || '店家'}（未核验）`
                                         : legacyAffiliation
                                           ? `${legacyAffiliation.store_dossier?.dm_name || '历史店家'}关联待确认`
                                           : dossier.employment_status === 'freelance' ? '自由 DM（本人声明）' : '暂无已确认店家'}
@@ -2615,13 +2616,13 @@ export default function Dashboard() {
 
                               {pendingAffiliation ? (
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.07)' }}>
-                                  <span style={{ color: MUTED, fontSize: 12 }}>申请于 {pendingAffiliation.created_at?.slice(0, 10)}；原店关系会保留到新店确认。</span>
+                                    <span style={{ color: MUTED, fontSize: 12 }}>声明于 {pendingAffiliation.created_at?.slice(0, 10)}；店家确认前按“本人声明”公开。</span>
                                   <button type="button" disabled={identityAction === `cancel:${pendingAffiliation.id}`} onClick={() => cancelDmStoreRequest(dossier, pendingAffiliation.id)} style={identitySecondaryButtonStyle}>取消申请</button>
                                 </div>
                               ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 8, alignItems: 'end', marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.07)' }}>
                                   <label style={{ display: 'grid', gap: 5 }}>
-                                    <span style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{activeAffiliation ? '申请更换店家' : '申请店家确认'}</span>
+                                    <span style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{activeAffiliation ? '声明更换店家' : '声明任职店家'}</span>
                                     <select value={dmStoreChoices[dossier.id] || ''} onChange={event => setDmStoreChoices(current => ({ ...current, [dossier.id]: event.target.value }))} style={{ ...inputStyle, minHeight: 38, padding: '0 10px' }}>
                                       <option value="">选择已收录店家</option>
                                       {dmIdentityData.stores.filter(store => store.id !== activeAffiliation?.store_dossier_id).map(store => (
@@ -2629,7 +2630,7 @@ export default function Dashboard() {
                                       ))}
                                     </select>
                                   </label>
-                                  <button type="button" disabled={identityAction === `request:${dossier.id}`} onClick={() => requestDmStoreConfirmation(dossier)} style={identityPrimaryButtonStyle}>提交确认申请</button>
+                                  <button type="button" disabled={identityAction === `request:${dossier.id}`} onClick={() => requestDmStoreConfirmation(dossier)} style={identityPrimaryButtonStyle}>立即关联</button>
                                 </div>
                               )}
 

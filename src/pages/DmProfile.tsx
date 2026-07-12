@@ -7,6 +7,7 @@ import ProfileNameLink from '../components/ProfileNameLink';
 import DmGiftModal from '../components/DmGiftModal';
 import RatingDiscussion from '../components/RatingDiscussion';
 import type { RatingOfficialResponse, RatingReaction } from '../components/RatingDiscussion';
+import AffiliationDisputeModal from '../components/AffiliationDisputeModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import type { DossierCareerEntry, DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
@@ -45,10 +46,12 @@ type DmDetail = {
     claim_status?: string;
     claimed_by?: string | null;
     affiliation?: {
+      id?: string | null;
       status: 'approved' | 'pending' | 'legacy_unverified';
       store_dossier_id?: string | null;
       store_name?: string | null;
       store_city?: string | null;
+      source?: 'store_confirmed' | 'self_declared' | 'community_unverified' | 'legacy_unverified';
       confirmed_at?: string | null;
     } | null;
   };
@@ -68,9 +71,11 @@ export default function DmProfile() {
   const [claimOpen, setClaimOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [giftOpen, setGiftOpen] = useState(false);
+  const [disputeOpen, setDisputeOpen] = useState(false);
   const [claimMessage, setClaimMessage] = useState('');
   const [editMessage, setEditMessage] = useState('');
   const [giftMessage, setGiftMessage] = useState('');
+  const [disputeMessage, setDisputeMessage] = useState('');
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [lightboxPhoto, setLightboxPhoto] = useState<DossierPhoto | null>(null);
 
@@ -119,9 +124,11 @@ export default function DmProfile() {
   const affiliationLabel = dossier.affiliation?.status === 'approved'
     ? `${dossier.affiliation.store_name || '店家'}已确认任职`
     : dossier.affiliation?.status === 'pending'
-      ? `等待${dossier.affiliation.store_name || '店家'}确认任职`
+      ? dossier.affiliation.source === 'community_unverified'
+        ? `社区补充：任职于${dossier.affiliation.store_name || '店家'}（未核验）`
+        : `本人声明任职于${dossier.affiliation.store_name || '店家'}（未核验）`
       : dossier.affiliation?.status === 'legacy_unverified'
-        ? `${dossier.affiliation.store_name || '历史店家'}关联待确认`
+        ? `历史资料：任职于${dossier.affiliation.store_name || '店家'}（未核验）`
         : dossier.employment_status === 'freelance' ? '自由 DM（本人声明）' : '暂无已确认店家';
   const photos = dossier.photo_files && dossier.photo_files.length > 0
     ? dossier.photo_files
@@ -171,10 +178,12 @@ export default function DmProfile() {
               <span aria-hidden="true" style={{ color: 'rgba(71,85,105,0.34)' }}>·</span>
               <span style={affiliationBadgeStyle(dossier.affiliation?.status || (dossier.employment_status === 'freelance' ? 'freelance' : 'unknown'))}>{affiliationLabel}</span>
               {dossier.affiliation?.status === 'approved' && dossier.affiliation.confirmed_at && <span style={{ color: MUTED, fontSize: 11 }}>确认于 {dossier.affiliation.confirmed_at.slice(0, 10)}</span>}
+              {dossier.affiliation?.id && <button type="button" onClick={() => auth?.token ? setDisputeOpen(true) : navigate(`/login?redirect=${encodeURIComponent(`/dm/${dossier.id}`)}`)} style={disputeButtonStyle}>对此任职有异议</button>}
             </div>
             {claimMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{claimMessage}</p>}
             {editMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{editMessage}</p>}
             {giftMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{giftMessage}</p>}
+            {disputeMessage && <p style={{ margin: '8px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{disputeMessage}</p>}
             <div className="dm-profile-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 'auto', paddingTop: 20 }}>
               <Link to={`/dm/rate?dmId=${encodeURIComponent(dossier.id)}`} style={primaryButton}>给TA评分</Link>
               {dossier.claim_status === 'approved' && dossier.claimed_by && !isOwner && <button type="button" onClick={() => auth?.token ? setGiftOpen(true) : navigate(`/login?redirect=${encodeURIComponent(`/dm/${dossier.id}`)}`)} style={giftButton}>送缠头</button>}
@@ -343,6 +352,16 @@ export default function DmProfile() {
           setEditMessage(message);
         }}
       />}
+      {disputeOpen && dossier.affiliation?.id && <AffiliationDisputeModal
+        affiliationId={dossier.affiliation.id}
+        title={`${dossier.dm_name} · ${dossier.affiliation.store_name || '任职店家'}`}
+        token={auth?.token || ''}
+        onClose={() => setDisputeOpen(false)}
+        onSubmitted={message => {
+          setDisputeOpen(false);
+          setDisputeMessage(message);
+        }}
+      />}
       <DmGiftModal
         open={giftOpen}
         token={auth?.token || ''}
@@ -480,6 +499,7 @@ const primaryButton = { borderRadius: 7, background: INK, color: '#fff', padding
 const secondaryButton = { borderRadius: 7, border: '1px solid rgba(31,41,55,0.14)', background: '#fff', color: INK, padding: '9px 13px', fontWeight: 850, textDecoration: 'none' };
 const giftButton = { borderRadius: 7, border: '1px solid rgba(166,106,31,0.28)', background: '#fff4d6', color: '#8a5a19', padding: '9px 13px', fontWeight: 900, cursor: 'pointer' };
 const claimButtonStyle = { padding: '4px 7px', borderRadius: 5, border: '1px solid rgba(166,106,31,0.22)', background: '#fff', color: '#8a5a19', fontSize: 11, fontWeight: 900, cursor: 'pointer' };
+const disputeButtonStyle = { padding: 0, border: 0, background: 'transparent', color: '#64748b', fontSize: 11, fontWeight: 750, cursor: 'pointer', textDecoration: 'underline' };
 const editButtonStyle = { padding: '3px 5px', border: 0, background: 'transparent', color: '#64748b', fontSize: 11, fontWeight: 800, textDecoration: 'underline', textUnderlineOffset: 3, cursor: 'pointer' };
 const tagStyle = { padding: '3px 7px', borderRadius: 999, background: '#eff6ff', color: '#275389', fontSize: 12, fontWeight: 800 };
 const smallLinkStyle = { color: '#8a5a19', fontSize: 12, fontWeight: 900, textDecoration: 'none' };

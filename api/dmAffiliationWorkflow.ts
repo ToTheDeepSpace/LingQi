@@ -6,7 +6,7 @@ export type DmAffiliationLike = {
   store_dossier_id?: string | null;
 };
 
-const PUBLIC_STATUS_PRIORITY: DmAffiliationStatus[] = ['approved', 'pending', 'legacy_unverified'];
+const PUBLIC_STATUS_PRIORITY: DmAffiliationStatus[] = ['pending', 'approved', 'legacy_unverified'];
 
 export function preferredPublicDmAffiliation<T extends DmAffiliationLike>(rows: T[]): T | null {
   for (const status of PUBLIC_STATUS_PRIORITY) {

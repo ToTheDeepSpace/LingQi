@@ -194,7 +194,9 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
                 ? '身高、体重、MBTI、星座直接更新；城市先更新后审核；自由填写内容审核通过后公开。'
                 : dossier.claimedBy
                   ? '认领人3天内上线则由本人确认；确认后受限字段按规则生效，自由填写内容仍由管理员审核。'
-                  : '档案尚未认领，提交后由管理员审核。'}
+                  : dossier.entityType === 'dm'
+                    ? '关联已有店家会作为“社区补充·未核验”立即展示，不需要证据；其他资料仍由管理员审核。'
+                    : '档案尚未认领，提交后由管理员审核。'}
             </p>
           </div>
           <button type="button" onClick={onClose} disabled={submitting} style={closeStyle} aria-label="关闭修改窗口">×</button>

@@ -7,15 +7,15 @@ import {
   preferredPublicDmAffiliation,
 } from '../api/dmAffiliationWorkflow.js';
 
-test('prefers a store-confirmed relationship over pending and historical rows', () => {
+test('prefers the latest active declaration while a store confirmation is pending', () => {
   const selected = preferredPublicDmAffiliation([
     { id: 'legacy', status: 'legacy_unverified' },
     { id: 'pending', status: 'pending' },
     { id: 'approved', status: 'approved' },
   ]);
 
-  assert.equal(selected?.id, 'approved');
-  assert.equal(isStoreConfirmedAffiliation(selected), true);
+  assert.equal(selected?.id, 'pending');
+  assert.equal(isStoreConfirmedAffiliation(selected), false);
 });
 
 test('never treats a historical store field as store confirmation', () => {
