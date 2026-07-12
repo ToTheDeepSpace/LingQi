@@ -496,7 +496,7 @@ export default function DmWall() {
               const showClaimStatus = ['approved', 'pending', 'withdrawn'].includes(item.claim_status || '');
               return (
                 <article key={item.id} className="dm-dossier-card" style={cardStyle}>
-                  <Link to={dossierHref} aria-label={`查看${item.dm_name}${copy.kindLabel}专属页`} style={cardOverlayLinkStyle} />
+                  <Link to={dossierHref} aria-label={`查看${item.dm_name}${kind === 'store' ? '店家' : 'DM'}专属页`} style={cardOverlayLinkStyle} />
                   <div className="dm-dossier-summary">
                     <img className="dm-dossier-photo" src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" style={{ objectPosition: `${item.photo_focus_x ?? 50}% ${item.photo_focus_y ?? 25}%` }} />
                     <div className="dm-dossier-summary-copy">
