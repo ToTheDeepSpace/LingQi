@@ -69,6 +69,7 @@ import {
 import { extractSharedUrl } from '../src/lib/socialLinks.js';
 import { CHANTO_MAX_AMOUNT, CHANTO_MIN_AMOUNT, isValidChantoAmount } from '../src/lib/chanto.js';
 import { CITIES } from '../src/constants/cities.js';
+import { adminPrivateAccountPayload, adminProfileListPayload } from './adminPrivacy.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -7665,6 +7666,7 @@ app.post('/api/lc/admin/login', async (req, res) => {
 
 app.get('/api/lc/admin/profiles', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store');
     const page = Math.max(1, parseInt(String(req.query.page || '1')) || 1);
     const limit = Math.min(100, Math.max(10, parseInt(String(req.query.limit || '50')) || 50));
     const offset = (page - 1) * limit;
@@ -7680,12 +7682,40 @@ app.get('/api/lc/admin/profiles', authMiddleware, adminMiddleware, async (req, r
     if (queryErr) throw queryErr;
     const total = count || 0;
     res.json(ok({
-      profiles: (data || []).map(profile => sanitizeProfile(profile, true)),
+      profiles: (data || []).map(profile => adminProfileListPayload(profile)),
       total,
       page,
       limit,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/admin/profiles/:id/private-access', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const reason = cleanText(req.body?.reason, 200);
+    if (reason.length < 4) return res.status(400).json(err(new Error('请填写至少 4 个字的查看原因')));
+    const { data: profile, error: profileErr } = await supabase.from('lc_profiles')
+      .select('id, display_name, phone, email, wechat, wechat_nickname, auth_provider')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (profileErr) throw profileErr;
+    if (!profile) return res.status(404).json(err(new Error('账号不存在')));
+    const fields = ['phone', 'email', 'wechat', 'wechat_nickname'].filter(field => cleanText(profile[field], 200));
+    const { error: auditErr } = await supabase.from('lc_security_events').insert({
+      actor_id: getReq(req, 'creatorId') || null,
+      actor_role: getReq(req, 'role') || 'admin',
+      action: 'admin_profile_private_view',
+      target_type: 'profile',
+      target_id: req.params.id,
+      ip_address: getClientIp(req),
+      user_agent: getUserAgent(req),
+      request_path: req.originalUrl || req.url,
+      metadata: { reason, fields },
+    });
+    if (auditErr) throw new Error('审计日志写入失败，已拒绝查看隐私信息');
+    res.json(ok(adminPrivateAccountPayload(profile)));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -7700,8 +7730,8 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       supabase.from('lc_comments').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_claims').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_commissions').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
-      supabase.from('lc_transactions').select('*, lc_profiles(display_name, phone)').eq('type', 'recharge').eq('status', 'pending').is('gateway', null).order('created_at', { ascending: false }),
-      supabase.from('lc_certifications').select('*, lc_profiles!inner(display_name, phone)').eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('lc_transactions').select('*, lc_profiles(display_name)').eq('type', 'recharge').eq('status', 'pending').is('gateway', null).order('created_at', { ascending: false }),
+      supabase.from('lc_certifications').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_carpools').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_reports').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_site_messages').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -7780,7 +7810,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       dm_dossier: dmDossierLookup.get(String(withdrawal.dm_dossier_id || '')) || null,
     }));
     res.json(ok({
-      profiles: (profiles || []).map(profile => sanitizeProfile(profile, true)),
+      profiles: (profiles || []).map(profile => adminProfileListPayload(profile)),
       contactRequests: requests || [],
       rankings: rankings || [],
       approvedRankings: approvedRankings || [],
@@ -14110,7 +14140,7 @@ app.get('/api/lc/certifications/my', authMiddleware, async (req, res) => {
 app.get('/api/lc/admin/certifications', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
     const { data } = await supabase.from('lc_certifications')
-      .select('*, lc_profiles!inner(display_name, phone)')
+      .select('*, lc_profiles!inner(display_name)')
       .order('created_at', { ascending: false });
 
     res.json(ok(data || []));
