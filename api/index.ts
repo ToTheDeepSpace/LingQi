@@ -36,7 +36,6 @@ import {
 import {
   dossierAdminReviewMode,
   dossierEditAdminReviewReady,
-  dossierOwnerConfirmationFields,
   effectiveDossierOwnerResponseStatus,
   initialDossierEditWorkflow,
   ownerLoggedInDuringDossierResponseWindow,
@@ -11023,25 +11022,15 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
       return res.status(409).json(err(new Error(`这份档案已有一条你在 ${time} 提交的修改，${stage}。请到“我的主页－认证身份－我提交的档案修改”撤回后再重新提交`)));
     }
     const sensitiveFields = dossierSensitiveFieldsInPatch(normalized.patch);
-    if (sensitiveFields.length > 0 && !ownerProfileId) {
-      return res.status(400).json(err(new Error('照片、主页链接及个人资料只能由 DM 本人认领档案后填写或明确同意')));
-    }
-    const ownerConfirmationFields = dossierOwnerConfirmationFields(normalized.patch);
-    const requiresOwnerConfirmation = ownerConfirmationFields.length > 0;
+    const submitterIsOwner = ownerProfileId === profile.id;
+    const ownerConfirmationFields = ownerProfileId && !submitterIsOwner ? normalized.changedFields : [];
     const workflow = initialDossierEditWorkflow({
-      ownerProfileId: requiresOwnerConfirmation ? ownerProfileId || null : null,
+      ownerProfileId: ownerProfileId || null,
       submitterProfileId: profile.id,
     });
-    const submitterIsOwner = ownerProfileId === profile.id;
     const classifiedPatch = partitionDossierEditPatch(normalized.patch);
-    const partitions = ownerProfileId
-      ? classifiedPatch
-      : {
-          noAdminReviewPatch: {},
-          postAdminReviewPatch: {},
-          preAdminReviewPatch: normalized.patch,
-        };
-    const reviewMode = submitterIsOwner ? 'direct' : ownerProfileId && requiresOwnerConfirmation ? 'owner' : 'admin_pre';
+    const partitions = classifiedPatch;
+    const reviewMode = submitterIsOwner ? 'direct' : ownerProfileId ? 'owner' : 'direct';
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: normalized.entityType === 'store' ? 'store_dossier_update_submit' : 'dm_dossier_update_submit',
       targetType: 'dossier_update',

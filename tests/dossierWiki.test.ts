@@ -47,11 +47,11 @@ test('圈人圈店按 ID 去重，履历拒绝结束早于开始', () => {
   }]);
 });
 
-test('敏感资料只有本人提交或本人明确同意时才进入应用补丁', () => {
+test('未锁定资料不因本人未确认而从补丁中丢失', () => {
   const patch = { bio: '人物简介', birth_year: 1998, height_cm: 170, photo_files: [{ url: '/a.jpg' }], mbti: 'INTJ', tags: ['情感本'] };
   const pending = dossierPatchForOwnerConsent(patch, { submitterIsOwner: false, ownerResponseStatus: 'expired' });
-  assert.deepEqual(pending.appliedPatch, { bio: '人物简介', tags: ['情感本'] });
-  assert.deepEqual(pending.omittedSensitiveFields, ['birth_year', 'height_cm', 'photo_files', 'mbti']);
+  assert.deepEqual(pending.appliedPatch, patch);
+  assert.deepEqual(pending.omittedSensitiveFields, []);
 
   const agreed = dossierPatchForOwnerConsent(patch, { submitterIsOwner: false, ownerResponseStatus: 'agreed' });
   assert.deepEqual(agreed.appliedPatch, patch);

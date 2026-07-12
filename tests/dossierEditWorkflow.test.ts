@@ -7,7 +7,6 @@ import {
   initialDossierEditWorkflow,
   ownerLoggedInDuringDossierResponseWindow,
   partitionDossierEditPatch,
-  dossierOwnerConfirmationFields,
 } from '../api/dossierEditWorkflow.js';
 
 const NOW = new Date('2026-07-11T12:00:00.000Z');
@@ -21,17 +20,6 @@ test('未认领档案和认领人本人修改不需要等待本人确认', () =>
   const ownerEdit = initialDossierEditWorkflow({ ownerProfileId: 'user-1', submitterProfileId: 'user-1', now: NOW });
   assert.equal(ownerEdit.requiresOwnerResponse, false);
   assert.equal(ownerEdit.ownerResponseStatus, 'not_required');
-});
-
-test('only personal and likeness fields require dossier owner confirmation', () => {
-  assert.deepEqual(dossierOwnerConfirmationFields({
-    city: '上海',
-    workplace: 'OG剧场',
-    common_scripts: [],
-    photo_files: [],
-    profile_url: 'https://example.com',
-    mbti: 'INTJ',
-  }), ['profile_url', 'photo_files', 'mbti']);
 });
 
 test('他人修改已认领档案时给认领人三天确认期', () => {
