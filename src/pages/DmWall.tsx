@@ -410,8 +410,8 @@ export default function DmWall() {
         }
       />
 
-      <section style={jumuluFilterPanelStyle}>
-        <div className="dm-filter-primary" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <section className="dm-dossier-filter-panel" style={{ ...jumuluFilterPanelStyle, padding: 8 }}>
+        <div className="dm-filter-toolbar">
           <CitySearchSelect
             value={city}
             onChange={value => {
@@ -420,20 +420,18 @@ export default function DmWall() {
             }}
             allowAll
             allowCustom
-            style={{ minWidth: 190, flex: '1 1 190px' }}
+            style={{ minWidth: 0 }}
           />
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索名称、标签或常开剧本" style={{ ...inputStyle, minWidth: 190, flex: '1 1 230px' }} />
+          <input className="dm-filter-query" value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索名称、标签或常开剧本" style={{ ...inputStyle, minWidth: 0, width: '100%' }} />
           <Link className="dm-filter-city-link" to="/reputation/city" style={ghostButton}>看城市口碑</Link>
-        </div>
-        <div className="dm-filter-secondary" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
-          <select aria-label="按标签筛选" value={tagFilter} onChange={event => setTagFilter(event.target.value)} style={{ ...inputStyle, minWidth: 170, flex: '1 1 190px' }}>
+          <select aria-label="按标签筛选" value={tagFilter} onChange={event => setTagFilter(event.target.value)} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
             <option value="all">全部标签</option>
             {availableTags.map(tag => <option key={tag.value} value={tag.value}>{tag.label}（{tag.count}）</option>)}
           </select>
-          <select aria-label="按评价筛选" value={ratingFilter} onChange={event => setRatingFilter(event.target.value as RatingFilter)} style={{ ...inputStyle, minWidth: 150, flex: '0 1 180px' }}>
+          <select aria-label="按评价筛选" value={ratingFilter} onChange={event => setRatingFilter(event.target.value as RatingFilter)} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
             {RATING_FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
-          <select aria-label="选择排序方式" value={sortMode} onChange={event => changeSortMode(event.target.value as DmDossierSortMode)} style={{ ...inputStyle, minWidth: 140, flex: '0 1 160px' }}>
+          <select aria-label="选择排序方式" value={sortMode} onChange={event => changeSortMode(event.target.value as DmDossierSortMode)} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
             {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <ChantoSortSwitch checked={chantoFirst} onChange={changeChantoFirst} />
@@ -617,24 +615,58 @@ export default function DmWall() {
           -webkit-box-orient: vertical;
           -webkit-line-clamp: 2;
         }
+        .dm-filter-toolbar {
+          display: grid;
+          grid-template-columns: minmax(120px, 145px) minmax(190px, 1fr) auto minmax(120px, 145px) 118px 120px 112px 140px auto;
+          gap: 8px;
+          align-items: center;
+        }
+        .dm-filter-toolbar input,
+        .dm-filter-toolbar select {
+          height: 38px !important;
+          padding: 0 10px !important;
+          border-radius: 8px !important;
+        }
+        .dm-filter-toolbar [role="switch"],
+        .dm-filter-toolbar [aria-label="展示方式"] {
+          height: 38px !important;
+        }
+        .dm-filter-toolbar .dm-filter-city-link {
+          min-height: 38px !important;
+          padding: 0 10px !important;
+          white-space: nowrap;
+        }
+        .dm-filter-count {
+          white-space: nowrap;
+        }
+        @media (max-width: 1180px) {
+          .dm-filter-toolbar {
+            grid-template-columns: minmax(120px, 1fr) minmax(180px, 2fr) minmax(180px, 2fr) auto auto;
+          }
+          .dm-filter-query {
+            grid-column: span 2;
+          }
+          .dm-filter-count {
+            text-align: right;
+          }
+        }
         @media (max-width: 640px) {
-          .dm-filter-primary,
-          .dm-filter-secondary {
-            display: grid !important;
+          .dm-dossier-filter-panel {
+            padding: 8px !important;
+          }
+          .dm-filter-toolbar {
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px !important;
           }
-          .dm-filter-secondary {
-            margin-top: 8px !important;
-          }
-          .dm-filter-primary > *,
-          .dm-filter-secondary > * {
+          .dm-filter-toolbar > * {
             box-sizing: border-box;
             min-width: 0 !important;
             width: 100% !important;
           }
+          .dm-filter-query {
+            grid-column: auto;
+          }
           .dm-filter-city-link {
-            grid-column: 1 / -1;
             justify-content: center;
           }
           .dm-filter-count {
