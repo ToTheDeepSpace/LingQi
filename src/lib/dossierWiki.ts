@@ -39,6 +39,14 @@ function finiteFocus(value: unknown, fallback: number) {
   return Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : fallback;
 }
 
+export function normalizeDossierIntegerInput(value: unknown, min: number, max: number, label: string) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'number' && !/^\d+$/.test(String(value).trim())) throw new Error(`${label}必须填写整数`);
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) throw new Error(`${label}格式不正确`);
+  return parsed;
+}
+
 export function normalizeDossierMonth(value: unknown) {
   const text = compactText(value, 10);
   if (!text) return null;

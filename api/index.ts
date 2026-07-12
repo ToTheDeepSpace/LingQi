@@ -33,10 +33,12 @@ import {
   type DossierClaimProofFile,
 } from './dossierClaimStorage.js';
 import {
+  dossierAdminReviewMode,
   dossierEditAdminReviewReady,
   effectiveDossierOwnerResponseStatus,
   initialDossierEditWorkflow,
   ownerLoggedInDuringDossierResponseWindow,
+  partitionDossierEditPatch,
 } from './dossierEditWorkflow.js';
 import {
   buildLingqiCosObjectKey,
@@ -56,6 +58,7 @@ import {
   MAX_DOSSIER_COMMON_SCRIPTS,
   MAX_DOSSIER_PHOTOS,
   normalizeDossierCareerHistory,
+  normalizeDossierIntegerInput,
   normalizeDossierMonth,
   normalizeDossierNamedRefs,
   normalizeDossierPhotos,
@@ -65,6 +68,7 @@ import {
 } from '../src/lib/dossierWiki.js';
 import { extractSharedUrl } from '../src/lib/socialLinks.js';
 import { CHANTO_MAX_AMOUNT, CHANTO_MIN_AMOUNT, isValidChantoAmount } from '../src/lib/chanto.js';
+import { CITIES } from '../src/constants/cities.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -2022,6 +2026,8 @@ const DM_ZODIAC_VALUES = [
   '狮子座', '处女座', '天秤座', '天蝎座',
   '射手座', '摩羯座', '水瓶座', '双鱼座',
 ] as const;
+const DOSSIER_CITY_VALUES = new Set(CITIES);
+const DOSSIER_SENSITIVE_FIELDS_FOR_REVIEW = new Set(['birth_year', 'height_cm', 'weight_kg']);
 
 function normalizeDmPersonalityValue(value: unknown, allowed: readonly string[], label: string) {
   const normalized = cleanText(value, 20);
@@ -2107,12 +2113,15 @@ async function applyDossierUpdateReview(
   const safePatch: Record<string, unknown> = {};
   for (const field of allowedFields) {
     if (!(field in consentResult.appliedPatch)) continue;
+    if (dossierEditComparableValue(dossier[field]) === dossierEditComparableValue(consentResult.appliedPatch[field])) {
+      continue;
+    }
     if (dossierEditComparableValue(dossier[field]) !== dossierEditComparableValue(beforeSnapshot[field])) {
       throw new Error(`${DOSSIER_EDIT_FIELD_LABELS[field]}已被其他审核更新，请重新提交修改`);
     }
     safePatch[field] = consentResult.appliedPatch[field];
   }
-  if (Object.keys(safePatch).length === 0) throw new Error('没有可应用的档案修改');
+  if (Object.keys(safePatch).length === 0) return;
   if ('photo_files' in safePatch) {
     const photos = normalizeDossierPhotoSubmission(
       safePatch.photo_files,
@@ -2181,6 +2190,9 @@ async function applyDossierUpdateReview(
           throw new Error('档案认领人已经变化，需要由新认领人重新确认');
         }
         for (const field of Object.keys(consentResult.appliedPatch)) {
+          if (dossierEditComparableValue(lockedDossier[field]) === dossierEditComparableValue(consentResult.appliedPatch[field])) {
+            continue;
+          }
           if (dossierEditComparableValue(lockedDossier[field]) !== dossierEditComparableValue(beforeSnapshot[field])) {
             throw new Error(`${DOSSIER_EDIT_FIELD_LABELS[field] || field}已被其他审核更新，请重新提交修改`);
           }
@@ -2341,6 +2353,149 @@ async function applyDossierUpdateReview(
   if (updateErr) throw updateErr;
 }
 
+function dossierReviewPartitions(payload: Record<string, unknown>) {
+  const fallback = partitionDossierEditPatch(objectPayload(payload.patch));
+  return {
+    noAdminReviewPatch: Object.keys(objectPayload(payload.no_admin_review_patch)).length > 0
+      ? objectPayload(payload.no_admin_review_patch)
+      : fallback.noAdminReviewPatch,
+    postAdminReviewPatch: Object.keys(objectPayload(payload.post_admin_review_patch)).length > 0
+      ? objectPayload(payload.post_admin_review_patch)
+      : fallback.postAdminReviewPatch,
+    preAdminReviewPatch: Object.keys(objectPayload(payload.pre_admin_review_patch)).length > 0
+      ? objectPayload(payload.pre_admin_review_patch)
+      : fallback.preAdminReviewPatch,
+  };
+}
+
+async function applyDossierPatchSubset(
+  review: PublicReviewRecord,
+  payload: Record<string, unknown>,
+  patch: Record<string, unknown>,
+  reviewerId: string | null,
+) {
+  if (Object.keys(patch).length === 0) return;
+  const subsetPayload = {
+    ...payload,
+    patch,
+    changed_fields: Object.keys(patch),
+    submitter_is_owner: true,
+    owner_response_status: 'agreed',
+  };
+  await applyDossierUpdateReview({ ...review, payload: subsetPayload }, subsetPayload, reviewerId);
+}
+
+async function advanceDossierReviewAfterOwner(
+  review: PublicReviewRecord,
+  payload: Record<string, unknown>,
+  ownerStatus: 'agreed' | 'expired',
+  reviewerId: string | null,
+  now = new Date(),
+) {
+  const partitions = dossierReviewPartitions(payload);
+  const submitterIsOwner = Boolean(payload.submitter_is_owner);
+  const consentInput = { submitterIsOwner, ownerResponseStatus: ownerStatus };
+  const immediateConsent = dossierPatchForOwnerConsent({
+    ...partitions.noAdminReviewPatch,
+    ...partitions.postAdminReviewPatch,
+  }, consentInput);
+  const preReviewConsent = dossierPatchForOwnerConsent(partitions.preAdminReviewPatch, consentInput);
+  const omittedSensitiveFields = Array.from(new Set([
+    ...immediateConsent.omittedSensitiveFields,
+    ...preReviewConsent.omittedSensitiveFields,
+  ]));
+  const appliedImmediatePatch = immediateConsent.appliedPatch;
+  const appliedPostReviewPatch = Object.fromEntries(Object.entries(partitions.postAdminReviewPatch)
+    .filter(([field]) => Object.prototype.hasOwnProperty.call(appliedImmediatePatch, field)));
+  const pendingPreReviewPatch = preReviewConsent.appliedPatch;
+
+  await applyDossierPatchSubset(review, payload, appliedImmediatePatch, reviewerId);
+
+  const mode = dossierAdminReviewMode({
+    preAdminReviewPatch: pendingPreReviewPatch,
+    postAdminReviewPatch: appliedPostReviewPatch,
+  });
+  const pendingChangedFields = Array.from(new Set([
+    ...Object.keys(appliedPostReviewPatch),
+    ...Object.keys(pendingPreReviewPatch),
+  ]));
+  payload.owner_response_status = ownerStatus;
+  payload.owner_response_due_at = ownerStatus === 'agreed' ? null : payload.owner_response_due_at;
+  payload.no_admin_review_patch = partitions.noAdminReviewPatch;
+  payload.post_admin_review_patch = appliedPostReviewPatch;
+  payload.pre_admin_review_patch = pendingPreReviewPatch;
+  payload.patch = pendingPreReviewPatch;
+  payload.changed_fields = pendingChangedFields;
+  payload.submitted_sensitive_fields = Array.isArray(payload.submitted_sensitive_fields)
+    ? payload.submitted_sensitive_fields
+    : Array.isArray(payload.sensitive_fields) ? payload.sensitive_fields : [];
+  payload.sensitive_fields = pendingChangedFields.filter(field => DOSSIER_SENSITIVE_FIELDS_FOR_REVIEW.has(field));
+  payload.applied_immediate_fields = Object.keys(appliedImmediatePatch);
+  payload.omitted_sensitive_fields = omittedSensitiveFields;
+  payload.review_mode = mode;
+  if (Object.keys(appliedPostReviewPatch).length > 0) payload.post_review_applied_at = now.toISOString();
+
+  const pendingAdminReview = mode !== 'none';
+  const updateResult = await supabase.from('lc_public_reviews').update({
+    payload,
+    status: pendingAdminReview ? 'pending' : 'approved',
+    reviewed_by: pendingAdminReview ? null : reviewerId,
+    reviewed_at: pendingAdminReview ? null : now.toISOString(),
+    review_note: pendingAdminReview
+      ? null
+      : ownerStatus === 'expired'
+        ? '认领人在提交后3天内未上线，符合规则的受限字段已自动生效'
+        : '认领人确认后，受限字段已按规则生效',
+    updated_at: now.toISOString(),
+  }).eq('id', review.id).eq('status', 'pending');
+  if (updateResult.error) throw updateResult.error;
+  return {
+    status: pendingAdminReview ? 'pending' as const : 'approved' as const,
+    reviewMode: mode,
+    appliedImmediateFields: Object.keys(appliedImmediatePatch),
+    pendingChangedFields,
+    omittedSensitiveFields,
+  };
+}
+
+async function rollbackDossierPostReview(review: PublicReviewRecord, payload: Record<string, unknown>) {
+  const postReviewPatch = objectPayload(payload.post_admin_review_patch);
+  if (Object.keys(postReviewPatch).length === 0) return payload;
+  const dossierId = cleanText(payload.dossier_id, 80);
+  const entityType = cleanText(payload.entity_type, 20) === 'store' ? 'store' : 'dm';
+  const beforeSnapshot = objectPayload(payload.before_snapshot);
+  const dossierResult = await supabase.from('lc_dm_dossiers')
+    .select('*')
+    .eq('id', dossierId)
+    .eq('entity_type', entityType)
+    .eq('status', 'approved')
+    .maybeSingle();
+  if (dossierResult.error) throw dossierResult.error;
+  if (!dossierResult.data) throw new Error('后审字段对应的档案不存在或已下架');
+
+  const rollbackPatch: Record<string, unknown> = {};
+  const skippedFields: string[] = [];
+  for (const [field, appliedValue] of Object.entries(postReviewPatch)) {
+    if (dossierEditComparableValue(dossierResult.data[field]) !== dossierEditComparableValue(appliedValue)) {
+      skippedFields.push(field);
+      continue;
+    }
+    rollbackPatch[field] = beforeSnapshot[field] ?? null;
+  }
+  if (Object.keys(rollbackPatch).length > 0) {
+    const rollbackResult = await supabase.from('lc_dm_dossiers').update({
+      ...rollbackPatch,
+      updated_at: new Date().toISOString(),
+    }).eq('id', dossierId).eq('status', 'approved');
+    if (rollbackResult.error) throw rollbackResult.error;
+  }
+  payload.post_review_rolled_back_fields = Object.keys(rollbackPatch);
+  payload.post_review_rollback_skipped_fields = skippedFields;
+  payload.post_review_rolled_back_at = new Date().toISOString();
+  review.payload = payload;
+  return payload;
+}
+
 let dueDossierOwnerReviewsCheckedAt = 0;
 
 async function processDueDossierOwnerReviews(now = new Date()) {
@@ -2396,38 +2551,12 @@ async function processDueDossierOwnerReviews(now = new Date()) {
       continue;
     }
 
-    const consent = dossierPatchForOwnerConsent(objectPayload(payload.patch), {
-      submitterIsOwner: Boolean(payload.submitter_is_owner),
-      ownerResponseStatus: 'expired',
-    });
-    if (Object.keys(consent.appliedPatch).length === 0 && consent.omittedSensitiveFields.length > 0) {
-      payload.owner_response_due_at = null;
-      payload.owner_login_detected = false;
-      payload.auto_apply_blocked_sensitive_fields = consent.omittedSensitiveFields;
-      const sensitiveUpdate = await supabase.from('lc_public_reviews').update({
-        payload,
-        updated_at: now.toISOString(),
-      }).eq('id', review.id).eq('status', 'pending');
-      if (sensitiveUpdate.error) throw sensitiveUpdate.error;
-      continue;
-    }
-
     payload.owner_response_status = 'expired';
     payload.owner_response_due_at = dueAt;
     payload.owner_login_detected = false;
-    payload.auto_applied_at = now.toISOString();
     review.payload = payload;
     try {
-      await applyDossierUpdateReview(review, payload, null);
-      const approved = await supabase.from('lc_public_reviews').update({
-        payload,
-        status: 'approved',
-        reviewed_by: null,
-        reviewed_at: now.toISOString(),
-        review_note: '档案认领人在提交后3天内未上线，非敏感资料已自动生效',
-        updated_at: now.toISOString(),
-      }).eq('id', review.id).eq('status', 'pending');
-      if (approved.error) throw approved.error;
+      await advanceDossierReviewAfterOwner(review, payload, 'expired', null, now);
     } catch (autoApplyError) {
       console.error('[dossier-edit] auto apply failed', review.id, getErrorText(autoApplyError));
       payload.owner_response_status = 'pending';
@@ -7795,7 +7924,12 @@ app.put('/api/lc/admin/public-reviews/:id/approve', authMiddleware, adminMiddlew
       }
     }
 
-    await applyPublicReview(review as PublicReviewRecord, reviewerId);
+    const dossierReviewMode = review.target_type === 'dossier_update'
+      ? cleanText(objectPayload(review.payload).review_mode, 30)
+      : '';
+    if (dossierReviewMode !== 'admin_post') {
+      await applyPublicReview(review as PublicReviewRecord, reviewerId);
+    }
     const { data: updated, error: updErr } = await supabase.from('lc_public_reviews')
       .update({
         status: 'approved',
@@ -7823,15 +7957,21 @@ app.put('/api/lc/admin/public-reviews/:id/reject', authMiddleware, adminMiddlewa
   try {
     const reviewerId = /^[0-9a-f-]{36}$/i.test(String(getReq(req, 'creatorId') || '')) ? String(getReq(req, 'creatorId')) : null;
     const rejectReason = cleanText(req.body?.rejectReason, 500) || '不符合公开展示规则';
-    const reviewResult = await supabase.from('lc_public_reviews').select('target_type, payload, status').eq('id', req.params.id).maybeSingle();
+    const reviewResult = await supabase.from('lc_public_reviews').select('*').eq('id', req.params.id).maybeSingle();
     if (reviewResult.error) throw reviewResult.error;
     if (!reviewResult.data || reviewResult.data.status !== 'pending') return res.status(404).json(err(new Error('审核记录不存在或已经处理')));
     if (reviewResult.data.target_type === 'dossier_update'
       && cleanText(objectPayload(reviewResult.data.payload).review_mode, 30) === 'owner') {
       return res.status(409).json(err(new Error('已认领档案由认领人处理，不进入管理员审核')));
     }
+    let rejectedPayload = objectPayload(reviewResult.data.payload);
+    if (reviewResult.data.target_type === 'dossier_update'
+      && ['admin_post', 'admin_mixed'].includes(cleanText(rejectedPayload.review_mode, 30))) {
+      rejectedPayload = await rollbackDossierPostReview(reviewResult.data as PublicReviewRecord, rejectedPayload);
+    }
     const { error: updErr } = await supabase.from('lc_public_reviews')
       .update({
+        payload: rejectedPayload,
         status: 'rejected',
         reviewed_by: reviewerId,
         reviewed_at: new Date().toISOString(),
@@ -9885,17 +10025,14 @@ function hasOwnInput(input: Record<string, unknown>, ...keys: string[]) {
 }
 
 function optionalDossierInteger(value: unknown, min: number, max: number, label: string) {
+  return normalizeDossierIntegerInput(value, min, max, label);
+}
+
+function optionalStoredDossierInteger(value: unknown, min: number, max: number, label: string) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) throw new Error(`${label}格式不正确`);
   return parsed;
-}
-
-function optionalDossierDecimal(value: unknown, min: number, max: number, label: string) {
-  if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < min || parsed > max) throw new Error(`${label}格式不正确`);
-  return Math.round(parsed * 10) / 10;
 }
 
 function optionalDossierMonth(value: unknown, label: string) {
@@ -9991,9 +10128,9 @@ function dossierEditSnapshot(dossier: Record<string, unknown>) {
     note: cleanText(dossier.note, 600) || null,
     tags: cleanTextArray(dossier.tags, 10, 18),
     dm_started_month: optionalDossierMonth(dossier.dm_started_month, 'DM 入行时间'),
-    birth_year: optionalDossierInteger(dossier.birth_year, 1900, 2100, '出生年份'),
-    height_cm: optionalDossierInteger(dossier.height_cm, 100, 250, '身高'),
-    weight_kg: optionalDossierDecimal(dossier.weight_kg, 25, 300, '体重'),
+    birth_year: optionalStoredDossierInteger(dossier.birth_year, 1900, 2100, '出生年份'),
+    height_cm: optionalStoredDossierInteger(dossier.height_cm, 100, 250, '身高'),
+    weight_kg: optionalStoredDossierInteger(dossier.weight_kg, 30, 300, '体重'),
     mbti: normalizeDmPersonalityValue(dossier.mbti, DM_MBTI_VALUES, 'MBTI'),
     zodiac: normalizeDmPersonalityValue(dossier.zodiac, DM_ZODIAC_VALUES, '星座'),
     bio: cleanText(dossier.bio, 3000) || null,
@@ -10043,6 +10180,10 @@ async function normalizeDossierEditProposal(dossier: Record<string, unknown>, bo
   };
   if (!proposed.dm_name) throw new Error(`请填写${entityLabel}名称`);
   if (!proposed.city) throw new Error('请选择城市');
+  const currentCity = cleanText(dossier.city, 80);
+  if (proposed.city !== currentCity && !DOSSIER_CITY_VALUES.has(String(proposed.city))) {
+    throw new Error('城市必须从固定城市列表中选择');
+  }
 
   if (entityType === 'store') {
     const workplace = hasOwnInput(body, 'workplace', 'address')
@@ -10077,13 +10218,13 @@ async function normalizeDossierEditProposal(dossier: Record<string, unknown>, bo
       : optionalDossierMonth(dossier.dm_started_month, 'DM 入行时间');
     proposed.birth_year = hasOwnInput(body, 'birthYear', 'birth_year')
       ? optionalDossierInteger(body.birthYear ?? body.birth_year, 1900, new Date().getFullYear(), '出生年份')
-      : optionalDossierInteger(dossier.birth_year, 1900, 2100, '出生年份');
+      : optionalStoredDossierInteger(dossier.birth_year, 1900, 2100, '出生年份');
     proposed.height_cm = hasOwnInput(body, 'heightCm', 'height_cm')
       ? optionalDossierInteger(body.heightCm ?? body.height_cm, 100, 250, '身高')
-      : optionalDossierInteger(dossier.height_cm, 100, 250, '身高');
+      : optionalStoredDossierInteger(dossier.height_cm, 100, 250, '身高');
     proposed.weight_kg = hasOwnInput(body, 'weightKg', 'weight_kg')
-      ? optionalDossierDecimal(body.weightKg ?? body.weight_kg, 25, 300, '体重')
-      : optionalDossierDecimal(dossier.weight_kg, 25, 300, '体重');
+      ? optionalDossierInteger(body.weightKg ?? body.weight_kg, 30, 300, '体重')
+      : optionalStoredDossierInteger(dossier.weight_kg, 30, 300, '体重');
     proposed.mbti = hasOwnInput(body, 'mbti')
       ? normalizeDmPersonalityValue(body.mbti, DM_MBTI_VALUES, 'MBTI')
       : normalizeDmPersonalityValue(dossier.mbti, DM_MBTI_VALUES, 'MBTI');
@@ -10179,7 +10320,15 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
       submitterProfileId: profile.id,
     });
     const submitterIsOwner = ownerProfileId === profile.id;
-    const reviewMode = submitterIsOwner ? 'direct' : ownerProfileId ? 'owner' : 'admin';
+    const classifiedPatch = partitionDossierEditPatch(normalized.patch);
+    const partitions = ownerProfileId
+      ? classifiedPatch
+      : {
+          noAdminReviewPatch: {},
+          postAdminReviewPatch: {},
+          preAdminReviewPatch: normalized.patch,
+        };
+    const reviewMode = submitterIsOwner ? 'direct' : ownerProfileId ? 'owner' : 'admin_pre';
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: normalized.entityType === 'store' ? 'store_dossier_update_submit' : 'dm_dossier_update_submit',
       targetType: 'dossier_update',
@@ -10215,7 +10364,12 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
         before_snapshot: normalized.beforeSnapshot,
         patch: normalized.patch,
         changed_fields: normalized.changedFields,
+        submitted_changed_fields: normalized.changedFields,
         sensitive_fields: sensitiveFields,
+        submitted_sensitive_fields: sensitiveFields,
+        no_admin_review_patch: partitions.noAdminReviewPatch,
+        post_admin_review_patch: partitions.postAdminReviewPatch,
+        pre_admin_review_patch: partitions.preAdminReviewPatch,
         edit_reason: editReason,
         owner_profile_id: ownerProfileId || null,
         review_mode: reviewMode,
@@ -10227,16 +10381,14 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
       },
       moderationPrecheck,
     });
+    let directResult: Awaited<ReturnType<typeof advanceDossierReviewAfterOwner>> | null = null;
     if (reviewMode === 'direct') {
-      await applyDossierUpdateReview(review as PublicReviewRecord, objectPayload(review.payload), profile.id);
-      const directUpdate = await supabase.from('lc_public_reviews').update({
-        status: 'approved',
-        reviewed_by: profile.id,
-        reviewed_at: new Date().toISOString(),
-        review_note: '档案认领人本人修改，直接生效',
-        updated_at: new Date().toISOString(),
-      }).eq('id', review.id).eq('status', 'pending');
-      if (directUpdate.error) throw directUpdate.error;
+      directResult = await advanceDossierReviewAfterOwner(
+        review as PublicReviewRecord,
+        objectPayload(review.payload),
+        'agreed',
+        profile.id,
+      );
     }
     await logSecurityEvent(req, {
       action: 'dossier_update_submitted_for_review',
@@ -10253,15 +10405,24 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
         moderation: moderationPrecheck,
       },
     });
+    const responseStatus = directResult?.status || 'pending';
+    const directMessage = directResult?.status === 'approved'
+      ? '受限字段已更新'
+      : (directResult?.appliedImmediateFields.length || 0) > 0
+        ? '受限字段已更新；城市后审和自由填写内容已按规则进入管理员审核'
+        : '自由填写内容已提交管理员审核，通过后公开';
     res.json(ok({
       ...publicReviewAcceptedResponse(review as Record<string, unknown>),
-      status: reviewMode === 'direct' ? 'approved' : 'pending',
+      status: responseStatus,
+      review_mode: directResult?.reviewMode || reviewMode,
+      applied_immediate_fields: directResult?.appliedImmediateFields || [],
+      pending_changed_fields: directResult?.pendingChangedFields || normalized.changedFields,
       owner_response_status: submitterIsOwner ? 'agreed' : workflow.ownerResponseStatus,
       owner_response_due_at: reviewMode === 'owner' ? workflow.ownerResponseDueAt : null,
       message: reviewMode === 'direct'
-        ? '档案资料已更新'
+        ? directMessage
         : reviewMode === 'owner'
-          ? '修改已提交；认领人3天内上线则由本人确认，3天内未上线则非敏感资料自动生效'
+          ? '修改已提交；认领人确认后受限字段按规则生效，自由填写内容仍需管理员审核'
           : '未认领档案的修改已提交，管理员审核通过后会更新公开资料',
     }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -10331,18 +10492,25 @@ app.put('/api/lc/dossier-edits/:id/owner-response', authMiddleware, async (req, 
     payload.owner_response_status = decision === 'agree' ? 'agreed' : 'opposed';
     payload.owner_response_reason = responseReason || null;
     payload.owner_responded_at = new Date().toISOString();
+    let ownerAdvanceResult: Awaited<ReturnType<typeof advanceDossierReviewAfterOwner>> | null = null;
     if (decision === 'agree') {
-      await applyDossierUpdateReview(review as PublicReviewRecord, payload, profile.id);
+      ownerAdvanceResult = await advanceDossierReviewAfterOwner(
+        review as PublicReviewRecord,
+        payload,
+        'agreed',
+        profile.id,
+      );
+    } else {
+      const updateResult = await supabase.from('lc_public_reviews').update({
+        payload,
+        status: 'rejected',
+        reviewed_by: profile.id,
+        reviewed_at: new Date().toISOString(),
+        review_note: responseReason,
+        updated_at: new Date().toISOString(),
+      }).eq('id', review.id).eq('status', 'pending');
+      if (updateResult.error) throw updateResult.error;
     }
-    const updateResult = await supabase.from('lc_public_reviews').update({
-      payload,
-      status: decision === 'agree' ? 'approved' : 'rejected',
-      reviewed_by: profile.id,
-      reviewed_at: new Date().toISOString(),
-      review_note: decision === 'agree' ? '档案认领人已同意修改' : responseReason,
-      updated_at: new Date().toISOString(),
-    }).eq('id', review.id).eq('status', 'pending');
-    if (updateResult.error) throw updateResult.error;
     await logSecurityEvent(req, {
       action: decision === 'agree' ? 'dossier_update_agreed_by_owner' : 'dossier_update_opposed_by_owner',
       targetType: 'public_review',
@@ -10353,8 +10521,13 @@ app.put('/api/lc/dossier-edits/:id/owner-response', authMiddleware, async (req, 
     });
     res.json(ok({
       owner_response_status: payload.owner_response_status,
-      status: decision === 'agree' ? 'approved' : 'rejected',
-      message: decision === 'agree' ? '修改已同意并生效' : '已反对这次修改',
+      status: decision === 'agree' ? ownerAdvanceResult?.status || 'pending' : 'rejected',
+      review_mode: ownerAdvanceResult?.reviewMode || 'owner',
+      message: decision === 'agree'
+        ? ownerAdvanceResult?.status === 'pending'
+          ? '已同意修改；受限字段按规则生效，自由填写内容和城市后审已转管理员处理'
+          : '已同意修改，受限字段已经生效'
+        : '已反对这次修改',
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });

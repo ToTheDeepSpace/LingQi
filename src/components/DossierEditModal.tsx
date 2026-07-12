@@ -127,6 +127,16 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
       setError('请先登录后再提交修改');
       return;
     }
+    if (dossier.entityType === 'dm') {
+      if (!isOptionalIntegerInRange(wikiDraft.heightCm, 100, 250)) {
+        setError('身高必须填写 100–250 之间的整数');
+        return;
+      }
+      if (!isOptionalIntegerInRange(wikiDraft.weightKg, 30, 300)) {
+        setError('体重必须填写 30–300 之间的整数');
+        return;
+      }
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -181,9 +191,9 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
             <h2 id="dossier-edit-title" style={{ margin: 0, fontSize: 22 }}>修改「{dossier.name}」</h2>
             <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 13, lineHeight: 1.6 }}>
               {isOwner
-                ? '这是你已认领的档案，提交后会直接更新。'
+                ? '身高、体重、MBTI、星座直接更新；城市先更新后审核；自由填写内容审核通过后公开。'
                 : dossier.claimedBy
-                  ? '认领人3天内上线则由本人确认；3天内未上线，非敏感资料自动生效。'
+                  ? '认领人3天内上线则由本人确认；确认后受限字段按规则生效，自由填写内容仍由管理员审核。'
                   : '档案尚未认领，提交后由管理员审核。'}
             </p>
           </div>
@@ -193,7 +203,7 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
         <div style={bodyStyle}>
           <div style={twoColumnStyle}>
             <Field label={`${entityLabel}名称 *`} value={name} onChange={setName} />
-            <CitySearchSelect label="城市 *" value={city} onChange={setCity} allowCustom />
+            <CitySearchSelect label="城市 *" value={city} onChange={setCity} />
           </div>
 
           {dossier.entityType === 'store' ? (
@@ -262,6 +272,13 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
       </section>
     </div>
   );
+}
+
+function isOptionalIntegerInRange(value: string, min: number, max: number) {
+  if (!value) return true;
+  if (!/^\d+$/.test(value)) return false;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max;
 }
 
 function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {

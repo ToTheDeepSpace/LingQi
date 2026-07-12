@@ -139,7 +139,7 @@ type DossierEditReview = {
   owner_response_status: 'not_required' | 'pending' | 'agreed' | 'opposed' | 'expired';
   owner_response_due_at?: string | null;
   owner_response_reason?: string | null;
-  review_mode?: 'direct' | 'owner' | 'admin';
+  review_mode?: 'direct' | 'owner' | 'admin_pre' | 'admin_post' | 'admin_mixed' | 'none';
   owner_login_detected?: boolean;
   created_at: string;
 };
@@ -515,8 +515,11 @@ function dossierEditDisplayValue(value: unknown) {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
-function dossierEditStatusLabel(status: DossierEditReview['owner_response_status']) {
+function dossierEditStatusLabel(status: DossierEditReview['owner_response_status'], reviewMode?: DossierEditReview['review_mode']) {
   if (status === 'pending') return '等待认领人确认';
+  if (reviewMode === 'admin_post') return '已更新 · 管理员后审';
+  if (reviewMode === 'admin_mixed') return '部分已更新 · 其余待审';
+  if (reviewMode === 'admin_pre') return '待管理员审核';
   if (status === 'agreed') return '认领人已同意';
   if (status === 'opposed') return '认领人已反对';
   if (status === 'expired') return '3天未上线 · 已自动处理';
@@ -2703,7 +2706,7 @@ export default function Dashboard() {
                             )}
                           </div>
                           <span style={{ color: '#8a5a19', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>
-                            {dossierEditStatusLabel(item.owner_response_status)}
+                            {dossierEditStatusLabel(item.owner_response_status, item.review_mode)}
                           </span>
                         </div>
                       ))}

@@ -709,10 +709,14 @@ function summarizePublicReviewPayload(
 ) {
   if (!payload || typeof payload !== 'object') return [];
   if (payload.patch && typeof payload.patch === 'object') {
-    const patch = payload.patch as Record<string, unknown>;
+    const postReviewPatch = payload.post_admin_review_patch && typeof payload.post_admin_review_patch === 'object'
+      ? payload.post_admin_review_patch as Record<string, unknown>
+      : {};
+    const patch = { ...postReviewPatch, ...payload.patch as Record<string, unknown> };
     const before = payload.before_snapshot && typeof payload.before_snapshot === 'object' ? payload.before_snapshot as Record<string, unknown> : {};
     const lines = Object.entries(patch).map(([key, value]) => `${DOSSIER_EDIT_FIELD_LABELS[key] || '资料'}：${publicReviewValueText(key, before[key], 'before', dossiers)} → ${publicReviewValueText(key, value, 'after', dossiers)}`);
     if (payload.edit_reason) lines.unshift(`修改依据: ${String(payload.edit_reason)}`);
+    if (Object.keys(postReviewPatch).length > 0) lines.unshift(`后审字段已先生效：${Object.keys(postReviewPatch).map(key => DOSSIER_EDIT_FIELD_LABELS[key] || key).join('、')}`);
     if (payload.owner_response_status === 'pending') lines.push(`认领人状态: 等待确认，截止 ${String(payload.owner_response_due_at || '')}`);
     if (payload.owner_response_status === 'agreed') lines.push(`认领人状态: 已同意${payload.owner_response_reason ? `，说明：${String(payload.owner_response_reason)}` : ''}`);
     if (payload.owner_response_status === 'opposed') lines.push(`认领人状态: 反对，说明：${String(payload.owner_response_reason || '未填写')}`);
@@ -2031,6 +2035,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   const waitingForDossierOwner = item.target_type === 'dossier_update' && item.payload?.owner_response_status === 'pending';
                   const sensitiveState = publicReviewSensitiveState(item);
                   const approvalBlocked = waitingForDossierOwner || sensitiveState.blocked;
+                  const postReviewOnly = item.target_type === 'dossier_update' && item.payload?.review_mode === 'admin_post';
                   return (
                     <Row key={item.id} accent="#facc15">
                       <div style={{ minWidth: 0, flex: 1 }}>
@@ -2054,8 +2059,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <ModerationPrecheckBadge value={item.moderation_precheck} />
                       </div>
                       <Actions vertical>
-                        <ActionButton kind="ok" disabled={approvalBlocked} onClick={() => approvePublicReview(item.id)}>{waitingForDossierOwner ? '等待认领人确认' : sensitiveState.blocked ? '敏感资料不可公开' : sensitiveState.sensitiveFields.length > 0 && item.payload?.owner_response_status !== 'agreed' && !item.payload?.submitter_is_owner ? '通过其他资料' : '通过并公开'}</ActionButton>
-                        <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'publicReview')}>拒绝</ActionButton>
+                        <ActionButton kind="ok" disabled={approvalBlocked} onClick={() => approvePublicReview(item.id)}>{waitingForDossierOwner ? '等待认领人确认' : sensitiveState.blocked ? '敏感资料不可公开' : postReviewOnly ? '确认保留' : sensitiveState.sensitiveFields.length > 0 && item.payload?.owner_response_status !== 'agreed' && !item.payload?.submitter_is_owner ? '通过其他资料' : '通过并公开'}</ActionButton>
+                        <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'publicReview')}>{postReviewOnly ? '驳回并回滚' : '拒绝'}</ActionButton>
                       </Actions>
                     </Row>
                   );

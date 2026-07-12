@@ -1,6 +1,37 @@
 export const DOSSIER_EDIT_OWNER_RESPONSE_DAYS = 3;
 
+export const DOSSIER_NO_ADMIN_REVIEW_FIELDS = ['height_cm', 'weight_kg', 'mbti', 'zodiac'] as const;
+export const DOSSIER_POST_ADMIN_REVIEW_FIELDS = ['city'] as const;
+
 export type DossierOwnerResponseStatus = 'not_required' | 'pending' | 'agreed' | 'opposed' | 'expired';
+
+export function partitionDossierEditPatch(patch: Record<string, unknown>) {
+  const noAdminReviewPatch: Record<string, unknown> = {};
+  const postAdminReviewPatch: Record<string, unknown> = {};
+  const preAdminReviewPatch: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(patch)) {
+    if ((DOSSIER_NO_ADMIN_REVIEW_FIELDS as readonly string[]).includes(field)) {
+      noAdminReviewPatch[field] = value;
+    } else if ((DOSSIER_POST_ADMIN_REVIEW_FIELDS as readonly string[]).includes(field)) {
+      postAdminReviewPatch[field] = value;
+    } else {
+      preAdminReviewPatch[field] = value;
+    }
+  }
+  return { noAdminReviewPatch, postAdminReviewPatch, preAdminReviewPatch };
+}
+
+export function dossierAdminReviewMode(input: {
+  preAdminReviewPatch?: Record<string, unknown> | null;
+  postAdminReviewPatch?: Record<string, unknown> | null;
+}) {
+  const hasPreReview = Object.keys(input.preAdminReviewPatch || {}).length > 0;
+  const hasPostReview = Object.keys(input.postAdminReviewPatch || {}).length > 0;
+  if (hasPreReview && hasPostReview) return 'admin_mixed' as const;
+  if (hasPreReview) return 'admin_pre' as const;
+  if (hasPostReview) return 'admin_post' as const;
+  return 'none' as const;
+}
 
 export function initialDossierEditWorkflow(input: {
   ownerProfileId?: string | null;

@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  dossierAdminReviewMode,
   dossierEditAdminReviewReady,
   effectiveDossierOwnerResponseStatus,
   initialDossierEditWorkflow,
   ownerLoggedInDuringDossierResponseWindow,
+  partitionDossierEditPatch,
 } from '../api/dossierEditWorkflow.js';
 
 const NOW = new Date('2026-07-11T12:00:00.000Z');
@@ -44,4 +46,27 @@ test('只把提交后三天窗口内的上线记录视为本人已上线', () =>
   assert.equal(ownerLoggedInDuringDossierResponseWindow({ ...base, ownerLastSeenAt: '2026-07-11T11:59:59.000Z' }), false);
   assert.equal(ownerLoggedInDuringDossierResponseWindow({ ...base, ownerLastSeenAt: '2026-07-14T12:00:01.000Z' }), false);
   assert.equal(ownerLoggedInDuringDossierResponseWindow({ ...base, ownerLastSeenAt: null }), false);
+});
+
+test('档案字段按免审、后审和前审拆分', () => {
+  const partition = partitionDossierEditPatch({
+    height_cm: 170,
+    weight_kg: 60,
+    mbti: 'INTJ',
+    zodiac: '天蝎座',
+    city: '保定',
+    bio: '自由填写的人物简介',
+    tags: ['情感本'],
+  });
+  assert.deepEqual(partition.noAdminReviewPatch, {
+    height_cm: 170,
+    weight_kg: 60,
+    mbti: 'INTJ',
+    zodiac: '天蝎座',
+  });
+  assert.deepEqual(partition.postAdminReviewPatch, { city: '保定' });
+  assert.deepEqual(partition.preAdminReviewPatch, { bio: '自由填写的人物简介', tags: ['情感本'] });
+  assert.equal(dossierAdminReviewMode(partition), 'admin_mixed');
+  assert.equal(dossierAdminReviewMode({ preAdminReviewPatch: {}, postAdminReviewPatch: { city: '上海' } }), 'admin_post');
+  assert.equal(dossierAdminReviewMode({ preAdminReviewPatch: {}, postAdminReviewPatch: {} }), 'none');
 });

@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   dossierComparableValue,
   dossierPatchForOwnerConsent,
+  normalizeDossierIntegerInput,
   normalizeDossierCareerHistory,
   normalizeDossierNamedRefs,
   normalizeDossierPhotos,
@@ -58,4 +59,13 @@ test('对象与数组比较不受键顺序影响', () => {
     dossierComparableValue([{ id: 'one', name: '泡泡' }]),
     dossierComparableValue([{ name: '泡泡', id: 'one' }]),
   );
+});
+
+test('身高体重只接受范围内的十进制整数', () => {
+  assert.equal(normalizeDossierIntegerInput('170', 100, 250, '身高'), 170);
+  assert.equal(normalizeDossierIntegerInput(60, 30, 300, '体重'), 60);
+  assert.throws(() => normalizeDossierIntegerInput('170.5', 100, 250, '身高'), /必须填写整数/);
+  assert.throws(() => normalizeDossierIntegerInput('1e2', 30, 300, '体重'), /必须填写整数/);
+  assert.throws(() => normalizeDossierIntegerInput('29', 30, 300, '体重'), /格式不正确/);
+  assert.throws(() => normalizeDossierIntegerInput('251', 100, 250, '身高'), /格式不正确/);
 });

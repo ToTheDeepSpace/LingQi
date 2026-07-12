@@ -76,6 +76,10 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
     update({ careerHistory: value.careerHistory.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry) });
   };
 
+  const updateIntegerDraft = (field: 'heightCm' | 'weightKg', next: string) => {
+    if (/^\d*$/.test(next)) update({ [field]: next });
+  };
+
   return (
     <>
       <section style={sectionStyle}>
@@ -88,10 +92,10 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
             <input type="number" min={1900} max={new Date().getFullYear()} value={value.birthYear} onChange={event => update({ birthYear: event.target.value })} disabled={sensitiveMode === 'unavailable'} style={inputStyle} />
           </Field>
           <Field label="身高（cm）">
-            <input type="number" min={100} max={250} value={value.heightCm} onChange={event => update({ heightCm: event.target.value })} disabled={sensitiveMode === 'unavailable'} style={inputStyle} />
+            <input type="number" min={100} max={250} step={1} inputMode="numeric" value={value.heightCm} onKeyDown={blockNonIntegerKey} onChange={event => updateIntegerDraft('heightCm', event.target.value)} disabled={sensitiveMode === 'unavailable'} style={inputStyle} />
           </Field>
           <Field label="体重（kg）">
-            <input type="number" min={25} max={300} step="0.1" value={value.weightKg} onChange={event => update({ weightKg: event.target.value })} disabled={sensitiveMode === 'unavailable'} style={inputStyle} />
+            <input type="number" min={30} max={300} step={1} inputMode="numeric" value={value.weightKg} onKeyDown={blockNonIntegerKey} onChange={event => updateIntegerDraft('weightKg', event.target.value)} disabled={sensitiveMode === 'unavailable'} style={inputStyle} />
           </Field>
           <Field label="MBTI">
             <select value={value.mbti} onChange={event => update({ mbti: event.target.value })} style={inputStyle}>
@@ -203,6 +207,11 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
       </section>
     </>
   );
+
+}
+
+function blockNonIntegerKey(event: React.KeyboardEvent<HTMLInputElement>) {
+  if (['e', 'E', '+', '-', '.'].includes(event.key)) event.preventDefault();
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
