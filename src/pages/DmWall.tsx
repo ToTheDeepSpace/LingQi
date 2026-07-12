@@ -18,6 +18,7 @@ import { extractSharedUrl } from '../lib/socialLinks';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import type { DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
 import type { DmGraphDossier } from '../components/DmRelationshipGraph';
+import { dmAffiliationLabel, dmClaimLabel, type PublicDmAffiliation } from '../lib/dmDossierPresentation';
 
 const DmRelationshipGraph = lazy(() => import('../components/DmRelationshipGraph'));
 
@@ -66,11 +67,11 @@ type DmDossier = {
   related_stores?: DossierNamedRef[];
   claim_status?: 'unclaimed' | 'pending' | 'approved' | 'rejected' | 'withdrawn';
   claimed_by?: string | null;
-  affiliation?: {
-    status: 'approved' | 'pending' | 'legacy_unverified';
-    store_name?: string | null;
-    source?: 'store_confirmed' | 'self_declared' | 'community_unverified' | 'legacy_unverified';
+  affiliation?: PublicDmAffiliation & {
+    id?: string | null;
+    store_city?: string | null;
     reviewed_at?: string | null;
+    confirmed_at?: string | null;
   } | null;
   created_at?: string;
   rating_summary?: {
@@ -161,23 +162,6 @@ function matchesRatingFilter(item: DmDossier, filter: RatingFilter) {
   if (filter === '4.0') return hasRatings && Number(summary?.avg || 0) >= 4;
   if (filter === '4.5') return hasRatings && Number(summary?.avg || 0) >= 4.5;
   return true;
-}
-
-function dossierClaimLabel(status?: DmDossier['claim_status']) {
-  if (status === 'approved') return '已认证';
-  if (status === 'pending') return '审核中';
-  if (status === 'withdrawn') return '已撤销';
-  return '未认证';
-}
-
-function dmAffiliationLabel(item: DmDossier) {
-  if (item.affiliation?.status === 'approved') return `${item.affiliation.store_name || '店家'}已确认任职`;
-  if (item.affiliation?.status === 'pending') return item.affiliation.source === 'community_unverified'
-    ? `社区补充：${item.affiliation.store_name || '店家'}（未核验）`
-    : `本人声明：${item.affiliation.store_name || '店家'}（未核验）`;
-  if (item.affiliation?.status === 'legacy_unverified') return `历史资料：${item.affiliation.store_name || '店家'}（未核验）`;
-  if (item.employment_status === 'freelance') return '自由 DM（本人声明）';
-  return '暂无已确认店家';
 }
 
 function shouldSaveDossierDraft(data: DossierDraft) {
@@ -501,31 +485,35 @@ export default function DmWall() {
           <div className="dm-dossier-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
             {visibleItems.map(item => {
               const kind = normalizeEntityType(item.entity_type);
-              const copy = ENTITY_COPY[kind];
               const dossierHref = kind === 'store' ? `/stores/${encodeURIComponent(item.id)}` : `/dm/${encodeURIComponent(item.id)}`;
               const displayTags = dossierDisplayTags(item);
               const hasRatings = kind === 'dm' && item.rating_summary && item.rating_summary.player_count > 0 && item.rating_summary.avg !== null;
+              const affiliationText = dmAffiliationLabel({
+                affiliation: item.affiliation,
+                claimStatus: item.claim_status,
+                employmentStatus: item.employment_status,
+              });
+              const showClaimStatus = ['approved', 'pending', 'withdrawn'].includes(item.claim_status || '');
               return (
                 <article key={item.id} className="dm-dossier-card" style={cardStyle}>
                   <Link to={dossierHref} aria-label={`查看${item.dm_name}${copy.kindLabel}专属页`} style={cardOverlayLinkStyle} />
                   <div className="dm-dossier-summary">
                     <img className="dm-dossier-photo" src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" style={{ objectPosition: `${item.photo_focus_x ?? 50}% ${item.photo_focus_y ?? 25}%` }} />
                     <div className="dm-dossier-summary-copy">
-                      <div className="dm-dossier-title-row" style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
-                        <span style={{ ...badgeStyle, color: '#275389', background: 'rgba(239,246,255,0.88)' }}>{copy.kindLabel}</span>
-                        <h2 style={{ margin: 0, fontSize: 17 }}>{item.dm_name}</h2>
-                        <span style={{ ...badgeStyle, color: item.claim_status === 'approved' ? '#15803d' : item.claim_status === 'withdrawn' ? '#9f1239' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : item.claim_status === 'withdrawn' ? 'rgba(255,228,230,0.76)' : 'rgba(166,106,31,0.10)' }}>
-                          {dossierClaimLabel(item.claim_status)}
+                      <div className="dm-dossier-title-row" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap', overflow: 'hidden', marginBottom: 6 }}>
+                        <h2 style={{ margin: 0, fontSize: 17, flex: '0 0 auto' }}>{item.dm_name}</h2>
+                        <span className="dm-dossier-inline-meta" title={`${item.city || '未知城市'} · ${affiliationText}`} style={{ minWidth: 0, flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: MUTED, fontSize: 11.5, fontWeight: 700 }}>
+                          {item.city || '未知城市'} · {affiliationText}
                         </span>
+                        {showClaimStatus && <span className="dm-dossier-status-badge" style={{ ...badgeStyle, flex: '0 0 auto', color: item.claim_status === 'approved' ? '#15803d' : item.claim_status === 'withdrawn' ? '#9f1239' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : item.claim_status === 'withdrawn' ? 'rgba(255,228,230,0.76)' : 'rgba(166,106,31,0.10)' }}>
+                          {dmClaimLabel(item.claim_status)}
+                        </span>}
                         {item.claim_status !== 'approved' && item.claim_status !== 'pending' && item.claim_status !== 'withdrawn' && (
-                          <button type="button" onClick={() => openClaim(item)} style={claimButtonStyle}>
-                            {kind === 'store' ? '店家认领' : '本人认领'}
+                          <button type="button" title="本人认领" onClick={() => openClaim(item)} style={{ ...claimButtonStyle, flex: '0 0 auto' }}>
+                            认领
                           </button>
                         )}
                       </div>
-                      <p className="dm-dossier-location" style={{ margin: '0 0 6px', color: MUTED, lineHeight: 1.55, fontSize: 13 }}>
-                        {item.city || '未知城市'} · {kind === 'dm' ? dmAffiliationLabel(item) : item.workplace || '店铺位置待补充'}
-                      </p>
                       {item.note && <p className="dm-dossier-note" style={{ margin: 0, color: 'rgba(31,41,55,0.74)', lineHeight: 1.55, fontSize: 13 }}>{item.note}</p>}
                     </div>
                   </div>
@@ -615,7 +603,7 @@ export default function DmWall() {
           .dm-dossier-title-row h2 {
             font-size: 16px !important;
           }
-          .dm-dossier-title-row span {
+          .dm-dossier-title-row .dm-dossier-status-badge {
             padding: 2px 6px !important;
             font-size: 10px !important;
           }

@@ -11,6 +11,7 @@ import AffiliationDisputeModal from '../components/AffiliationDisputeModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import type { DossierCareerEntry, DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
+import { dmAffiliationLabel } from '../lib/dmDossierPresentation';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -120,16 +121,12 @@ export default function DmProfile() {
   const claimStatusLabel = dossier.claim_status === 'approved'
     ? 'DM 身份已认证'
     : dossier.claim_status === 'pending' ? '身份认证审核中'
-      : dossier.claim_status === 'withdrawn' ? '原身份认证已撤销' : '未认证 DM 档案';
-  const affiliationLabel = dossier.affiliation?.status === 'approved'
-    ? `${dossier.affiliation.store_name || '店家'}已确认任职`
-    : dossier.affiliation?.status === 'pending'
-      ? dossier.affiliation.source === 'community_unverified'
-        ? `社区补充：任职于${dossier.affiliation.store_name || '店家'}（未核验）`
-        : `本人声明任职于${dossier.affiliation.store_name || '店家'}（未核验）`
-      : dossier.affiliation?.status === 'legacy_unverified'
-        ? `历史资料：任职于${dossier.affiliation.store_name || '店家'}（未核验）`
-        : dossier.employment_status === 'freelance' ? '自由 DM（本人声明）' : '暂无已确认店家';
+      : dossier.claim_status === 'withdrawn' ? '原身份认证已撤销' : '未认领 DM 档案';
+  const affiliationLabel = dmAffiliationLabel({
+    affiliation: dossier.affiliation,
+    claimStatus: dossier.claim_status,
+    employmentStatus: dossier.employment_status,
+  });
   const photos = dossier.photo_files && dossier.photo_files.length > 0
     ? dossier.photo_files
     : [{ url: dossier.photo_url || generatedAvatarDataUrl(dossier.dm_name, dossier.id), caption: null, focus_x: dossier.photo_focus_x ?? 50, focus_y: dossier.photo_focus_y ?? 25 }];

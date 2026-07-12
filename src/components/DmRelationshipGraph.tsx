@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import ForceGraph2D from 'react-force-graph-2d';
 import type { ForceGraphMethods, GraphData, NodeObject } from 'react-force-graph-2d';
 import type { DossierNamedRef } from '../lib/dossierWiki';
+import type { PublicDmAffiliation } from '../lib/dmDossierPresentation';
 
 type GraphNodeKind = 'dm' | 'store' | 'tag' | 'script' | 'profile';
 
@@ -17,6 +18,7 @@ export type DmGraphDossier = {
   common_scripts?: DossierNamedRef[];
   related_profiles?: DossierNamedRef[];
   related_stores?: DossierNamedRef[];
+  affiliation?: PublicDmAffiliation | null;
 };
 
 type GraphNode = {
@@ -31,6 +33,7 @@ type GraphLink = {
   source: string;
   target: string;
   kind: 'tag' | 'store' | 'script' | 'profile';
+  verification: 'confirmed' | 'unverified' | 'reference';
 };
 
 const NODE_COLORS: Record<GraphNodeKind, string> = {
@@ -51,9 +54,9 @@ function buildGraph(items: DmGraphDossier[]): GraphData<GraphNode, GraphLink> {
   const addNode = (node: GraphNode) => {
     if (!nodes.has(node.id)) nodes.set(node.id, node);
   };
-  const addLink = (source: string, target: string, kind: GraphLink['kind']) => {
+  const addLink = (source: string, target: string, kind: GraphLink['kind'], verification: GraphLink['verification'] = 'reference') => {
     const key = `${source}|${target}|${kind}`;
-    if (!links.has(key)) links.set(key, { source, target, kind });
+    if (!links.has(key)) links.set(key, { source, target, kind, verification });
   };
 
   items.forEach(item => {
@@ -82,14 +85,21 @@ function buildGraph(items: DmGraphDossier[]): GraphData<GraphNode, GraphLink> {
       addLink(sourceId, nodeId, 'script');
     });
 
-    const linkedStores = [...(item.related_stores || [])];
-    if (item.employer_store_id && item.workplace && !linkedStores.some(store => store.id === item.employer_store_id)) {
-      linkedStores.unshift({ id: item.employer_store_id, name: item.workplace });
+    const linkedStores = new Map<string, DossierNamedRef & { verification: GraphLink['verification'] }>();
+    (item.related_stores || []).forEach(store => linkedStores.set(store.id, { ...store, verification: 'reference' }));
+    if (item.affiliation?.store_dossier_id) {
+      linkedStores.set(item.affiliation.store_dossier_id, {
+        id: item.affiliation.store_dossier_id,
+        name: item.affiliation.store_name || item.workplace || '关联店家',
+        verification: item.affiliation.status === 'approved' ? 'confirmed' : 'unverified',
+      });
+    } else if (item.employer_store_id && item.workplace) {
+      linkedStores.set(item.employer_store_id, { id: item.employer_store_id, name: item.workplace, verification: 'unverified' });
     }
-    linkedStores.slice(0, 12).forEach(store => {
+    Array.from(linkedStores.values()).slice(0, 12).forEach(store => {
       const nodeId = `store:${store.id}`;
       addNode({ id: nodeId, label: store.name, kind: 'store', href: `/stores/${encodeURIComponent(store.id)}`, val: 6 });
-      addLink(sourceId, nodeId, 'store');
+      addLink(sourceId, nodeId, 'store', store.verification);
     });
 
     (item.related_profiles || []).slice(0, 12).forEach(profile => {
@@ -146,6 +156,7 @@ export default function DmRelationshipGraph({ items }: { items: DmGraphDossier[]
           </span>
         ))}
         <span style={{ marginLeft: 'auto', color: '#64748b', fontSize: 12 }}>{graphData.nodes.length} 个节点</span>
+        <span style={{ color: '#8a5a19', fontSize: 11, fontWeight: 700 }}>橙色虚线＝待核验店家关系</span>
       </div>
       <div ref={containerRef} style={{ width: '100%', height, overflow: 'hidden' }}>
         <ForceGraph2D<GraphNode, GraphLink>
@@ -169,8 +180,11 @@ export default function DmRelationshipGraph({ items }: { items: DmGraphDossier[]
             context.fillStyle = '#1f2937';
             context.fillText(label, node.x || 0, (node.y || 0) + Math.sqrt(node.val) * 4 + 3, 130 / globalScale);
           }}
-          linkColor={() => 'rgba(100,116,139,0.28)'}
-          linkWidth={1}
+          linkColor={link => link.verification === 'confirmed'
+            ? 'rgba(40,115,93,0.62)'
+            : link.verification === 'unverified' ? 'rgba(183,121,31,0.72)' : 'rgba(100,116,139,0.28)'}
+          linkWidth={link => link.kind === 'store' ? 1.5 : 1}
+          linkLineDash={link => link.verification === 'unverified' ? [5, 4] : []}
           cooldownTicks={120}
           d3VelocityDecay={0.32}
           minZoom={0.35}
