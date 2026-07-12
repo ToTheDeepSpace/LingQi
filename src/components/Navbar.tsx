@@ -171,7 +171,7 @@ export default function Navbar() {
         }}>
           <NavLink to="/dm">DM评分</NavLink>
           <NavLink to="/stores">店家评分</NavLink>
-          <NavLink to="/commissions">委托需求</NavLink>
+          <NavLink to="/commissions">找/接委托</NavLink>
           <NavLink to="/carpools">拼车区</NavLink>
           <NavLink to="/rankings">红黑榜</NavLink>
           <NavLink to="/scripts">角色点评</NavLink>
@@ -271,7 +271,7 @@ export default function Navbar() {
           <MobileLink to="/dm" onClick={() => setMenuOpen(false)}>DM评分</MobileLink>
           <MobileLink to="/dm/rate" onClick={() => setMenuOpen(false)}>给DM评分</MobileLink>
           <MobileLink to="/stores" onClick={() => setMenuOpen(false)}>店家评分</MobileLink>
-          <MobileLink to="/commissions" onClick={() => setMenuOpen(false)}>委托需求</MobileLink>
+          <MobileLink to="/commissions" onClick={() => setMenuOpen(false)}>找/接委托</MobileLink>
           <MobileLink to="/carpools" onClick={() => setMenuOpen(false)}>拼车区</MobileLink>
           <MobileLink to="/rankings" onClick={() => setMenuOpen(false)}>红黑榜</MobileLink>
           <MobileLink to="/scripts" onClick={() => setMenuOpen(false)}>角色点评</MobileLink>

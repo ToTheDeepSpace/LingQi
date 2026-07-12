@@ -2,16 +2,15 @@ import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { Creator, PaginatedResponse } from '../types';
 import { CITIES } from '../constants/cities';
-import InfoTip from '../components/InfoTip';
 import { getJsonCached } from '../lib/apiCache';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { creatorEntryPath } from '../lib/authSession';
 import { primaryDisplayIdentityRole } from '../lib/serviceCategories';
 import { formatTravelStatus } from '../lib/travelStatus';
+import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
+import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 
 const API = '/api';
-const C = '#fffdf8';
-const C2 = '#eef6ff';
 const GOLD = '#d9a857';
 const PAPER = '#1f2937';
 const PAPER_DIM = 'rgba(71,85,105,0.76)';
@@ -116,58 +115,33 @@ export default function Explore() {
     return roles.has(key);
   };
   const filtered = filter === 'all' ? creators : creators.filter(c => hasIdentity(c, filter));
-  const creatorCountText = loading ? '正在加载' : `${filtered.length} 位可委托`;
-
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: PAPER }}>
-      <div style={{
-        background: `radial-gradient(circle at 16% 0%, rgba(217,168,87,0.16), transparent 34%), linear-gradient(135deg, ${C2}, #fffaf2)`,
-        borderBottom: '1px solid rgba(217,168,87,0.2)',
-        padding: '52px 20px 34px',
-      }}>
-        <div style={{ maxWidth: 1080, margin: '0 auto' }}>
-          <div className="gold-line" style={{ marginBottom: 16 }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 24, flexWrap: 'wrap' }}>
-            <div style={{ maxWidth: 690 }}>
-              <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.85rem, 4vw, 2.75rem)', marginBottom: 10, color: PAPER }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  服务主页
-                  <InfoTip>这里只展示已经提交并通过服务审核的人。查看主页、档期、可接城市和社交展示；想要指定角色或日期，也可以先去委托需求墙挂一段愿望。</InfoTip>
-                </span>
-              </h1>
-            </div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <Link to="/commissions" style={secondaryAction}>委托需求墙</Link>
-              <Link to={entryPath} className="btn-gold" style={{ padding: '10px 20px', textDecoration: 'none', fontSize: '0.9rem' }}>
-                创建服务主页
-              </Link>
-            </div>
+    <JumuluPageFrame currentLabel="服务者">
+      <JumuluCompactHeader
+        eyebrow="服务者主页"
+        title="找合适的人接委托"
+        description="按身份和城市查看已经审核上架的服务、报价、档期与个人主页。"
+        aside={
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Link to="/commissions" style={jumuluSecondaryLinkStyle}>查看委托</Link>
+            <Link to={entryPath} style={jumuluPrimaryLinkStyle}>上架我的服务</Link>
           </div>
+        }
+      />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 28 }}>
-            <Metric label="当前筛选" value={filter === 'all' ? '全部身份' : FILTERS.find(f => f.key === filter)?.label || filter} />
-            <Metric label="城市" value={city === 'all' ? '全国' : city} />
-            <Metric label="结果" value={creatorCountText} />
-          </div>
-        </div>
-      </div>
-
-      <div style={{ maxWidth: 1080, margin: '0 auto', padding: '28px 20px 80px' }}>
-        <div style={{ display: 'flex', gap: 14, marginBottom: 24, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+      <section style={jumuluFilterPanelStyle}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, minWidth: 0 }}>
             {FILTERS.map(({ key, label }) => {
               const active = filter === key;
               return (
                 <button key={key} onClick={() => setFilterAndReset(key)}
                   style={{
-                    minHeight: 36,
-                    padding: '8px 15px',
-                    borderRadius: 999,
-                    fontSize: '0.875rem',
+                    minHeight: 36, padding: '8px 13px', borderRadius: 7, fontSize: '0.82rem',
                     cursor: 'pointer',
                     fontWeight: active ? 800 : 600,
                     border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.14)',
-                    background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.82)',
+                    background: active ? 'rgba(217,168,87,0.16)' : '#fff',
                     color: active ? '#925f18' : 'rgba(71,85,105,0.78)',
                   }}>
                   {label}
@@ -186,7 +160,14 @@ export default function Explore() {
             onClose={() => setCityOpen(false)}
           />
         </div>
+        {!loading && !error && (
+          <p style={{ margin: '10px 0 0', color: PAPER_DIM, fontSize: 12 }}>
+            当前显示 {filtered.length} 位服务者{city !== 'all' ? ` · ${city}` : ''}
+          </p>
+        )}
+      </section>
 
+      <section>
         {error && (
           <div style={stateWrap}>
             <div style={{ fontSize: 34, marginBottom: 14, color: GOLD }}>✦</div>
@@ -199,7 +180,7 @@ export default function Explore() {
             <p style={{ color: 'rgba(252,165,165,0.86)', fontSize: '0.84rem', marginBottom: 22 }}>{error}</p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
               <button onClick={() => window.location.reload()} style={textButton}>重新加载</button>
-              <Link to="/commissions/new" style={secondaryAction}>发布委托需求</Link>
+              <Link to="/commissions/new" style={jumuluSecondaryLinkStyle}>发布委托需求</Link>
             </div>
           </div>
         )}
@@ -222,8 +203,8 @@ export default function Explore() {
                 可以先发布一条委托需求，让合适的人来回应你；也可以自己入驻，提交服务并通过审核后再出现在这里。
               </p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <Link to="/commissions/new" className="btn-gold" style={{ padding: '10px 20px', textDecoration: 'none' }}>发布委托需求</Link>
-                <Link to={entryPath} style={secondaryAction}>我要入驻</Link>
+                <Link to="/commissions/new" style={jumuluPrimaryLinkStyle}>发布委托需求</Link>
+                <Link to={entryPath} style={jumuluSecondaryLinkStyle}>我要入驻</Link>
               </div>
             </div>
           </div>
@@ -231,7 +212,7 @@ export default function Explore() {
 
         {!loading && !error && filtered.length > 0 && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))', gap: 12 }}>
               {filtered.map(c => (
                 <Link key={c.id} to={`/explore/${c.id}`} style={{ textDecoration: 'none' }}>
                   <CreatorCard creator={c} />
@@ -248,10 +229,10 @@ export default function Explore() {
             )}
           </>
         )}
-      </div>
+      </section>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+    </JumuluPageFrame>
   );
 }
 
@@ -371,32 +352,14 @@ function CreatorCard({ creator }: { creator: Creator }) {
   const tags = Array.isArray(creator.tags) ? creator.tags : [];
   const travelStatus = creator.travel_status ? formatTravelStatus(creator.travel_status, creator.city) : '';
   const availableCities = Array.isArray(creator.available_cities) ? creator.available_cities : [];
+  const services = Array.isArray(creator.services) ? creator.services : [];
 
   return (
-    <article className="content-card" style={{
-      minHeight: 210,
-      background: 'linear-gradient(180deg, #ffffff, #fffaf2)',
-      border: '1px solid rgba(217,168,87,0.2)',
-      borderRadius: 8,
-      padding: 18,
-      transition: 'transform 0.18s ease, border-color 0.18s ease, background 0.18s ease',
-      cursor: 'pointer',
-      boxShadow: '0 12px 30px rgba(31,41,55,0.06)',
-    }}
-      onMouseEnter={e => {
-        e.currentTarget.style.background = 'linear-gradient(180deg, #ffffff, #fff7ed)';
-        e.currentTarget.style.borderColor = 'rgba(217,168,87,0.42)';
-        e.currentTarget.style.transform = 'translateY(-2px)';
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.background = 'linear-gradient(180deg, #ffffff, #fffaf2)';
-        e.currentTarget.style.borderColor = 'rgba(217,168,87,0.2)';
-        e.currentTarget.style.transform = 'none';
-      }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+    <article className="content-card" style={{ ...jumuluCardStyle, minHeight: 168, padding: 14, display: 'grid', alignContent: 'start', gap: 10, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
         <div style={{
-          width: 58,
-          height: 58,
+          width: 52,
+          height: 52,
           borderRadius: 8,
           flexShrink: 0,
           background: 'linear-gradient(135deg, rgba(217,168,87,0.24), rgba(107,63,160,0.16))',
@@ -415,49 +378,40 @@ function CreatorCard({ creator }: { creator: Creator }) {
             style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${creator.avatar_focus_x ?? 50}% ${creator.avatar_focus_y ?? 25}%` }}
           />
         </div>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <h2 style={{ fontWeight: 900, fontSize: '1rem', color: PAPER, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
               {creator.display_name}
             </h2>
             {creator.is_realname && <span style={{ color: GOLD, fontSize: '0.74rem', flexShrink: 0 }}>⭐</span>}
           </div>
-          <div style={{ fontSize: '0.8rem', color: PAPER_DIM, marginTop: 4 }}>
+          <div style={{ fontSize: '0.78rem', color: PAPER_DIM, marginTop: 3 }}>
             {creator.city || '地点待补'} · {role}
           </div>
         </div>
       </div>
 
-      {creator.bio ? (
-        <p style={{ fontSize: '0.86rem', color: 'rgba(71,85,105,0.76)', lineHeight: 1.75, marginBottom: 14, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-          {creator.bio}
-        </p>
-      ) : (
-        <p style={{ fontSize: '0.86rem', color: 'rgba(71,85,105,0.64)', lineHeight: 1.75, marginBottom: 14 }}>
-          主页资料还在补全中，可以先查看档期、服务与联系方式入口。
-        </p>
-      )}
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-        {travelStatus && <Tag>{travelStatus}</Tag>}
-        {creator.contact_unlock_enabled && <Tag>预约意向金</Tag>}
-        {availableCities.slice(0, 2).map(c => <Tag key={c}>{c}</Tag>)}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {services.slice(0, 3).map(service => (
+          <span key={service.id} style={{ padding: '5px 8px', borderRadius: 6, background: '#fffaf2', border: '1px solid rgba(217,168,87,0.2)', color: '#65401c', fontSize: '0.76rem', fontWeight: 800 }}>
+            {service.service_type} · ¥{Number(service.price).toFixed(Number(service.price) % 1 === 0 ? 0 : 2)}
+          </span>
+        ))}
+        {services.length > 3 && <span style={{ color: PAPER_DIM, fontSize: '0.74rem', alignSelf: 'center' }}>+{services.length - 3} 项</span>}
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {tags.slice(0, 4).map(t => <Tag key={t} muted>{t}</Tag>)}
-        {tags.length > 4 && <span style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.75rem', alignSelf: 'center' }}>+{tags.length - 4}</span>}
+        {travelStatus && <Tag>{travelStatus}</Tag>}
+        {availableCities.slice(0, 2).map(c => <Tag key={c}>{c}</Tag>)}
+        {creator.contact_unlock_enabled && <Tag>可联系</Tag>}
       </div>
-    </article>
-  );
-}
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ border: '1px solid rgba(217,168,87,0.18)', background: 'rgba(255,255,255,0.76)', borderRadius: 8, padding: '12px 14px' }}>
-      <div style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', marginBottom: 4 }}>{label}</div>
-      <div style={{ color: PAPER, fontWeight: 900, fontSize: '0.96rem' }}>{value}</div>
-    </div>
+      {(creator.bio || tags.length > 0) && (
+        <p style={{ margin: 0, fontSize: '0.79rem', color: PAPER_DIM, lineHeight: 1.55, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {creator.bio || tags.slice(0, 3).join(' · ')}
+        </p>
+      )}
+    </article>
   );
 }
 
@@ -496,16 +450,6 @@ function PageBtn({ children, onClick, disabled }: { children: React.ReactNode; o
   );
 }
 
-const secondaryAction: React.CSSProperties = {
-  padding: '10px 18px',
-  borderRadius: 8,
-  border: '1px solid rgba(217,168,87,0.28)',
-  color: GOLD,
-  textDecoration: 'none',
-  fontSize: '0.9rem',
-  fontWeight: 800,
-};
-
 const stateWrap: React.CSSProperties = {
   textAlign: 'center',
   maxWidth: 560,
@@ -513,7 +457,7 @@ const stateWrap: React.CSSProperties = {
   padding: '48px 22px',
   borderRadius: 8,
   border: '1px solid rgba(217,168,87,0.2)',
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,250,242,0.82))',
+  background: '#fff',
 };
 
 const textButton: React.CSSProperties = {

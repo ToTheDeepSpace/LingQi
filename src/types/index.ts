@@ -34,6 +34,7 @@ export interface Creator {
   has_pending_shop_cert?: boolean;
   has_pending_dm_cert?: boolean;
   role_preferences?: ProfileRolePreference[];
+  services?: Service[];
 }
 
 export interface ProfileRolePreference {

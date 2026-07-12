@@ -2603,6 +2603,7 @@ async function applyPublicReview(review: PublicReviewRecord, reviewerId: string 
         price,
         duration: cleanText(item.duration, 120) || null,
         description: cleanText(item.description, 1000) || null,
+        is_active: true,
       };
     }).filter(item => item.creator_id && item.service_type && item.price !== null);
     if (rows.length === 0) throw new Error('审核记录缺少服务项目');
@@ -5211,7 +5212,7 @@ app.get('/api/lc/creators', async (req, res) => {
 
     const { data: serviceRows, error: serviceErr } = await supabase
       .from('lc_services')
-      .select('creator_id, service_type')
+      .select('id, creator_id, service_type, price, duration, description, is_active')
       .eq('is_active', true);
     if (serviceErr) throw serviceErr;
 
@@ -5219,11 +5220,24 @@ app.get('/api/lc/creators', async (req, res) => {
       .map((row: { creator_id?: string | null }) => row.creator_id)
       .filter((id): id is string => Boolean(id))));
     const serviceTypesByCreator = new Map<string, string[]>();
-    for (const row of (serviceRows || []) as Array<{ creator_id?: string | null; service_type?: string | null }>) {
+    const servicesByCreator = new Map<string, Record<string, unknown>[]>();
+    for (const row of (serviceRows || []) as Array<Record<string, unknown>>) {
       if (!row.creator_id) continue;
-      const current = serviceTypesByCreator.get(row.creator_id) || [];
-      current.push(row.service_type || '');
-      serviceTypesByCreator.set(row.creator_id, current);
+      const creatorId = String(row.creator_id);
+      const current = serviceTypesByCreator.get(creatorId) || [];
+      current.push(cleanText(row.service_type, 80));
+      serviceTypesByCreator.set(creatorId, current);
+      const creatorServices = servicesByCreator.get(creatorId) || [];
+      creatorServices.push({
+        id: row.id,
+        creator_id: creatorId,
+        service_type: cleanText(row.service_type, 80),
+        price: row.price,
+        duration: cleanText(row.duration, 120) || null,
+        description: cleanText(row.description, 1000) || null,
+        is_active: true,
+      });
+      servicesByCreator.set(creatorId, creatorServices);
     }
 
     if (serviceCreatorIds.length === 0) {
@@ -5258,6 +5272,7 @@ app.get('/api/lc/creators', async (req, res) => {
         return sanitizeProfile({
           ...profile,
           identity_roles: mergeIdentityRoles(profile.identity_roles, serviceRoles),
+          services: servicesByCreator.get(String(profile.id)) || [],
         });
       }),
       total,
