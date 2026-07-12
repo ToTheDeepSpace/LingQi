@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
-import { ReputationBadge, ReputationButton, ReputationHubShell } from '../components/ReputationHubChrome';
+import { ReputationHubShell } from '../components/ReputationHubChrome';
+import { JumuluCompactHeader } from '../components/JumuluPageChrome';
+import { jumuluFilterPanelStyle, jumuluPrimaryLinkStyle } from '../styles/jumuluPageStyles';
 import { flattenScriptRoles, matchesRoleSearch, roleKindLabel } from '../lib/scriptRoleCatalog';
 import type { ScriptCatalogItem } from '../types';
 
@@ -55,28 +57,23 @@ export default function Scripts() {
 
   return (
     <ReputationHubShell active="roles">
-      <section className="role-rating-header" style={headerStyle}>
-        <div style={{ display: 'grid', gap: 10 }}>
-          <ReputationBadge>角色口碑</ReputationBadge>
-          <div>
-            <h1 style={titleStyle}>已有角色评分</h1>
-            <p style={descriptionStyle}>先看角色的综合评分和评价人数，点击角色再查看全部评价。</p>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gap: 9 }}>
-          <label style={searchLabelStyle}>
-            <span style={searchCaptionStyle}>搜索角色或剧本</span>
-            <input
-              value={query}
-              onChange={event => setQuery(event.target.value)}
-              placeholder="例如：祝魇 / 琳琅"
-              style={searchInputStyle}
-            />
-          </label>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <ReputationButton to="/scripts/rate" tone="gold">添加角色评分</ReputationButton>
-          </div>
-        </div>
+      <JumuluCompactHeader
+        eyebrow="沉浸式娱乐角色评分"
+        title="角色点评"
+        description="查看角色的综合评分和评价人数，进入角色详情可阅读全部公开评价。"
+        aside={<Link to="/scripts/rate" style={jumuluPrimaryLinkStyle}>添加角色评分</Link>}
+      />
+
+      <section style={jumuluFilterPanelStyle}>
+        <label style={searchLabelStyle}>
+          <span style={searchCaptionStyle}>搜索角色或剧本</span>
+          <input
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="例如：祝魇 / 琳琅"
+            style={searchInputStyle}
+          />
+        </label>
       </section>
 
       {loading && <StatePanel>正在加载角色评分...</StatePanel>}
@@ -113,7 +110,6 @@ export default function Scripts() {
           <Link to="/scripts/rate" style={emptyActionStyle}>添加角色评分</Link>
         </StatePanel>
       )}
-      <style>{`@media (max-width: 680px) { .role-rating-header { grid-template-columns: 1fr !important; } }`}</style>
     </ReputationHubShell>
   );
 }
@@ -126,20 +122,11 @@ function StatePanel({ children, tone = 'normal' }: { children: React.ReactNode; 
   );
 }
 
-const headerStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 360px)',
-  gap: 18,
-  alignItems: 'end',
-  padding: '18px 4px 8px',
-};
-const titleStyle: React.CSSProperties = { margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', lineHeight: 1.12, color: INK };
-const descriptionStyle: React.CSSProperties = { margin: '8px 0 0', color: MUTED, lineHeight: 1.65, fontSize: 14 };
 const searchLabelStyle: React.CSSProperties = { display: 'grid', gap: 7 };
 const searchCaptionStyle: React.CSSProperties = { color: '#526170', fontSize: 12, fontWeight: 900 };
 const searchInputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', minHeight: 44, border: '1px solid rgba(39,83,137,0.18)', borderRadius: 7, padding: '0 13px', background: '#fff', color: INK, fontSize: 14 };
 const roleGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 10 };
-const roleCardStyle: React.CSSProperties = { minHeight: 126, display: 'flex', justifyContent: 'space-between', gap: 16, padding: 16, border: '1px solid rgba(31,41,55,0.09)', borderRadius: 8, background: '#fff', color: INK, textDecoration: 'none', boxShadow: '0 6px 18px rgba(31,41,55,0.04)' };
+const roleCardStyle: React.CSSProperties = { minHeight: 126, display: 'flex', justifyContent: 'space-between', gap: 16, padding: 14, border: '1px solid rgba(31,41,55,0.08)', borderRadius: 8, background: '#fff', color: INK, textDecoration: 'none', boxShadow: 'none' };
 const roleMetaStyle: React.CSSProperties = { color: '#657383', fontSize: 11, fontWeight: 900 };
 const roleNameStyle: React.CSSProperties = { margin: '7px 0 0', fontSize: 20, lineHeight: 1.2, overflowWrap: 'anywhere' };
 const scriptNameStyle: React.CSSProperties = { margin: '8px 0 0', color: BLUE, fontSize: 13, lineHeight: 1.4, fontWeight: 800, overflowWrap: 'anywhere' };

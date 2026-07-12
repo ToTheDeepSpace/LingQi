@@ -13,7 +13,9 @@ import {
 } from '../lib/postLoginFlow';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal, { type ReportTargetType } from '../components/ReportModal';
-import { ReputationButton, ReputationHubShell } from '../components/ReputationHubChrome';
+import { ReputationHubShell } from '../components/ReputationHubChrome';
+import { JumuluCompactHeader } from '../components/JumuluPageChrome';
+import { jumuluFilterPanelStyle, jumuluPrimaryLinkStyle } from '../styles/jumuluPageStyles';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import { cityReputationTitle } from '../lib/reputationNaming';
 
@@ -223,45 +225,14 @@ function hubToggleStyle(active: boolean, color: string): React.CSSProperties {
   };
 }
 
-const compactHeroStyle: React.CSSProperties = {
-  minHeight: 88,
-  borderRadius: 12,
-  border: '1px solid rgba(31,41,55,0.08)',
-  background: '#fff',
-  padding: '18px 18px',
+const filterBarStyle: React.CSSProperties = {
+  ...jumuluFilterPanelStyle,
+  minHeight: 52,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: 16,
+  gap: 12,
   flexWrap: 'wrap',
-};
-
-const compactTitleStyle: React.CSSProperties = {
-  margin: 0,
-  fontFamily: 'var(--font-serif)',
-  fontSize: 'clamp(1.9rem, 3.2vw, 2.45rem)',
-  lineHeight: 1.05,
-  letterSpacing: 0,
-};
-
-const compactLeadStyle: React.CSSProperties = {
-  margin: '6px 0 0',
-  color: 'rgba(31,41,55,0.72)',
-  lineHeight: 1.55,
-  fontSize: 14,
-  fontWeight: 700,
-};
-
-const filterBarStyle: React.CSSProperties = {
-  minHeight: 54,
-  display: 'flex',
-  alignItems: 'center',
-  gap: 16,
-  flexWrap: 'wrap',
-  padding: '10px 12px',
-  borderRadius: 10,
-  background: '#f8fafc',
-  border: '1px solid rgba(31,41,55,0.06)',
 };
 
 const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
@@ -599,7 +570,7 @@ function CityFilter({
             border: '1px solid rgba(166,106,31,0.22)',
             boxShadow: '0 18px 48px rgba(102,70,30,0.18)',
             '--ranking-city-panel-top': `${mobilePanelTop}px`,
-          }}
+          } as React.CSSProperties & { '--ranking-city-panel-top': string }}
             onWheel={e => e.stopPropagation()}
             onTouchMove={e => e.stopPropagation()}>
             <input
@@ -1333,7 +1304,7 @@ export default function Rankings() {
 	  ) : null;
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: '#1f2937' }}>
+    <div style={{ backgroundColor: '#fffdf8', minHeight: '100vh', color: '#1f2937' }}>
       {showOnboarding && (
         <div style={{
           position: 'fixed',
@@ -1419,12 +1390,11 @@ export default function Rankings() {
         cityHref={cityReputationHref}
         currentLabel="红黑榜"
       >
-        <section style={compactHeroStyle}>
-          <div>
-            <h1 style={compactTitleStyle}>剧幕录·红黑榜</h1>
-            <p style={compactLeadStyle}>红黑榜是评分榜的事件媒介。口碑票看真实人数，真金榜只看用户自愿投入的正向榜金；两套数据分开判断。</p>
-          </div>
-          <div style={filterGroupStyle}>
+        <JumuluCompactHeader
+          eyebrow="沉浸式娱乐事件口碑"
+          title="红黑榜"
+          description="记录值得推荐、需要提醒和应当留档的具体事件；口碑票与正向榜金分开统计。"
+          aside={<div style={filterGroupStyle}>
             {auth && (
               <Link to="/wallet" style={walletChipStyle}>
                 {walletLoading ? '榜金 ...' : `榜金 ${balance || 0}`}
@@ -1432,9 +1402,9 @@ export default function Rankings() {
             )}
             <button onClick={() => setBoardMode('reputation')} style={hubToggleStyle(boardMode === 'reputation', '#275389')}>口碑榜</button>
             <button onClick={() => setBoardMode('money')} style={hubToggleStyle(boardMode === 'money', GOLD)}>真金榜</button>
-            <ReputationButton to="/rankings/new">发布评价</ReputationButton>
-          </div>
-        </section>
+            <Link to="/rankings/new" style={jumuluPrimaryLinkStyle}>发布评价</Link>
+          </div>}
+        />
 
         <section style={filterBarStyle}>
           <div style={filterGroupStyle}>
