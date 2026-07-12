@@ -5,6 +5,8 @@ import DossierClaimModal from '../components/DossierClaimModal';
 import DossierEditModal from '../components/DossierEditModal';
 import ProfileNameLink from '../components/ProfileNameLink';
 import DmGiftModal from '../components/DmGiftModal';
+import RatingDiscussion from '../components/RatingDiscussion';
+import type { RatingOfficialResponse, RatingReaction } from '../components/RatingDiscussion';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import type { DossierCareerEntry, DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
@@ -51,7 +53,7 @@ type DmDetail = {
     } | null;
   };
   summary: { avg: number | null; review_count: number; player_count: number; sample_status: 'insufficient' | 'stable' };
-  ratings: Array<{ id: string; profile_id?: string | null; profile_name: string; script_name: string; store_dossier_id?: string | null; store_name: string; played_on: string; replay_number: number; rating: number; content: string; tags?: string[] }>;
+  ratings: Array<{ id: string; profile_id?: string | null; profile_name: string; script_name: string; store_dossier_id?: string | null; store_name: string; played_on: string; replay_number: number; rating: number; content: string; tags?: string[]; reaction: RatingReaction; official_response?: RatingOfficialResponse | null }>;
   reputation_summary: { event_count: number; red_count: number; black_count: number; white_count: number };
   reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; poster_id?: string | null; event_date?: string | null; event_script_name?: string | null; event_store_name?: string | null; created_at: string }>;
   chanto_summary?: { total: number; gift_count: number; supporter_count: number; recent: Array<{ id: string; amount: number; supporter_name: string; created_at: string }> };
@@ -60,6 +62,7 @@ type DmDetail = {
 export default function DmProfile() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const auth = readStoredCreatorAuth();
   const [data, setData] = useState<DmDetail | null>(null);
   const [error, setError] = useState('');
   const [claimOpen, setClaimOpen] = useState(false);
@@ -73,7 +76,10 @@ export default function DmProfile() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`${API}/lc/dm-dossiers/${encodeURIComponent(id)}`, { signal: controller.signal })
+    fetch(`${API}/lc/dm-dossiers/${encodeURIComponent(id)}`, {
+      signal: controller.signal,
+      headers: auth?.token ? { Authorization: `Bearer ${auth.token}` } : undefined,
+    })
       .then(async response => ({ response, body: await response.json() }))
       .then(({ response, body }) => {
         if (!response.ok || !body.success) throw new Error(body.error || 'DM档案加载失败');
@@ -84,7 +90,7 @@ export default function DmProfile() {
         if (reason?.name !== 'AbortError') setError(reason instanceof Error ? reason.message : 'DM档案加载失败');
       });
     return () => controller.abort();
-  }, [id]);
+  }, [id, auth?.token]);
 
   useEffect(() => {
     if (!lightboxPhoto) return;
@@ -105,7 +111,6 @@ export default function DmProfile() {
 
   const { dossier, summary, ratings, reputation_summary: reputationSummary = { event_count: 0, red_count: 0, black_count: 0, white_count: 0 }, reputation_events: reputationEvents = [], chanto_summary: chantoSummary = { total: 0, gift_count: 0, supporter_count: 0, recent: [] } } = data;
   const scoreText = summary.player_count === 0 ? '暂无评分' : `${summary.avg?.toFixed(1)} / 5`;
-  const auth = readStoredCreatorAuth();
   const isOwner = Boolean(dossier.claimed_by && dossier.claimed_by === auth?.id);
   const claimStatusLabel = dossier.claim_status === 'approved'
     ? 'DM 身份已认证'
@@ -261,6 +266,15 @@ export default function DmProfile() {
               </div>
               <p style={{ margin: '10px 0 0', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{item.content}</p>
               {item.tags && item.tags.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>{item.tags.map(tag => <span key={tag} style={tagStyle}>#{tag}</span>)}</div>}
+              <RatingDiscussion
+                ratingType="dm"
+                ratingId={item.id}
+                token={auth?.token}
+                reaction={item.reaction}
+                officialResponse={item.official_response}
+                canOfficialRespond={isOwner}
+                canFollowUp={Boolean(auth?.id && item.profile_id === auth.id)}
+              />
             </article>)}
           </div>}
         </section>

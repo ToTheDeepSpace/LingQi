@@ -383,7 +383,7 @@ type SiteMessage = {
 
 type PublicReview = {
   id: string;
-  target_type: 'profile_update' | 'dossier_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert' | 'entity_rating_upsert';
+  target_type: 'profile_update' | 'dossier_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert' | 'entity_rating_upsert' | 'rating_discussion_create';
   profile_id?: string | null;
   profile_name?: string | null;
   title?: string | null;
@@ -596,6 +596,7 @@ function publicReviewTypeLabel(type: string) {
   if (type === 'tag_create') return '公开标签';
   if (type === 'script_rating_upsert') return '剧本评分';
   if (type === 'entity_rating_upsert') return '角色评分';
+  if (type === 'rating_discussion_create') return '评价回应';
   return '公开内容';
 }
 

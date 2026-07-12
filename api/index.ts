@@ -1819,7 +1819,8 @@ type PublicReviewTargetType =
   | 'availability_create'
   | 'tag_create'
   | 'script_rating_upsert'
-  | 'entity_rating_upsert';
+  | 'entity_rating_upsert'
+  | 'rating_discussion_create';
 
 type PublicReviewRecord = {
   id: string;
@@ -2705,6 +2706,19 @@ async function applyPublicReview(review: PublicReviewRecord, reviewerId: string 
       updated_at: new Date().toISOString(),
     }, { onConflict: 'target_type,target_id,profile_id' });
     if (upsertErr) throw upsertErr;
+    return;
+  }
+  if (review.target_type === 'rating_discussion_create') {
+    const nodeId = cleanText(payload.node_id, 80);
+    if (!nodeId) throw new Error('审核记录缺少评价回应节点');
+    const { error: updateErr } = await supabase.from('lc_rating_discussion_nodes').update({
+      status: 'approved',
+      reviewed_by: reviewerId,
+      reviewed_at: new Date().toISOString(),
+      review_note: null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', nodeId).eq('status', 'pending');
+    if (updateErr) throw updateErr;
     return;
   }
   throw new Error('未知公开审核类型');
@@ -7969,6 +7983,19 @@ app.put('/api/lc/admin/public-reviews/:id/reject', authMiddleware, adminMiddlewa
       && ['admin_post', 'admin_mixed'].includes(cleanText(rejectedPayload.review_mode, 30))) {
       rejectedPayload = await rollbackDossierPostReview(reviewResult.data as PublicReviewRecord, rejectedPayload);
     }
+    if (reviewResult.data.target_type === 'rating_discussion_create') {
+      const nodeId = cleanText(rejectedPayload.node_id, 80);
+      if (nodeId) {
+        const nodeResult = await supabase.from('lc_rating_discussion_nodes').update({
+          status: 'rejected',
+          reviewed_by: reviewerId,
+          reviewed_at: new Date().toISOString(),
+          review_note: rejectReason,
+          updated_at: new Date().toISOString(),
+        }).eq('id', nodeId).eq('status', 'pending');
+        if (nodeResult.error) throw nodeResult.error;
+      }
+    }
     const { error: updErr } = await supabase.from('lc_public_reviews')
       .update({
         payload: rejectedPayload,
@@ -9440,6 +9467,167 @@ function collectPublicRatingTags(rows: Record<string, unknown>[]) {
   return tags;
 }
 
+type RatingDiscussionType = 'dm' | 'store';
+type RatingReactionTargetType = 'dm_rating' | 'store_rating' | 'discussion_node';
+
+function ratingSource(type: RatingDiscussionType) {
+  return type === 'dm'
+    ? { table: 'lc_dm_ratings', dossierColumn: 'dm_dossier_id', dossierType: 'dm', label: 'DM' }
+    : { table: 'lc_store_ratings', dossierColumn: 'store_dossier_id', dossierType: 'store', label: '店家' };
+}
+
+function publicRatingReaction(votes: Record<string, unknown>[], profileId: string | null) {
+  return {
+    likes: votes.filter(vote => vote.vote_type === 'like').length,
+    dislikes: votes.filter(vote => vote.vote_type === 'dislike').length,
+    my_vote: profileId ? (votes.find(vote => vote.profile_id === profileId)?.vote_type || null) : null,
+  };
+}
+
+async function loadRatingDiscussionPayload(
+  ratingType: RatingDiscussionType,
+  ratingRows: Record<string, unknown>[],
+  profileId: string | null,
+) {
+  const ratingIds = ratingRows.map(row => String(row.id || '')).filter(Boolean);
+  const empty = new Map<string, Record<string, unknown>>();
+  if (ratingIds.length === 0) return empty;
+
+  const nodeResult = await supabase.from('lc_rating_discussion_nodes')
+    .select('*')
+    .eq('rating_type', ratingType)
+    .in('rating_id', ratingIds)
+    .eq('status', 'approved')
+    .order('created_at', { ascending: true });
+  if (nodeResult.error && !isMissingRelation(nodeResult.error, 'lc_rating_discussion_nodes')) throw nodeResult.error;
+  const nodes = nodeResult.error ? [] : (nodeResult.data || []) as Record<string, unknown>[];
+  const ratingTargetType = ratingType === 'dm' ? 'dm_rating' : 'store_rating';
+  const nodeIds = nodes.map(node => String(node.id || '')).filter(Boolean);
+  const voteTargetIds = [...ratingIds, ...nodeIds];
+  const voteResult = await supabase.from('lc_rating_reaction_votes')
+    .select('target_type, target_id, profile_id, vote_type')
+    .in('target_id', voteTargetIds)
+    .limit(10000);
+  if (voteResult.error && !isMissingRelation(voteResult.error, 'lc_rating_reaction_votes')) throw voteResult.error;
+  const votes = voteResult.error ? [] : (voteResult.data || []) as Record<string, unknown>[];
+  const votesFor = (targetType: RatingReactionTargetType, targetId: string) => votes.filter(vote => vote.target_type === targetType && vote.target_id === targetId);
+
+  const result = new Map<string, Record<string, unknown>>();
+  ratingRows.forEach(row => {
+    const ratingId = String(row.id || '');
+    const official = nodes.find(node => node.rating_id === ratingId && node.node_type === 'official_response');
+    const followup = official
+      ? nodes.find(node => node.parent_id === official.id && node.node_type === 'reviewer_followup')
+      : null;
+    const publicNode = (node: Record<string, unknown> | null | undefined) => node ? {
+      id: node.id,
+      content: node.content,
+      profile_id: node.is_anonymous ? null : node.profile_id,
+      profile_name: node.is_anonymous ? '匿名玩家' : node.profile_name,
+      created_at: node.created_at,
+      reaction: publicRatingReaction(votesFor('discussion_node', String(node.id || '')), profileId),
+    } : null;
+    result.set(ratingId, {
+      reaction: publicRatingReaction(votesFor(ratingTargetType, ratingId), profileId),
+      official_response: official ? {
+        ...publicNode(official),
+        reviewer_followup: publicNode(followup),
+      } : null,
+    });
+  });
+  return result;
+}
+
+async function findPublicRating(type: RatingDiscussionType, ratingId: string) {
+  const source = ratingSource(type);
+  const ratingResult = await supabase.from(source.table).select('*').eq('id', ratingId).eq('status', 'approved').maybeSingle();
+  if (ratingResult.error) throw ratingResult.error;
+  if (!ratingResult.data) return null;
+  const dossierId = cleanText(ratingResult.data[source.dossierColumn], 80);
+  const dossierResult = await supabase.from('lc_dm_dossiers').select('id, dm_name, entity_type, claim_status, claimed_by, status')
+    .eq('id', dossierId).eq('entity_type', source.dossierType).eq('status', 'approved').maybeSingle();
+  if (dossierResult.error) throw dossierResult.error;
+  if (!dossierResult.data) return null;
+  return { rating: ratingResult.data as Record<string, unknown>, dossier: dossierResult.data as Record<string, unknown>, source };
+}
+
+async function createRatingDiscussionNode(req: express.Request, res: express.Response, nodeType: 'official_response' | 'reviewer_followup') {
+  const ratingType = cleanText(req.params.ratingType, 20) as RatingDiscussionType;
+  if (ratingType !== 'dm' && ratingType !== 'store') return res.status(400).json(err(new Error('评价类型不正确')));
+  const profile = await getAuthedProfile(req);
+  if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+  const speakBlock = getSpeakBlockReason(profile);
+  if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+  const content = cleanText(req.body?.content, 1000);
+  if (content.length < 4) return res.status(400).json(err(new Error('回应至少填写 4 个字')));
+  const target = await findPublicRating(ratingType, req.params.ratingId);
+  if (!target) return res.status(404).json(err(new Error('评价不存在或尚未公开')));
+
+  let parentId: string | null = null;
+  let isAnonymous = false;
+  if (nodeType === 'official_response') {
+    if (target.dossier.claim_status !== 'approved' || target.dossier.claimed_by !== profile.id) {
+      return res.status(403).json(err(new Error(`只有这份${target.source.label}档案的已认证认领人可以回应`)));
+    }
+  } else {
+    if (target.rating.profile_id !== profile.id) return res.status(403).json(err(new Error('只有原评价发布人可以补充回应')));
+    const officialResult = await supabase.from('lc_rating_discussion_nodes').select('id')
+      .eq('rating_type', ratingType).eq('rating_id', req.params.ratingId)
+      .eq('node_type', 'official_response').eq('status', 'approved').maybeSingle();
+    if (officialResult.error) throw officialResult.error;
+    if (!officialResult.data) return res.status(409).json(err(new Error('对方回应审核通过后才能补充回应')));
+    parentId = String(officialResult.data.id);
+    isAnonymous = cleanText(target.rating.profile_name, 120) === '匿名玩家';
+  }
+
+  const existingQuery = supabase.from('lc_rating_discussion_nodes').select('id, status')
+    .eq('rating_type', ratingType).eq('rating_id', req.params.ratingId).eq('node_type', nodeType).neq('status', 'rejected');
+  const existingResult = parentId ? await existingQuery.eq('parent_id', parentId).maybeSingle() : await existingQuery.maybeSingle();
+  if (existingResult.error) throw existingResult.error;
+  if (existingResult.data) return res.status(409).json(err(new Error(existingResult.data.status === 'pending' ? '这条回应正在审核中' : '这条评价已经回应过了')));
+
+  const moderationPrecheck = runLocalModerationPrecheck({
+    scene: nodeType === 'official_response' ? 'rating_official_response' : 'rating_reviewer_followup',
+    targetType: 'rating_discussion',
+    texts: { content },
+  });
+  const nodeResult = await supabase.from('lc_rating_discussion_nodes').insert({
+    rating_type: ratingType,
+    rating_id: req.params.ratingId,
+    node_type: nodeType,
+    parent_id: parentId,
+    profile_id: profile.id,
+    profile_name: cleanText(profile.display_name, 120) || '用户',
+    is_anonymous: isAnonymous,
+    content,
+    status: 'pending',
+    moderation_precheck: moderationPrecheck,
+  }).select('*').single();
+  if (nodeResult.error) throw nodeResult.error;
+  try {
+    const review = await createPublicReview({
+      targetType: 'rating_discussion_create',
+      profile,
+      title: `${target.source.label}${nodeType === 'official_response' ? '回应评价' : '评价人补充回应'}：${cleanText(target.dossier.dm_name, 80)}`,
+      summary: content,
+      payload: {
+        node_id: nodeResult.data.id,
+        rating_type: ratingType,
+        rating_id: req.params.ratingId,
+        node_type: nodeType,
+        dossier_id: target.dossier.id,
+        dossier_name: target.dossier.dm_name,
+        content,
+      },
+      moderationPrecheck,
+    });
+    return res.status(202).json(ok(publicReviewAcceptedResponse(review)));
+  } catch (reviewError) {
+    await supabase.from('lc_rating_discussion_nodes').delete().eq('id', nodeResult.data.id);
+    throw reviewError;
+  }
+}
+
 app.get('/api/lc/dm-dossiers', async (req, res) => {
   try {
     await processDueDossierOwnerReviews();
@@ -9451,8 +9639,7 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       .select('*')
       .eq('status', 'approved')
       .order('approved_at', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false })
-      .limit(120);
+      .order('created_at', { ascending: false });
     if (city && city !== 'all') query = query.eq('city', city);
     if (entityType === 'dm' || entityType === 'store') query = query.eq('entity_type', entityType);
     if (q) query = query.ilike('dm_name', `%${q}%`);
@@ -9461,7 +9648,15 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
       if (isMissingRelation(error, 'lc_dm_dossiers')) return res.json(ok([]));
       throw error;
     }
-    const dossierRows = (data || []) as Record<string, unknown>[];
+    let dossierRows = (data || []) as Record<string, unknown>[];
+    if (entityType === 'dm') {
+      dossierRows = [...dossierRows].sort((left, right) => {
+        const leftHasImage = Boolean(cleanText(left.photo_url, 600) || publicDossierPhotoFiles(left).length);
+        const rightHasImage = Boolean(cleanText(right.photo_url, 600) || publicDossierPhotoFiles(right).length);
+        return Number(rightHasImage) - Number(leftHasImage);
+      });
+    }
+    dossierRows = dossierRows.slice(0, 120);
     const dossierIds = dossierRows.map(row => String(row.id || '')).filter(Boolean);
     let dmRatingRows: Record<string, unknown>[] = [];
     let storeRatingRows: Record<string, unknown>[] = [];
@@ -9650,6 +9845,7 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
       .limit(100);
     if (ratingResult.error && !isMissingRelation(ratingResult.error, 'lc_dm_ratings')) throw ratingResult.error;
     const rows = ratingResult.error ? [] : (ratingResult.data || []) as Record<string, unknown>[];
+    const ratingDiscussions = await loadRatingDiscussionPayload('dm', rows, getOptionalCreatorId(req));
     const rankingResult = await supabase.from('lc_rankings')
       .select('*')
       .eq('subject_dossier_id', req.params.id)
@@ -9723,6 +9919,7 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
         content: row.content,
         tags: row.tags || [],
         created_at: row.created_at,
+        ...(ratingDiscussions.get(String(row.id || '')) || {}),
       })),
     }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -9902,6 +10099,7 @@ app.get('/api/lc/store-dossiers/:id', async (req, res) => {
       .limit(100);
     if (ratingResult.error && !isMissingRelation(ratingResult.error, 'lc_store_ratings')) throw ratingResult.error;
     const rows = ratingResult.error ? [] : (ratingResult.data || []) as Record<string, unknown>[];
+    const ratingDiscussions = await loadRatingDiscussionPayload('store', rows, getOptionalCreatorId(req));
     const rankingResult = await supabase.from('lc_rankings')
       .select('*')
       .eq('subject_dossier_id', req.params.id)
@@ -9941,8 +10139,70 @@ app.get('/api/lc/store-dossiers/:id', async (req, res) => {
         content: row.content,
         tags: row.tags || [],
         created_at: row.created_at,
+        ...(ratingDiscussions.get(String(row.id || '')) || {}),
       })),
     }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/rating-discussions/:ratingType/:ratingId/official-response', authMiddleware, async (req, res) => {
+  try {
+    await createRatingDiscussionNode(req, res, 'official_response');
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/rating-discussions/:ratingType/:ratingId/follow-up', authMiddleware, async (req, res) => {
+  try {
+    await createRatingDiscussionNode(req, res, 'reviewer_followup');
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/rating-reactions/:targetType/:targetId', authMiddleware, async (req, res) => {
+  try {
+    const targetType = cleanText(req.params.targetType, 30) as RatingReactionTargetType;
+    const targetId = cleanText(req.params.targetId, 80);
+    const voteType = cleanText(req.body?.voteType ?? req.body?.vote_type, 20);
+    if (!['dm_rating', 'store_rating', 'discussion_node'].includes(targetType)) {
+      return res.status(400).json(err(new Error('赞踩对象不正确')));
+    }
+    if (voteType !== 'like' && voteType !== 'dislike') return res.status(400).json(err(new Error('请选择赞或踩')));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    if (targetType === 'discussion_node') {
+      const nodeResult = await supabase.from('lc_rating_discussion_nodes').select('id, rating_type, rating_id')
+        .eq('id', targetId).eq('status', 'approved').maybeSingle();
+      if (nodeResult.error) throw nodeResult.error;
+      if (!nodeResult.data || !await findPublicRating(nodeResult.data.rating_type as RatingDiscussionType, String(nodeResult.data.rating_id))) {
+        return res.status(404).json(err(new Error('回应不存在或尚未公开')));
+      }
+    } else {
+      const ratingType: RatingDiscussionType = targetType === 'dm_rating' ? 'dm' : 'store';
+      if (!await findPublicRating(ratingType, targetId)) return res.status(404).json(err(new Error('评价不存在或尚未公开')));
+    }
+
+    const existingResult = await supabase.from('lc_rating_reaction_votes').select('id, vote_type')
+      .eq('target_type', targetType).eq('target_id', targetId).eq('profile_id', profile.id).maybeSingle();
+    if (existingResult.error) throw existingResult.error;
+    let myVote: string | null = voteType;
+    if (existingResult.data?.vote_type === voteType) {
+      const deleteResult = await supabase.from('lc_rating_reaction_votes').delete().eq('id', existingResult.data.id);
+      if (deleteResult.error) throw deleteResult.error;
+      myVote = null;
+    } else {
+      const upsertResult = await supabase.from('lc_rating_reaction_votes').upsert({
+        target_type: targetType,
+        target_id: targetId,
+        profile_id: profile.id,
+        vote_type: voteType,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'target_type,target_id,profile_id' });
+      if (upsertResult.error) throw upsertResult.error;
+    }
+    const aggregateResult = await supabase.from('lc_rating_reaction_votes').select('profile_id, vote_type')
+      .eq('target_type', targetType).eq('target_id', targetId).limit(10000);
+    if (aggregateResult.error) throw aggregateResult.error;
+    res.json(ok({ ...publicRatingReaction((aggregateResult.data || []) as Record<string, unknown>[], profile.id), my_vote: myVote }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

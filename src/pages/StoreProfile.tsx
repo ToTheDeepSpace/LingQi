@@ -3,6 +3,8 @@ import type React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DossierEditModal from '../components/DossierEditModal';
 import ProfileNameLink from '../components/ProfileNameLink';
+import RatingDiscussion from '../components/RatingDiscussion';
+import type { RatingOfficialResponse, RatingReaction } from '../components/RatingDiscussion';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { JumuluPageFrame } from '../components/JumuluPageChrome';
@@ -30,7 +32,7 @@ type StoreDetail = {
     claimed_by?: string | null;
   };
   summary: { avg: number | null; review_count: number; player_count: number; sample_status: 'insufficient' | 'stable' };
-  ratings: Array<{ id: string; profile_id?: string | null; profile_name: string; script_name: string; visited_on: string; rating: number; content: string; tags?: string[] }>;
+  ratings: Array<{ id: string; profile_id?: string | null; profile_name: string; script_name: string; visited_on: string; rating: number; content: string; tags?: string[]; reaction: RatingReaction; official_response?: RatingOfficialResponse | null }>;
   reputation_summary: { event_count: number; red_count: number; black_count: number; white_count: number };
   reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; poster_id?: string | null; event_date?: string | null; event_script_name?: string | null; created_at: string }>;
 };
@@ -48,7 +50,10 @@ export default function StoreProfile() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`${API}/lc/store-dossiers/${encodeURIComponent(id)}`, { signal: controller.signal })
+    fetch(`${API}/lc/store-dossiers/${encodeURIComponent(id)}`, {
+      signal: controller.signal,
+      headers: auth?.token ? { Authorization: `Bearer ${auth.token}` } : undefined,
+    })
       .then(response => response.json().then(payload => ({ response, payload })))
       .then(({ response, payload }) => {
         if (!response.ok || !payload.success) throw new Error(payload.error || '店家档案加载失败');
@@ -63,7 +68,7 @@ export default function StoreProfile() {
         if (!controller.signal.aborted) setLoadedId(id);
       });
     return () => controller.abort();
-  }, [id]);
+  }, [id, auth?.token]);
 
   return (
     <JumuluPageFrame
@@ -114,6 +119,15 @@ export default function StoreProfile() {
                     <p style={proofStyle}>《{item.script_name}》 · {item.visited_on}</p>
                     <p style={contentStyle}>{item.content}</p>
                     {item.tags && item.tags.length > 0 && <div style={tagRowStyle}>{item.tags.map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}</div>}
+                    <RatingDiscussion
+                      ratingType="store"
+                      ratingId={item.id}
+                      token={auth?.token}
+                      reaction={item.reaction}
+                      officialResponse={item.official_response}
+                      canOfficialRespond={Boolean(data.dossier.claimed_by && data.dossier.claimed_by === auth?.id)}
+                      canFollowUp={Boolean(auth?.id && item.profile_id === auth.id)}
+                    />
                   </article>
                 ))}
                 {data.ratings.length === 0 && <div style={emptyStyle}>还没有公开的到店评分。</div>}
