@@ -53,7 +53,7 @@ import {
   mergeIdentityRoles,
 } from '../src/lib/serviceCategories.js';
 import {
-  dossierComparableValue,
+  dossierFieldComparableValue,
   dossierPatchForOwnerConsent,
   dossierSensitiveFieldsInPatch,
   MAX_DOSSIER_COMMON_SCRIPTS,
@@ -2042,8 +2042,8 @@ function normalizeDmPersonalityValue(value: unknown, allowed: readonly string[],
 const DM_AFFILIATION_EDIT_FIELDS = new Set(['workplace', 'employment_status', 'employer_store_id']);
 const DOSSIER_JSONB_EDIT_FIELDS = new Set(['photo_files', 'common_scripts', 'career_history', 'related_profiles', 'related_stores']);
 
-function dossierEditComparableValue(value: unknown) {
-  return dossierComparableValue(value);
+function dossierEditComparableValue(field: string, value: unknown) {
+  return dossierFieldComparableValue(field, value);
 }
 
 function dossierEditAdminBlockReason(payload: Record<string, unknown>, now = new Date()) {
@@ -2116,10 +2116,10 @@ async function applyDossierUpdateReview(
   const safePatch: Record<string, unknown> = {};
   for (const field of allowedFields) {
     if (!(field in consentResult.appliedPatch)) continue;
-    if (dossierEditComparableValue(dossier[field]) === dossierEditComparableValue(consentResult.appliedPatch[field])) {
+    if (dossierEditComparableValue(field, dossier[field]) === dossierEditComparableValue(field, consentResult.appliedPatch[field])) {
       continue;
     }
-    if (dossierEditComparableValue(dossier[field]) !== dossierEditComparableValue(beforeSnapshot[field])) {
+    if (dossierEditComparableValue(field, dossier[field]) !== dossierEditComparableValue(field, beforeSnapshot[field])) {
       throw new Error(`${DOSSIER_EDIT_FIELD_LABELS[field]}已被其他审核更新，请重新提交修改`);
     }
     safePatch[field] = consentResult.appliedPatch[field];
@@ -2193,10 +2193,10 @@ async function applyDossierUpdateReview(
           throw new Error('档案认领人已经变化，需要由新认领人重新确认');
         }
         for (const field of Object.keys(consentResult.appliedPatch)) {
-          if (dossierEditComparableValue(lockedDossier[field]) === dossierEditComparableValue(consentResult.appliedPatch[field])) {
+          if (dossierEditComparableValue(field, lockedDossier[field]) === dossierEditComparableValue(field, consentResult.appliedPatch[field])) {
             continue;
           }
-          if (dossierEditComparableValue(lockedDossier[field]) !== dossierEditComparableValue(beforeSnapshot[field])) {
+          if (dossierEditComparableValue(field, lockedDossier[field]) !== dossierEditComparableValue(field, beforeSnapshot[field])) {
             throw new Error(`${DOSSIER_EDIT_FIELD_LABELS[field] || field}已被其他审核更新，请重新提交修改`);
           }
         }
@@ -2479,7 +2479,7 @@ async function rollbackDossierPostReview(review: PublicReviewRecord, payload: Re
   const rollbackPatch: Record<string, unknown> = {};
   const skippedFields: string[] = [];
   for (const [field, appliedValue] of Object.entries(postReviewPatch)) {
-    if (dossierEditComparableValue(dossierResult.data[field]) !== dossierEditComparableValue(appliedValue)) {
+    if (dossierEditComparableValue(field, dossierResult.data[field]) !== dossierEditComparableValue(field, appliedValue)) {
       skippedFields.push(field);
       continue;
     }
@@ -10797,7 +10797,7 @@ async function normalizeDossierEditProposal(dossier: Record<string, unknown>, bo
   const patch: Record<string, unknown> = {};
   const changedFields: string[] = [];
   for (const [field, value] of Object.entries(proposed)) {
-    if (dossierEditComparableValue(beforeSnapshot[field as keyof typeof beforeSnapshot]) === dossierEditComparableValue(value)) continue;
+    if (dossierEditComparableValue(field, beforeSnapshot[field as keyof typeof beforeSnapshot]) === dossierEditComparableValue(field, value)) continue;
     patch[field] = value;
     changedFields.push(field);
   }

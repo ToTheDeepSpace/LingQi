@@ -162,3 +162,8 @@ export function dossierComparableValue(value: unknown) {
   if (typeof value === 'object') return JSON.stringify(stableValue(value));
   return String(value);
 }
+
+export function dossierFieldComparableValue(field: string, value: unknown) {
+  if (field === 'photo_files') return dossierComparableValue(normalizeDossierPhotos(value));
+  return dossierComparableValue(value);
+}

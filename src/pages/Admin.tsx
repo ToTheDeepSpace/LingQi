@@ -1307,13 +1307,22 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   };
 
   const approvePublicReview = async (id: string) => {
-    await fetch(`${API}/lc/admin/public-reviews/${id}/approve`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reviewNote: '公开内容审核通过' }),
-    });
-    setPublicReviews(prev => prev.filter(item => item.id !== id));
-    void loadData();
+    setError('');
+    try {
+      const response = await fetch(`${API}/lc/admin/public-reviews/${id}/approve`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewNote: '公开内容审核通过' }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '审核提交失败');
+      }
+      setPublicReviews(prev => prev.filter(item => item.id !== id));
+      void loadData();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : '审核提交失败');
+    }
   };
 
   const approveGuide = async (id: string) => {

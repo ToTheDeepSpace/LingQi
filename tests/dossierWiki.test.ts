@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   dossierComparableValue,
+  dossierFieldComparableValue,
   dossierPatchForOwnerConsent,
   normalizeDossierIntegerInput,
   normalizeDossierCareerHistory,
@@ -59,6 +60,22 @@ test('对象与数组比较不受键顺序影响', () => {
     dossierComparableValue([{ id: 'one', name: '泡泡' }]),
     dossierComparableValue([{ name: '泡泡', id: 'one' }]),
   );
+});
+
+test('照片缺省焦点与默认焦点在审核冲突检测中视为相同', () => {
+  const legacy = [{ url: 'https://example.com/a.jpg', name: 'DM照片', type: 'image/*' }];
+  const normalized = [{
+    url: 'https://example.com/a.jpg',
+    name: 'DM照片',
+    type: 'image/*',
+    caption: null,
+    focus_x: 50,
+    focus_y: 25,
+  }];
+  const changed = [{ ...normalized[0], focus_x: 56.03, focus_y: 10.95 }];
+
+  assert.equal(dossierFieldComparableValue('photo_files', legacy), dossierFieldComparableValue('photo_files', normalized));
+  assert.notEqual(dossierFieldComparableValue('photo_files', legacy), dossierFieldComparableValue('photo_files', changed));
 });
 
 test('身高体重只接受范围内的十进制整数', () => {

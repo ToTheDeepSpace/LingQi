@@ -1,6 +1,7 @@
 import pg from 'pg';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { resolveExactSelectCount } from './tencentPgCount.js';
 
 const { Pool, types } = pg;
 
@@ -401,10 +402,12 @@ class PgQueryBuilder {
   private async executeSelect(): Promise<AdapterResult> {
     const values: DbValue[] = [];
     const countRequested = this.selectOptions.count === 'exact';
+    let exactCount: number | null = null;
     if (countRequested) {
       const countSql = `SELECT count(*)::int AS count FROM ${quoteIdent(this.table)}${this.whereSql(values)}`;
       const countResult = await pool.query(countSql, values);
-      if (this.selectOptions.head) return { data: adapterData(null), error: null, count: countResult.rows[0]?.count || 0 };
+      exactCount = resolveExactSelectCount(true, countResult.rows[0]?.count);
+      if (this.selectOptions.head) return { data: adapterData(null), error: null, count: exactCount };
     }
 
     values.length = 0;
@@ -416,7 +419,7 @@ class PgQueryBuilder {
     rows = applyPostFilters(rows, this.postFilters());
     rows = rows.map(row => projectRow(row, parseBaseColumns(this.selectClause), relationSpecs));
     const data = this.formatRows(rows);
-    return { data, error: null, count: countRequested ? rows.length : null };
+    return { data, error: null, count: resolveExactSelectCount(countRequested, exactCount) };
   }
 
   private async executeInsert(): Promise<AdapterResult> {
