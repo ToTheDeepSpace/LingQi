@@ -217,6 +217,7 @@ type DossierOption = {
   employer_store_id?: string | null;
   photo_url?: string | null;
   photo_files?: ProofFile[] | null;
+  status?: string | null;
 };
 
 type CommentReview = {
@@ -553,13 +554,14 @@ type GuideWithdrawalReview = {
 };
 
 type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'dmRating' | 'storeRating' | 'publicReview' | 'guide' | 'guideWithdrawal';
-type Tab = 'allPending' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
-type AdminGroup = 'all' | 'dm' | 'store' | 'content' | 'finance' | 'appeals' | 'history' | 'accounts';
+type Tab = 'allPending' | 'siteData' | 'publishedDmDossiers' | 'publishedStoreDossiers' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
+type AdminGroup = 'all' | 'data' | 'dm' | 'store' | 'content' | 'finance' | 'appeals' | 'history' | 'accounts';
 
 function adminGroupForTab(tab: Tab): AdminGroup {
+  if (['siteData', 'publishedDmDossiers', 'publishedStoreDossiers', 'publishedRankings'].includes(tab)) return 'data';
   if (['dmDossiers', 'dmDossierEdits', 'dmCerts', 'dmRatings', 'dmWithdrawals'].includes(tab)) return 'dm';
   if (['storeDossiers', 'storeDossierEdits', 'storeCerts', 'storeRatings'].includes(tab)) return 'store';
-  if (['rankings', 'publishedRankings', 'publicReviews', 'comments', 'commissions', 'carpools', 'scriptContributions', 'guides'].includes(tab)) return 'content';
+  if (['rankings', 'publicReviews', 'comments', 'commissions', 'carpools', 'scriptContributions', 'guides'].includes(tab)) return 'content';
   if (['wallet', 'guideWithdrawals'].includes(tab)) return 'finance';
   if (['reports', 'messages', 'claims', 'requests'].includes(tab)) return 'appeals';
   if (tab === 'reviewHistory') return 'history';
@@ -1572,11 +1574,14 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   const activeGroup = adminGroupForTab(tab);
   const dmDossierItems = dmDossiers.filter(item => item.entity_type !== 'store');
   const storeDossierItems = dmDossiers.filter(item => item.entity_type === 'store');
+  const publishedDmDossiers = dossierOptions.filter(item => item.entity_type === 'dm');
+  const publishedStoreDossiers = dossierOptions.filter(item => item.entity_type === 'store');
   const dmDossierEdits = publicReviews.filter(item => item.target_type === 'dossier_update' && item.payload?.entity_type !== 'store');
   const storeDossierEdits = publicReviews.filter(item => item.target_type === 'dossier_update' && item.payload?.entity_type === 'store');
   const contentPublicReviews = publicReviews.filter(item => item.target_type !== 'dossier_update');
   const visiblePublicReviews = tab === 'dmDossierEdits' ? dmDossierEdits : tab === 'storeDossierEdits' ? storeDossierEdits : contentPublicReviews;
   const visibleDossiers = tab === 'storeDossiers' ? storeDossierItems : dmDossierItems;
+  const visiblePublishedDossiers = tab === 'publishedStoreDossiers' ? publishedStoreDossiers : publishedDmDossiers;
   const visibleCerts = certs.filter(item => tab === 'dmCerts' ? item.type === 'dm' : tab === 'storeCerts' ? item.type === 'shop' : item.type === 'realname');
   const historyEvents = securityEvents.filter(event => Boolean(ADMIN_REVIEW_ACTIONS[event.action]));
   const reviewHistoryById = new Map(reviewHistory.map(item => [item.id, item]));
@@ -1591,6 +1596,12 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   ].filter(item => item?.decision === 'review' || item?.decision === 'block').length;
 
   const groupTabs: Record<Exclude<AdminGroup, 'all' | 'history'>, Array<{ tab: Tab; label: string; count?: number }>> = {
+    data: [
+      { tab: 'siteData', label: '数据总览' },
+      { tab: 'publishedDmDossiers', label: 'DM档案', count: publishedDmDossiers.length },
+      { tab: 'publishedStoreDossiers', label: '店家档案', count: publishedStoreDossiers.length },
+      { tab: 'publishedRankings', label: '已发布榜单', count: approvedRankings.length },
+    ],
     dm: [
       { tab: 'dmDossiers', label: '建档 / 认领', count: dmDossierItems.length },
       { tab: 'dmDossierEdits', label: '资料修改', count: dmDossierEdits.length },
@@ -1612,7 +1623,6 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       { tab: 'carpools', label: '拼车', count: carpools.length },
       { tab: 'scriptContributions', label: '剧本库', count: scriptContributions.length },
       { tab: 'guides', label: '攻略', count: guides.length },
-      { tab: 'publishedRankings', label: '已发布榜单', count: approvedRankings.length },
     ],
     finance: [
       { tab: 'wallet', label: '充值', count: transactions.length },
@@ -1633,6 +1643,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   };
   const primaryGroups: Array<{ group: AdminGroup; label: string; tab: Tab; count?: number }> = [
     { group: 'all', label: '全部待审', tab: 'allPending', count: pendingReviewItems.length },
+    { group: 'data', label: '站内数据', tab: 'siteData', count: dossierOptions.length + approvedRankings.length + accountProfiles.length },
     { group: 'dm', label: 'DM审核', tab: 'dmDossiers', count: dmDossierItems.length + dmDossierEdits.length + dmRatings.length + dmIdentityWithdrawals.length + certs.filter(item => item.type === 'dm').length },
     { group: 'store', label: '店家审核', tab: 'storeDossiers', count: storeDossierItems.length + storeDossierEdits.length + storeRatings.length + certs.filter(item => item.type === 'shop').length },
     { group: 'content', label: '内容审核', tab: 'publicReviews', count: contentPublicReviews.length + rankings.length + comments.length + commissions.length + carpools.length + scriptContributions.length + guides.length },
@@ -1759,6 +1770,55 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               </div>
             ) : (
               <>
+            {tab === 'siteData' && (
+              <div style={{ ...card, padding: 18 }}>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 900, fontSize: '1rem', color: INK }}>网站数据总览</div>
+                  <div style={{ marginTop: 4, color: MUTED, fontSize: '0.8rem' }}>这里是已经存在或已经发布的数据；新提交仍在各审核分组处理。</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+                  {[
+                    { label: '账号', value: accountProfiles.length, next: 'accounts' as Tab },
+                    { label: 'DM档案', value: publishedDmDossiers.length, next: 'publishedDmDossiers' as Tab },
+                    { label: '店家档案', value: publishedStoreDossiers.length, next: 'publishedStoreDossiers' as Tab },
+                    { label: '已发布榜单', value: approvedRankings.length, next: 'publishedRankings' as Tab },
+                  ].map(item => (
+                    <button key={item.label} onClick={() => setTab(item.next)} style={{ minHeight: 84, padding: '14px 16px', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fffdf8', color: INK, cursor: 'pointer', textAlign: 'left' }}>
+                      <div style={{ color: MUTED, fontSize: '0.78rem', fontWeight: 800 }}>{item.label}</div>
+                      <div style={{ marginTop: 5, fontSize: '1.55rem', lineHeight: 1, fontWeight: 900 }}>{item.value}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {['publishedDmDossiers', 'publishedStoreDossiers'].includes(tab) && (
+              <ListEmpty empty={visiblePublishedDossiers.length === 0} text={tab === 'publishedStoreDossiers' ? '暂无店家档案' : '暂无DM档案'}>
+                {visiblePublishedDossiers.map(item => {
+                  const isStore = item.entity_type === 'store';
+                  const href = isStore ? `/stores/${item.id}` : `/dm/${item.id}`;
+                  const employer = !isStore && item.employer_store_id
+                    ? publishedStoreDossiers.find(store => store.id === item.employer_store_id)?.dm_name
+                    : null;
+                  return (
+                    <Row key={item.id} accent={isStore ? '#38bdf8' : '#f472b6'}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <TitleLine title={item.dm_name} pill={isStore ? '店家档案' : 'DM档案'} />
+                        <Meta>
+                          {item.city || '城市未填写'}
+                          {item.workplace ? ` · ${item.workplace}` : ''}
+                          {employer ? ` · 任职：${employer}` : ''}
+                        </Meta>
+                      </div>
+                      <Actions>
+                        <Link to={href} target="_blank" style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${LINE}`, background: SURFACE, color: INK, fontSize: '0.82rem', textDecoration: 'none', fontWeight: 800 }}>查看档案</Link>
+                      </Actions>
+                    </Row>
+                  );
+                })}
+              </ListEmpty>
+            )}
+
             {tab === 'allPending' && (
               <ListEmpty empty={pendingReviewItems.length === 0} text="没有待审核内容">
                 {pendingReviewItems.map(item => (
