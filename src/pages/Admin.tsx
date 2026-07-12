@@ -122,6 +122,24 @@ type Profile = {
   avatar_focus_y?: number;
 };
 
+type PrivateAccountDetails = {
+  id: string;
+  display_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  wechat?: string | null;
+  wechat_nickname?: string | null;
+  auth_provider?: string | null;
+};
+
+type PrivateAccountView = {
+  profile: Profile;
+  reason: string;
+  loading: boolean;
+  error: string;
+  details: PrivateAccountDetails | null;
+};
+
 function profileNickname(profile: Profile) {
   const name = profile.display_name?.trim();
   if (!name) return '未设置昵称';
@@ -148,6 +166,11 @@ function profileAuthProviderLabel(provider?: string | null) {
     codex_framer_snapshot: '内部测试账号',
   };
   return labels[provider] || '其他来源';
+}
+
+function securityActionLabel(action: string) {
+  if (action === 'admin_profile_private_view') return '管理员查看账号隐私信息';
+  return action;
 }
 
 function profileAccountById(profiles: Profile[], profileId?: string | null) {
@@ -314,7 +337,7 @@ type TransactionReview = {
   description: string;
   payment_proof?: string | null;
   created_at: string;
-  lc_profiles?: { display_name?: string; phone?: string };
+  lc_profiles?: { display_name?: string };
 };
 
 type CertReview = {
@@ -326,7 +349,7 @@ type CertReview = {
   description: string | null;
   reject_reason: string | null;
   created_at: string;
-  lc_profiles?: { display_name?: string; phone?: string };
+  lc_profiles?: { display_name?: string };
 };
 
 type ReportReview = {
@@ -907,6 +930,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     revisionKind: 'content',
   });
   const [rankingEdit, setRankingEdit] = useState<{ item: Ranking; form: RankingEditForm; saving: boolean; error: string } | null>(null);
+  const [privateAccountView, setPrivateAccountView] = useState<PrivateAccountView | null>(null);
 
   const loadAccounts = useCallback(async (token: string | undefined, page: number, search: string) => {
     const t = token || getToken();
@@ -1055,6 +1079,28 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     });
     void loadData();
     void loadAccounts(undefined, accountPage, accountSearch);
+  };
+
+  const revealPrivateAccount = async () => {
+    if (!privateAccountView || privateAccountView.loading || privateAccountView.details) return;
+    const reason = privateAccountView.reason.trim();
+    if (reason.length < 4) {
+      setPrivateAccountView(current => current ? { ...current, error: '请填写至少 4 个字的查看原因' } : current);
+      return;
+    }
+    setPrivateAccountView(current => current ? { ...current, loading: true, error: '' } : current);
+    try {
+      const response = await fetch(`${API}/lc/admin/profiles/${encodeURIComponent(privateAccountView.profile.id)}/private-access`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      const payload = await response.json();
+      if (!payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '隐私信息读取失败');
+      setPrivateAccountView(current => current ? { ...current, loading: false, details: payload.data as PrivateAccountDetails } : current);
+    } catch (privateError) {
+      setPrivateAccountView(current => current ? { ...current, loading: false, error: privateError instanceof Error ? privateError.message : '隐私信息读取失败' } : current);
+    }
   };
 
   const approveReq = async (id: string) => {
@@ -1942,6 +1988,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     <Actions>
                       <Link to={`/explore/${p.id}`} target="_blank" style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(217,168,87,0.30)', background: '#fff8e8', color: '#8a5a19', fontSize: '0.82rem', textDecoration: 'none', fontWeight: 700 }}>主页</Link>
                       <ActionButton onClick={() => toggleRealname(p.id, !p.is_realname)}>{p.is_realname ? '取消实名' : '设为实名'}</ActionButton>
+                      <ActionButton onClick={() => setPrivateAccountView({ profile: p, reason: '', loading: false, error: '', details: null })}>查看完整账号</ActionButton>
                       {p.is_banned
                         ? <ActionButton kind="ok" onClick={() => unbanProfile(p.id)}>解除限制</ActionButton>
                         : <ActionButton kind="bad" onClick={() => banProfile(p.id)}>限制账号</ActionButton>}
@@ -2001,7 +2048,6 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <TitleLine title={`充值 ${tx.amount} 榜金`} pill="钱包充值" />
                       <Meta>
                         用户：{tx.lc_profiles?.display_name || '未知用户'}
-                        {tx.lc_profiles?.phone ? ` · ${tx.lc_profiles.phone}` : ''}
                         {tx.created_at ? ` · ${tx.created_at.slice(0, 10)}` : ''}
                       </Meta>
                       {tx.payment_proof && <AdminLinkedValue label="支付凭证" value={tx.payment_proof} />}
@@ -2610,7 +2656,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {securityEvents.map(event => (
                   <Row key={event.id} accent="#fb923c">
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={event.action} pill={event.actor_role || 'unknown'} />
+                      <TitleLine title={securityActionLabel(event.action)} pill={event.actor_role || 'unknown'} />
                       <Meta>
                         {event.actor_id ? `操作者：${event.actor_id}` : '操作者：未登录'}
                         {event.target_type ? ` · 对象：${event.target_type}/${event.target_id || '-'}` : ''}
@@ -2697,7 +2743,6 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       />
                       <Meta>
                         用户：{c.lc_profiles?.display_name || '未知用户'}
-                        {c.lc_profiles?.phone ? ` · ${c.lc_profiles.phone}` : ''}
                         {c.created_at ? ` · ${c.created_at.slice(0, 10)}` : ''}
                       </Meta>
                       {c.description && <ContentBox>{c.description}</ContentBox>}
@@ -2718,6 +2763,43 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
         </section>
       </div>
+
+      {privateAccountView && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120, padding: 20 }}>
+          <div style={{ backgroundColor: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12, padding: 22, width: '100%', maxWidth: 480, boxShadow: '0 28px 80px rgba(31,41,55,0.22)' }}>
+            <h3 style={{ margin: 0, color: INK, fontSize: '1.05rem' }}>查看完整账号信息</h3>
+            <p style={{ margin: '7px 0 16px', color: MUTED, fontSize: '0.8rem', lineHeight: 1.65 }}>
+              当前账号：{profileNickname(privateAccountView.profile)} · {profileAccountSummary(privateAccountView.profile)}。每次查看都会记录操作者、原因、时间和 IP。
+            </p>
+            {privateAccountView.details ? (
+              <div style={{ display: 'grid', gap: 8, padding: 12, borderRadius: 8, border: `1px solid ${LINE}`, background: '#fffdf8' }}>
+                <AdminDetail label="手机号" value={privateAccountView.details.phone || '未绑定'} />
+                <AdminDetail label="邮箱" value={privateAccountView.details.email || '未绑定'} />
+                <AdminDetail label="微信号" value={privateAccountView.details.wechat || '未填写'} />
+                <AdminDetail label="微信昵称" value={privateAccountView.details.wechat_nickname || '未绑定'} />
+              </div>
+            ) : (
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: INK, fontSize: '0.78rem', fontWeight: 850 }}>查看原因</span>
+                <textarea
+                  autoFocus
+                  value={privateAccountView.reason}
+                  onChange={event => setPrivateAccountView(current => current ? { ...current, reason: event.target.value, error: '' } : current)}
+                  rows={3}
+                  placeholder="例如：处理用户本人发起的账号申诉"
+                  maxLength={200}
+                  style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: 11, borderRadius: 8, border: `1px solid ${LINE}`, background: SURFACE, color: INK, fontSize: '0.86rem', lineHeight: 1.6 }}
+                />
+              </label>
+            )}
+            {privateAccountView.error && <p style={{ margin: '9px 0 0', color: '#b91c1c', fontSize: '0.78rem' }}>{privateAccountView.error}</p>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <ActionButton onClick={() => setPrivateAccountView(null)}>关闭</ActionButton>
+              {!privateAccountView.details && <ActionButton kind="bad" disabled={privateAccountView.loading} onClick={() => void revealPrivateAccount()}>{privateAccountView.loading ? '读取中...' : '确认并留痕查看'}</ActionButton>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {rankingEdit && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
