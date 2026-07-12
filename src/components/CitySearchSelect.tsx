@@ -14,6 +14,7 @@ type CitySearchSelectProps = {
   label?: string;
   placeholder?: string;
   style?: React.CSSProperties;
+  disabled?: boolean;
 };
 
 function normalizeCity(value: string) {
@@ -34,6 +35,7 @@ export default function CitySearchSelect({
   label,
   placeholder = '搜索城市，例如：保定、上海',
   style,
+  disabled = false,
 }: CitySearchSelectProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -82,7 +84,9 @@ export default function CitySearchSelect({
     <div style={{ position: 'relative', minWidth: 0, ...style }}>
       <input
         value={inputValue}
+        disabled={disabled}
         onFocus={() => {
+          if (disabled) return;
           setDraft(value === 'all' ? '' : value);
           setOpen(true);
         }}
@@ -97,7 +101,7 @@ export default function CitySearchSelect({
         placeholder={placeholder}
         style={inputStyle}
       />
-      {open && (
+      {open && !disabled && (
         <div style={menuStyle}>
           {allowAll && (
             <button type="button" onMouseDown={event => { event.preventDefault(); choose('all'); }} style={optionStyle(value === 'all')}>

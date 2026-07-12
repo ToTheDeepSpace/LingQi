@@ -10,7 +10,7 @@ import type { RatingOfficialResponse, RatingReaction } from '../components/Ratin
 import AffiliationDisputeModal from '../components/AffiliationDisputeModal';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
-import type { DossierCareerEntry, DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
+import type { DossierCareerEntry, DossierFieldProvenance, DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
 import { dmAffiliationLabel } from '../lib/dmDossierPresentation';
 
 const API = '/api';
@@ -44,6 +44,7 @@ type DmDetail = {
     career_history?: Array<DossierCareerEntry & { verification_status?: 'store_confirmed' | 'platform_reviewed' }>;
     related_profiles?: DossierNamedRef[];
     related_stores?: DossierNamedRef[];
+    field_provenance?: DossierFieldProvenance;
     claim_status?: string;
     claimed_by?: string | null;
     affiliation?: {
@@ -169,7 +170,10 @@ export default function DmProfile() {
                 {isOwner ? '编辑我的档案' : '补充 / 纠错资料'}
               </button>
             </div>
-            <h1 className="dm-profile-name" style={{ margin: '18px 0 0', fontSize: 'clamp(2.25rem, 5vw, 3.35rem)', lineHeight: 1.08, fontFamily: 'var(--font-serif)', overflowWrap: 'anywhere' }}>{dossier.dm_name}</h1>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginTop: 18 }}>
+              <h1 className="dm-profile-name" style={{ margin: 0, fontSize: 'clamp(2.25rem, 5vw, 3.35rem)', lineHeight: 1.08, fontFamily: 'var(--font-serif)', overflowWrap: 'anywhere' }}>{dossier.dm_name}</h1>
+              <SourceBadge source={dossier.field_provenance?.dm_name?.source} />
+            </div>
             <div className="dm-profile-meta" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
               <span style={{ color: MUTED, fontSize: 14, fontWeight: 750 }}>{dossier.city || '城市待补'}</span>
               <span aria-hidden="true" style={{ color: 'rgba(71,85,105,0.34)' }}>·</span>
@@ -216,9 +220,10 @@ export default function DmProfile() {
           <h2 style={headingStyle}>DM 百科</h2>
           <div className="dm-wiki-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.45fr) minmax(240px, 0.75fr)', gap: 22, alignItems: 'start' }}>
             <div style={{ minWidth: 0 }}>
-              {dossier.bio ? <p style={{ margin: 0, lineHeight: 1.85, color: '#334155', whiteSpace: 'pre-wrap' }}>{dossier.bio}</p> : <p style={{ margin: 0, color: MUTED }}>人物简介待补充。</p>}
+              {dossier.bio ? <div><SourceBadge source={dossier.field_provenance?.bio?.source} /><p style={{ margin: '5px 0 0', lineHeight: 1.85, color: '#334155', whiteSpace: 'pre-wrap' }}>{dossier.bio}</p></div> : <p style={{ margin: 0, color: MUTED }}>人物简介待补充。</p>}
               {dossier.common_scripts && dossier.common_scripts.length > 0 && (
                 <WikiSection title="常开剧本">
+                  <SourceBadge source={dossier.field_provenance?.common_scripts?.source} />
                   <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{dossier.common_scripts.map(script => <span key={script.id} style={tagStyle}>{script.name}</span>)}</div>
                 </WikiSection>
               )}
@@ -249,15 +254,15 @@ export default function DmProfile() {
               ) : null}
             </div>
             <aside style={{ paddingLeft: 18, borderLeft: '1px solid rgba(31,41,55,0.10)' }}>
-              <InfoRow label="所在城市" value={dossier.city || '待补充'} />
-              <InfoRow label="DM 入行" value={dossier.dm_started_month ? `${formatMonth(dossier.dm_started_month)} · ${dmExperience}` : '待补充'} />
-              <InfoRow label="年龄" value={age !== null ? `${age} 岁` : '本人未公开'} />
-              <InfoRow label="身高" value={dossier.height_cm ? `${dossier.height_cm} cm` : '本人未公开'} />
-              <InfoRow label="体重" value={dossier.weight_kg ? `${dossier.weight_kg} kg` : '本人未公开'} />
-              <InfoRow label="MBTI" value={dossier.mbti || '待补充'} />
-              <InfoRow label="星座" value={dossier.zodiac || '待补充'} />
+              <InfoRow label="所在城市" value={dossier.city || '待补充'} source={dossier.field_provenance?.city?.source} />
+              <InfoRow label="DM 入行" value={dossier.dm_started_month ? `${formatMonth(dossier.dm_started_month)} · ${dmExperience}` : '待补充'} source={dossier.field_provenance?.dm_started_month?.source} />
+              <InfoRow label="年龄" value={age !== null ? `${age} 岁` : '待补充'} source={dossier.field_provenance?.birth_year?.source} />
+              <InfoRow label="身高" value={dossier.height_cm ? `${dossier.height_cm} cm` : '待补充'} source={dossier.field_provenance?.height_cm?.source} />
+              <InfoRow label="体重" value={dossier.weight_kg ? `${dossier.weight_kg} kg` : '待补充'} source={dossier.field_provenance?.weight_kg?.source} />
+              <InfoRow label="MBTI" value={dossier.mbti || '待补充'} source={dossier.field_provenance?.mbti?.source} />
+              <InfoRow label="星座" value={dossier.zodiac || '待补充'} source={dossier.field_provenance?.zodiac?.source} />
               <InfoRow label="任职状态" value={affiliationLabel} />
-              {dossier.tags && dossier.tags.length > 0 && <div style={{ marginTop: 12 }}><span style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>标签</span><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>{dossier.tags.map(tag => <span key={tag} style={tagStyle}>#{tag}</span>)}</div></div>}
+              {dossier.tags && dossier.tags.length > 0 && <div style={{ marginTop: 12 }}><span style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>标签</span><SourceBadge source={dossier.field_provenance?.tags?.source} /><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>{dossier.tags.map(tag => <span key={tag} style={tagStyle}>#{tag}</span>)}</div></div>}
             </aside>
           </div>
         </section>
@@ -340,6 +345,7 @@ export default function DmProfile() {
           careerHistory: dossier.career_history,
           relatedProfiles: dossier.related_profiles,
           relatedStores: dossier.related_stores,
+          fieldProvenance: dossier.field_provenance,
         }}
         token={auth?.token || ''}
         currentUserId={auth?.id}
@@ -446,8 +452,13 @@ function WikiSection({ title, children }: { title: string; children: React.React
   return <section style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid rgba(31,41,55,0.09)' }}><h3 style={{ margin: '0 0 10px', fontSize: 14 }}>{title}</h3>{children}</section>;
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(31,41,55,0.08)' }}><span style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{label}</span><strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{value}</strong></div>;
+function InfoRow({ label, value, source }: { label: string; value: string; source?: 'owner' | 'community' }) {
+  return <div style={{ display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(31,41,55,0.08)' }}><span style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{label}</span><span><strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{value}</strong>{source && <small title={source === 'owner' ? '由 DM 本人填写' : '由社区用户补充'} style={{ display: 'block', marginTop: 2, color: source === 'owner' ? '#8a5a19' : '#64748b', fontSize: 10, fontWeight: 750 }}>{source === 'owner' ? 'DM本人提供' : '社区提供'}</small>}</span></div>;
+}
+
+function SourceBadge({ source }: { source?: 'owner' | 'community' }) {
+  if (!source) return null;
+  return <small title={source === 'owner' ? '由 DM 本人填写' : '由社区用户补充'} style={{ display: 'inline-block', color: source === 'owner' ? '#8a5a19' : '#64748b', fontSize: 10, fontWeight: 750 }}>{source === 'owner' ? 'DM本人提供' : '社区提供'}</small>;
 }
 
 function formatMonth(value: string) {

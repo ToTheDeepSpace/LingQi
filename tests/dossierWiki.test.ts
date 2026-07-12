@@ -4,6 +4,9 @@ import {
   dossierComparableValue,
   dossierFieldComparableValue,
   dossierPatchForOwnerConsent,
+  dossierOwnerLockedFields,
+  normalizeDossierFieldProvenance,
+  stampDossierFieldProvenance,
   normalizeDossierIntegerInput,
   normalizeDossierCareerHistory,
   normalizeDossierNamedRefs,
@@ -44,15 +47,28 @@ test('圈人圈店按 ID 去重，履历拒绝结束早于开始', () => {
   }]);
 });
 
-test('敏感资料只有本人提交或本人明确同意时才进入应用补丁', () => {
+test('结构化身体资料不再因本人未确认而被丢弃', () => {
   const patch = { bio: '人物简介', birth_year: 1998, height_cm: 170, tags: ['情感本'] };
   const pending = dossierPatchForOwnerConsent(patch, { submitterIsOwner: false, ownerResponseStatus: 'expired' });
-  assert.deepEqual(pending.appliedPatch, { bio: '人物简介', tags: ['情感本'] });
-  assert.deepEqual(pending.omittedSensitiveFields, ['birth_year', 'height_cm']);
+  assert.deepEqual(pending.appliedPatch, patch);
+  assert.deepEqual(pending.omittedSensitiveFields, []);
 
   const agreed = dossierPatchForOwnerConsent(patch, { submitterIsOwner: false, ownerResponseStatus: 'agreed' });
   assert.deepEqual(agreed.appliedPatch, patch);
   assert.deepEqual(agreed.omittedSensitiveFields, []);
+});
+
+test('本人提供的字段形成字段级锁定，社区字段保持可编辑', () => {
+  const provenance = stampDossierFieldProvenance({
+    current: { city: { source: 'community' } },
+    fields: ['height_cm', 'weight_kg'],
+    source: 'owner',
+    actorId: 'owner-1',
+    updatedAt: '2026-07-13T00:00:00.000Z',
+  });
+  assert.deepEqual(dossierOwnerLockedFields(provenance), ['height_cm', 'weight_kg']);
+  assert.equal(normalizeDossierFieldProvenance(provenance).city.source, 'community');
+  assert.equal(provenance.height_cm.actor_id, 'owner-1');
 });
 
 test('对象与数组比较不受键顺序影响', () => {

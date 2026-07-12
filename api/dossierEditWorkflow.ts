@@ -1,6 +1,6 @@
 export const DOSSIER_EDIT_OWNER_RESPONSE_DAYS = 3;
 
-export const DOSSIER_NO_ADMIN_REVIEW_FIELDS = ['height_cm', 'weight_kg', 'mbti', 'zodiac'] as const;
+export const DOSSIER_NO_ADMIN_REVIEW_FIELDS = ['birth_year', 'height_cm', 'weight_kg', 'mbti', 'zodiac'] as const;
 export const DOSSIER_POST_ADMIN_REVIEW_FIELDS = ['city'] as const;
 
 export type DossierOwnerResponseStatus = 'not_required' | 'pending' | 'agreed' | 'opposed' | 'expired';

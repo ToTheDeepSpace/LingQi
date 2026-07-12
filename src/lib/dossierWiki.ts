@@ -7,6 +7,16 @@ export const DOSSIER_SENSITIVE_FIELDS = ['birth_year', 'height_cm', 'weight_kg']
 
 export type DossierSensitiveField = typeof DOSSIER_SENSITIVE_FIELDS[number];
 
+export type DossierFieldSource = 'owner' | 'community';
+
+export type DossierFieldProvenanceEntry = {
+  source: DossierFieldSource;
+  updated_at?: string | null;
+  actor_id?: string | null;
+};
+
+export type DossierFieldProvenance = Record<string, DossierFieldProvenanceEntry>;
+
 export type DossierPhoto = {
   url: string;
   name?: string | null;
@@ -135,16 +145,45 @@ export function dossierPatchForOwnerConsent(
   input: { submitterIsOwner: boolean; ownerResponseStatus?: string | null },
 ) {
   const ownerConsented = input.submitterIsOwner || input.ownerResponseStatus === 'agreed';
-  const appliedPatch: Record<string, unknown> = {};
-  const omittedSensitiveFields: DossierSensitiveField[] = [];
-  for (const [field, value] of Object.entries(patch)) {
-    if (!ownerConsented && (DOSSIER_SENSITIVE_FIELDS as readonly string[]).includes(field)) {
-      omittedSensitiveFields.push(field as DossierSensitiveField);
-      continue;
-    }
-    appliedPatch[field] = value;
+  return { appliedPatch: { ...patch }, omittedSensitiveFields: [] as DossierSensitiveField[], ownerConsented };
+}
+
+export function normalizeDossierFieldProvenance(input: unknown): DossierFieldProvenance {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const normalized: DossierFieldProvenance = {};
+  for (const [field, rawEntry] of Object.entries(input as Record<string, unknown>)) {
+    if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) continue;
+    const entry = rawEntry as Record<string, unknown>;
+    const source = entry.source === 'owner' ? 'owner' : entry.source === 'community' ? 'community' : null;
+    if (!source) continue;
+    normalized[field] = {
+      source,
+      updated_at: typeof entry.updated_at === 'string' ? entry.updated_at : null,
+      actor_id: typeof entry.actor_id === 'string' ? entry.actor_id : null,
+    };
   }
-  return { appliedPatch, omittedSensitiveFields, ownerConsented };
+  return normalized;
+}
+
+export function dossierOwnerLockedFields(input: unknown) {
+  return Object.entries(normalizeDossierFieldProvenance(input))
+    .filter(([, entry]) => entry.source === 'owner')
+    .map(([field]) => field);
+}
+
+export function stampDossierFieldProvenance(input: {
+  current: unknown;
+  fields: string[];
+  source: DossierFieldSource;
+  actorId?: string | null;
+  updatedAt?: string;
+}) {
+  const next = normalizeDossierFieldProvenance(input.current);
+  const updatedAt = input.updatedAt || new Date().toISOString();
+  for (const field of input.fields) {
+    next[field] = { source: input.source, updated_at: updatedAt, actor_id: input.actorId || null };
+  }
+  return next;
 }
 
 function stableValue(value: unknown): unknown {

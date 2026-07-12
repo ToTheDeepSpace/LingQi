@@ -156,7 +156,7 @@ export default function DmRelationshipGraph({ items }: { items: DmGraphDossier[]
           </span>
         ))}
         <span style={{ marginLeft: 'auto', color: '#64748b', fontSize: 12 }}>{graphData.nodes.length} 个节点</span>
-        <span style={{ color: '#8a5a19', fontSize: 11, fontWeight: 700 }}>橙色虚线＝待核验店家关系</span>
+        <span style={{ color: '#8a5a19', fontSize: 11, fontWeight: 700 }}>橙色虚线＝社区提供的店家关系</span>
       </div>
       <div ref={containerRef} style={{ width: '100%', height, overflow: 'hidden' }}>
         <ForceGraph2D<GraphNode, GraphLink>

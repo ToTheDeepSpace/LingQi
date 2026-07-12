@@ -50,6 +50,7 @@ test('只把提交后三天窗口内的上线记录视为本人已上线', () =>
 
 test('档案字段按免审、后审和前审拆分', () => {
   const partition = partitionDossierEditPatch({
+    birth_year: 1998,
     height_cm: 170,
     weight_kg: 60,
     mbti: 'INTJ',
@@ -59,6 +60,7 @@ test('档案字段按免审、后审和前审拆分', () => {
     tags: ['情感本'],
   });
   assert.deepEqual(partition.noAdminReviewPatch, {
+    birth_year: 1998,
     height_cm: 170,
     weight_kg: 60,
     mbti: 'INTJ',

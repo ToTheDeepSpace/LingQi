@@ -54,6 +54,7 @@ import {
 } from '../src/lib/serviceCategories.js';
 import {
   dossierFieldComparableValue,
+  dossierOwnerLockedFields,
   dossierPatchForOwnerConsent,
   dossierSensitiveFieldsInPatch,
   MAX_DOSSIER_COMMON_SCRIPTS,
@@ -63,6 +64,8 @@ import {
   normalizeDossierMonth,
   normalizeDossierNamedRefs,
   normalizeDossierPhotos,
+  normalizeDossierFieldProvenance,
+  stampDossierFieldProvenance,
   type DossierCareerEntry,
   type DossierNamedRef,
   type DossierPhoto,
@@ -2125,6 +2128,15 @@ async function applyDossierUpdateReview(
     safePatch[field] = consentResult.appliedPatch[field];
   }
   if (Object.keys(safePatch).length === 0) return;
+  const nowIso = new Date().toISOString();
+  const fieldSource = payload.submission_source === 'owner' ? 'owner' : 'community';
+  const fieldProvenance = stampDossierFieldProvenance({
+    current: dossier.field_provenance,
+    fields: Object.keys(safePatch),
+    source: fieldSource,
+    actorId: cleanText(review.profile_id, 80) || null,
+    updatedAt: nowIso,
+  });
   if ('photo_files' in safePatch) {
     const photos = normalizeDossierPhotoSubmission(
       safePatch.photo_files,
@@ -2160,7 +2172,7 @@ async function applyDossierUpdateReview(
       throw new Error('任职店家信息不完整，请重新提交修改');
     }
 
-    const now = new Date().toISOString();
+    const now = nowIso;
     const requestReason = cleanText(
       `档案修改审核通过：${cleanText(payload.edit_reason, 420) || '社区用户补充任职信息'}（审核单 ${review.id}）`,
       500,
@@ -2259,10 +2271,20 @@ async function applyDossierUpdateReview(
 
         const patchEntries = Object.entries(regularPatch);
         if (patchEntries.length > 0) {
+          regularPatch.field_provenance = stampDossierFieldProvenance({
+            current: lockedDossier.field_provenance,
+            fields: Object.keys(regularPatch),
+            source: fieldSource,
+            actorId: cleanText(review.profile_id, 80) || null,
+            updatedAt: now,
+          });
+        }
+        if (Object.keys(regularPatch).length > 0) {
+          const patchEntries = Object.entries(regularPatch);
           const values: unknown[] = [dossierId];
           const assignments = patchEntries.map(([field, value]) => {
-            values.push(DOSSIER_JSONB_EDIT_FIELDS.has(field) ? JSON.stringify(value) : value);
-            const cast = DOSSIER_JSONB_EDIT_FIELDS.has(field) ? '::jsonb' : field === 'tags' ? '::text[]' : '';
+            values.push(DOSSIER_JSONB_EDIT_FIELDS.has(field) || field === 'field_provenance' ? JSON.stringify(value) : value);
+            const cast = DOSSIER_JSONB_EDIT_FIELDS.has(field) || field === 'field_provenance' ? '::jsonb' : field === 'tags' ? '::text[]' : '';
             return `${field} = $${values.length}${cast}`;
           });
           values.push(now);
@@ -2342,6 +2364,13 @@ async function applyDossierUpdateReview(
     if (Object.keys(regularPatch).length > 0) {
       const updateResult = await supabase.from('lc_dm_dossiers').update({
         ...regularPatch,
+        field_provenance: stampDossierFieldProvenance({
+          current: dossier.field_provenance,
+          fields: Object.keys(regularPatch),
+          source: fieldSource,
+          actorId: cleanText(review.profile_id, 80) || null,
+          updatedAt: now,
+        }),
         updated_at: now,
       }).eq('id', dossierId).eq('status', 'approved');
       if (updateResult.error) throw updateResult.error;
@@ -2351,7 +2380,8 @@ async function applyDossierUpdateReview(
 
   const { error: updateErr } = await supabase.from('lc_dm_dossiers').update({
     ...safePatch,
-    updated_at: new Date().toISOString(),
+    field_provenance: fieldProvenance,
+    updated_at: nowIso,
   }).eq('id', dossierId).eq('status', 'approved');
   if (updateErr) throw updateErr;
 }
@@ -2467,6 +2497,7 @@ async function rollbackDossierPostReview(review: PublicReviewRecord, payload: Re
   const dossierId = cleanText(payload.dossier_id, 80);
   const entityType = cleanText(payload.entity_type, 20) === 'store' ? 'store' : 'dm';
   const beforeSnapshot = objectPayload(payload.before_snapshot);
+  const beforeProvenance = normalizeDossierFieldProvenance(payload.before_field_provenance);
   const dossierResult = await supabase.from('lc_dm_dossiers')
     .select('*')
     .eq('id', dossierId)
@@ -2486,8 +2517,14 @@ async function rollbackDossierPostReview(review: PublicReviewRecord, payload: Re
     rollbackPatch[field] = beforeSnapshot[field] ?? null;
   }
   if (Object.keys(rollbackPatch).length > 0) {
+    const restoredProvenance = normalizeDossierFieldProvenance(dossierResult.data.field_provenance);
+    for (const field of Object.keys(rollbackPatch)) {
+      if (beforeProvenance[field]) restoredProvenance[field] = beforeProvenance[field];
+      else delete restoredProvenance[field];
+    }
     const rollbackResult = await supabase.from('lc_dm_dossiers').update({
       ...rollbackPatch,
+      field_provenance: restoredProvenance,
       updated_at: new Date().toISOString(),
     }).eq('id', dossierId).eq('status', 'approved');
     if (rollbackResult.error) throw rollbackResult.error;
@@ -9485,6 +9522,7 @@ function publicDossierWikiPayload(
     career_history: careerHistory as Array<DossierCareerEntry & { verification_status: string }>,
     related_profiles: normalizeDossierNamedRefs(dossier.related_profiles) as DossierNamedRef[],
     related_stores: normalizeDossierNamedRefs(dossier.related_stores) as DossierNamedRef[],
+    field_provenance: normalizeDossierFieldProvenance(dossier.field_provenance),
   };
 }
 
@@ -10915,6 +10953,13 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
 
     const normalized = await normalizeDossierEditProposal(dossier as Record<string, unknown>, req.body as Record<string, unknown>);
     const ownerProfileId = dossier.claim_status === 'approved' ? cleanText(dossier.claimed_by, 80) : '';
+    if (ownerProfileId !== profile.id) {
+      const lockedFields = new Set(dossierOwnerLockedFields(dossier.field_provenance));
+      const blockedFields = normalized.changedFields.filter(field => lockedFields.has(field));
+      if (blockedFields.length > 0) {
+        return res.status(409).json(err(new Error(`以下资料由 DM 本人提供，其他用户不能修改：${blockedFields.map(field => DOSSIER_EDIT_FIELD_LABELS[field] || field).join('、')}`)));
+      }
+    }
     let communityAffiliation: Record<string, unknown> | null = null;
     if (!ownerProfileId && normalized.entityType === 'dm' && normalized.patch.employment_status === 'store_affiliated') {
       const storeDossierId = cleanText(normalized.patch.employer_store_id, 80);
@@ -10953,23 +10998,14 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
       return res.status(409).json(err(new Error('你已经提交过这份档案的修改，审核完成前无需重复提交')));
     }
     const sensitiveFields = dossierSensitiveFieldsInPatch(normalized.patch);
-    if (sensitiveFields.length > 0 && !ownerProfileId) {
-      return res.status(400).json(err(new Error('出生年份、身高和体重只能由 DM 本人认领档案后填写或明确同意')));
-    }
     const workflow = initialDossierEditWorkflow({
       ownerProfileId: ownerProfileId || null,
       submitterProfileId: profile.id,
     });
     const submitterIsOwner = ownerProfileId === profile.id;
     const classifiedPatch = partitionDossierEditPatch(normalized.patch);
-    const partitions = ownerProfileId
-      ? classifiedPatch
-      : {
-          noAdminReviewPatch: {},
-          postAdminReviewPatch: {},
-          preAdminReviewPatch: normalized.patch,
-        };
-    const reviewMode = submitterIsOwner ? 'direct' : ownerProfileId ? 'owner' : 'admin_pre';
+    const partitions = classifiedPatch;
+    const reviewMode = submitterIsOwner ? 'direct' : ownerProfileId ? 'owner' : 'direct';
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: normalized.entityType === 'store' ? 'store_dossier_update_submit' : 'dm_dossier_update_submit',
       targetType: 'dossier_update',
@@ -10997,12 +11033,13 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
       targetType: 'dossier_update',
       profile,
       title: `${cleanText(dossier.dm_name, 80)} · ${normalized.entityLabel}档案修改`,
-      summary: `${reviewMode === 'owner' ? '等待认领人确认；' : reviewMode === 'direct' ? '认领人本人修改；' : '未认领档案待管理员审核；'}${sensitiveFields.length > 0 && ownerProfileId !== profile.id ? '敏感资料须本人明确同意；' : ''}修改字段：${normalized.changedFields.map(field => DOSSIER_EDIT_FIELD_LABELS[field] || field).join('、')}`,
+      summary: `${reviewMode === 'owner' ? '等待认领人确认；' : submitterIsOwner ? '认领人本人修改；' : '社区用户补充；'}修改字段：${normalized.changedFields.map(field => DOSSIER_EDIT_FIELD_LABELS[field] || field).join('、')}`,
       payload: {
         dossier_id: dossier.id,
         entity_type: normalized.entityType,
         dossier_name: dossier.dm_name,
         before_snapshot: normalized.beforeSnapshot,
+        before_field_provenance: normalizeDossierFieldProvenance(dossier.field_provenance),
         patch: normalized.patch,
         changed_fields: normalized.changedFields,
         submitted_changed_fields: normalized.changedFields,
@@ -11015,6 +11052,7 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
         owner_profile_id: ownerProfileId || null,
         review_mode: reviewMode,
         submitter_is_owner: submitterIsOwner,
+        submission_source: submitterIsOwner ? 'owner' : 'community',
         owner_response_status: submitterIsOwner ? 'agreed' : workflow.ownerResponseStatus,
         owner_response_due_at: reviewMode === 'owner' ? workflow.ownerResponseDueAt : null,
         owner_response_reason: null,
@@ -11048,9 +11086,9 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
     });
     const responseStatus = directResult?.status || 'pending';
     const directMessage = directResult?.status === 'approved'
-      ? '受限字段已更新'
+      ? '资料已更新'
       : (directResult?.appliedImmediateFields.length || 0) > 0
-        ? '受限字段已更新；城市后审和自由填写内容已按规则进入管理员审核'
+        ? '结构化资料已更新；城市后审和自由填写内容已按规则进入管理员审核'
         : '自由填写内容已提交管理员审核，通过后公开';
     res.json(ok({
       ...publicReviewAcceptedResponse(review as Record<string, unknown>),
@@ -11063,8 +11101,8 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
       message: reviewMode === 'direct'
         ? directMessage
         : reviewMode === 'owner'
-          ? '修改已提交；认领人确认后受限字段按规则生效，自由填写内容仍需管理员审核'
-          : '未认领档案的修改已提交，管理员审核通过后会更新公开资料',
+          ? '修改已提交；认领人确认后结构化资料按规则生效，自由填写内容仍需管理员审核'
+          : '结构化资料已按规则更新；自由填写内容会在管理员审核通过后公开',
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });

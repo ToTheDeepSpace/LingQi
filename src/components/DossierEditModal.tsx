@@ -11,6 +11,7 @@ import {
   normalizeDossierNamedRefs,
   normalizeDossierPhotos,
   type DossierCareerEntry,
+  type DossierFieldProvenance,
   type DossierNamedRef,
   type DossierPhoto,
 } from '../lib/dossierWiki';
@@ -45,6 +46,7 @@ export type EditableDossier = {
   careerHistory?: DossierCareerEntry[];
   relatedProfiles?: DossierNamedRef[];
   relatedStores?: DossierNamedRef[];
+  fieldProvenance?: DossierFieldProvenance;
 };
 
 type StoreOption = { id: string; dm_name: string; city?: string | null };
@@ -89,6 +91,10 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const isOwner = Boolean(dossier.claimedBy && dossier.claimedBy === currentUserId);
+  const provenance = dossier.fieldProvenance || {};
+  const isLocked = (field: string) => !isOwner && provenance[field]?.source === 'owner';
+  const fieldSource = (field: string) => provenance[field]?.source;
+  const employmentLocked = ['employment_status', 'employer_store_id', 'workplace'].some(isLocked);
   const entityLabel = dossier.entityType === 'store' ? '店家' : 'DM';
 
   useEffect(() => {
@@ -202,30 +208,34 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
               {isOwner
                 ? '身高、体重、MBTI、星座直接更新；城市先更新后审核；自由填写内容审核通过后公开。'
                 : dossier.claimedBy
-                  ? '认领人3天内上线则由本人确认；确认后受限字段按规则生效，自由填写内容仍由管理员审核。'
+                  ? '认领人3天内上线则由本人确认；确认后结构化资料按规则生效，自由填写内容仍由管理员审核。'
                   : dossier.entityType === 'dm'
-                    ? '关联已有店家会作为社区补充立即展示并标记待核验；其他资料仍由管理员审核。'
+                    ? '结构化资料可直接补充，城市后审核；自由填写内容仍由管理员审核。'
                     : '档案尚未认领，提交后由管理员审核。'}
             </p>
           </details>
 
-          <div style={twoColumnStyle}>
-            <Field label={`${entityLabel}名称 *`} value={name} onChange={setName} />
-            <CitySearchSelect label="城市 *" value={city} onChange={setCity} />
+          <div className="dossier-basic-grid" style={basicGridStyle}>
+            <Field label={`${entityLabel}名称 *`} value={name} onChange={setName} disabled={isLocked('dm_name')} source={fieldSource('dm_name')} />
+            <FieldShell label="城市 *" source={fieldSource('city')} locked={isLocked('city')}>
+              <CitySearchSelect value={city} onChange={setCity} disabled={isLocked('city')} style={{ minHeight: 38 }} />
+            </FieldShell>
+            {dossier.entityType === 'dm' && <div style={{ marginTop: 8 }}>
+              <span style={labelStyle}>任职状态</span>
+              <div style={segmentStyle}>
+                <button type="button" disabled={employmentLocked} onClick={() => setEmploymentStatus('store_affiliated')} style={employmentStatus === 'store_affiliated' ? activeSegmentStyle : segmentButtonStyle}>关联店家</button>
+                <button type="button" disabled={employmentLocked} onClick={() => { setEmploymentStatus('freelance'); setEmployerStoreId(''); setWorkplace(''); }} style={employmentStatus === 'freelance' ? activeSegmentStyle : segmentButtonStyle}>自由DM</button>
+              </div>
+            </div>}
           </div>
 
           {dossier.entityType === 'store' ? (
-            <Field label="地址 / 商圈 / 常驻位置 *" value={workplace} onChange={setWorkplace} />
+            <Field label="地址 / 商圈 / 常驻位置 *" value={workplace} onChange={setWorkplace} disabled={isLocked('workplace')} source={fieldSource('workplace')} />
           ) : (
-            <div style={{ marginTop: 10 }}>
-              <span style={labelStyle}>受雇状态</span>
-              <div style={segmentStyle}>
-                <button type="button" onClick={() => setEmploymentStatus('store_affiliated')} style={employmentStatus === 'store_affiliated' ? activeSegmentStyle : segmentButtonStyle}>关联店家</button>
-                <button type="button" onClick={() => { setEmploymentStatus('freelance'); setEmployerStoreId(''); setWorkplace(''); }} style={employmentStatus === 'freelance' ? activeSegmentStyle : segmentButtonStyle}>自由DM</button>
-                <button type="button" onClick={() => { setEmploymentStatus('unknown'); setEmployerStoreId(''); }} style={employmentStatus === 'unknown' ? activeSegmentStyle : segmentButtonStyle}>待核验</button>
-              </div>
+            <div style={{ marginTop: 8 }}>
               {employmentStatus === 'store_affiliated' && <StoreSearchSelect
                 value={employerStoreId}
+                disabled={employmentLocked}
                 options={storeOptions.map(store => ({ id: store.id, name: store.dm_name, city: store.city }))}
                 onChange={(nextId, store) => {
                   setEmployerStoreId(nextId);
@@ -233,20 +243,20 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
                   if (!city && store?.city) setCity(store.city);
                 }}
               />}
-              {employmentStatus === 'unknown' && <Field label="常驻店家 / 工作地点（待核验）" value={workplace} onChange={setWorkplace} />}
+              {employmentStatus === 'unknown' && <span style={{ color: MUTED, fontSize: 12 }}>任职信息未填写</span>}
             </div>
           )}
 
           <div style={twoColumnStyle}>
-            <Field label={dossier.entityType === 'store' ? '店铺主页链接' : '个人主页链接'} value={profileUrl} onChange={setProfileUrl} placeholder="可留空" />
-            <Field label="标签" value={tags} onChange={setTags} placeholder="逗号或斜杠分隔，最多10个" />
+            <Field label={dossier.entityType === 'store' ? '店铺主页链接' : '个人主页链接'} value={profileUrl} onChange={setProfileUrl} placeholder="可留空" disabled={isLocked('profile_url')} source={fieldSource('profile_url')} />
+            <Field label="标签" value={tags} onChange={setTags} placeholder="逗号或斜杠分隔，最多10个" disabled={isLocked('tags')} source={fieldSource('tags')} />
           </div>
 
           {dossier.entityType === 'dm' && (
             <>
               <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-                <span style={labelStyle}>人物简介</span>
-                <textarea value={wikiDraft.bio} onChange={event => setWikiDraft({ ...wikiDraft, bio: event.target.value.slice(0, 3000) })} rows={3} style={{ ...inputStyle, minHeight: 76, padding: '9px 11px', resize: 'vertical' }} />
+                <span style={labelStyle}>人物简介<SourceLabel source={fieldSource('bio')} /></span>
+                <textarea value={wikiDraft.bio} disabled={isLocked('bio')} onChange={event => setWikiDraft({ ...wikiDraft, bio: event.target.value.slice(0, 3000) })} rows={3} style={{ ...inputStyle, minHeight: 68, padding: '9px 11px', resize: 'vertical' }} />
               </label>
               <div style={photoSummaryStyle}>
                 {photoFiles[0] ? <img src={photoFiles[0].url} alt="当前封面" style={{ width: 58, height: 58, borderRadius: 7, objectFit: 'cover', objectPosition: `${photoFiles[0].focus_x ?? 50}% ${photoFiles[0].focus_y ?? 25}%` }} /> : <div style={emptyPhotoStyle}>暂无照片</div>}
@@ -254,18 +264,19 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
                   <strong style={{ display: 'block', color: INK, fontSize: 13 }}>当前照片</strong>
                   <span style={{ color: MUTED, fontSize: 11 }}>{photoFiles.length} / {MAX_DOSSIER_PHOTOS} 张，第一张作为封面</span>
                 </div>
-                {photoFiles.length < MAX_DOSSIER_PHOTOS && <ImageUpload token={token} scope="dossier-edit" label="添加照片" variant="compact" onUploaded={url => setPhotoFiles(current => [...current, { url, name: `DM照片 ${current.length + 1}`, type: 'image/*', caption: null, focus_x: 50, focus_y: 25 }])} />}
+                {!isLocked('photo_files') && photoFiles.length < MAX_DOSSIER_PHOTOS && <ImageUpload token={token} scope="dossier-edit" label="添加照片" variant="compact" onUploaded={url => setPhotoFiles(current => [...current, { url, name: `DM照片 ${current.length + 1}`, type: 'image/*', caption: null, focus_x: 50, focus_y: 25 }])} />}
               </div>
-              <details style={compactDetailsStyle}>
+              {!isLocked('photo_files') && <details style={compactDetailsStyle}>
                 <summary style={compactSummaryStyle}><span>更多照片</span><small style={summaryMetaStyle}>排序、说明、调整显示位置</small></summary>
                 <div style={compactDetailsBodyStyle}><DossierGalleryEditor photos={photoFiles} token={token} onChange={setPhotoFiles} /></div>
-              </details>
+              </details>}
               <DossierWikiFieldsEditor
                 value={wikiDraft}
                 onChange={setWikiDraft}
                 scriptOptions={scriptOptions}
                 storeOptions={storeOptions.map(store => ({ id: store.id, name: store.dm_name }))}
-                sensitiveMode={isOwner ? 'owner' : dossier.claimedBy ? 'requires_consent' : 'unavailable'}
+                fieldProvenance={provenance}
+                isOwner={isOwner}
               />
             </>
           )}
@@ -276,8 +287,8 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
           </div>}
 
           <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-            <span style={labelStyle}>一句话档案说明</span>
-            <textarea value={note} onChange={event => setNote(event.target.value.slice(0, 600))} rows={2} style={{ ...inputStyle, minHeight: 60, padding: '8px 11px', resize: 'vertical' }} />
+            <span style={labelStyle}>一句话档案说明<SourceLabel source={fieldSource('note')} /></span>
+            <textarea value={note} disabled={isLocked('note')} onChange={event => setNote(event.target.value.slice(0, 600))} rows={2} style={{ ...inputStyle, minHeight: 54, padding: '8px 11px', resize: 'vertical' }} />
           </label>
           <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
             <span style={labelStyle}>修改依据 *</span>
@@ -290,6 +301,7 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
           <button type="button" onClick={onClose} disabled={submitting} style={secondaryButtonStyle}>取消</button>
           <button type="button" onClick={submit} disabled={submitting} style={primaryButtonStyle}>{submitting ? '提交中...' : isOwner ? '保存修改' : '提交修改'}</button>
         </footer>
+        <style>{`@media (max-width: 720px){.dossier-basic-grid{grid-template-columns:1fr 1fr!important}.dossier-basic-grid>div:first-child,.dossier-basic-grid>label:first-child{grid-column:1/-1}}@media (max-width: 480px){.dossier-basic-grid{grid-template-columns:1fr!important}.dossier-basic-grid>*{grid-column:auto!important}}`}</style>
       </section>
     </div>
   );
@@ -302,8 +314,17 @@ function isOptionalIntegerInRange(value: string, min: number, max: number) {
   return Number.isInteger(parsed) && parsed >= min && parsed <= max;
 }
 
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
-  return <label style={{ display: 'block', marginTop: 8 }}><span style={labelStyle}>{label}</span><input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} style={inputStyle} /></label>;
+function Field({ label, value, onChange, placeholder, disabled = false, source }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; disabled?: boolean; source?: 'owner' | 'community' }) {
+  return <label title={disabled ? '该字段由 DM 本人提供，其他用户不能修改' : undefined} style={{ display: 'block', marginTop: 8 }}><span style={labelStyle}>{label}<SourceLabel source={source} /></span><input value={value} disabled={disabled} onChange={event => onChange(event.target.value)} placeholder={placeholder} style={inputStyle} /></label>;
+}
+
+function FieldShell({ label, source, locked, children }: { label: string; source?: 'owner' | 'community'; locked?: boolean; children: React.ReactNode }) {
+  return <div title={locked ? '该字段由 DM 本人提供，其他用户不能修改' : undefined} style={{ marginTop: 8 }}><span style={labelStyle}>{label}<SourceLabel source={source} /></span>{children}</div>;
+}
+
+function SourceLabel({ source }: { source?: 'owner' | 'community' }) {
+  if (!source) return null;
+  return <small style={{ marginLeft: 6, color: source === 'owner' ? '#8a5a19' : '#64748b', fontSize: 10, fontWeight: 750 }}>{source === 'owner' ? 'DM本人提供' : '社区提供'}</small>;
 }
 
 const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 1300, display: 'grid', placeItems: 'center', padding: 12, background: 'rgba(15,23,42,0.48)', backdropFilter: 'blur(3px)' };
@@ -313,9 +334,10 @@ const kickerStyle: React.CSSProperties = { margin: '0 0 5px', color: GOLD, fontS
 const closeStyle: React.CSSProperties = { width: 32, height: 32, flex: '0 0 32px', display: 'grid', placeItems: 'center', padding: 0, borderRadius: 6, border: '1px solid rgba(31,41,55,0.12)', background: '#fff', color: '#475569', fontSize: 21, cursor: 'pointer' };
 const bodyStyle: React.CSSProperties = { padding: '8px 15px 14px', overflow: 'auto' };
 const twoColumnStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 230px), 1fr))', gap: 12 };
+const basicGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(210px, 1.35fr) minmax(150px, 0.75fr) minmax(190px, 0.9fr)', gap: 10, alignItems: 'end' };
 const labelStyle: React.CSSProperties = { display: 'block', marginBottom: 5, color: INK, fontSize: 12, fontWeight: 900 };
 const inputStyle: React.CSSProperties = { boxSizing: 'border-box', width: '100%', minHeight: 38, borderRadius: 7, border: '1px solid rgba(39,83,137,0.18)', background: '#fff', padding: '0 10px', color: INK, font: 'inherit', fontSize: 13 };
-const segmentStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 7, marginBottom: 9 };
+const segmentStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 };
 const segmentButtonStyle: React.CSSProperties = { minHeight: 36, borderRadius: 7, border: '1px solid rgba(31,41,55,0.12)', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 850, cursor: 'pointer' };
 const activeSegmentStyle: React.CSSProperties = { ...segmentButtonStyle, borderColor: 'rgba(166,106,31,0.4)', background: '#fff8e8', color: '#8a5a19' };
 const errorStyle: React.CSSProperties = { marginTop: 12, padding: '9px 11px', borderRadius: 6, background: '#fef2f2', color: '#b91c1c', fontSize: 12, fontWeight: 800 };
