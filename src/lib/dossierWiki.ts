@@ -3,7 +3,16 @@ export const MAX_DOSSIER_COMMON_SCRIPTS = 20;
 export const MAX_DOSSIER_CAREER_ENTRIES = 12;
 export const MAX_DOSSIER_RELATED_ENTITIES = 12;
 
-export const DOSSIER_SENSITIVE_FIELDS = ['birth_year', 'height_cm', 'weight_kg'] as const;
+export const DOSSIER_SENSITIVE_FIELDS = [
+  'profile_url',
+  'photo_url',
+  'photo_files',
+  'birth_year',
+  'height_cm',
+  'weight_kg',
+  'mbti',
+  'zodiac',
+] as const;
 
 export type DossierSensitiveField = typeof DOSSIER_SENSITIVE_FIELDS[number];
 
@@ -145,7 +154,16 @@ export function dossierPatchForOwnerConsent(
   input: { submitterIsOwner: boolean; ownerResponseStatus?: string | null },
 ) {
   const ownerConsented = input.submitterIsOwner || input.ownerResponseStatus === 'agreed';
-  return { appliedPatch: { ...patch }, omittedSensitiveFields: [] as DossierSensitiveField[], ownerConsented };
+  const appliedPatch: Record<string, unknown> = {};
+  const omittedSensitiveFields: DossierSensitiveField[] = [];
+  for (const [field, value] of Object.entries(patch)) {
+    if (!ownerConsented && (DOSSIER_SENSITIVE_FIELDS as readonly string[]).includes(field)) {
+      omittedSensitiveFields.push(field as DossierSensitiveField);
+      continue;
+    }
+    appliedPatch[field] = value;
+  }
+  return { appliedPatch, omittedSensitiveFields, ownerConsented };
 }
 
 export function normalizeDossierFieldProvenance(input: unknown): DossierFieldProvenance {

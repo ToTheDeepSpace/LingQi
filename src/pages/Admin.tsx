@@ -742,7 +742,9 @@ function summarizePublicReviewPayload(
     const lines = Object.entries(patch).map(([key, value]) => `${DOSSIER_EDIT_FIELD_LABELS[key] || '资料'}：${publicReviewValueText(key, before[key], 'before', dossiers)} → ${publicReviewValueText(key, value, 'after', dossiers)}`);
     if (payload.edit_reason) lines.unshift(`修改依据: ${String(payload.edit_reason)}`);
     if (Object.keys(postReviewPatch).length > 0) lines.unshift(`后审字段已先生效：${Object.keys(postReviewPatch).map(key => DOSSIER_EDIT_FIELD_LABELS[key] || key).join('、')}`);
-    if (payload.owner_response_status === 'pending') lines.push(`认领人状态: 等待确认，截止 ${String(payload.owner_response_due_at || '')}`);
+    if (payload.owner_response_status === 'pending') lines.push(payload.owner_login_detected || !payload.owner_response_due_at
+      ? '认领人状态：已上线，等待本人明确同意或反对'
+      : `认领人状态：等待确认，截止 ${String(payload.owner_response_due_at)}`);
     if (payload.owner_response_status === 'agreed') lines.push(`认领人状态: 已同意${payload.owner_response_reason ? `，说明：${String(payload.owner_response_reason)}` : ''}`);
     if (payload.owner_response_status === 'opposed') lines.push(`认领人状态: 反对，说明：${String(payload.owner_response_reason || '未填写')}`);
     if (payload.owner_response_status === 'expired') lines.push('认领人状态: 3天内未上线，非敏感资料自动生效');
@@ -2162,7 +2164,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
                         </Meta>
                         {item.summary && <ContentBox>{item.summary}</ContentBox>}
-                        {waitingForDossierOwner && <Meta>认领人确认期尚未结束，当前不能通过；可以先拒绝明显无效的修改。</Meta>}
+                        {waitingForDossierOwner && <Meta>这条修改正在等待 DM 本人确认。管理员当前只读可见，不能代替本人通过；明显无效时仍可拒绝。</Meta>}
                         {sensitiveState.warning && <Meta>{sensitiveState.warning}</Meta>}
                         {details.length > 0 && (
                           <ReviewSection title={item.target_type === 'profile_update' || item.target_type === 'dossier_update' ? '修改对比' : '提交内容'}>

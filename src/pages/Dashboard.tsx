@@ -132,6 +132,7 @@ type DossierEditReview = {
   dossier_name: string;
   changed_fields: string[];
   sensitive_fields?: string[];
+  owner_confirmation_fields?: string[];
   omitted_sensitive_fields?: string[];
   patch: Record<string, unknown>;
   before_snapshot: Record<string, unknown>;
@@ -800,9 +801,32 @@ export default function Dashboard() {
         awaiting_owner_response: current.awaiting_owner_response.filter(edit => edit.id !== item.id),
       }));
       setOwnerResponseNotes(current => ({ ...current, [item.id]: '' }));
-      setMsg(decision === 'agree' ? '已同意，这次资料修改已经生效。' : '已反对，这次资料修改不会生效。');
+      setMsg(data.data?.message || (decision === 'agree' ? '已同意这次资料修改。' : '已反对，这次资料修改不会生效。'));
     } catch (responseError) {
       setModuleError(responseError instanceof Error ? responseError.message : '确认失败');
+    } finally {
+      setRespondingDossierEditId('');
+    }
+  };
+
+  const withdrawDossierEdit = async (item: DossierEditReview) => {
+    if (!confirm(`确定撤回对“${item.dossier_name}”的这条档案修改吗？撤回后可以重新提交。`)) return;
+    setRespondingDossierEditId(item.id);
+    setModuleError('');
+    try {
+      const response = await fetch(`${API}/lc/dossier-edits/${encodeURIComponent(item.id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(typeof data.error === 'string' ? data.error : data.error?.message || '撤回失败');
+      setDossierEditData(current => ({
+        ...current,
+        my_submissions: current.my_submissions.filter(edit => edit.id !== item.id),
+      }));
+      setMsg('档案修改已撤回，可以重新提交。');
+    } catch (responseError) {
+      setModuleError(responseError instanceof Error ? responseError.message : '撤回失败');
     } finally {
       setRespondingDossierEditId('');
     }
@@ -2534,7 +2558,7 @@ export default function Dashboard() {
                   <section style={{ ...card, borderColor: 'rgba(166,106,31,0.32)', background: '#fffdf8' }}>
                     <div style={{ marginBottom: 10 }}>
                       <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>待你确认的档案修改</h2>
-                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>你上线后需要明确同意或反对；同意后直接生效，不再转管理员审核。</p>
+                      <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>照片、主页链接及个人资料需要你明确同意或反对；其他公开履历由管理员核验。</p>
                     </div>
                     <div style={{ display: 'grid', gap: 12 }}>
                       {dossierEditData.awaiting_owner_response.map(item => (
@@ -2705,9 +2729,12 @@ export default function Dashboard() {
                               <p style={{ color: '#9a5f18', fontSize: 11, marginTop: 3 }}>敏感资料须由 DM 本人明确同意后才能公开</p>
                             )}
                           </div>
-                          <span style={{ color: '#8a5a19', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>
-                            {dossierEditStatusLabel(item.owner_response_status, item.review_mode)}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <span style={{ color: '#8a5a19', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>
+                              {dossierEditStatusLabel(item.owner_response_status, item.review_mode)}
+                            </span>
+                            <button type="button" disabled={respondingDossierEditId === item.id} onClick={() => withdrawDossierEdit(item)} style={{ ...secondaryActionStyle, minHeight: 32, padding: '6px 10px' }}>撤回</button>
+                          </div>
                         </div>
                       ))}
                     </div>

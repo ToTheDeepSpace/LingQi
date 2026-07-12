@@ -36,6 +36,7 @@ import {
 import {
   dossierAdminReviewMode,
   dossierEditAdminReviewReady,
+  dossierOwnerConfirmationFields,
   effectiveDossierOwnerResponseStatus,
   initialDossierEditWorkflow,
   ownerLoggedInDuringDossierResponseWindow,
@@ -2097,7 +2098,7 @@ async function applyDossierUpdateReview(
     ownerResponseStatus: effectiveOwnerStatus,
   });
   if (Object.keys(consentResult.appliedPatch).length === 0 && consentResult.omittedSensitiveFields.length > 0) {
-    throw new Error('出生年份、身高和体重必须由 DM 本人明确同意后才能公开');
+    throw new Error('照片、主页链接及个人资料必须由 DM 本人明确同意后才能公开');
   }
 
   let payloadChanged = false;
@@ -8044,8 +8045,6 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       storeRatings: pendingStoreRatings,
       dmIdentityWithdrawals: pendingDmIdentityWithdrawals,
       publicReviews: publicReviewsResult.error ? [] : (publicReviewsResult.data || [])
-        .filter((review: Record<string, unknown>) => review.target_type !== 'dossier_update'
-          || cleanText(objectPayload(review.payload).review_mode, 30) !== 'owner')
         .map((review: Record<string, unknown>) => {
         if (review.target_type !== 'dossier_update') return review;
         const payload = objectPayload(review.payload);
@@ -10869,6 +10868,7 @@ function publicDossierEditReview(review: Record<string, unknown>) {
     dossier_name: payload.dossier_name,
     changed_fields: Array.isArray(payload.changed_fields) ? payload.changed_fields : [],
     sensitive_fields: Array.isArray(payload.sensitive_fields) ? payload.sensitive_fields : [],
+    owner_confirmation_fields: Array.isArray(payload.owner_confirmation_fields) ? payload.owner_confirmation_fields : [],
     omitted_sensitive_fields: Array.isArray(payload.omitted_sensitive_fields) ? payload.omitted_sensitive_fields : [],
     patch: objectPayload(payload.patch),
     before_snapshot: objectPayload(payload.before_snapshot),
@@ -10944,14 +10944,14 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
     if (!dossier) return res.status(404).json(err(new Error('档案不存在或尚未公开')));
 
     const existingResult = await supabase.from('lc_public_reviews')
-      .select('id, payload')
+      .select('id, payload, created_at')
       .eq('target_type', 'dossier_update')
       .eq('profile_id', profile.id)
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
       .limit(100);
     if (existingResult.error && !isMissingRelation(existingResult.error, 'lc_public_reviews')) throw existingResult.error;
-    const hasExisting = (existingResult.data || []).some((item: Record<string, unknown>) => cleanText(objectPayload(item.payload).dossier_id, 80) === dossier.id);
+    const existingReview = (existingResult.data || []).find((item: Record<string, unknown>) => cleanText(objectPayload(item.payload).dossier_id, 80) === dossier.id) as Record<string, unknown> | undefined;
 
     const normalized = await normalizeDossierEditProposal(dossier as Record<string, unknown>, req.body as Record<string, unknown>);
     const ownerProfileId = dossier.claim_status === 'approved' ? cleanText(dossier.claimed_by, 80) : '';
@@ -10991,23 +10991,47 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
         message: '任职店家已作为社区补充立即展示；如有异议，异议方需提交证据',
       }));
     }
-    if (hasExisting) {
+    if (existingReview) {
       if (communityAffiliation) return res.json(ok({
         status: 'partial',
         affiliation: communityAffiliation,
         message: '任职店家已立即展示；其他资料已有修改正在审核，本次未重复提交',
       }));
-      return res.status(409).json(err(new Error('你已经提交过这份档案的修改，审核完成前无需重复提交')));
+      const existingPayload = objectPayload(existingReview.payload);
+      const submittedAt = cleanText(existingReview.created_at, 80);
+      const mode = cleanText(existingPayload.review_mode, 30);
+      const ownerDetected = Boolean(existingPayload.owner_login_detected);
+      const dueAt = cleanText(existingPayload.owner_response_due_at, 80);
+      const stage = mode === 'owner'
+        ? ownerDetected || !dueAt
+          ? '正在等待 DM 本人明确同意或反对'
+          : `正在等待 DM 本人确认，确认期至 ${new Date(dueAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`
+        : '正在等待管理员审核';
+      const time = submittedAt
+        ? new Date(submittedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
+        : '此前';
+      return res.status(409).json(err(new Error(`这份档案已有一条你在 ${time} 提交的修改，${stage}。请到“我的主页－认证身份－我提交的档案修改”撤回后再重新提交`)));
     }
     const sensitiveFields = dossierSensitiveFieldsInPatch(normalized.patch);
+    if (sensitiveFields.length > 0 && !ownerProfileId) {
+      return res.status(400).json(err(new Error('照片、主页链接及个人资料只能由 DM 本人认领档案后填写或明确同意')));
+    }
+    const ownerConfirmationFields = dossierOwnerConfirmationFields(normalized.patch);
+    const requiresOwnerConfirmation = ownerConfirmationFields.length > 0;
     const workflow = initialDossierEditWorkflow({
-      ownerProfileId: ownerProfileId || null,
+      ownerProfileId: requiresOwnerConfirmation ? ownerProfileId || null : null,
       submitterProfileId: profile.id,
     });
     const submitterIsOwner = ownerProfileId === profile.id;
     const classifiedPatch = partitionDossierEditPatch(normalized.patch);
-    const partitions = classifiedPatch;
-    const reviewMode = submitterIsOwner ? 'direct' : ownerProfileId ? 'owner' : 'direct';
+    const partitions = ownerProfileId
+      ? classifiedPatch
+      : {
+          noAdminReviewPatch: {},
+          postAdminReviewPatch: {},
+          preAdminReviewPatch: normalized.patch,
+        };
+    const reviewMode = submitterIsOwner ? 'direct' : ownerProfileId && requiresOwnerConfirmation ? 'owner' : 'admin_pre';
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: normalized.entityType === 'store' ? 'store_dossier_update_submit' : 'dm_dossier_update_submit',
       targetType: 'dossier_update',
@@ -11046,6 +11070,7 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
         changed_fields: normalized.changedFields,
         submitted_changed_fields: normalized.changedFields,
         sensitive_fields: sensitiveFields,
+        owner_confirmation_fields: ownerConfirmationFields,
         submitted_sensitive_fields: sensitiveFields,
         no_admin_review_patch: partitions.noAdminReviewPatch,
         post_admin_review_patch: partitions.postAdminReviewPatch,
@@ -11130,6 +11155,44 @@ app.get('/api/lc/dossier-edits/my', authMiddleware, async (req, res) => {
     }).map(publicDossierEditReview);
     const mySubmissions = rows.filter(row => cleanText(row.profile_id, 80) === profile.id).map(publicDossierEditReview);
     res.json(ok({ awaiting_owner_response: awaitingOwnerResponse, my_submissions: mySubmissions }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.delete('/api/lc/dossier-edits/:id', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const reviewResult = await supabase.from('lc_public_reviews')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('target_type', 'dossier_update')
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (reviewResult.error) throw reviewResult.error;
+    const review = reviewResult.data as Record<string, unknown> | null;
+    if (!review) return res.status(404).json(err(new Error('这条档案修改不存在或已经处理')));
+    if (cleanText(review.profile_id, 80) !== profile.id) return res.status(403).json(err(new Error('只能撤回自己提交的档案修改')));
+    const payload = objectPayload(review.payload);
+    payload.submitter_withdrawn = true;
+    payload.withdrawn_at = new Date().toISOString();
+    const updateResult = await supabase.from('lc_public_reviews').update({
+      payload,
+      status: 'rejected',
+      reviewed_by: profile.id,
+      reviewed_at: payload.withdrawn_at,
+      review_note: '提交人主动撤回',
+      updated_at: payload.withdrawn_at,
+    }).eq('id', review.id).eq('status', 'pending');
+    if (updateResult.error) throw updateResult.error;
+    await logSecurityEvent(req, {
+      action: 'dossier_update_withdrawn_by_submitter',
+      targetType: 'public_review',
+      targetId: cleanText(review.id, 80),
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { dossier_id: payload.dossier_id },
+    });
+    res.json(ok({ id: review.id, status: 'withdrawn', message: '档案修改已撤回，可以重新提交' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
