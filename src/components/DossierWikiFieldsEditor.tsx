@@ -65,6 +65,9 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
 
   const availableScripts = useMemo(() => scriptOptions.filter(option => !value.commonScripts.some(item => item.id === option.id)), [scriptOptions, value.commonScripts]);
   const availableStores = useMemo(() => storeOptions.filter(option => !value.relatedStores.some(item => item.id === option.id)), [storeOptions, value.relatedStores]);
+  const identityCount = [value.birthYear, value.heightCm, value.weightKg, value.mbti, value.zodiac].filter(Boolean).length;
+  const careerCount = (value.dmStartedMonth ? 1 : 0) + value.commonScripts.length + value.careerHistory.length;
+  const relationCount = value.relatedProfiles.length + value.relatedStores.length;
   const update = (patch: Partial<DossierWikiDraft>) => onChange({ ...value, ...patch });
 
   const addCareer = () => {
@@ -82,12 +85,8 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
 
   return (
     <>
-      <section style={sectionStyle}>
-        <h3 style={headingStyle}>百科资料</h3>
+      <EditorDetails title="身体与性格" summary={identityCount > 0 ? `已填写 ${identityCount} 项` : '可选'}>
         <div style={fieldGridStyle}>
-          <Field label="开始做 DM 的月份">
-            <input type="month" value={value.dmStartedMonth} onChange={event => update({ dmStartedMonth: event.target.value })} style={inputStyle} />
-          </Field>
           <Field label="出生年份">
             <input type="number" min={1900} max={new Date().getFullYear()} value={value.birthYear} onChange={event => update({ birthYear: event.target.value })} disabled={sensitiveMode === 'unavailable'} style={inputStyle} />
           </Field>
@@ -115,13 +114,15 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
             {sensitiveMode === 'unavailable' ? '出生年份、身高和体重需由本人认领档案后填写。' : '出生年份、身高和体重只有 DM 本人明确同意后才会公开。'}
           </p>
         )}
-        <Field label="人物简介">
-          <textarea value={value.bio} onChange={event => update({ bio: event.target.value.slice(0, 3000) })} rows={5} style={{ ...inputStyle, minHeight: 118, resize: 'vertical' }} />
-        </Field>
-      </section>
+      </EditorDetails>
 
-      <section style={sectionStyle}>
-        <h3 style={headingStyle}>常开剧本</h3>
+      <EditorDetails title="从业资料" summary={careerCount > 0 ? `已有 ${careerCount} 项` : '入行时间、常开剧本、履历'}>
+        <div style={{ maxWidth: 240 }}>
+          <Field label="开始做 DM 的月份">
+            <input type="month" value={value.dmStartedMonth} onChange={event => update({ dmStartedMonth: event.target.value })} style={inputStyle} />
+          </Field>
+        </div>
+        <h3 style={{ ...headingStyle, marginTop: 14 }}>常开剧本</h3>
         <div style={addRowStyle}>
           <select value={scriptId} onChange={event => setScriptId(event.target.value)} style={inputStyle}>
             <option value="">从共用剧本库选择</option>
@@ -134,10 +135,7 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
           }} style={addButtonStyle}>添加</button>
         </div>
         <ChipList values={value.commonScripts} onRemove={id => update({ commonScripts: value.commonScripts.filter(item => item.id !== id) })} />
-      </section>
-
-      <section style={sectionStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(31,41,55,0.08)' }}>
           <h3 style={headingStyle}>任职履历</h3>
           <button type="button" onClick={addCareer} disabled={value.careerHistory.length >= MAX_DOSSIER_CAREER_ENTRIES} style={smallButtonStyle}>＋任职</button>
         </div>
@@ -165,10 +163,9 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
             </div>
           ))}
         </div>
-      </section>
+      </EditorDetails>
 
-      <section style={sectionStyle}>
-        <h3 style={headingStyle}>圈人 / 圈店</h3>
+      <EditorDetails title="关系资料" summary={relationCount > 0 ? `已关联 ${relationCount} 项` : '圈人 / 圈店'}>
         <div style={fieldGridStyle}>
           <div style={{ position: 'relative' }}>
             <Field label="圈人">
@@ -204,10 +201,22 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
             <ChipList values={value.relatedStores} onRemove={id => update({ relatedStores: value.relatedStores.filter(item => item.id !== id) })} />
           </div>
         </div>
-      </section>
+      </EditorDetails>
     </>
   );
 
+}
+
+function EditorDetails({ title, summary, children }: { title: string; summary: string; children: React.ReactNode }) {
+  return (
+    <details style={detailsStyle}>
+      <summary style={summaryStyle}>
+        <span>{title}</span>
+        <small style={{ color: MUTED, fontSize: 11, fontWeight: 750 }}>{summary}</small>
+      </summary>
+      <div style={detailsBodyStyle}>{children}</div>
+    </details>
+  );
 }
 
 function blockNonIntegerKey(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -223,7 +232,6 @@ function ChipList({ values, onRemove }: { values: DossierNamedRef[]; onRemove: (
   return <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>{values.map(item => <span key={item.id} style={chipStyle}>{item.name}<button type="button" title={`移除${item.name}`} aria-label={`移除${item.name}`} onClick={() => onRemove(item.id)} style={chipRemoveStyle}>×</button></span>)}</div>;
 }
 
-const sectionStyle: React.CSSProperties = { marginTop: 16, paddingTop: 15, borderTop: '1px solid rgba(31,41,55,0.09)' };
 const headingStyle: React.CSSProperties = { margin: 0, color: INK, fontSize: 14 };
 const fieldGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: 10 };
 const careerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 7 };
@@ -236,3 +244,6 @@ const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'ce
 const chipRemoveStyle: React.CSSProperties = { width: 19, height: 19, display: 'grid', placeItems: 'center', padding: 0, border: 0, borderRadius: '50%', background: 'rgba(39,83,137,0.10)', color: '#275389', cursor: 'pointer' };
 const resultListStyle: React.CSSProperties = { position: 'absolute', zIndex: 12, top: 69, left: 0, right: 0, maxHeight: 230, overflowY: 'auto', border: '1px solid rgba(31,41,55,0.14)', borderRadius: 7, background: '#fff', boxShadow: '0 12px 30px rgba(31,41,55,0.14)' };
 const resultButtonStyle: React.CSSProperties = { width: '100%', minHeight: 42, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', border: 0, borderBottom: '1px solid rgba(31,41,55,0.08)', background: '#fff', color: INK, textAlign: 'left', cursor: 'pointer' };
+const detailsStyle: React.CSSProperties = { marginTop: 8, border: '1px solid rgba(31,41,55,0.10)', borderRadius: 7, background: '#fff' };
+const summaryStyle: React.CSSProperties = { minHeight: 42, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '0 12px', color: INK, fontSize: 13, fontWeight: 900, cursor: 'pointer' };
+const detailsBodyStyle: React.CSSProperties = { padding: '2px 12px 13px', borderTop: '1px solid rgba(31,41,55,0.07)' };

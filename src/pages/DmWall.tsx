@@ -5,6 +5,7 @@ import CitySearchSelect from '../components/CitySearchSelect';
 import DossierClaimModal from '../components/DossierClaimModal';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ImageFocusPicker from '../components/ImageFocusPicker';
+import StoreSearchSelect from '../components/StoreSearchSelect';
 import ImageUpload from '../components/ImageUpload';
 import SocialPlatformLink, { InternalProfileLink } from '../components/SocialPlatformLink';
 import {
@@ -478,17 +479,14 @@ export default function DmWall() {
                   <button type="button" onClick={() => updateForm({ employmentStatus: 'store_affiliated' })} style={form.employmentStatus === 'store_affiliated' ? primaryButton : ghostButton}>选择已有店家</button>
                   <button type="button" onClick={() => updateForm({ employmentStatus: 'freelance', employerStoreId: '', workplace: '' })} style={form.employmentStatus === 'freelance' ? primaryButton : ghostButton}>无受雇店家（自由DM）</button>
                 </div>
-                {form.employmentStatus === 'store_affiliated' && (
-                  <select value={form.employerStoreId} onChange={event => {
-                    const id = event.target.value;
-                    const store = storeOptions.find(item => item.id === id);
-                    updateForm({ employerStoreId: id, workplace: store?.dm_name || '' });
-                    if (!form.city && store?.city) updateForm({ employerStoreId: id, workplace: store.dm_name, city: store.city });
-                  }} style={inputStyle}>
-                    <option value="">请选择已有店家档案</option>
-                    {storeOptions.map(item => <option key={item.id} value={item.id}>{item.dm_name} · {item.city || '城市待补'}</option>)}
-                  </select>
-                )}
+                {form.employmentStatus === 'store_affiliated' && <StoreSearchSelect
+                  value={form.employerStoreId}
+                  options={storeOptions.map(item => ({ id: item.id, name: item.dm_name, city: item.city, workplace: item.workplace }))}
+                  onChange={(id, store) => {
+                    updateForm({ employerStoreId: id, workplace: store?.name || '' });
+                    if (!form.city && store?.city) updateForm({ employerStoreId: id, workplace: store.name, city: store.city });
+                  }}
+                />}
               </div>
             )}
             <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'end' }}>

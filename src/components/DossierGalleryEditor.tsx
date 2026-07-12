@@ -38,7 +38,7 @@ export default function DossierGalleryEditor({ photos, token, onChange }: Props)
   };
 
   return (
-    <section style={{ marginTop: 16, paddingTop: 15, borderTop: '1px solid rgba(31,41,55,0.09)' }}>
+    <section style={{ paddingTop: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h3 style={{ margin: 0, color: INK, fontSize: 14 }}>照片图库</h3>

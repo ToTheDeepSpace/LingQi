@@ -6,6 +6,7 @@ import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ImageFocusPicker from '../components/ImageFocusPicker';
 import InfoTip from '../components/InfoTip';
 import ImageUpload from '../components/ImageUpload';
+import StoreSearchSelect from '../components/StoreSearchSelect';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { isTokenExpired, readStoredCreatorAuth } from '../lib/authSession';
 import { SERVICE_CATEGORY_OPTIONS, normalizeServiceCategory, serviceCategoryLabel } from '../lib/serviceCategories';
@@ -2621,15 +2622,13 @@ export default function Dashboard() {
                                 </div>
                               ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 8, alignItems: 'end', marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.07)' }}>
-                                  <label style={{ display: 'grid', gap: 5 }}>
-                                    <span style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{activeAffiliation ? '声明更换店家' : '声明任职店家'}</span>
-                                    <select value={dmStoreChoices[dossier.id] || ''} onChange={event => setDmStoreChoices(current => ({ ...current, [dossier.id]: event.target.value }))} style={{ ...inputStyle, minHeight: 38, padding: '0 10px' }}>
-                                      <option value="">选择已收录店家</option>
-                                      {dmIdentityData.stores.filter(store => store.id !== activeAffiliation?.store_dossier_id).map(store => (
-                                        <option key={store.id} value={store.id}>{store.dm_name}{store.city ? ` · ${store.city}` : ''}</option>
-                                      ))}
-                                    </select>
-                                  </label>
+                                  <StoreSearchSelect
+                                    label={activeAffiliation ? '声明更换店家' : '声明任职店家'}
+                                    value={dmStoreChoices[dossier.id] || ''}
+                                    options={dmIdentityData.stores.map(store => ({ id: store.id, name: store.dm_name, city: store.city, workplace: store.workplace }))}
+                                    excludedIds={activeAffiliation ? [activeAffiliation.store_dossier_id] : []}
+                                    onChange={id => setDmStoreChoices(current => ({ ...current, [dossier.id]: id }))}
+                                  />
                                   <button type="button" disabled={identityAction === `request:${dossier.id}`} onClick={() => requestDmStoreConfirmation(dossier)} style={identityPrimaryButtonStyle}>立即关联</button>
                                 </div>
                               )}

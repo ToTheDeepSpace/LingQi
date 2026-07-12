@@ -4,7 +4,9 @@ import CitySearchSelect from './CitySearchSelect';
 import DossierGalleryEditor from './DossierGalleryEditor';
 import DossierWikiFieldsEditor, { type DossierWikiDraft } from './DossierWikiFieldsEditor';
 import ImageUpload from './ImageUpload';
+import StoreSearchSelect from './StoreSearchSelect';
 import {
+  MAX_DOSSIER_PHOTOS,
   normalizeDossierCareerHistory,
   normalizeDossierNamedRefs,
   normalizeDossierPhotos,
@@ -188,21 +190,25 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
         <header style={headerStyle}>
           <div>
             <p style={kickerStyle}>{isOwner ? `编辑我的${entityLabel}档案` : `补充 / 纠正${entityLabel}资料`}</p>
-            <h2 id="dossier-edit-title" style={{ margin: 0, fontSize: 22 }}>修改「{dossier.name}」</h2>
-            <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 13, lineHeight: 1.6 }}>
-              {isOwner
-                ? '身高、体重、MBTI、星座直接更新；城市先更新后审核；自由填写内容审核通过后公开。'
-                : dossier.claimedBy
-                  ? '认领人3天内上线则由本人确认；确认后受限字段按规则生效，自由填写内容仍由管理员审核。'
-                  : dossier.entityType === 'dm'
-                    ? '关联已有店家会作为“社区补充·未核验”立即展示，不需要证据；其他资料仍由管理员审核。'
-                    : '档案尚未认领，提交后由管理员审核。'}
-            </p>
+            <h2 id="dossier-edit-title" style={{ margin: 0, fontSize: 19 }}>修改「{dossier.name}」</h2>
           </div>
           <button type="button" onClick={onClose} disabled={submitting} style={closeStyle} aria-label="关闭修改窗口">×</button>
         </header>
 
         <div style={bodyStyle}>
+          <details style={noticeDetailsStyle}>
+            <summary style={noticeSummaryStyle}>审核与生效说明</summary>
+            <p style={{ margin: '8px 0 0', color: MUTED, fontSize: 12, lineHeight: 1.65 }}>
+              {isOwner
+                ? '身高、体重、MBTI、星座直接更新；城市先更新后审核；自由填写内容审核通过后公开。'
+                : dossier.claimedBy
+                  ? '认领人3天内上线则由本人确认；确认后受限字段按规则生效，自由填写内容仍由管理员审核。'
+                  : dossier.entityType === 'dm'
+                    ? '关联已有店家会作为社区补充立即展示并标记待核验；其他资料仍由管理员审核。'
+                    : '档案尚未认领，提交后由管理员审核。'}
+            </p>
+          </details>
+
           <div style={twoColumnStyle}>
             <Field label={`${entityLabel}名称 *`} value={name} onChange={setName} />
             <CitySearchSelect label="城市 *" value={city} onChange={setCity} />
@@ -211,40 +217,49 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
           {dossier.entityType === 'store' ? (
             <Field label="地址 / 商圈 / 常驻位置 *" value={workplace} onChange={setWorkplace} />
           ) : (
-            <div style={{ marginTop: 14 }}>
+            <div style={{ marginTop: 10 }}>
               <span style={labelStyle}>受雇状态</span>
               <div style={segmentStyle}>
                 <button type="button" onClick={() => setEmploymentStatus('store_affiliated')} style={employmentStatus === 'store_affiliated' ? activeSegmentStyle : segmentButtonStyle}>关联店家</button>
                 <button type="button" onClick={() => { setEmploymentStatus('freelance'); setEmployerStoreId(''); setWorkplace(''); }} style={employmentStatus === 'freelance' ? activeSegmentStyle : segmentButtonStyle}>自由DM</button>
                 <button type="button" onClick={() => { setEmploymentStatus('unknown'); setEmployerStoreId(''); }} style={employmentStatus === 'unknown' ? activeSegmentStyle : segmentButtonStyle}>待核验</button>
               </div>
-              {employmentStatus === 'store_affiliated' && (
-                <select value={employerStoreId} onChange={event => {
-                  const nextId = event.target.value;
-                  const store = storeOptions.find(item => item.id === nextId);
+              {employmentStatus === 'store_affiliated' && <StoreSearchSelect
+                value={employerStoreId}
+                options={storeOptions.map(store => ({ id: store.id, name: store.dm_name, city: store.city }))}
+                onChange={(nextId, store) => {
                   setEmployerStoreId(nextId);
-                  setWorkplace(store?.dm_name || '');
+                  setWorkplace(store?.name || '');
                   if (!city && store?.city) setCity(store.city);
-                }} style={inputStyle}>
-                  <option value="">请选择已有店家档案</option>
-                  {storeOptions.map(store => <option key={store.id} value={store.id}>{store.dm_name} · {store.city || '城市待补'}</option>)}
-                </select>
-              )}
+                }}
+              />}
               {employmentStatus === 'unknown' && <Field label="常驻店家 / 工作地点（待核验）" value={workplace} onChange={setWorkplace} />}
             </div>
           )}
 
-          <div style={{ marginTop: 14 }}>
+          <div style={twoColumnStyle}>
             <Field label={dossier.entityType === 'store' ? '店铺主页链接' : '个人主页链接'} value={profileUrl} onChange={setProfileUrl} placeholder="可留空" />
-            {dossier.entityType === 'store' && <div>
-              <Field label="公开照片链接" value={photoUrl} onChange={setPhotoUrl} placeholder="可留空" />
-              <ImageUpload token={token} scope="dossier-edit" label="上传新照片" variant="compact" onUploaded={setPhotoUrl} style={{ marginTop: 7 }} />
-            </div>}
+            <Field label="标签" value={tags} onChange={setTags} placeholder="逗号或斜杠分隔，最多10个" />
           </div>
 
           {dossier.entityType === 'dm' && (
             <>
-              <DossierGalleryEditor photos={photoFiles} token={token} onChange={setPhotoFiles} />
+              <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+                <span style={labelStyle}>人物简介</span>
+                <textarea value={wikiDraft.bio} onChange={event => setWikiDraft({ ...wikiDraft, bio: event.target.value.slice(0, 3000) })} rows={3} style={{ ...inputStyle, minHeight: 76, padding: '9px 11px', resize: 'vertical' }} />
+              </label>
+              <div style={photoSummaryStyle}>
+                {photoFiles[0] ? <img src={photoFiles[0].url} alt="当前封面" style={{ width: 58, height: 58, borderRadius: 7, objectFit: 'cover', objectPosition: `${photoFiles[0].focus_x ?? 50}% ${photoFiles[0].focus_y ?? 25}%` }} /> : <div style={emptyPhotoStyle}>暂无照片</div>}
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <strong style={{ display: 'block', color: INK, fontSize: 13 }}>当前照片</strong>
+                  <span style={{ color: MUTED, fontSize: 11 }}>{photoFiles.length} / {MAX_DOSSIER_PHOTOS} 张，第一张作为封面</span>
+                </div>
+                {photoFiles.length < MAX_DOSSIER_PHOTOS && <ImageUpload token={token} scope="dossier-edit" label="添加照片" variant="compact" onUploaded={url => setPhotoFiles(current => [...current, { url, name: `DM照片 ${current.length + 1}`, type: 'image/*', caption: null, focus_x: 50, focus_y: 25 }])} />}
+              </div>
+              <details style={compactDetailsStyle}>
+                <summary style={compactSummaryStyle}><span>更多照片</span><small style={summaryMetaStyle}>排序、说明、调整显示位置</small></summary>
+                <div style={compactDetailsBodyStyle}><DossierGalleryEditor photos={photoFiles} token={token} onChange={setPhotoFiles} /></div>
+              </details>
               <DossierWikiFieldsEditor
                 value={wikiDraft}
                 onChange={setWikiDraft}
@@ -255,14 +270,18 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
             </>
           )}
 
-          <label style={{ display: 'block', marginTop: 14 }}>
-            <span style={labelStyle}>档案说明</span>
-            <textarea value={note} onChange={event => setNote(event.target.value.slice(0, 600))} rows={3} style={{ ...inputStyle, minHeight: 86, padding: '10px 12px', resize: 'vertical' }} />
+          {dossier.entityType === 'store' && <div style={twoColumnStyle}>
+            <Field label="公开照片链接" value={photoUrl} onChange={setPhotoUrl} placeholder="可留空" />
+            <div style={{ alignSelf: 'end', paddingBottom: 1 }}><ImageUpload token={token} scope="dossier-edit" label="上传新照片" variant="compact" onUploaded={setPhotoUrl} /></div>
+          </div>}
+
+          <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+            <span style={labelStyle}>一句话档案说明</span>
+            <textarea value={note} onChange={event => setNote(event.target.value.slice(0, 600))} rows={2} style={{ ...inputStyle, minHeight: 60, padding: '8px 11px', resize: 'vertical' }} />
           </label>
-          <Field label="标签" value={tags} onChange={setTags} placeholder="用逗号或斜杠分隔，最多10个" />
-          <label style={{ display: 'block', marginTop: 14 }}>
+          <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
             <span style={labelStyle}>修改依据 *</span>
-            <textarea value={editReason} onChange={event => setEditReason(event.target.value.slice(0, 600))} rows={3} placeholder="请说明资料来自哪里、为什么需要修改，至少6个字" style={{ ...inputStyle, minHeight: 86, padding: '10px 12px', resize: 'vertical' }} />
+            <textarea value={editReason} onChange={event => setEditReason(event.target.value.slice(0, 600))} rows={2} placeholder="资料来源和修改原因，至少6个字" style={{ ...inputStyle, minHeight: 60, padding: '8px 11px', resize: 'vertical' }} />
           </label>
 
           {error && <div style={errorStyle} role="alert">{error}</div>}
@@ -284,22 +303,30 @@ function isOptionalIntegerInRange(value: string, min: number, max: number) {
 }
 
 function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
-  return <label style={{ display: 'block', marginTop: 14 }}><span style={labelStyle}>{label}</span><input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} style={inputStyle} /></label>;
+  return <label style={{ display: 'block', marginTop: 8 }}><span style={labelStyle}>{label}</span><input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} style={inputStyle} /></label>;
 }
 
-const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 1300, display: 'grid', placeItems: 'center', padding: 18, background: 'rgba(15,23,42,0.48)', backdropFilter: 'blur(3px)' };
-const modalStyle: React.CSSProperties = { width: 'min(940px, 100%)', maxHeight: '92dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 8, border: '1px solid rgba(31,41,55,0.12)', background: '#fffdf8', color: INK, boxShadow: '0 24px 80px rgba(15,23,42,0.24)' };
-const headerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 16, padding: '18px 20px 15px', borderBottom: '1px solid rgba(31,41,55,0.09)', background: '#fff' };
+const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 1300, display: 'grid', placeItems: 'center', padding: 12, background: 'rgba(15,23,42,0.48)', backdropFilter: 'blur(3px)' };
+const modalStyle: React.CSSProperties = { width: 'min(860px, 100%)', maxHeight: '94dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: 8, border: '1px solid rgba(31,41,55,0.12)', background: '#fffdf8', color: INK, boxShadow: '0 24px 80px rgba(15,23,42,0.24)' };
+const headerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 14, padding: '13px 15px 11px', borderBottom: '1px solid rgba(31,41,55,0.09)', background: '#fff' };
 const kickerStyle: React.CSSProperties = { margin: '0 0 5px', color: GOLD, fontSize: 11, fontWeight: 900 };
 const closeStyle: React.CSSProperties = { width: 32, height: 32, flex: '0 0 32px', display: 'grid', placeItems: 'center', padding: 0, borderRadius: 6, border: '1px solid rgba(31,41,55,0.12)', background: '#fff', color: '#475569', fontSize: 21, cursor: 'pointer' };
-const bodyStyle: React.CSSProperties = { padding: '4px 20px 18px', overflow: 'auto' };
+const bodyStyle: React.CSSProperties = { padding: '8px 15px 14px', overflow: 'auto' };
 const twoColumnStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 230px), 1fr))', gap: 12 };
-const labelStyle: React.CSSProperties = { display: 'block', marginBottom: 7, color: INK, fontSize: 12, fontWeight: 900 };
-const inputStyle: React.CSSProperties = { boxSizing: 'border-box', width: '100%', minHeight: 40, borderRadius: 7, border: '1px solid rgba(39,83,137,0.18)', background: '#fff', padding: '0 11px', color: INK, font: 'inherit' };
+const labelStyle: React.CSSProperties = { display: 'block', marginBottom: 5, color: INK, fontSize: 12, fontWeight: 900 };
+const inputStyle: React.CSSProperties = { boxSizing: 'border-box', width: '100%', minHeight: 38, borderRadius: 7, border: '1px solid rgba(39,83,137,0.18)', background: '#fff', padding: '0 10px', color: INK, font: 'inherit', fontSize: 13 };
 const segmentStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 7, marginBottom: 9 };
 const segmentButtonStyle: React.CSSProperties = { minHeight: 36, borderRadius: 7, border: '1px solid rgba(31,41,55,0.12)', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 850, cursor: 'pointer' };
 const activeSegmentStyle: React.CSSProperties = { ...segmentButtonStyle, borderColor: 'rgba(166,106,31,0.4)', background: '#fff8e8', color: '#8a5a19' };
 const errorStyle: React.CSSProperties = { marginTop: 12, padding: '9px 11px', borderRadius: 6, background: '#fef2f2', color: '#b91c1c', fontSize: 12, fontWeight: 800 };
-const footerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 9, padding: '12px 20px', borderTop: '1px solid rgba(31,41,55,0.09)', background: '#fff' };
+const footerStyle: React.CSSProperties = { display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 15px', borderTop: '1px solid rgba(31,41,55,0.09)', background: '#fff' };
 const secondaryButtonStyle: React.CSSProperties = { minWidth: 96, minHeight: 38, borderRadius: 7, border: '1px solid rgba(31,41,55,0.14)', background: '#fff', color: '#475569', fontWeight: 900, cursor: 'pointer' };
 const primaryButtonStyle: React.CSSProperties = { minWidth: 130, minHeight: 38, borderRadius: 7, border: `1px solid ${INK}`, background: INK, color: '#fff', fontWeight: 900, cursor: 'pointer' };
+const noticeDetailsStyle: React.CSSProperties = { marginBottom: 2, padding: '7px 9px', borderRadius: 7, background: '#fff8e8', border: '1px solid rgba(166,106,31,0.15)' };
+const noticeSummaryStyle: React.CSSProperties = { color: '#8a5a19', fontSize: 11, fontWeight: 850, cursor: 'pointer' };
+const photoSummaryStyle: React.CSSProperties = { minHeight: 68, display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, padding: 8, borderRadius: 7, border: '1px solid rgba(31,41,55,0.10)', background: '#fff' };
+const emptyPhotoStyle: React.CSSProperties = { width: 58, height: 58, display: 'grid', placeItems: 'center', borderRadius: 7, background: '#f1f5f9', color: MUTED, fontSize: 10, textAlign: 'center' };
+const compactDetailsStyle: React.CSSProperties = { marginTop: 8, border: '1px solid rgba(31,41,55,0.10)', borderRadius: 7, background: '#fff' };
+const compactSummaryStyle: React.CSSProperties = { minHeight: 42, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '0 12px', color: INK, fontSize: 13, fontWeight: 900, cursor: 'pointer' };
+const summaryMetaStyle: React.CSSProperties = { color: MUTED, fontSize: 11, fontWeight: 750 };
+const compactDetailsBodyStyle: React.CSSProperties = { padding: '0 12px 12px', borderTop: '1px solid rgba(31,41,55,0.07)' };
