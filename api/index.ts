@@ -9509,6 +9509,8 @@ function publicDossierWikiPayload(
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   };
+  const fieldProvenance = Object.fromEntries(Object.entries(normalizeDossierFieldProvenance(dossier.field_provenance))
+    .map(([field, entry]) => [field, { source: entry.source, updated_at: entry.updated_at || null }]));
   return {
     photo_files: publicDossierPhotoFiles(dossier),
     dm_started_month: normalizeDossierMonth(dossier.dm_started_month),
@@ -9522,7 +9524,7 @@ function publicDossierWikiPayload(
     career_history: careerHistory as Array<DossierCareerEntry & { verification_status: string }>,
     related_profiles: normalizeDossierNamedRefs(dossier.related_profiles) as DossierNamedRef[],
     related_stores: normalizeDossierNamedRefs(dossier.related_stores) as DossierNamedRef[],
-    field_provenance: normalizeDossierFieldProvenance(dossier.field_provenance),
+    field_provenance: fieldProvenance,
   };
 }
 
