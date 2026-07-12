@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import type { Availability, Creator, Service, Portfolio, ProfileRolePreference, SocialSnapshot } from '../types';
+import type { Availability, Creator, Service, Portfolio, ProfileRolePreference, ScriptCatalogItem, SocialSnapshot } from '../types';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal from '../components/ReportModal';
 import SocialPlatformLink from '../components/SocialPlatformLink';
@@ -35,8 +35,8 @@ function getAuth(): { token: string } | null {
   return data?.token ? { token: data.token } : null;
 }
 
-async function readJsonSafe(url: string) {
-  const response = await fetch(url);
+async function readJsonSafe(url: string, init?: RequestInit) {
+  const response = await fetch(url, init);
   if (!response.ok) return { success: false, data: null };
   try {
     return await response.json();
@@ -51,6 +51,15 @@ type ContactRequestDraft = {
   message: string;
 };
 
+type PlayerExperience = {
+  script_id: string;
+  script_name: string;
+  is_hidden: boolean;
+  sources: Array<{ key: string; label: string }>;
+  roles: Array<{ target_id: string; role_name: string; review_lanes: string[] }>;
+  updated_at?: string | null;
+};
+
 export default function CreatorProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -59,6 +68,11 @@ export default function CreatorProfile() {
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
   const [availDates, setAvailDates] = useState<string[]>([]);
   const [availability, setAvailability] = useState<Availability[]>([]);
+  const [experiences, setExperiences] = useState<PlayerExperience[]>([]);
+  const [scriptCatalog, setScriptCatalog] = useState<ScriptCatalogItem[]>([]);
+  const [selectedScriptId, setSelectedScriptId] = useState('');
+  const [experienceMessage, setExperienceMessage] = useState('');
+  const [savingExperience, setSavingExperience] = useState(false);
   const [loading, setLoading]     = useState(true);
 
   const [contactShown, setContactShown] = useState(false);
@@ -89,10 +103,14 @@ export default function CreatorProfile() {
 
   useEffect(() => {
     if (!id) return;
+    const auth = readStoredCreatorAuth();
+    const authHeaders = auth?.token ? { Authorization: `Bearer ${auth.token}` } : undefined;
     Promise.all([
       readJsonSafe(`${API}/lc/creators/${id}`),
       readJsonSafe(`${API}/lc/creators/${id}/availability`),
-    ]).then(([profileData, availData]) => {
+      readJsonSafe(`${API}/lc/creators/${id}/experiences`, { headers: authHeaders }),
+      auth?.id === id ? readJsonSafe(`${API}/lc/scripts`) : Promise.resolve({ success: true, data: [] }),
+    ]).then(([profileData, availData, experienceData, scriptData]) => {
       if (profileData.success && profileData.data) {
         const { services: svc, portfolio: port, ...profile } = profileData.data;
         setCreator(profile);
@@ -104,8 +122,51 @@ export default function CreatorProfile() {
         setAvailability(items);
         setAvailDates(items.filter(a => !a.is_booked).map(a => a.date));
       }
+      if (experienceData.success) setExperiences(experienceData.data?.items || []);
+      if (scriptData.success) setScriptCatalog(scriptData.data || []);
     }).finally(() => setLoading(false));
   }, [id]);
+
+  const reloadExperiences = async () => {
+    const auth = readStoredCreatorAuth();
+    if (!id || !auth?.token) return;
+    const payload = await readJsonSafe(`${API}/lc/creators/${id}/experiences`, { headers: { Authorization: `Bearer ${auth.token}` } });
+    if (payload.success) setExperiences(payload.data?.items || []);
+  };
+
+  const registerScript = async () => {
+    const auth = readStoredCreatorAuth();
+    if (!auth?.token || !selectedScriptId) return;
+    setSavingExperience(true);
+    setExperienceMessage('');
+    try {
+      const response = await fetch(`${API}/lc/player-script-records`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify({ scriptId: selectedScriptId }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '登记失败');
+      setSelectedScriptId('');
+      setExperienceMessage('已登记');
+      await reloadExperiences();
+    } catch (error) {
+      setExperienceMessage(error instanceof Error ? error.message : '登记失败');
+    } finally {
+      setSavingExperience(false);
+    }
+  };
+
+  const setExperienceHidden = async (scriptId: string, isHidden: boolean) => {
+    const auth = readStoredCreatorAuth();
+    if (!auth?.token) return;
+    const response = await fetch(`${API}/lc/player-script-records/${encodeURIComponent(scriptId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+      body: JSON.stringify({ isHidden }),
+    });
+    if (response.ok) await reloadExperiences();
+  };
 
   const submitContact = async () => {
     if (!formName || !formWechat) return;
@@ -178,6 +239,10 @@ export default function CreatorProfile() {
     !!creator.verified_dm,
     !!creator.verified_shop,
   );
+  const auth = readStoredCreatorAuth();
+  const isOwnProfile = auth?.id === creator.id;
+  const registeredScriptIds = new Set(experiences.map(item => item.script_id));
+  const availableScripts = scriptCatalog.filter(script => !registeredScriptIds.has(script.id));
   const rolePreferences = [...(creator.role_preferences || [])].sort((a, b) => {
     const recDiff = Number(!!b.is_recommended) - Number(!!a.is_recommended);
     if (recDiff !== 0) return recDiff;
@@ -375,6 +440,59 @@ export default function CreatorProfile() {
           {/* ── 右侧内容 ── */}
           <div className="creator-profile-main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
+            {(experiences.length > 0 || isOwnProfile) && (
+              <div className="creator-profile-card" style={card}>
+                <div style={experienceHeaderStyle}>
+                  <div>
+                    <h3 style={{ fontWeight: 700, fontSize: '0.9rem', margin: 0, color: INK }}>体验记录</h3>
+                    <p style={experienceDescriptionStyle}>登记打过的剧本；公开评价和带明确剧本的红黑榜会自动归档。</p>
+                  </div>
+                  <span style={experienceCountStyle}>{experiences.filter(item => !item.is_hidden).length} 个本</span>
+                </div>
+
+                {isOwnProfile && (
+                  <div style={experienceRegisterStyle}>
+                    <select value={selectedScriptId} onChange={event => setSelectedScriptId(event.target.value)} style={experienceSelectStyle}>
+                      <option value="">选择打过的剧本</option>
+                      {availableScripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
+                    </select>
+                    <button type="button" onClick={() => void registerScript()} disabled={!selectedScriptId || savingExperience} style={experienceAddButtonStyle}>
+                      {savingExperience ? '登记中...' : '登记'}
+                    </button>
+                    {experienceMessage && <span style={experienceMessageStyle}>{experienceMessage}</span>}
+                  </div>
+                )}
+
+                <div style={experienceListStyle}>
+                  {experiences.map(item => (
+                    <div key={item.script_id} style={{ ...experienceRowStyle, opacity: item.is_hidden ? 0.56 : 1 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <strong style={{ color: INK, fontSize: 14 }}>《{item.script_name}》</strong>
+                        <div style={experienceSourcesStyle}>
+                          {item.sources.map(source => <span key={source.key}>{source.label}</span>)}
+                        </div>
+                        {item.roles.length > 0 && (
+                          <div style={experiencedRolesStyle}>
+                            {item.roles.map(role => (
+                              <Link key={role.target_id} to={`/scripts/roles/${encodeURIComponent(role.target_id)}`} style={experiencedRoleLinkStyle}>
+                                {role.role_name}{role.review_lanes.includes('deep_spoiler') ? ' · 有深评' : ''}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {isOwnProfile && (
+                        <button type="button" onClick={() => void setExperienceHidden(item.script_id, !item.is_hidden)} style={experienceVisibilityButtonStyle}>
+                          {item.is_hidden ? '公开' : '隐藏'}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {experiences.length === 0 && isOwnProfile && <p style={experienceEmptyStyle}>还没有体验记录，可以先登记一个打过的剧本。</p>}
+                </div>
+              </div>
+            )}
+
             {rolePreferences.length > 0 && (
               <div className="creator-profile-card" style={card}>
                 <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 14, color: INK }}>可接本与角色</h3>
@@ -512,7 +630,7 @@ export default function CreatorProfile() {
               </div>
             )}
 
-            {rolePreferences.length === 0 && services.length === 0 && availDates.length === 0 && busySlots.length === 0 && portfolio.length === 0 && (
+            {experiences.length === 0 && !isOwnProfile && rolePreferences.length === 0 && services.length === 0 && availDates.length === 0 && busySlots.length === 0 && portfolio.length === 0 && (
               <div className="creator-profile-card creator-empty-card" style={{ ...card, textAlign: 'center', padding: '60px 24px' }}>
                 <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>🌙</div>
                 <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.9rem' }}>创作者还没有发布内容</p>
@@ -645,6 +763,21 @@ export default function CreatorProfile() {
     </div>
   );
 }
+
+const experienceHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 };
+const experienceDescriptionStyle: React.CSSProperties = { margin: '5px 0 0', color: MUTED, fontSize: 12, lineHeight: 1.55 };
+const experienceCountStyle: React.CSSProperties = { flex: '0 0 auto', color: '#925f18', fontSize: 12, fontWeight: 900 };
+const experienceRegisterStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 12, borderBottom: '1px solid rgba(31,41,55,0.08)', flexWrap: 'wrap' };
+const experienceSelectStyle: React.CSSProperties = { minWidth: 210, minHeight: 38, flex: '1 1 260px', border: '1px solid rgba(39,83,137,0.18)', borderRadius: 7, padding: '0 10px', background: '#fff', color: INK, fontSize: 13 };
+const experienceAddButtonStyle: React.CSSProperties = { minHeight: 38, border: 0, borderRadius: 7, padding: '0 14px', background: '#275389', color: '#fff', fontWeight: 900, cursor: 'pointer' };
+const experienceMessageStyle: React.CSSProperties = { color: MUTED, fontSize: 12 };
+const experienceListStyle: React.CSSProperties = { display: 'grid' };
+const experienceRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '12px 0', borderBottom: '1px solid rgba(31,41,55,0.07)' };
+const experienceSourcesStyle: React.CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6, color: MUTED, fontSize: 11 };
+const experiencedRolesStyle: React.CSSProperties = { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 };
+const experiencedRoleLinkStyle: React.CSSProperties = { borderRadius: 6, padding: '4px 8px', background: '#eef6ff', color: '#275389', fontSize: 11, fontWeight: 850, textDecoration: 'none' };
+const experienceVisibilityButtonStyle: React.CSSProperties = { flex: '0 0 auto', minHeight: 30, border: '1px solid rgba(39,83,137,0.16)', borderRadius: 6, padding: '0 9px', background: '#fff', color: '#275389', fontSize: 11, fontWeight: 850, cursor: 'pointer' };
+const experienceEmptyStyle: React.CSSProperties = { margin: '12px 0 0', color: MUTED, fontSize: 13 };
 
 function Badge({ children }: { children: React.ReactNode }) {
   return (

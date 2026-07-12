@@ -21,7 +21,9 @@ export default function RateScriptRole() {
   const [selectedTargetId, setSelectedTargetId] = useState(initialTargetId);
   const [rating, setRating] = useState(5);
   const [content, setContent] = useState('');
-  const [spoiler, setSpoiler] = useState(false);
+  const [reviewLane, setReviewLane] = useState<'experience' | 'deep_spoiler'>(
+    searchParams.get('lane') === 'deep_spoiler' ? 'deep_spoiler' : 'experience',
+  );
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -96,7 +98,7 @@ export default function RateScriptRole() {
           targetId: selectedRole.target_id,
           rating,
           content: content.trim(),
-          spoilerLevel: spoiler ? 'spoiler' : 'none',
+          reviewLane,
         }),
       });
       const payload = await response.json();
@@ -181,6 +183,30 @@ export default function RateScriptRole() {
           </div>
 
           <fieldset style={fieldsetStyle}>
+            <legend style={labelStyle}>评价栏目</legend>
+            <div style={lanePickerStyle}>
+              <button
+                type="button"
+                onClick={() => setReviewLane('experience')}
+                aria-pressed={reviewLane === 'experience'}
+                style={{ ...laneButtonStyle, ...(reviewLane === 'experience' ? laneButtonActiveStyle : {}) }}
+              >
+                <strong>无剧透体验</strong>
+                <span>好不好玩、是否吃配置、适合什么玩家</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setReviewLane('deep_spoiler')}
+                aria-pressed={reviewLane === 'deep_spoiler'}
+                style={{ ...laneButtonStyle, ...(reviewLane === 'deep_spoiler' ? laneButtonActiveStyle : {}) }}
+              >
+                <strong>剧透深评</strong>
+                <span>角色内核、故事动机、反转与深度体验</span>
+              </button>
+            </div>
+          </fieldset>
+
+          <fieldset style={fieldsetStyle}>
             <legend style={labelStyle}>综合评分</legend>
             <div style={starPickerStyle}>
               {[1, 2, 3, 4, 5].map(value => (
@@ -204,16 +230,19 @@ export default function RateScriptRole() {
             <textarea
               value={content}
               onChange={event => setContent(event.target.value)}
-              placeholder="写下这个角色好不好玩、是否吃配置，以及推荐或不推荐的原因。"
+              placeholder={reviewLane === 'deep_spoiler'
+                ? '可以结合完整剧情，写下角色内核、动机、反转和深度体验。'
+                : '写下这个角色好不好玩、是否吃配置，以及推荐或不推荐的原因。'}
               maxLength={1200}
               style={textareaStyle}
             />
           </label>
 
-          <label style={checkboxStyle}>
-            <input type="checkbox" checked={spoiler} onChange={event => setSpoiler(event.target.checked)} />
-            评分理由中含有剧透
-          </label>
+          <p style={laneNoticeStyle}>
+            {reviewLane === 'deep_spoiler'
+              ? '本栏目必须包含剧透，公开后会对未体验玩家默认遮挡。'
+              : '本栏目不得包含关键剧情、角色秘密或反转信息。'}
+          </p>
 
           {message && <p style={{ ...messageStyle, color: message.ok ? '#166534' : '#b91c1c' }}>{message.text}</p>}
 
@@ -249,10 +278,13 @@ const selectedRoleStyle: React.CSSProperties = { display: 'flex', justifyContent
 const metaStyle: React.CSSProperties = { color: '#657383', fontSize: 11, fontWeight: 900 };
 const changeButtonStyle: React.CSSProperties = { flex: '0 0 auto', minHeight: 34, border: '1px solid rgba(39,83,137,0.18)', borderRadius: 7, padding: '0 11px', background: '#fff', color: BLUE, fontWeight: 850, cursor: 'pointer' };
 const fieldsetStyle: React.CSSProperties = { margin: 0, border: 0, padding: 0 };
+const lanePickerStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginTop: 8 };
+const laneButtonStyle: React.CSSProperties = { minHeight: 72, display: 'grid', gap: 5, alignContent: 'center', border: '1px solid rgba(39,83,137,0.16)', borderRadius: 7, padding: '10px 12px', background: '#fff', color: INK, textAlign: 'left', cursor: 'pointer' };
+const laneButtonActiveStyle: React.CSSProperties = { borderColor: 'rgba(166,106,31,0.54)', background: '#fff8e8', color: '#7a4d14' };
+const laneNoticeStyle: React.CSSProperties = { margin: 0, color: MUTED, fontSize: 12, lineHeight: 1.6 };
 const starPickerStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, minHeight: 42 };
 const starButtonStyle: React.CSSProperties = { width: 38, height: 38, border: 0, padding: 0, background: 'transparent', fontSize: 30, lineHeight: 1, cursor: 'pointer' };
 const textareaStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', minHeight: 132, border: '1px solid rgba(39,83,137,0.2)', borderRadius: 7, padding: 12, color: INK, background: '#fff', fontSize: 14, lineHeight: 1.65, resize: 'vertical' };
-const checkboxStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, color: '#526170', fontSize: 13, fontWeight: 800 };
 const messageStyle: React.CSSProperties = { margin: 0, borderRadius: 7, padding: '10px 12px', background: '#f8fafc', fontSize: 13, fontWeight: 800 };
 const submitRowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, flexWrap: 'wrap' };
 const detailLinkStyle: React.CSSProperties = { color: BLUE, fontSize: 13, fontWeight: 900, textDecoration: 'none' };

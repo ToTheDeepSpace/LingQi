@@ -20,12 +20,18 @@ type RatingItem = {
   rating: number;
   content?: string | null;
   spoiler_level?: string | null;
+  review_lane?: 'experience' | 'deep_spoiler' | null;
   created_at: string;
 };
 
 type RatingPayload = {
   ratings: RatingItem[];
   summary: { avg: number | null; count: number };
+  lane_summaries: {
+    experience: { avg: number | null; count: number };
+    deep_spoiler: { avg: number | null; count: number };
+  };
+  has_experienced_role?: boolean;
 };
 
 export default function RoleRatingDetail() {
@@ -35,6 +41,7 @@ export default function RoleRatingDetail() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [activeLane, setActiveLane] = useState<'experience' | 'deep_spoiler'>('experience');
   const token = readStoredCreatorAuth()?.token || '';
 
   useEffect(() => {
@@ -72,6 +79,10 @@ export default function RoleRatingDetail() {
   );
   const ratingCount = ratings?.summary.count ?? role?.rating_count ?? 0;
   const ratingAverage = ratings?.summary.avg ?? role?.rating_avg ?? null;
+  const laneRatings = (ratings?.ratings || []).filter(item => (
+    activeLane === 'deep_spoiler' ? item.review_lane === 'deep_spoiler' : item.review_lane !== 'deep_spoiler'
+  ));
+  const laneSummary = ratings?.lane_summaries?.[activeLane] || { avg: null, count: laneRatings.length };
 
   return (
     <ReputationHubShell
@@ -101,19 +112,31 @@ export default function RoleRatingDetail() {
                 )}
                 <small style={{ display: 'block', marginTop: 7, color: MUTED, fontWeight: 800 }}>{ratingCount} 人评分</small>
               </div>
-              <ReputationButton to={`/scripts/rate?role=${encodeURIComponent(targetId)}`} tone="gold">添加评分</ReputationButton>
+              <div style={ratingActionsStyle}>
+                <ReputationButton to={`/scripts/rate?role=${encodeURIComponent(targetId)}&lane=experience`} tone="gold">写无剧透体验</ReputationButton>
+                <ReputationButton to={`/scripts/rate?role=${encodeURIComponent(targetId)}&lane=deep_spoiler`}>写剧透深评</ReputationButton>
+              </div>
             </div>
           </section>
 
           <section>
             <div style={sectionHeadStyle}>
-              <h2 style={{ margin: 0, fontSize: 18 }}>全部评价</h2>
-              <span style={{ color: MUTED, fontSize: 12 }}>{ratings?.summary.count || 0} 条</span>
+              <div style={laneTabsStyle}>
+                <button type="button" onClick={() => setActiveLane('experience')} style={{ ...laneTabStyle, ...(activeLane === 'experience' ? laneTabActiveStyle : {}) }}>
+                  <strong>无剧透体验</strong>
+                  <span>{ratings?.lane_summaries?.experience.count || 0} 条{ratings?.lane_summaries?.experience.avg ? ` · ${ratings.lane_summaries.experience.avg} 分` : ''}</span>
+                </button>
+                <button type="button" onClick={() => setActiveLane('deep_spoiler')} style={{ ...laneTabStyle, ...(activeLane === 'deep_spoiler' ? laneTabActiveStyle : {}) }}>
+                  <strong>剧透深评</strong>
+                  <span>{ratings?.lane_summaries?.deep_spoiler.count || 0} 条{ratings?.lane_summaries?.deep_spoiler.avg ? ` · ${ratings.lane_summaries.deep_spoiler.avg} 分` : ''}</span>
+                </button>
+              </div>
+              <span style={{ color: MUTED, fontSize: 12 }}>{laneSummary.count} 条</span>
             </div>
             <div style={reviewListStyle}>
-              {(ratings?.ratings || []).map(item => {
+              {laneRatings.map(item => {
                 const isSpoiler = item.spoiler_level === 'spoiler';
-                const showContent = !isSpoiler || revealed[item.id];
+                const showContent = !isSpoiler || !!ratings?.has_experienced_role || revealed[item.id];
                 return (
                   <article key={item.id} style={reviewStyle}>
                     <div style={reviewHeadStyle}>
@@ -135,10 +158,10 @@ export default function RoleRatingDetail() {
                   </article>
                 );
               })}
-              {!ratings?.ratings?.length && (
+              {!laneRatings.length && (
                 <StatePanel>
-                  <strong>还没有公开评价</strong>
-                  <Link to={`/scripts/rate?role=${encodeURIComponent(targetId)}`} style={emptyActionStyle}>提交第一条评分</Link>
+                  <strong>{activeLane === 'deep_spoiler' ? '还没有公开的剧透深评' : '还没有公开的无剧透体验'}</strong>
+                  <Link to={`/scripts/rate?role=${encodeURIComponent(targetId)}&lane=${activeLane}`} style={emptyActionStyle}>提交第一条评价</Link>
                 </StatePanel>
               )}
             </div>
@@ -165,7 +188,11 @@ const metaStyle: React.CSSProperties = { color: '#657383', fontSize: 12, fontWei
 const titleStyle: React.CSSProperties = { margin: '8px 0 0', fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3rem)', lineHeight: 1.05, overflowWrap: 'anywhere' };
 const scriptStyle: React.CSSProperties = { margin: '10px 0 0', color: BLUE, fontSize: 15, fontWeight: 850 };
 const scoreStyle: React.CSSProperties = { flex: '0 0 auto', textAlign: 'right', color: INK };
+const ratingActionsStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' };
 const sectionHeadStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, margin: '4px 0 10px' };
+const laneTabsStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, width: 'min(100%, 520px)' };
+const laneTabStyle: React.CSSProperties = { minHeight: 52, display: 'grid', gap: 4, border: '1px solid rgba(39,83,137,0.14)', borderRadius: 7, padding: '8px 12px', background: '#fff', color: INK, textAlign: 'left', cursor: 'pointer' };
+const laneTabActiveStyle: React.CSSProperties = { borderColor: 'rgba(166,106,31,0.48)', background: '#fff8e8', color: '#7a4d14' };
 const reviewListStyle: React.CSSProperties = { display: 'grid', gap: 10 };
 const reviewStyle: React.CSSProperties = { border: '1px solid rgba(31,41,55,0.09)', borderRadius: 8, padding: 16, background: '#fff' };
 const reviewHeadStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' };
