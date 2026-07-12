@@ -5289,7 +5289,7 @@ app.get('/api/lc/creators/:id', async (req, res) => {
 
 const PROFILE_REVIEW_FIELD_LABELS: Record<string, string> = {
   display_name: '昵称', avatar: '头像', bio: '个人简介', tags: '个人标签', city: '常驻城市',
-  social_links: '社交主页', wechat: '微信号', available_cities: '可服务城市', travel_status: '常驻状态',
+  social_links: '社交主页', wechat: '微信号', available_cities: '可服务城市', travel_status: '活动状态',
   contact_unlock_enabled: '联系方式解锁', contact_intent_amount: '联系意向金额', gender: '性别',
   sexual_orientation: '性取向', preferred_story_lines: '偏好故事线', avatar_focus_x: '头像展示位置',
   avatar_focus_y: '头像展示位置',

@@ -37,13 +37,24 @@ test('legacy profile review still hides database field names', () => {
   const lines = summarizeProfileReviewPayload({
     profile_patch: {
       display_name: '用户',
+      city: '山东',
       travel_status: '常驻所在城市',
       avatar_focus_x: 50,
       avatar_focus_y: 25,
       social_snapshots: {},
     },
   });
-  assert.deepEqual(lines, ['昵称：用户', '常驻状态：常驻所在城市', '头像展示位置：已调整']);
+  assert.deepEqual(lines, ['昵称：用户', '常驻城市：山东', '活动状态：常驻山东', '头像展示位置：已调整']);
+});
+
+test('profile review formats resident status with before and after cities', () => {
+  const lines = summarizeProfileReviewPayload({
+    profile_patch: { city: '山东', travel_status: '常驻所在城市' },
+    before_snapshot: { city: '河北', travel_status: '常驻所在城市' },
+    changed_fields: ['city', 'travel_status'],
+  });
+
+  assert.deepEqual(lines, ['常驻城市：河北 → 山东']);
 });
 
 test('admin review action map covers public and DM review history', () => {

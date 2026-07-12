@@ -1,3 +1,5 @@
+import { formatTravelStatus } from './travelStatus.js';
+
 export const PROFILE_REVIEW_FIELD_LABELS: Record<string, string> = {
   display_name: '昵称',
   avatar: '头像',
@@ -7,7 +9,7 @@ export const PROFILE_REVIEW_FIELD_LABELS: Record<string, string> = {
   social_links: '社交主页',
   wechat: '微信号',
   available_cities: '可服务城市',
-  travel_status: '常驻状态',
+  travel_status: '活动状态',
   contact_unlock_enabled: '联系方式解锁',
   contact_intent_amount: '联系意向金额',
   gender: '性别',
@@ -32,11 +34,15 @@ function comparableValue(value: unknown) {
   return String(value);
 }
 
-function valueText(field: string, value: unknown) {
+function valueText(field: string, value: unknown, context?: Record<string, unknown>) {
   if (field === 'avatar') return value ? '已上传新头像' : '移除头像';
   if (field === 'avatar_focus_x' || field === 'avatar_focus_y') return '已调整';
   if (field === 'contact_unlock_enabled') return value ? '开启' : '关闭';
   if (field === 'contact_intent_amount') return Number(value || 0) > 0 ? `${Number(value)} 契约币` : '不设置';
+  if (field === 'travel_status') {
+    if (value === undefined || value === null || value === '') return '未填写';
+    return formatTravelStatus(String(value), typeof context?.city === 'string' ? context.city : '');
+  }
   if (field === 'social_links' && value && typeof value === 'object' && !Array.isArray(value)) {
     const links = Object.entries(value as Record<string, unknown>)
       .filter(([, url]) => typeof url === 'string' && url.trim())
@@ -84,11 +90,11 @@ export function summarizeProfileReviewPayload(
     if (hasReliableBefore && comparableValue(previousValue) === comparableValue(nextValue)) continue;
     const label = PROFILE_REVIEW_FIELD_LABELS[field];
     if (field === 'avatar') {
-      lines.push(`${label}：${valueText(field, nextValue)}`);
+      lines.push(`${label}：${valueText(field, nextValue, patch)}`);
     } else if (hasReliableBefore && Object.prototype.hasOwnProperty.call(before, field)) {
-      lines.push(`${label}：${valueText(field, previousValue)} → ${valueText(field, nextValue)}`);
+      lines.push(`${label}：${valueText(field, previousValue, before)} → ${valueText(field, nextValue, patch)}`);
     } else {
-      lines.push(`${label}：${valueText(field, nextValue)}`);
+      lines.push(`${label}：${valueText(field, nextValue, patch)}`);
     }
   }
 
