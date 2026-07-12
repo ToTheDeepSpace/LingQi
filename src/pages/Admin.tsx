@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import { isTokenExpired } from '../lib/authSession';
@@ -867,6 +867,11 @@ export default function Admin() {
   });
   const [password, setPassword] = useState('');
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [managedProfiles, setManagedProfiles] = useState<Profile[]>([]);
+  const [profilesTotal, setProfilesTotal] = useState(0);
+  const [accountPage, setAccountPage] = useState(1);
+  const [accountSearch, setAccountSearch] = useState('');
+  const [accountsLoading, setAccountsLoading] = useState(false);
   const [requests, setRequests] = useState<ContactReq[]>([]);
   const [rankings, setRankings] = useState<Ranking[]>([]);
   const [approvedRankings, setApprovedRankings] = useState<Ranking[]>([]);
@@ -902,6 +907,29 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     revisionKind: 'content',
   });
   const [rankingEdit, setRankingEdit] = useState<{ item: Ranking; form: RankingEditForm; saving: boolean; error: string } | null>(null);
+
+  const loadAccounts = useCallback(async (token: string | undefined, page: number, search: string) => {
+    const t = token || getToken();
+    if (!t) return;
+    setAccountsLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: '50' });
+      if (search.trim()) params.set('q', search.trim());
+      const response = await fetch(`${API}/lc/admin/profiles?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      const payload = await response.json();
+      if (!payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '账号加载失败');
+      const data = payload.data as { profiles?: Profile[]; total?: number; page?: number };
+      setManagedProfiles(data.profiles || []);
+      setProfilesTotal(Number(data.total || 0));
+      if (data.page && data.page !== page) setAccountPage(data.page);
+    } catch (accountError) {
+      setError(accountError instanceof Error ? accountError.message : '账号加载失败');
+    } finally {
+      setAccountsLoading(false);
+    }
+  }, []);
 
   async function loadData(token?: string) {
     const t = token || getToken();
@@ -956,6 +984,12 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     return () => window.clearTimeout(timer);
   }, [authed]);
 
+  useEffect(() => {
+    if (!authed) return;
+    const timer = window.setTimeout(() => void loadAccounts(undefined, accountPage, accountSearch), 250);
+    return () => window.clearTimeout(timer);
+  }, [authed, accountPage, accountSearch, loadAccounts]);
+
   const login = async () => {
     setError('');
     try {
@@ -982,6 +1016,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   const approveProfile = async (id: string) => {
     await fetch(`${API}/lc/admin/profile/${id}/unflag`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
     void loadData();
+    void loadAccounts(undefined, accountPage, accountSearch);
   };
 
   const hideProfile = async (id: string) => {
@@ -991,6 +1026,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       body: JSON.stringify({ rejectReason: '管理员下线' }),
     });
     void loadData();
+    void loadAccounts(undefined, accountPage, accountSearch);
   };
 
   const banProfile = async (id: string) => {
@@ -1002,11 +1038,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       body: JSON.stringify({ reason }),
     });
     void loadData();
+    void loadAccounts(undefined, accountPage, accountSearch);
   };
 
   const unbanProfile = async (id: string) => {
     await fetch(`${API}/lc/admin/profile/${id}/unban`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
     void loadData();
+    void loadAccounts(undefined, accountPage, accountSearch);
   };
 
   const toggleRealname = async (id: string, value: boolean) => {
@@ -1016,6 +1054,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       body: JSON.stringify({ value }),
     });
     void loadData();
+    void loadAccounts(undefined, accountPage, accountSearch);
   };
 
   const approveReq = async (id: string) => {
@@ -1399,7 +1438,8 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   };
 
   const pendingProfiles = profiles.filter(p => !p.is_visible && !p.reject_reason);
-  const accountProfiles = profiles;
+  const accountProfiles = managedProfiles;
+  const accountTotalPages = Math.max(1, Math.ceil(profilesTotal / 50));
   const pendingReviewItems: PendingReviewItem[] = [
     ...pendingProfiles.map(p => ({
       id: `profile-${p.id}`,
@@ -1643,7 +1683,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       { tab: 'requests', label: '联系申请', count: requests.length },
     ],
     accounts: [
-      { tab: 'accounts', label: '账号管理', count: accountProfiles.length },
+      { tab: 'accounts', label: '账号管理', count: profilesTotal },
       { tab: 'pending', label: '创作者主页', count: pendingProfiles.length },
       { tab: 'realnameCerts', label: '实名认证', count: certs.filter(item => item.type === 'realname').length },
       { tab: 'security', label: '安全日志' },
@@ -1786,7 +1826,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
                   {[
-                    { label: '账号', value: accountProfiles.length, next: 'accounts' as Tab },
+                    { label: '账号', value: profilesTotal, next: 'accounts' as Tab },
                     { label: 'DM档案', value: publishedDmDossiers.length, next: 'publishedDmDossiers' as Tab },
                     { label: '店家档案', value: publishedStoreDossiers.length, next: 'publishedStoreDossiers' as Tab },
                     { label: '已发布榜单', value: approvedRankings.length, next: 'publishedRankings' as Tab },
@@ -1868,8 +1908,20 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
 
             {tab === 'accounts' && (
-              <ListEmpty empty={accountProfiles.length === 0} text="暂无可管理账号">
-                {accountProfiles.map(p => (
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ ...card, padding: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <input
+                    value={accountSearch}
+                    onChange={event => { setAccountSearch(event.target.value); setAccountPage(1); }}
+                    placeholder="搜索手机号、邮箱、微信昵称或公开昵称"
+                    style={{ flex: '1 1 280px', minWidth: 0, height: 40, padding: '0 12px', borderRadius: 8, border: `1px solid ${LINE}`, background: SURFACE, color: INK, fontSize: '0.86rem' }}
+                  />
+                  <span style={{ color: MUTED, fontSize: '0.8rem', fontWeight: 800 }}>
+                    {accountsLoading ? '加载中...' : `共 ${profilesTotal} 个账号`}
+                  </span>
+                </div>
+                <ListEmpty empty={!accountsLoading && accountProfiles.length === 0} text={accountSearch.trim() ? '没有匹配账号' : '暂无可管理账号'}>
+                  {accountProfiles.map(p => (
                   <Row key={p.id}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -1896,8 +1948,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ActionButton kind="bad" onClick={() => hideProfile(p.id)}>下线</ActionButton>
                     </Actions>
                   </Row>
-                ))}
-              </ListEmpty>
+                  ))}
+                </ListEmpty>
+                {accountTotalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10 }}>
+                    <ActionButton onClick={() => setAccountPage(page => Math.max(1, page - 1))} disabled={accountPage <= 1 || accountsLoading}>上一页</ActionButton>
+                    <span style={{ color: MUTED, fontSize: '0.82rem', fontWeight: 800 }}>{accountPage} / {accountTotalPages}</span>
+                    <ActionButton onClick={() => setAccountPage(page => Math.min(accountTotalPages, page + 1))} disabled={accountPage >= accountTotalPages || accountsLoading}>下一页</ActionButton>
+                  </div>
+                )}
+              </div>
             )}
 
             {tab === 'requests' && (

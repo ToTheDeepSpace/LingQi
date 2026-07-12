@@ -7663,6 +7663,32 @@ app.post('/api/lc/admin/login', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.get('/api/lc/admin/profiles', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page || '1')) || 1);
+    const limit = Math.min(100, Math.max(10, parseInt(String(req.query.limit || '50')) || 50));
+    const offset = (page - 1) * limit;
+    const q = cleanText(req.query.q, 80).replace(/[,_%]/g, '').trim();
+    let query = supabase.from('lc_profiles')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false });
+    if (q) {
+      const pattern = `%${q}%`;
+      query = query.or(`display_name.ilike.${pattern},phone.ilike.${pattern},email.ilike.${pattern},wechat_nickname.ilike.${pattern}`);
+    }
+    const { data, error: queryErr, count } = await query.range(offset, offset + limit - 1);
+    if (queryErr) throw queryErr;
+    const total = count || 0;
+    res.json(ok({
+      profiles: (data || []).map(profile => sanitizeProfile(profile, true)),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
     await processDueDossierOwnerReviews();
@@ -9693,7 +9719,7 @@ app.get('/api/lc/dm-dossiers', async (req, res) => {
           .eq('status', 'approved')
           .limit(5000),
         supabase.from('lc_dm_store_affiliations')
-          .select('id, dm_dossier_id, store_dossier_id, status, reviewed_at, started_at, created_at, updated_at')
+          .select('id, dm_dossier_id, store_dossier_id, status, requested_by_role, reviewed_at, started_at, created_at, updated_at')
           .in('dm_dossier_id', dossierIds)
           .in('status', ['approved', 'pending', 'legacy_unverified'])
           .order('created_at', { ascending: false })
