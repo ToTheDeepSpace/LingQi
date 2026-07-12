@@ -28,7 +28,6 @@ const MUTED = 'rgba(71,85,105,0.76)';
 
 type AuthSession = { token: string; displayName: string; userId?: string };
 type DossierEntityType = 'dm' | 'store';
-type EntityFilter = 'all' | DossierEntityType;
 type RatingFilter = 'all' | 'rated' | '4.0' | '4.5' | 'unrated';
 type ViewMode = 'cards' | 'graph';
 type DossierDraft = {
@@ -124,12 +123,6 @@ const ENTITY_COPY: Record<DossierEntityType, {
   },
 };
 
-const ENTITY_FILTERS: { value: EntityFilter; label: string; helper: string }[] = [
-  { value: 'all', label: '全部档案', helper: 'DM和店家一起看' },
-  { value: 'dm', label: 'DM档案', helper: '剧本杀DM' },
-  { value: 'store', label: '店家档案', helper: '城市店铺' },
-];
-
 const ENTITY_FORM_TYPES: { value: DossierEntityType; label: string; helper: string }[] = [
   { value: 'dm', label: 'DM档案', helper: '给剧本杀DM建档' },
   { value: 'store', label: '店家档案', helper: '给城市店家建档' },
@@ -203,7 +196,6 @@ export default function DmWall() {
   const [items, setItems] = useState<DmDossier[]>([]);
   const [loadedKey, setLoadedKey] = useState('');
   const [city, setCity] = useState('all');
-  const [entityType, setEntityType] = useState<EntityFilter>('dm');
   const [query, setQuery] = useState('');
   const [tagFilter, setTagFilter] = useState('all');
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
@@ -215,7 +207,7 @@ export default function DmWall() {
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [claimTarget, setClaimTarget] = useState<{ id: string; name: string; entityType: DossierEntityType } | null>(null);
 
-  const requestKey = useMemo(() => `${city}|${entityType}`, [city, entityType]);
+  const requestKey = useMemo(() => `${city}|dm`, [city]);
   const loading = loadedKey !== requestKey;
   const activeFormCopy = ENTITY_COPY[form.entityType];
 
@@ -275,10 +267,10 @@ export default function DmWall() {
   });
 
   const loadDossiers = useCallback((signal?: AbortSignal) => {
-    const nextKey = `${city}|${entityType}`;
+    const nextKey = `${city}|dm`;
     const params = new URLSearchParams();
     if (city !== 'all') params.set('city', city);
-    if (entityType !== 'all') params.set('entityType', entityType);
+    params.set('entityType', 'dm');
     fetch(`${API}/lc/dm-dossiers?${params}`, { signal })
       .then(r => r.json())
       .then(d => {
@@ -298,7 +290,7 @@ export default function DmWall() {
       .finally(() => {
         if (!signal?.aborted) setLoadedKey(nextKey);
       });
-  }, [city, entityType]);
+  }, [city]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -402,10 +394,6 @@ export default function DmWall() {
             allowCustom
             style={{ minWidth: 190, flex: '1 1 190px' }}
           />
-          <EntityFilterSwitch value={entityType} onChange={value => {
-            setEntityType(value);
-            setTagFilter('all');
-          }} />
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索名称、标签或常开剧本" style={{ ...inputStyle, minWidth: 190, flex: '1 1 230px' }} />
           <Link to="/reputation/city" style={ghostButton}>看城市口碑</Link>
         </div>
@@ -674,28 +662,6 @@ function ViewModeSwitch({ value, onChange }: { value: ViewMode; onChange: (value
           style={{ border: 0, borderRadius: 6, background: value === mode ? '#fff' : 'transparent', color: value === mode ? INK : MUTED, boxShadow: value === mode ? '0 1px 4px rgba(15,23,42,0.10)' : 'none', fontSize: 12, fontWeight: 850, cursor: 'pointer' }}
         >
           {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function EntityFilterSwitch({ value, onChange }: { value: EntityFilter; onChange: (value: EntityFilter) => void }) {
-  const activeIndex = Math.max(0, ENTITY_FILTERS.findIndex(option => option.value === value));
-  return (
-    <div aria-label="档案类型筛选" style={{ ...segmentShell(ENTITY_FILTERS.length), flex: '2 1 360px' }}>
-      <span className="segment-switch-indicator" aria-hidden="true" style={segmentIndicator(activeIndex, ENTITY_FILTERS.length)} />
-      {ENTITY_FILTERS.map(option => (
-        <button
-          key={option.value}
-          className="segment-switch-button"
-          type="button"
-          onClick={() => onChange(option.value)}
-          aria-pressed={value === option.value}
-          style={segmentButton(value === option.value)}
-        >
-          <span style={segmentLabel}>{option.label}</span>
-          <span style={segmentHelper}>{option.helper}</span>
         </button>
       ))}
     </div>
