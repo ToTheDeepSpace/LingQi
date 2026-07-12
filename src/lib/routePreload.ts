@@ -7,6 +7,7 @@ export const pageLoaders = {
   admin: () => import('../pages/Admin'),
   moderation: () => import('../pages/CommunityModeration'),
   rankings: () => import('../pages/Rankings'),
+  rankingDetail: () => import('../pages/RankingDetail'),
   cityReputation: () => import('../pages/CityReputation'),
   reputationDossier: () => import('../pages/ReputationDossier'),
   dmWall: () => import('../pages/DmWall'),
@@ -56,6 +57,7 @@ const routeLoaders: Record<string, () => Promise<unknown>> = {
   '/admin': pageLoaders.admin,
   '/moderation': pageLoaders.moderation,
   '/rankings': pageLoaders.rankings,
+  '/rankings/:id': pageLoaders.rankingDetail,
   '/city': pageLoaders.cityReputation,
   '/reputation/city': pageLoaders.cityReputation,
   '/reputation/dossier': pageLoaders.reputationDossier,
@@ -102,6 +104,7 @@ function routeKey(path: string) {
   if (pathname.startsWith('/explore/') && pathname !== '/explore') return '/explore/:id';
   if (pathname.startsWith('/dm/') && pathname !== '/dm/rate') return '/dm/:id';
   if (pathname.startsWith('/stores/') && pathname !== '/stores/rate') return '/stores/:id';
+  if (pathname.startsWith('/rankings/') && pathname !== '/rankings/new') return '/rankings/:id';
   if (pathname.startsWith('/scripts/roles/')) return '/scripts/roles/:targetId';
   return pathname || '/';
 }

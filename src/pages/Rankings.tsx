@@ -237,6 +237,7 @@ const filterBarStyle: React.CSSProperties = {
 
 const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 10, alignItems: 'start' };
+const readFullLinkStyle: React.CSSProperties = { display: 'inline-flex', marginTop: 6, color: '#275389', fontSize: '0.74rem', fontWeight: 850, textDecoration: 'none' };
 const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 7, borderTop: '1px solid rgba(31,41,55,0.06)' };
 const compactActionButtonStyle: React.CSSProperties = { border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.66)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 0', fontWeight: 800 };
 const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 4, marginBottom: 5 };
@@ -1521,7 +1522,22 @@ export default function Rankings() {
 
               return (
                 <div key={item.id}
+                  id={`ranking-${item.id}`}
                   className="content-card"
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`查看${heading}详情`}
+                  onClick={event => {
+                    if ((event.target as HTMLElement).closest('a,button,input,textarea,select,label')) return;
+                    navigate(`/rankings/${encodeURIComponent(item.id)}`);
+                  }}
+                  onKeyDown={event => {
+                    if ((event.target as HTMLElement).closest('a,button,input,textarea,select,label')) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      navigate(`/rankings/${encodeURIComponent(item.id)}`);
+                    }
+                  }}
                   style={{
                     ...card,
                     position: 'relative',
@@ -1529,6 +1545,7 @@ export default function Rankings() {
                     paddingLeft: 16,
                     paddingRight: 16,
                     borderColor: subtleAccentBorder,
+                    cursor: 'pointer',
                   }}>
                   {(item.type === 'red' || item.type === 'white') && (
                     <div aria-hidden="true" style={{
@@ -1585,19 +1602,22 @@ export default function Rankings() {
                       </span>
                     </div>
                     {summary && (
-                      <p style={{
-                        fontSize: '0.9rem',
-                        color: 'rgba(31,41,55,0.92)',
-                        lineHeight: 1.6,
-                        margin: '0',
-                        fontWeight: 650,
-                        display: '-webkit-box',
-                        WebkitBoxOrient: 'vertical',
-                        WebkitLineClamp: 2,
-                        overflow: 'hidden',
-                      }}>
-                        {renderContent(summary)}
-                      </p>
+                      <div style={{ margin: 0 }}>
+                        <p style={{
+                          fontSize: '0.9rem',
+                          color: 'rgba(31,41,55,0.92)',
+                          lineHeight: 1.6,
+                          margin: '0',
+                          fontWeight: 650,
+                          display: '-webkit-box',
+                          WebkitBoxOrient: 'vertical',
+                          WebkitLineClamp: 2,
+                          overflow: 'hidden',
+                        }}>
+                          {renderContent(summary)}
+                        </p>
+                        <Link to={`/rankings/${encodeURIComponent(item.id)}`} style={readFullLinkStyle}>查看全文</Link>
+                      </div>
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                       <span style={{

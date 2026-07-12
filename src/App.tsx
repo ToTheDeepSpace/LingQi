@@ -15,6 +15,7 @@ const Dashboard = lazy(pageLoaders.dashboard);
 const Admin = lazy(pageLoaders.admin);
 const CommunityModeration = lazy(pageLoaders.moderation);
 const Rankings = lazy(pageLoaders.rankings);
+const RankingDetail = lazy(pageLoaders.rankingDetail);
 const CityReputation = lazy(pageLoaders.cityReputation);
 const ReputationDossier = lazy(pageLoaders.reputationDossier);
 const DmWall = lazy(pageLoaders.dmWall);
@@ -83,6 +84,7 @@ function AppLayout() {
           <Route path="/admin" element={<Admin />} />
           <Route path="/moderation" element={<CommunityModeration />} />
           <Route path="/rankings" element={<Rankings />} />
+          <Route path="/rankings/:id" element={<RankingDetail />} />
           <Route path="/city" element={<CityReputation />} />
           <Route path="/reputation/city" element={<CityReputation />} />
           <Route path="/reputation/dossier" element={<ReputationDossier />} />

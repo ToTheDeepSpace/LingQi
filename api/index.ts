@@ -12471,6 +12471,34 @@ app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.get('/api/lc/rankings/:id', async (req, res) => {
+  try {
+    const viewerId = getOptionalCreatorId(req);
+    const { data, error } = await supabase.from('lc_rankings')
+      .select('*, lc_profiles!poster_id(display_name, avatar, verified_dm, verified_shop, role)')
+      .eq('id', req.params.id)
+      .eq('status', 'approved')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data || !isPublicRankingVisible(data as Record<string, unknown>)) {
+      return res.status(404).json(err(new Error('榜单不存在或尚未公开')));
+    }
+    const [withAudit] = await attachAuditProof('ranking', [publicRankingPayload(withRankingMetrics(data as Record<string, unknown>))]);
+    let myVote = null;
+    if (viewerId) {
+      const voteResult = await supabase.from('lc_votes')
+        .select('id, ranking_id, vote_type, created_at')
+        .eq('ranking_id', req.params.id)
+        .eq('voter_id', viewerId)
+        .eq('source', 'free_vote')
+        .maybeSingle();
+      if (voteResult.error) throw voteResult.error;
+      if (voteResult.data) myVote = serializeMyVote(voteResult.data as RankingVoteRow);
+    }
+    res.json(ok({ ...withRankingMetrics(withAudit), my_vote: myVote }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
   try {
     const { type, subjectName, subjectType, subjectCity, subjectUrl, content, paymentProof, newSubject } = req.body;
