@@ -636,7 +636,11 @@ function publicReviewTags(item: PublicReview) {
   return Array.from(new Set(tags.filter(Boolean))).slice(0, 6);
 }
 
-function summarizePublicReviewPayload(payload?: Record<string, unknown> | null, fallbackProfile?: Record<string, unknown> | null) {
+function summarizePublicReviewPayload(
+  payload?: Record<string, unknown> | null,
+  fallbackProfile?: Record<string, unknown> | null,
+  dossiers: DossierOption[] = [],
+) {
   if (!payload || typeof payload !== 'object') return [];
   if (payload.patch && typeof payload.patch === 'object') {
     const patch = payload.patch as Record<string, unknown>;
@@ -645,8 +649,25 @@ function summarizePublicReviewPayload(payload?: Record<string, unknown> | null, 
       dm_name: '名称', city: '城市', workplace: '店家 / 地址', employment_status: '受雇状态', employer_store_id: '受雇店家',
       profile_url: '主页链接', photo_url: '照片', note: '档案说明', tags: '标签',
     };
-    const valueText = (value: unknown) => Array.isArray(value) ? (value.join('、') || '留空') : value === null || value === undefined || value === '' ? '留空' : String(value);
-    const lines = Object.entries(patch).map(([key, value]) => `${labels[key] || key}: ${valueText(before[key])} → ${valueText(value)}`);
+    const valueText = (key: string, value: unknown, phase: 'before' | 'after') => {
+      if (key === 'employment_status') {
+        if (value === 'store_affiliated') return '已受雇于店家';
+        if (value === 'freelance') return '无受雇店家（自由DM）';
+        if (value === 'unknown') return '受雇状态待核对';
+      }
+      if (key === 'employer_store_id') {
+        if (!value) return '无关联店家';
+        const store = dossiers.find(item => item.entity_type === 'store' && item.id === String(value));
+        return store?.dm_name || (phase === 'before' ? '原关联店家' : '待核对店家');
+      }
+      if (key === 'photo_url') {
+        if (!value) return '无照片';
+        return phase === 'before' ? '原照片' : '已上传新照片';
+      }
+      if (Array.isArray(value)) return value.join('、') || '留空';
+      return value === null || value === undefined || value === '' ? '留空' : String(value);
+    };
+    const lines = Object.entries(patch).map(([key, value]) => `${labels[key] || '资料'}：${valueText(key, before[key], 'before')} → ${valueText(key, value, 'after')}`);
     if (payload.edit_reason) lines.unshift(`修改依据: ${String(payload.edit_reason)}`);
     if (payload.owner_response_status === 'pending') lines.push(`认领人状态: 等待确认，截止 ${String(payload.owner_response_due_at || '')}`);
     if (payload.owner_response_status === 'agreed') lines.push(`认领人状态: 已同意${payload.owner_response_reason ? `，说明：${String(payload.owner_response_reason)}` : ''}`);
@@ -657,10 +678,15 @@ function summarizePublicReviewPayload(payload?: Record<string, unknown> | null, 
   if (payload.profile_patch && typeof payload.profile_patch === 'object') {
     return summarizeProfileReviewPayload(payload, fallbackProfile);
   }
+  const fallbackLabels: Record<string, string> = {
+    tag: '标签', target_type: '对象类型', rating: '评分', score: '评分', content: '提交内容', comment: '点评内容',
+    spoiler_level: '剧透程度', items: '提交档期', image_url: '上传图片', role_name: '角色', script_name: '剧本',
+  };
+  const hiddenKeys = new Set(['social_snapshots', 'before_snapshot', 'changed_fields']);
   return Object.entries(payload)
-    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .filter(([key, value]) => !hiddenKeys.has(key) && value !== undefined && value !== null && value !== '')
     .slice(0, 12)
-    .map(([key, value]) => `${key}: ${Array.isArray(value) ? `${value.length} 项` : typeof value === 'object' ? JSON.stringify(value).slice(0, 160) : String(value).slice(0, 160)}`);
+    .map(([key, value]) => `${fallbackLabels[key] || '提交资料'}：${Array.isArray(value) ? `${value.length} 项` : typeof value === 'object' ? '已提交结构化资料' : String(value).slice(0, 160)}`);
 }
 
 function publicReviewProofFiles(item: PublicReview): ProofFile[] {
@@ -1890,7 +1916,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
               <ListEmpty empty={visiblePublicReviews.length === 0} text="暂无待审核内容">
                 {visiblePublicReviews.map(item => {
                   const fallbackProfile = item.status === 'pending' ? profiles.find(profile => profile.id === item.profile_id) : undefined;
-                  const details = summarizePublicReviewPayload(item.payload, fallbackProfile as Record<string, unknown> | undefined);
+                  const details = summarizePublicReviewPayload(item.payload, fallbackProfile as Record<string, unknown> | undefined, dossierOptions);
                   const proofFiles = publicReviewProofFiles(item);
                   const waitingForDossierOwner = item.target_type === 'dossier_update' && item.payload?.owner_response_status === 'pending';
                   return (
@@ -2361,7 +2387,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 {historyEvents.map(event => {
                   const actionInfo = ADMIN_REVIEW_ACTIONS[event.action];
                   const publicReview = event.target_type === 'public_review' && event.target_id ? reviewHistoryById.get(event.target_id) : undefined;
-                  const details = publicReview ? summarizePublicReviewPayload(publicReview.payload) : [];
+                  const details = publicReview ? summarizePublicReviewPayload(publicReview.payload, undefined, dossierOptions) : [];
                   const proofFiles = publicReview ? publicReviewProofFiles(publicReview) : [];
                   const metadataLines = moderationHistoryMetadataLines(event.metadata);
                   const outcomeText = actionInfo.outcome === 'approved' ? '已通过' : actionInfo.outcome === 'rejected' ? '已拒绝' : '已处理';
