@@ -29,10 +29,10 @@ test('圈人圈店按 ID 去重，履历拒绝结束早于开始', () => {
   assert.deepEqual(normalizeDossierNamedRefs([
     { id: 'one', name: '泡泡' },
     { id: 'one', name: '重复名字' },
-    { id: 'two', name: '止行剧场' },
+    { id: 'two', name: '止行剧场', type: 'store' },
   ]), [
     { id: 'one', name: '泡泡' },
-    { id: 'two', name: '止行剧场' },
+    { id: 'two', name: '止行剧场', type: 'store' },
   ]);
   assert.deepEqual(normalizeDossierCareerHistory([
     { storeDossierId: 'store-1', storeName: '止行剧场', startedMonth: '2024-03', endedMonth: '2024-02' },

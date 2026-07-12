@@ -10670,15 +10670,25 @@ function normalizeDossierPhotoSubmission(input: unknown, fallbackUrl: unknown, e
 async function canonicalDossierProfileRefs(input: unknown) {
   const refs = normalizeDossierNamedRefs(input);
   if (refs.length === 0) return [];
-  const result = await supabase.from('lc_profiles')
-    .select('id, display_name')
-    .in('id', refs.map(ref => ref.id))
-    .eq('is_visible', true);
-  if (result.error) throw result.error;
-  const profiles = new Map((result.data || []).map(row => [String(row.id || ''), cleanText(row.display_name, 100)]));
-  const invalid = refs.find(ref => !profiles.has(ref.id));
-  if (invalid) throw new Error(`圈选用户“${invalid.name}”不存在或未公开`);
-  return refs.map(ref => ({ id: ref.id, name: profiles.get(ref.id) || ref.name }));
+  const profileRefs = refs.filter(ref => ref.type !== 'dm');
+  const dmRefs = refs.filter(ref => ref.type === 'dm');
+  const [profileResult, dmResult] = await Promise.all([
+    profileRefs.length > 0
+      ? supabase.from('lc_profiles').select('id, display_name').in('id', profileRefs.map(ref => ref.id)).eq('is_visible', true)
+      : Promise.resolve({ data: [], error: null }),
+    dmRefs.length > 0
+      ? supabase.from('lc_dm_dossiers').select('id, dm_name').in('id', dmRefs.map(ref => ref.id)).eq('entity_type', 'dm').eq('status', 'approved')
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (profileResult.error) throw profileResult.error;
+  if (dmResult.error) throw dmResult.error;
+  const profiles = new Map((profileResult.data || []).map(row => [String(row.id || ''), cleanText(row.display_name, 100)]));
+  const dms = new Map((dmResult.data || []).map(row => [String(row.id || ''), cleanText(row.dm_name, 100)]));
+  const invalid = refs.find(ref => ref.type === 'dm' ? !dms.has(ref.id) : !profiles.has(ref.id));
+  if (invalid) throw new Error(`引用对象“${invalid.name}”不存在或未公开`);
+  return refs.map(ref => ref.type === 'dm'
+    ? { id: ref.id, name: dms.get(ref.id) || ref.name, type: 'dm' as const }
+    : { id: ref.id, name: profiles.get(ref.id) || ref.name, type: 'profile' as const });
 }
 
 async function canonicalDossierStoreData(relatedInput: unknown, careerInput: unknown) {
@@ -10701,7 +10711,7 @@ async function canonicalDossierStoreData(relatedInput: unknown, careerInput: unk
   const invalidCareer = career.find(entry => entry.store_dossier_id && !stores.has(String(entry.store_dossier_id)));
   if (invalidCareer) throw new Error(`任职店家“${invalidCareer.store_name}”不存在或未公开`);
   return {
-    related: related.map(ref => ({ id: ref.id, name: stores.get(ref.id) || ref.name })),
+    related: related.map(ref => ({ id: ref.id, name: stores.get(ref.id) || ref.name, type: 'store' as const })),
     career: career.map(entry => ({
       ...entry,
       store_name: entry.store_dossier_id ? stores.get(String(entry.store_dossier_id)) || entry.store_name : entry.store_name,
@@ -14143,6 +14153,61 @@ app.post('/api/lc/wallet/wechat/notify', async (req, res) => {
 });
 
 // ── 艾特解析 ──
+
+app.get('/api/lc/dossier-references/search', async (req, res) => {
+  try {
+    const q = cleanText(req.query.q, 60);
+    let profileQuery = supabase.from('lc_profiles')
+      .select('id, display_name, city')
+      .eq('is_visible', true)
+      .order('display_name')
+      .limit(8);
+    let dossierQuery = supabase.from('lc_dm_dossiers')
+      .select('id, dm_name, city, entity_type, tags')
+      .eq('status', 'approved')
+      .order('approved_at', { ascending: false, nullsFirst: false })
+      .limit(120);
+    if (q) {
+      profileQuery = profileQuery.ilike('display_name', `%${q}%`);
+      dossierQuery = dossierQuery.ilike('dm_name', `%${q}%`);
+    }
+    const [profileResult, dossierResult, tagDossierResult, entityTagResult] = await Promise.all([
+      profileQuery,
+      dossierQuery,
+      supabase.from('lc_dm_dossiers').select('tags').eq('status', 'approved').limit(500),
+      supabase.from('lc_entity_tags').select('tag, likes').eq('status', 'approved').order('likes', { ascending: false }).limit(200),
+    ]);
+    if (profileResult.error) throw profileResult.error;
+    if (dossierResult.error) throw dossierResult.error;
+    if (tagDossierResult.error) throw tagDossierResult.error;
+    if (entityTagResult.error && !isMissingRelation(entityTagResult.error, 'lc_entity_tags')) throw entityTagResult.error;
+    const entities = [
+      ...(dossierResult.data || []).slice(0, 12).map(row => ({
+        id: row.id,
+        name: row.dm_name,
+        type: row.entity_type === 'store' ? 'store' : 'dm',
+        city: row.city || null,
+      })),
+      ...(profileResult.data || []).map(row => ({ id: row.id, name: row.display_name, type: 'profile', city: row.city || null })),
+    ].slice(0, 16);
+    const normalizedQuery = q.toLowerCase();
+    const tagCounts = new Map<string, { name: string; score: number }>();
+    const addTag = (value: unknown, score = 0) => {
+      const name = cleanText(value, 24);
+      if (!name || (normalizedQuery && !name.toLowerCase().includes(normalizedQuery))) return;
+      const key = name.toLowerCase();
+      const current = tagCounts.get(key);
+      tagCounts.set(key, { name: current?.name || name, score: (current?.score || 0) + score + 1 });
+    };
+    (tagDossierResult.data || []).forEach(row => cleanTextArray(row.tags, 10, 24).forEach(tag => addTag(tag, 1)));
+    if (!entityTagResult.error) (entityTagResult.data || []).forEach(row => addTag(row.tag, Number(row.likes || 0)));
+    const tags = Array.from(tagCounts.values())
+      .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name, 'zh-CN'))
+      .slice(0, 12)
+      .map(item => item.name);
+    res.json(ok({ entities, tags }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
 
 app.get('/api/lc/profiles/search', async (req, res) => {
   try {

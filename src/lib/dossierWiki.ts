@@ -38,6 +38,7 @@ export type DossierPhoto = {
 export type DossierNamedRef = {
   id: string;
   name: string;
+  type?: 'profile' | 'dm' | 'store';
 };
 
 export type DossierCareerEntry = {
@@ -115,7 +116,8 @@ export function normalizeDossierNamedRefs(input: unknown, max = MAX_DOSSIER_RELA
     const name = compactText(row.name, 100);
     if (!id || !name || seen.has(id)) continue;
     seen.add(id);
-    refs.push({ id, name });
+    const type = row.type === 'dm' || row.type === 'store' || row.type === 'profile' ? row.type : undefined;
+    refs.push({ id, name, ...(type ? { type } : {}) });
     if (refs.length >= max) break;
   }
   return refs;

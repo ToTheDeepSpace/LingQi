@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type React from 'react';
 import CitySearchSelect from './CitySearchSelect';
 import DossierGalleryEditor from './DossierGalleryEditor';
+import DossierInlineReferenceEditor from './DossierInlineReferenceEditor';
 import DossierWikiFieldsEditor, { type DossierWikiDraft } from './DossierWikiFieldsEditor';
 import ImageUpload from './ImageUpload';
 import StoreSearchSelect from './StoreSearchSelect';
@@ -70,8 +71,7 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
   const [profileUrl, setProfileUrl] = useState(dossier.profileUrl || '');
   const [photoUrl, setPhotoUrl] = useState(dossier.photoUrl || '');
   const [photoFiles, setPhotoFiles] = useState<DossierPhoto[]>(() => normalizeDossierPhotos(dossier.photoFiles, dossier.photoUrl));
-  const [note, setNote] = useState(dossier.note || '');
-  const [tags, setTags] = useState((dossier.tags || []).join(' / '));
+  const [tags, setTags] = useState(dossier.tags || []);
   const [editReason, setEditReason] = useState('');
   const [storeOptions, setStoreOptions] = useState<StoreOption[]>([]);
   const [scriptOptions, setScriptOptions] = useState<ScriptOption[]>([]);
@@ -126,8 +126,6 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
     };
   }, [onClose, open, submitting]);
 
-  const parsedTags = useMemo(() => tags.split(/[，,、/\n]/).map(value => value.trim()).filter(Boolean).slice(0, 10), [tags]);
-
   if (!open) return null;
 
   const submit = async () => {
@@ -160,8 +158,7 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
           profileUrl: profileUrl.trim(),
           photoUrl: dossier.entityType === 'dm' ? photoFiles[0]?.url || '' : photoUrl.trim(),
           photoFiles: dossier.entityType === 'dm' ? photoFiles : undefined,
-          note: note.trim(),
-          tags: parsedTags,
+          tags,
           dmStartedMonth: dossier.entityType === 'dm' ? wikiDraft.dmStartedMonth || null : undefined,
           birthYear: dossier.entityType === 'dm' ? wikiDraft.birthYear || null : undefined,
           heightCm: dossier.entityType === 'dm' ? wikiDraft.heightCm || null : undefined,
@@ -247,17 +244,26 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
             </div>
           )}
 
-          <div style={twoColumnStyle}>
-            <Field label={dossier.entityType === 'store' ? '店铺主页链接' : '个人主页链接'} value={profileUrl} onChange={setProfileUrl} placeholder="可留空" disabled={isLocked('profile_url')} source={fieldSource('profile_url')} />
-            <Field label="标签" value={tags} onChange={setTags} placeholder="逗号或斜杠分隔，最多10个" disabled={isLocked('tags')} source={fieldSource('tags')} />
-          </div>
+          <div style={{ maxWidth: 460 }}><Field label={dossier.entityType === 'store' ? '店铺主页链接' : '个人主页链接'} value={profileUrl} onChange={setProfileUrl} placeholder="可留空" disabled={isLocked('profile_url')} source={fieldSource('profile_url')} /></div>
 
           {dossier.entityType === 'dm' && (
             <>
-              <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+              <div style={{ marginTop: 8 }}>
                 <span style={labelStyle}>人物简介<SourceLabel source={fieldSource('bio')} /></span>
-                <textarea value={wikiDraft.bio} disabled={isLocked('bio')} onChange={event => setWikiDraft({ ...wikiDraft, bio: event.target.value.slice(0, 3000) })} rows={3} style={{ ...inputStyle, minHeight: 68, padding: '9px 11px', resize: 'vertical' }} />
-              </label>
+                <DossierInlineReferenceEditor
+                  value={wikiDraft.bio}
+                  onChange={bio => setWikiDraft(current => ({ ...current, bio }))}
+                  relatedProfiles={wikiDraft.relatedProfiles}
+                  relatedStores={wikiDraft.relatedStores}
+                  tags={tags}
+                  onRelatedProfilesChange={relatedProfiles => setWikiDraft(current => ({ ...current, relatedProfiles }))}
+                  onRelatedStoresChange={relatedStores => setWikiDraft(current => ({ ...current, relatedStores }))}
+                  onTagsChange={setTags}
+                  disabled={isLocked('bio')}
+                  tagsLocked={isLocked('tags')}
+                  referencesLocked={isLocked('related_profiles') || isLocked('related_stores')}
+                />
+              </div>
               <div style={photoSummaryStyle}>
                 {photoFiles[0] ? <img src={photoFiles[0].url} alt="当前封面" style={{ width: 58, height: 58, borderRadius: 7, objectFit: 'cover', objectPosition: `${photoFiles[0].focus_x ?? 50}% ${photoFiles[0].focus_y ?? 25}%` }} /> : <div style={emptyPhotoStyle}>暂无照片</div>}
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -286,10 +292,6 @@ export default function DossierEditModal({ open, dossier, token, currentUserId, 
             <div style={{ alignSelf: 'end', paddingBottom: 1 }}><ImageUpload token={token} scope="dossier-edit" label="上传新照片" variant="compact" onUploaded={setPhotoUrl} /></div>
           </div>}
 
-          <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-            <span style={labelStyle}>一句话档案说明<SourceLabel source={fieldSource('note')} /></span>
-            <textarea value={note} disabled={isLocked('note')} onChange={event => setNote(event.target.value.slice(0, 600))} rows={2} style={{ ...inputStyle, minHeight: 54, padding: '8px 11px', resize: 'vertical' }} />
-          </label>
           <label style={{ display: 'grid', gap: 6, marginTop: 8 }}>
             <span style={labelStyle}>修改依据 *</span>
             <textarea value={editReason} onChange={event => setEditReason(event.target.value.slice(0, 600))} rows={2} placeholder="资料来源和修改原因，至少6个字" style={{ ...inputStyle, minHeight: 60, padding: '8px 11px', resize: 'vertical' }} />

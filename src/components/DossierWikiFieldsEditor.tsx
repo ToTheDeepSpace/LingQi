@@ -1,15 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type React from 'react';
 import {
   MAX_DOSSIER_CAREER_ENTRIES,
   MAX_DOSSIER_COMMON_SCRIPTS,
-  MAX_DOSSIER_RELATED_ENTITIES,
   type DossierCareerEntry,
   type DossierFieldProvenance,
   type DossierNamedRef,
 } from '../lib/dossierWiki';
 
-const API = '/api';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.72)';
 const MBTI_OPTIONS = [
@@ -41,35 +39,12 @@ type Props = {
   isOwner: boolean;
 };
 
-type ProfileSearchResult = DossierNamedRef & { city?: string | null };
-
 export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions, storeOptions, fieldProvenance = {}, isOwner }: Props) {
   const [scriptId, setScriptId] = useState('');
-  const [storeId, setStoreId] = useState('');
-  const [profileQuery, setProfileQuery] = useState('');
-  const [profileResults, setProfileResults] = useState<ProfileSearchResult[]>([]);
-
-  useEffect(() => {
-    const query = profileQuery.trim();
-    if (!query) return;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      fetch(`${API}/lc/profiles/search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
-        .then(response => response.json())
-        .then(payload => { if (payload.success) setProfileResults(payload.data || []); })
-        .catch(() => undefined);
-    }, 220);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [profileQuery]);
 
   const availableScripts = useMemo(() => scriptOptions.filter(option => !value.commonScripts.some(item => item.id === option.id)), [scriptOptions, value.commonScripts]);
-  const availableStores = useMemo(() => storeOptions.filter(option => !value.relatedStores.some(item => item.id === option.id)), [storeOptions, value.relatedStores]);
   const identityCount = [value.birthYear, value.heightCm, value.weightKg, value.mbti, value.zodiac].filter(Boolean).length;
   const careerCount = (value.dmStartedMonth ? 1 : 0) + value.commonScripts.length + value.careerHistory.length;
-  const relationCount = value.relatedProfiles.length + value.relatedStores.length;
   const update = (patch: Partial<DossierWikiDraft>) => onChange({ ...value, ...patch });
   const locked = (field: string) => !isOwner && fieldProvenance[field]?.source === 'owner';
   const source = (field: string) => fieldProvenance[field]?.source;
@@ -163,44 +138,6 @@ export default function DossierWikiFieldsEditor({ value, onChange, scriptOptions
           ))}
         </div>
       </EditorDetails>
-
-      <EditorDetails title="关系资料" summary={relationCount > 0 ? `已关联 ${relationCount} 项` : '圈人 / 圈店'}>
-        <div style={fieldGridStyle}>
-          <div style={{ position: 'relative' }}>
-            <Field label="圈人">
-              <input value={profileQuery} disabled={locked('related_profiles')} onChange={event => setProfileQuery(event.target.value)} placeholder="搜索公开用户名" style={inputStyle} />
-            </Field>
-            {profileQuery.trim() && profileResults.length > 0 && (
-              <div style={resultListStyle}>
-                {profileResults.filter(item => !value.relatedProfiles.some(ref => ref.id === item.id)).slice(0, 8).map(item => (
-                  <button type="button" key={item.id} onClick={() => {
-                    if (value.relatedProfiles.length < MAX_DOSSIER_RELATED_ENTITIES) update({ relatedProfiles: [...value.relatedProfiles, { id: item.id, name: item.name }] });
-                    setProfileQuery('');
-                    setProfileResults([]);
-                  }} style={resultButtonStyle}><strong>{item.name}</strong><span>{item.city || '城市待补'}</span></button>
-                ))}
-              </div>
-            )}
-            <ChipList values={value.relatedProfiles} disabled={locked('related_profiles')} onRemove={id => update({ relatedProfiles: value.relatedProfiles.filter(item => item.id !== id) })} />
-          </div>
-          <div>
-            <Field label="圈店">
-              <div style={addRowStyle}>
-                <select value={storeId} disabled={locked('related_stores')} onChange={event => setStoreId(event.target.value)} style={inputStyle}>
-                  <option value="">选择店家</option>
-                  {availableStores.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
-                </select>
-                <button type="button" disabled={locked('related_stores') || !storeId || value.relatedStores.length >= MAX_DOSSIER_RELATED_ENTITIES} onClick={() => {
-                  const option = storeOptions.find(item => item.id === storeId);
-                  if (option) update({ relatedStores: [...value.relatedStores, option] });
-                  setStoreId('');
-                }} style={addButtonStyle}>添加</button>
-              </div>
-            </Field>
-            <ChipList values={value.relatedStores} disabled={locked('related_stores')} onRemove={id => update({ relatedStores: value.relatedStores.filter(item => item.id !== id) })} />
-          </div>
-        </div>
-      </EditorDetails>
     </>
   );
 
@@ -241,8 +178,6 @@ const smallButtonStyle: React.CSSProperties = { minHeight: 30, padding: '0 9px',
 const iconButtonStyle: React.CSSProperties = { width: 34, minHeight: 38, padding: 0, borderRadius: 7, border: '1px solid rgba(185,28,28,0.18)', background: '#fff', color: '#b91c1c', fontSize: 18, fontWeight: 900, cursor: 'pointer' };
 const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 27, padding: '0 5px 0 8px', borderRadius: 999, background: '#eff6ff', color: '#275389', fontSize: 12, fontWeight: 850 };
 const chipRemoveStyle: React.CSSProperties = { width: 19, height: 19, display: 'grid', placeItems: 'center', padding: 0, border: 0, borderRadius: '50%', background: 'rgba(39,83,137,0.10)', color: '#275389', cursor: 'pointer' };
-const resultListStyle: React.CSSProperties = { position: 'absolute', zIndex: 12, top: 69, left: 0, right: 0, maxHeight: 230, overflowY: 'auto', border: '1px solid rgba(31,41,55,0.14)', borderRadius: 7, background: '#fff', boxShadow: '0 12px 30px rgba(31,41,55,0.14)' };
-const resultButtonStyle: React.CSSProperties = { width: '100%', minHeight: 42, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', border: 0, borderBottom: '1px solid rgba(31,41,55,0.08)', background: '#fff', color: INK, textAlign: 'left', cursor: 'pointer' };
 const detailsStyle: React.CSSProperties = { marginTop: 8, border: '1px solid rgba(31,41,55,0.10)', borderRadius: 7, background: '#fff' };
 const summaryStyle: React.CSSProperties = { minHeight: 42, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '0 12px', color: INK, fontSize: 13, fontWeight: 900, cursor: 'pointer' };
 const detailsBodyStyle: React.CSSProperties = { padding: '2px 12px 13px', borderTop: '1px solid rgba(31,41,55,0.07)' };

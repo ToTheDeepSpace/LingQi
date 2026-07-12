@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import CitySearchSelect from '../components/CitySearchSelect';
 import DossierClaimModal from '../components/DossierClaimModal';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
@@ -207,11 +207,12 @@ function shouldSaveDossierDraft(data: DossierDraft) {
 
 export default function DmWall() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const auth = getAuth();
   const [items, setItems] = useState<DmDossier[]>([]);
   const [loadedKey, setLoadedKey] = useState('');
   const [city, setCity] = useState('all');
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => searchParams.get('q') || '');
   const [tagFilter, setTagFilter] = useState('all');
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
   const [sortMode, setSortMode] = useState<DmDossierSortMode>(readStoredSortMode);

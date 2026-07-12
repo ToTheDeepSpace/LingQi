@@ -220,7 +220,7 @@ export default function DmProfile() {
           <h2 style={headingStyle}>DM 百科</h2>
           <div className="dm-wiki-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.45fr) minmax(240px, 0.75fr)', gap: 22, alignItems: 'start' }}>
             <div style={{ minWidth: 0 }}>
-              {dossier.bio ? <div><SourceBadge source={dossier.field_provenance?.bio?.source} /><p style={{ margin: '5px 0 0', lineHeight: 1.85, color: '#334155', whiteSpace: 'pre-wrap' }}>{dossier.bio}</p></div> : <p style={{ margin: 0, color: MUTED }}>人物简介待补充。</p>}
+              {dossier.bio ? <div><SourceBadge source={dossier.field_provenance?.bio?.source} /><p style={{ margin: '5px 0 0', lineHeight: 1.85, color: '#334155', whiteSpace: 'pre-wrap' }}><DossierRichText text={dossier.bio} profiles={dossier.related_profiles || []} stores={dossier.related_stores || []} tags={dossier.tags || []} /></p></div> : <p style={{ margin: 0, color: MUTED }}>人物简介待补充。</p>}
               {dossier.common_scripts && dossier.common_scripts.length > 0 && (
                 <WikiSection title="常开剧本">
                   <SourceBadge source={dossier.field_provenance?.common_scripts?.source} />
@@ -244,14 +244,6 @@ export default function DmProfile() {
                   </div>
                 </WikiSection>
               )}
-              {(dossier.related_profiles?.length || dossier.related_stores?.length) ? (
-                <WikiSection title="关联人物与店家">
-                  <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                    {dossier.related_profiles?.map(profile => <Link key={profile.id} to={`/explore/${profile.id}`} style={relatedLinkStyle}>@{profile.name}</Link>)}
-                    {dossier.related_stores?.map(store => <Link key={store.id} to={`/stores/${store.id}`} style={relatedLinkStyle}>#{store.name}</Link>)}
-                  </div>
-                </WikiSection>
-              ) : null}
             </div>
             <aside style={{ paddingLeft: 18, borderLeft: '1px solid rgba(31,41,55,0.10)' }}>
               <InfoRow label="所在城市" value={dossier.city || '待补充'} source={dossier.field_provenance?.city?.source} />
@@ -266,7 +258,6 @@ export default function DmProfile() {
             </aside>
           </div>
         </section>
-        {dossier.note && <section style={cardStyle}><h2 style={headingStyle}>档案说明</h2><p style={{ margin: 0, lineHeight: 1.75, color: MUTED }}>{dossier.note}</p></section>}
         <section style={cardStyle}>
           <h2 style={headingStyle}>体验评价</h2>
           {ratings.length === 0 ? <p style={{ color: MUTED }}>暂无审核通过的评分。</p> : <div style={{ display: 'grid', gap: 12 }}>
@@ -461,6 +452,32 @@ function SourceBadge({ source }: { source?: 'owner' | 'community' }) {
   return <small title={source === 'owner' ? '由 DM 本人填写' : '由社区用户补充'} style={{ display: 'inline-block', color: source === 'owner' ? '#8a5a19' : '#64748b', fontSize: 10, fontWeight: 750 }}>{source === 'owner' ? 'DM本人提供' : '社区提供'}</small>;
 }
 
+function DossierRichText({ text, profiles, stores, tags }: { text: string; profiles: DossierNamedRef[]; stores: DossierNamedRef[]; tags: string[] }) {
+  const tokens = [
+    ...profiles.map(item => ({ token: `@${item.name}`, href: item.type === 'dm' ? `/dm/${item.id}` : `/explore/${item.id}` })),
+    ...stores.map(item => ({ token: `@${item.name}`, href: `/stores/${item.id}` })),
+    ...tags.map(tag => ({ token: `#${tag}`, href: `/dm?q=${encodeURIComponent(tag)}` })),
+  ].sort((left, right) => right.token.length - left.token.length);
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    let next: { index: number; token: string; href: string } | null = null;
+    for (const candidate of tokens) {
+      const index = text.indexOf(candidate.token, cursor);
+      if (index < 0 || (next && index >= next.index)) continue;
+      next = { index, ...candidate };
+    }
+    if (!next) {
+      parts.push(text.slice(cursor));
+      break;
+    }
+    if (next.index > cursor) parts.push(text.slice(cursor, next.index));
+    parts.push(<Link key={`${next.href}-${next.index}`} to={next.href} style={inlineReferenceStyle}>{next.token}</Link>);
+    cursor = next.index + next.token.length;
+  }
+  return <>{parts}</>;
+}
+
 function formatMonth(value: string) {
   const [year, month] = value.slice(0, 7).split('-');
   return year && month ? `${year}年${Number(month)}月` : value;
@@ -514,7 +531,7 @@ const smallLinkStyle = { color: '#8a5a19', fontSize: 12, fontWeight: 900, textDe
 const supportChipStyle = { padding: '5px 8px', borderRadius: 999, background: '#fff8e8', border: '1px solid rgba(166,106,31,0.14)', color: '#8a5a19', fontSize: 12, fontWeight: 800 };
 const wikiLinkStyle = { color: '#275389', fontWeight: 900, textDecoration: 'none' };
 const inlineStoreLinkStyle = { color: '#275389', fontWeight: 800, textDecoration: 'none' };
-const relatedLinkStyle = { padding: '4px 8px', borderRadius: 999, background: '#f1f5f9', color: '#334155', fontSize: 12, fontWeight: 850, textDecoration: 'none' };
+const inlineReferenceStyle = { color: '#275389', fontWeight: 850, textDecoration: 'none', borderBottom: '1px solid rgba(39,83,137,0.22)' };
 const verificationBadgeStyle = { display: 'inline-flex', padding: '2px 5px', borderRadius: 5, background: '#ecfdf3', color: '#166534', fontSize: 10, fontWeight: 900 };
 const lightboxStyle = { position: 'fixed' as const, inset: 0, zIndex: 1500, display: 'grid', placeItems: 'center', padding: 24, background: 'rgba(3,7,18,0.92)' };
 const lightboxCloseStyle = { position: 'fixed' as const, top: 16, right: 18, width: 38, height: 38, display: 'grid', placeItems: 'center', padding: 0, borderRadius: 7, border: '1px solid rgba(255,255,255,0.28)', background: 'rgba(15,23,42,0.72)', color: '#fff', fontSize: 24, cursor: 'pointer' };

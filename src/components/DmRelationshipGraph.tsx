@@ -103,8 +103,8 @@ function buildGraph(items: DmGraphDossier[]): GraphData<GraphNode, GraphLink> {
     });
 
     (item.related_profiles || []).slice(0, 12).forEach(profile => {
-      const nodeId = `profile:${profile.id}`;
-      addNode({ id: nodeId, label: profile.name, kind: 'profile', href: `/explore/${encodeURIComponent(profile.id)}`, val: 4 });
+      const nodeId = `${profile.type === 'dm' ? 'dm' : 'profile'}:${profile.id}`;
+      addNode({ id: nodeId, label: profile.name, kind: profile.type === 'dm' ? 'dm' : 'profile', href: profile.type === 'dm' ? `/dm/${encodeURIComponent(profile.id)}` : `/explore/${encodeURIComponent(profile.id)}`, val: 4 });
       addLink(sourceId, nodeId, 'profile');
     });
   });
