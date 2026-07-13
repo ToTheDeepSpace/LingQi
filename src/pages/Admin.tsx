@@ -2152,6 +2152,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   const details = summarizePublicReviewPayload(item.payload, fallbackProfile as Record<string, unknown> | undefined, dossierOptions);
                   const proofFiles = publicReviewProofFiles(item);
                   const waitingForDossierOwner = item.target_type === 'dossier_update' && item.payload?.owner_response_status === 'pending';
+                  const displayedDetails = waitingForDossierOwner
+                    ? details.filter(line => !line.startsWith('认领人状态'))
+                    : details;
                   const sensitiveState = publicReviewSensitiveState(item);
                   const approvalBlocked = waitingForDossierOwner || sensitiveState.blocked;
                   const postReviewOnly = item.target_type === 'dossier_update' && item.payload?.review_mode === 'admin_post';
@@ -2163,18 +2166,17 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           提交人：{item.profile_name || item.profile_id || '未知用户'}
                           {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
                         </Meta>
-                        {item.summary && details.length === 0 && <ContentBox>{item.summary}</ContentBox>}
+                        {item.summary && displayedDetails.length === 0 && <ContentBox>{item.summary}</ContentBox>}
                         {waitingForDossierOwner && <ReviewNotice tone="gold">等待 DM 本人确认，管理员只读可见，不能代替本人通过。</ReviewNotice>}
                         {sensitiveState.warning && !waitingForDossierOwner && <ReviewNotice tone={sensitiveState.blocked ? 'red' : 'gold'}>{sensitiveState.warning}</ReviewNotice>}
-                        {details.length > 0 && (
+                        {displayedDetails.length > 0 && (
                           <ReviewSection title={item.target_type === 'profile_update' || item.target_type === 'dossier_update' ? '修改对比' : '提交内容'}>
-                            {details.map(line => <div key={line}>{line}</div>)}
+                            {displayedDetails.map(line => <div key={line}>{line}</div>)}
                           </ReviewSection>
                         )}
                         {proofFiles.length > 0 && <ReviewSection title="上传材料">
                           <AdminAttachmentLinks files={proofFiles} compact />
                         </ReviewSection>}
-                        <TagCloud tags={publicReviewTags(item)} />
                         <ModerationPrecheckBadge value={item.moderation_precheck} />
                       </div>
                       <Actions vertical>
