@@ -800,9 +800,8 @@ function publicReviewProofFiles(item: PublicReview): ProofFile[] {
 const card: React.CSSProperties = {
   backgroundColor: SURFACE,
   border: `1px solid ${LINE}`,
-  borderRadius: 12,
-  padding: '16px 20px',
-  boxShadow: '0 12px 28px rgba(31,41,55,0.05)',
+  borderRadius: 8,
+  padding: '12px 14px',
 };
 
 const MODERATION_RISK_LABELS: Record<string, string> = {
@@ -853,8 +852,9 @@ function ModerationPrecheckBadge({ value }: { value?: ModerationPrecheck | null 
   const bg = decision === 'block' ? '#fef2f2' : decision === 'review' ? '#fff7ed' : '#f0fdf4';
   const label = decision === 'block' ? '建议拦截' : decision === 'review' ? '需关注' : '通过';
   const labels = Array.isArray(value.risk_labels) ? value.risk_labels.map(moderationRiskLabel) : [];
+  if (decision === 'pass' && labels.length === 0 && Number(value.risk_score || 0) === 0) return null;
   return (
-    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, border: `1px solid ${borderColor}`, background: bg, color, fontSize: '0.76rem', lineHeight: 1.6 }}>
+    <div style={{ marginTop: 6, padding: '6px 9px', borderRadius: 6, border: `1px solid ${borderColor}`, background: bg, color, fontSize: '0.74rem', lineHeight: 1.45 }}>
       <strong>本地预审：{label}</strong>
       {typeof value.risk_score === 'number' ? ` · 风险 ${value.risk_score}` : ''}
       {labels.length > 0 ? ` · ${labels.join(' / ')}` : ''}
@@ -2163,17 +2163,17 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           提交人：{item.profile_name || item.profile_id || '未知用户'}
                           {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
                         </Meta>
-                        {item.summary && <ContentBox>{item.summary}</ContentBox>}
-                        {waitingForDossierOwner && <Meta>这条修改正在等待 DM 本人确认。管理员当前只读可见，不能代替本人通过；明显无效时仍可拒绝。</Meta>}
-                        {sensitiveState.warning && <Meta>{sensitiveState.warning}</Meta>}
+                        {item.summary && details.length === 0 && <ContentBox>{item.summary}</ContentBox>}
+                        {waitingForDossierOwner && <ReviewNotice tone="gold">等待 DM 本人确认，管理员只读可见，不能代替本人通过。</ReviewNotice>}
+                        {sensitiveState.warning && !waitingForDossierOwner && <ReviewNotice tone={sensitiveState.blocked ? 'red' : 'gold'}>{sensitiveState.warning}</ReviewNotice>}
                         {details.length > 0 && (
                           <ReviewSection title={item.target_type === 'profile_update' || item.target_type === 'dossier_update' ? '修改对比' : '提交内容'}>
                             {details.map(line => <div key={line}>{line}</div>)}
                           </ReviewSection>
                         )}
-                        <ReviewSection title="上传材料">
-                          <AdminAttachmentLinks files={proofFiles} emptyText="没有上传图片或附件" compact />
-                        </ReviewSection>
+                        {proofFiles.length > 0 && <ReviewSection title="上传材料">
+                          <AdminAttachmentLinks files={proofFiles} compact />
+                        </ReviewSection>}
                         <TagCloud tags={publicReviewTags(item)} />
                         <ModerationPrecheckBadge value={item.moderation_precheck} />
                       </div>
@@ -2365,19 +2365,10 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   <Row key={item.id} accent={entityType === 'store' ? '#38bdf8' : '#f472b6'}>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <TitleLine title={item.dm_name} pill={item.status === 'pending' ? `${entityLabel}建档` : `${entityLabel}认领`} />
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', columnGap: 20, borderTop: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}`, marginTop: 12 }}>
-                        <AdminDetail label="档案类型" value={entityLabel} />
-                        <AdminDetail label="城市" value={item.city || '未填写'} />
-                        <AdminDetail label={entityType === 'store' ? '地址 / 商圈' : '常驻店家 / 工作地点'} value={item.workplace || '未填写'} />
-                        {entityType === 'dm' && <AdminDetail label="受雇状态" value={item.employment_status === 'freelance' ? '无受雇店家（自由DM）' : item.employment_status === 'store_affiliated' ? `已关联店家：${dossierOptions.find(store => store.id === item.employer_store_id)?.dm_name || item.workplace || '待核对'}` : item.workplace ? `旧档案文本：${item.workplace}` : '待核对'} />}
-                        <AdminDetail label="提交人" value={item.submitted_by_name || '未知账号'} />
-                        <AdminDetail label="提交时间" value={item.created_at ? item.created_at.slice(0, 19).replace('T', ' ') : '未知'} />
-                        <AdminDetail label="个人主页">
-                          {profileHref
-                            ? <a href={profileHref} target="_blank" rel="noreferrer" style={{ color: '#275389', fontWeight: 900, textDecoration: 'none', overflowWrap: 'anywhere' }}>打开个人主页</a>
-                            : <span>未提供</span>}
-                        </AdminDetail>
-                      </div>
+                      <Meta>
+                        {[item.city || '城市未填', item.workplace || (entityType === 'store' ? '地址未填' : '店家未填'), entityType === 'dm' && item.employment_status === 'freelance' ? '自由 DM' : '', `提交人：${item.submitted_by_name || '未知账号'}`, item.created_at ? item.created_at.slice(0, 16).replace('T', ' ') : '时间未知'].filter(Boolean).join(' · ')}
+                        {profileHref && <> · <a href={profileHref} target="_blank" rel="noreferrer" style={{ color: '#275389', fontWeight: 850, textDecoration: 'none' }}>个人主页</a></>}
+                      </Meta>
                       {item.claim_status === 'pending' && (
                         <div style={{ marginTop: 14, padding: 12, borderRadius: 8, border: '1px solid rgba(217,168,87,0.24)', background: '#fff8e8' }}>
                           <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#8a5a19' }}>认领核验材料</div>
@@ -2395,16 +2386,15 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           )}
                         </div>
                       )}
-                      <AdminPhotoPreview url={item.photo_url} />
-                      <AdminAttachmentLinks files={item.photo_files || []} />
-                      <div style={{ marginTop: 14, fontSize: '0.82rem', fontWeight: 900, color: INK }}>补充说明</div>
-                      {item.note ? <ContentBox>{item.note}</ContentBox> : <Meta>未填写补充说明</Meta>}
-                      <div style={{ marginTop: 12, fontSize: '0.82rem', fontWeight: 900, color: INK }}>标签</div>
-                      {item.tags && item.tags.length > 0 ? <TagCloud tags={item.tags} /> : <Meta>未填写标签</Meta>}
+                      {((item.photo_files || []).length > 0 || item.photo_url) && <ReviewSection title="待审照片">
+                        <AdminAttachmentLinks files={(item.photo_files || []).length > 0 ? item.photo_files || [] : [{ name: `${item.dm_name}照片`, url: item.photo_url || '', type: 'image/*' }]} compact />
+                      </ReviewSection>}
+                      {item.note && <ReviewSection title="补充说明">{item.note}</ReviewSection>}
+                      {item.tags && item.tags.length > 0 && <TagCloud tags={item.tags} />}
                       <ModerationPrecheckBadge value={item.moderation_precheck} />
                       {item.status === 'pending' && (
-                        <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${LINE}`, display: 'grid', gap: 8 }}>
-                          <div style={{ fontSize: '0.9rem', fontWeight: 900, color: INK }}>相似{entityLabel}候选</div>
+                        <div style={{ marginTop: 10, paddingTop: 9, borderTop: `1px solid ${LINE}`, display: 'grid', gap: 6 }}>
+                          <div style={{ fontSize: '0.8rem', fontWeight: 900, color: INK }}>相似{entityLabel}候选</div>
                           {(item.similar_candidates || []).length === 0 ? (
                             <Meta>库内未找到明显相似的名称、城市和位置组合。</Meta>
                           ) : (item.similar_candidates || []).map(candidate => (
@@ -2966,14 +2956,14 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
 
 function Row({ children, accent }: { children: React.ReactNode; accent?: string }) {
   return (
-    <div className="admin-row" style={{ ...card, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderLeft: accent ? `3px solid ${accent}` : card.border }}>
+    <div className="admin-row" style={{ ...card, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, borderLeft: accent ? `3px solid ${accent}` : card.border }}>
       {children}
     </div>
   );
 }
 
-function Actions({ children, vertical }: { children: React.ReactNode; vertical?: boolean }) {
-  return <div className="admin-actions" style={{ display: 'flex', flexDirection: vertical ? 'column' : 'row', gap: 8, flexShrink: 0 }}>{children}</div>;
+function Actions({ children }: { children: React.ReactNode; vertical?: boolean }) {
+  return <div className="admin-actions" style={{ display: 'flex', flexDirection: 'row', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{children}</div>;
 }
 
 function ActionButton({ children, onClick, kind, disabled }: { children: React.ReactNode; onClick: () => void; kind?: 'ok' | 'bad'; disabled?: boolean }) {
@@ -2981,7 +2971,7 @@ function ActionButton({ children, onClick, kind, disabled }: { children: React.R
   const bad = kind === 'bad';
   return (
     <button onClick={onClick} disabled={disabled}
-      style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${ok ? 'rgba(22,101,52,0.22)' : bad ? 'rgba(185,28,28,0.20)' : 'rgba(217,168,87,0.30)'}`, cursor: disabled ? 'not-allowed' : 'pointer', background: ok ? 'rgba(240,253,244,0.95)' : bad ? 'rgba(254,242,242,0.95)' : '#fff8e8', color: ok ? '#166534' : bad ? '#b91c1c' : '#8a5a19', fontWeight: 700, fontSize: '0.82rem', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+      style={{ minHeight: 32, padding: '6px 10px', borderRadius: 6, border: `1px solid ${ok ? 'rgba(22,101,52,0.22)' : bad ? 'rgba(185,28,28,0.20)' : 'rgba(217,168,87,0.30)'}`, cursor: disabled ? 'not-allowed' : 'pointer', background: ok ? 'rgba(240,253,244,0.95)' : bad ? 'rgba(254,242,242,0.95)' : '#fff8e8', color: ok ? '#166534' : bad ? '#b91c1c' : '#8a5a19', fontWeight: 750, fontSize: '0.76rem', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap' }}>
       {children}
     </button>
   );
@@ -2989,9 +2979,9 @@ function ActionButton({ children, onClick, kind, disabled }: { children: React.R
 
 function AdminDetail({ label, value, children }: { label: string; value?: string; children?: React.ReactNode }) {
   return (
-    <div style={{ minWidth: 0, padding: '10px 0' }}>
+    <div style={{ minWidth: 0, padding: '6px 0' }}>
       <div style={{ color: MUTED, fontSize: '0.72rem', fontWeight: 800, marginBottom: 4 }}>{label}</div>
-      <div style={{ color: INK, fontSize: '0.9rem', fontWeight: 850, lineHeight: 1.55, overflowWrap: 'anywhere' }}>{children || value || '未填写'}</div>
+      <div style={{ color: INK, fontSize: '0.84rem', fontWeight: 850, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{children || value || '未填写'}</div>
     </div>
   );
 }
@@ -3004,12 +2994,12 @@ function AdminAttachmentLinks({ files, emptyText, compact = false }: { files: Pr
   })).filter(file => file.href);
   if (valid.length === 0) return emptyText ? <Meta>{emptyText}</Meta> : null;
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginTop: compact ? 0 : 10 }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: compact ? 0 : 7 }}>
       {valid.map(file => {
         const isImage = (file.type || '').startsWith('image/') || /\.(png|jpe?g|webp)(\?|$)/i.test(file.href || '') || (file.href || '').startsWith('/uploads/');
         if (isImage) return (
           <a key={`${file.href}-${file.index}`} href={file.href || '#'} target="_blank" rel="noreferrer"
-            style={{ width: 150, maxWidth: '100%', display: 'grid', gap: 5, color: '#275389', fontSize: '0.72rem', fontWeight: 850, textDecoration: 'none' }}>
+            style={{ width: 112, maxWidth: '100%', display: 'grid', gap: 4, color: '#275389', fontSize: '0.7rem', fontWeight: 850, textDecoration: 'none' }}>
             <img src={file.href || ''} alt={file.name || `待审核图片 ${file.index + 1}`}
               style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff' }} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || '查看原图'}{valid.length > 1 ? ` ${file.index + 1}` : ''}</span>
@@ -3035,29 +3025,6 @@ function AdminLinkedValue({ label, value }: { label: string; value: string }) {
     </Proof>
   );
   return <Proof>{label}：{value}</Proof>;
-}
-
-function AdminPhotoPreview({ url }: { url?: string | null }) {
-  const [failed, setFailed] = useState(false);
-  const source = normalizeAdminUrl(url, true);
-  return (
-    <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: '0.82rem', fontWeight: 900, color: INK, marginBottom: 8 }}>照片资料</div>
-      {!source ? (
-        <div style={{ color: MUTED, fontSize: '0.84rem', fontWeight: 750 }}>未提供照片</div>
-      ) : failed ? (
-        <div style={{ padding: '10px 12px', border: '1px solid rgba(185,28,28,0.18)', background: '#fef2f2', color: '#991b1b', borderRadius: 8, fontSize: '0.8rem', fontWeight: 800 }}>
-          图片链接已失效或无法加载，请核对原地址。
-          <a href={source} target="_blank" rel="noreferrer" style={{ marginLeft: 8, color: '#991b1b' }}>打开原地址</a>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
-          <img src={source} alt="待审核档案照片" onError={() => setFailed(true)} style={{ width: 180, maxWidth: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fffdf8' }} />
-          <a href={source} target="_blank" rel="noreferrer" style={{ color: '#275389', fontSize: '0.82rem', fontWeight: 900, textDecoration: 'none' }}>打开原图</a>
-        </div>
-      )}
-    </div>
-  );
 }
 
 function AdminPrivateClaimProofs({ claimId, files, route = 'claim' }: { claimId: string; files: DossierClaimProof[]; route?: 'claim' | 'affiliation' }) {
@@ -3121,37 +3088,42 @@ function ListEmpty({ empty, text, children }: { empty: boolean; text: string; ch
       <p style={{ color: MUTED, margin: 0 }}>{text}</p>
     </div>
   );
-  return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>;
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{children}</div>;
 }
 
 function TitleLine({ title, pill }: { title: string; pill: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-      <span style={{ fontWeight: 900, fontSize: '1.05rem', color: INK }}>{title}</span>
-      <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', background: '#fff8e8', color: '#8a5a19', border: '1px solid rgba(217,168,87,0.26)' }}>{pill}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, minWidth: 0 }}>
+      <span style={{ minWidth: 0, overflow: 'hidden', fontWeight: 900, fontSize: '0.96rem', color: INK, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+      <span style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 5, fontSize: '0.68rem', background: '#fff8e8', color: '#8a5a19', border: '1px solid rgba(217,168,87,0.26)' }}>{pill}</span>
     </div>
   );
 }
 
 function Meta({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: '0.78rem', color: MUTED, marginBottom: 8, lineHeight: 1.55 }}>{children}</div>;
+  return <span className="admin-meta" style={{ display: 'inline', fontSize: '0.74rem', color: MUTED, marginRight: 10, lineHeight: 1.45 }}>{children}</span>;
 }
 
 function ContentBox({ children }: { children: React.ReactNode }) {
-  return <div style={{ padding: '10px 14px', backgroundColor: '#fffdf8', border: `1px solid ${LINE}`, borderRadius: 8, fontSize: '0.82rem', color: 'rgba(31,41,55,0.78)', lineHeight: 1.7, marginTop: 8 }}>{children}</div>;
+  return <div style={{ padding: '7px 10px', backgroundColor: '#fffdf8', border: `1px solid ${LINE}`, borderRadius: 6, fontSize: '0.79rem', color: 'rgba(31,41,55,0.82)', lineHeight: 1.55, marginTop: 6 }}>{children}</div>;
 }
 
 function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section style={{ marginTop: 10, padding: '11px 12px', border: `1px solid ${LINE}`, borderRadius: 8, background: '#fff' }}>
-      <div style={{ marginBottom: 7, color: INK, fontSize: '0.78rem', fontWeight: 900 }}>{title}</div>
-      <div style={{ color: 'rgba(31,41,55,0.76)', fontSize: '0.8rem', lineHeight: 1.7 }}>{children}</div>
+    <section style={{ marginTop: 7, padding: '8px 10px', border: '1px solid rgba(217,168,87,0.34)', borderRadius: 6, background: '#fffaf0' }}>
+      <div style={{ marginBottom: 4, color: '#8a5a19', fontSize: '0.7rem', fontWeight: 900 }}>{title}</div>
+      <div style={{ color: INK, fontSize: '0.79rem', fontWeight: 650, lineHeight: 1.55 }}>{children}</div>
     </section>
   );
 }
 
+function ReviewNotice({ children, tone }: { children: React.ReactNode; tone: 'gold' | 'red' }) {
+  const red = tone === 'red';
+  return <div style={{ marginTop: 6, padding: '5px 8px', borderLeft: `3px solid ${red ? '#dc2626' : '#d97706'}`, background: red ? '#fef2f2' : '#fff7ed', color: red ? '#991b1b' : '#9a5f18', fontSize: '0.74rem', fontWeight: 800, lineHeight: 1.4 }}>{children}</div>;
+}
+
 function Proof({ children }: { children: React.ReactNode }) {
-  return <div style={{ marginTop: 8, padding: '8px 12px', backgroundColor: '#fff8e8', border: '1px solid rgba(217,168,87,0.24)', borderRadius: 8, fontSize: '0.78rem', color: '#8a5a19', lineHeight: 1.55 }}>{children}</div>;
+  return <div style={{ marginTop: 6, padding: '6px 9px', backgroundColor: '#fff8e8', border: '1px solid rgba(217,168,87,0.28)', borderRadius: 6, fontSize: '0.76rem', color: '#8a5a19', fontWeight: 700, lineHeight: 1.45 }}>{children}</div>;
 }
 
 function TagCloud({ tags }: { tags: string[] }) {
