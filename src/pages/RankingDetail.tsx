@@ -23,6 +23,7 @@ type Ranking = {
   event_script_name?: string | null;
   event_store_name?: string | null;
   content: string;
+  display_files?: Array<{ name: string; url: string }>;
   author_name: string;
   poster_id?: string | null;
   is_realname?: boolean;
@@ -103,6 +104,16 @@ export default function RankingDetail() {
 
             <h1 style={titleStyle}><Link to={subjectUrl} style={titleLinkStyle}>{ranking.subject_name}</Link></h1>
             <p style={contentStyle}>{ranking.content}</p>
+
+            {!!ranking.display_files?.length && (
+              <section style={galleryStyle} aria-label="正文配图">
+                {ranking.display_files.map((file, index) => (
+                  <a key={`${file.url}-${index}`} href={file.url} target="_blank" rel="noreferrer" style={galleryLinkStyle}>
+                    <img src={file.url} alt={file.name || `正文配图 ${index + 1}`} style={galleryImageStyle} />
+                  </a>
+                ))}
+              </section>
+            )}
 
             {(ranking.event_date || ranking.event_script_name || ranking.event_store_name) && (
               <div style={contextStyle}>
@@ -198,6 +209,9 @@ const subjectLineStyle: React.CSSProperties = { display: 'flex', gap: 7, alignIt
 const titleStyle: React.CSSProperties = { margin: '14px 0 0', color: INK, fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.55rem, 4vw, 2.15rem)', lineHeight: 1.25, overflowWrap: 'anywhere' };
 const titleLinkStyle: React.CSSProperties = { color: INK, textDecoration: 'none' };
 const contentStyle: React.CSSProperties = { margin: '18px 0 0', color: 'rgba(31,41,55,0.9)', fontSize: 15, fontWeight: 600, lineHeight: 1.85, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
+const galleryStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: 8, marginTop: 16 };
+const galleryLinkStyle: React.CSSProperties = { display: 'block', minWidth: 0 };
+const galleryImageStyle: React.CSSProperties = { display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(31,41,55,0.1)', background: '#f8fafc' };
 const contextStyle: React.CSSProperties = { display: 'grid', gap: 5, marginTop: 18, borderTop: '1px solid rgba(31,41,55,0.08)', paddingTop: 14, color: MUTED, fontSize: 12, lineHeight: 1.6 };
 const authorStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, color: MUTED, fontSize: 12 };
 const sideStyle: React.CSSProperties = { display: 'grid', gap: 12 };

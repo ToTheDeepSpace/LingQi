@@ -206,6 +206,8 @@ type Ranking = {
   reject_reason?: string | null;
   payment_proof: string | null;
   files?: ProofFile[];
+  display_files?: ProofFile[];
+  private_evidence_files?: DossierClaimProof[];
   subject_dossier_id?: string | null;
   event_date?: string | null;
   event_script_id?: string | null;
@@ -1122,6 +1124,28 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       body: JSON.stringify({ targetType }),
     });
     void loadData();
+  };
+
+  const moveRankingImageToEvidence = async (id: string, index: number) => {
+    const response = await fetch(`${API}/lc/admin/rankings/${encodeURIComponent(id)}/display-files/${index}/private`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      window.alert(typeof payload.error === 'string' ? payload.error : payload.error?.message || '配图处理失败');
+      return;
+    }
+    setRankings(previous => previous.map(item => item.id === id ? {
+      ...item,
+      display_files: payload.data.display_files || [],
+      private_evidence_files: payload.data.private_evidence_files || [],
+    } : item));
+    setApprovedRankings(previous => previous.map(item => item.id === id ? {
+      ...item,
+      display_files: payload.data.display_files || [],
+      private_evidence_files: payload.data.private_evidence_files || [],
+    } : item));
   };
 
   const openRankingEdit = (item: Ranking) => {
@@ -2102,7 +2126,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       {(r.event_date || r.event_script_name || r.event_store_name) && <Meta>事件背景：{[r.event_date, r.event_script_name, r.event_store_name].filter(Boolean).join(' · ')}</Meta>}
                       <ModerationPrecheckBadge value={r.moderation_precheck} />
                       <ContentBox>{r.content}</ContentBox>
-                      <AdminAttachmentLinks files={r.files || []} emptyText="未提交证据图片" />
+                      <AdminRankingPublicImages rankingId={r.id} files={r.display_files || []} onMovePrivate={moveRankingImageToEvidence} />
+                      <AdminRankingPrivateEvidence rankingId={r.id} files={r.private_evidence_files || []} />
+                      {!!r.files?.length && (
+                        <ReviewSection title="历史审核材料（旧版，仅后台显示）">
+                          <AdminAttachmentLinks files={r.files} compact />
+                        </ReviewSection>
+                      )}
                       {r.payment_proof && <AdminLinkedValue label="旧支付凭证" value={r.payment_proof} />}
                     </div>
                     <Actions vertical>
@@ -2136,6 +2166,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       </Meta>
                       {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
                       <ContentBox>{r.content}</ContentBox>
+                      <AdminRankingPublicImages rankingId={r.id} files={r.display_files || []} onMovePrivate={moveRankingImageToEvidence} />
+                      <AdminRankingPrivateEvidence rankingId={r.id} files={r.private_evidence_files || []} />
+                      {!!r.files?.length && (
+                        <ReviewSection title="历史审核材料（旧版，仅后台显示）">
+                          <AdminAttachmentLinks files={r.files} compact />
+                        </ReviewSection>
+                      )}
                     </div>
                     <Actions vertical>
                       <ActionButton onClick={() => openRankingEdit(r)}>编辑并留痕</ActionButton>
@@ -3027,6 +3064,70 @@ function AdminLinkedValue({ label, value }: { label: string; value: string }) {
     </Proof>
   );
   return <Proof>{label}：{value}</Proof>;
+}
+
+function AdminRankingPublicImages({ rankingId, files, onMovePrivate }: { rankingId: string; files: ProofFile[]; onMovePrivate: (rankingId: string, index: number) => void }) {
+  return (
+    <ReviewSection title="正文配图（通过后公开）">
+      {files.length === 0 ? <Meta>没有公开配图</Meta> : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 180px))', gap: 9 }}>
+          {files.map((file, index) => (
+            <div key={`${file.url}-${index}`} style={{ display: 'grid', gap: 5 }}>
+              <a href={normalizeAdminUrl(file.url, true) || '#'} target="_blank" rel="noreferrer">
+                <img src={normalizeAdminUrl(file.url, true) || ''} alt={file.name || `正文配图 ${index + 1}`} style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: `1px solid ${LINE}`, background: '#fff' }} />
+              </a>
+              <button type="button" onClick={() => onMovePrivate(rankingId, index)} style={{ minHeight: 30, border: '1px solid rgba(166,106,31,0.22)', borderRadius: 7, background: '#fffaf2', color: '#8a5a19', cursor: 'pointer', fontSize: 11, fontWeight: 850 }}>移出公开，转为审核材料</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </ReviewSection>
+  );
+}
+
+function AdminRankingPrivateEvidence({ rankingId, files }: { rankingId: string; files: DossierClaimProof[] }) {
+  return (
+    <ReviewSection title="私密审核材料（仅管理员可见）">
+      {files.length === 0 ? <Meta>没有私密审核材料</Meta> : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 180px))', gap: 9 }}>
+          {files.map((file, index) => <AdminRankingPrivateEvidenceImage key={file.id} rankingId={rankingId} file={file} index={index} />)}
+        </div>
+      )}
+    </ReviewSection>
+  );
+}
+
+function AdminRankingPrivateEvidenceImage({ rankingId, file, index }: { rankingId: string; file: DossierClaimProof; index: number }) {
+  const [source, setSource] = useState('');
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl = '';
+    fetch(`${API}/lc/admin/rankings/${encodeURIComponent(rankingId)}/evidence/${encodeURIComponent(file.id)}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+      signal: controller.signal,
+    }).then(async response => {
+      if (!response.ok) throw new Error('审核材料读取失败');
+      return response.blob();
+    }).then(blob => {
+      objectUrl = URL.createObjectURL(blob);
+      setSource(objectUrl);
+    }).catch(reason => {
+      if (reason?.name !== 'AbortError') setLoadError(reason instanceof Error ? reason.message : '审核材料读取失败');
+    });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [file.id, rankingId]);
+  if (loadError) return <div style={{ minHeight: 96, padding: 9, border: '1px solid rgba(185,28,28,0.18)', borderRadius: 7, background: '#fff', color: '#991b1b', fontSize: 11 }}>{loadError}</div>;
+  if (!source) return <div style={{ minHeight: 96, display: 'grid', placeItems: 'center', border: `1px solid ${LINE}`, borderRadius: 7, background: '#fff', color: MUTED, fontSize: 11 }}>读取中…</div>;
+  return (
+    <a href={source} target="_blank" rel="noreferrer" style={{ display: 'block', color: '#275389', textDecoration: 'none' }}>
+      <img src={source} alt={`审核材料 ${index + 1}`} style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: `1px solid ${LINE}`, background: '#fff' }} />
+      <div style={{ overflow: 'hidden', marginTop: 4, fontSize: 10, fontWeight: 800, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || `材料 ${index + 1}`}</div>
+    </a>
+  );
 }
 
 function AdminPrivateClaimProofs({ claimId, files, route = 'claim' }: { claimId: string; files: DossierClaimProof[]; route?: 'claim' | 'affiliation' }) {

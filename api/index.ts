@@ -11,7 +11,7 @@ import {
   conflictsWhenMergingStoreDossiers,
   preferredPublicDmAffiliation,
 } from './dmAffiliationWorkflow.js';
-import { hasRankingEvidence, normalizeRankingRevisionKind } from './rankingWorkflow.js';
+import { normalizeRankingRevisionKind } from './rankingWorkflow.js';
 import {
   findSharedRole,
   findSharedScript,
@@ -33,6 +33,15 @@ import {
   saveDossierClaimProofs,
   type DossierClaimProofFile,
 } from './dossierClaimStorage.js';
+import {
+  MAX_RANKING_EVIDENCE_FILES,
+  internalRankingEvidenceFiles,
+  publicRankingEvidenceMetadata,
+  readRankingEvidenceFile,
+  removeRankingEvidenceFiles,
+  saveRankingEvidenceFiles,
+  type RankingEvidenceFile,
+} from './rankingEvidenceStorage.js';
 import {
   dossierAdminReviewMode,
   dossierEditAdminReviewReady,
@@ -3301,6 +3310,7 @@ function auditPayload(targetType: AuditTargetType, row: Record<string, unknown>)
       oppose_count: row.oppose_count,
       status: row.status,
       files: summarizeAuditFiles(row.files),
+      display_files: summarizeAuditFiles(row.display_files),
       expires_at: row.expires_at,
       created_at: row.created_at,
     };
@@ -3644,6 +3654,7 @@ function publicRankingPayload(row: Record<string, unknown>) {
     event_store_dossier_id: row.event_store_dossier_id || null,
     event_store_name: row.event_store_name || null,
     content: row.content,
+    display_files: normalizeRankingDisplayFiles(row.display_files),
     author_name: row.author_name,
     poster_id: row.poster_id || null,
     is_realname: !!row.is_realname,
@@ -8026,8 +8037,16 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     res.json(ok({
       profiles: (profiles || []).map(profile => adminProfileListPayload(profile)),
       contactRequests: requests || [],
-      rankings: rankings || [],
-      approvedRankings: approvedRankings || [],
+      rankings: (rankings || []).map((ranking: Record<string, unknown>) => ({
+        ...ranking,
+        display_files: normalizeRankingDisplayFiles(ranking.display_files),
+        private_evidence_files: publicRankingEvidenceMetadata(ranking.private_evidence_files),
+      })),
+      approvedRankings: (approvedRankings || []).map((ranking: Record<string, unknown>) => ({
+        ...ranking,
+        display_files: normalizeRankingDisplayFiles(ranking.display_files),
+        private_evidence_files: publicRankingEvidenceMetadata(ranking.private_evidence_files),
+      })),
       comments: comments || [],
       claims: claims || [],
       commissions: commissions || [],
@@ -9315,19 +9334,30 @@ app.post('/api/lc/admin/audit/backfill', authMiddleware, adminMiddleware, async 
 
 // ==================== 红黑榜 ====================
 
-function normalizeRankingEvidenceFiles(value: unknown) {
+function normalizeRankingDisplayFiles(value: unknown) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 8).map((raw, index) => {
+  return value.slice(0, 6).map((raw, index) => {
     const file = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
     const url = normalizeOptionalPublicUrl(file.url, 1000, true);
     if (!url) return null;
     return {
-      name: cleanText(file.name, 120) || `证据图片 ${index + 1}`,
+      name: cleanText(file.name, 120) || `正文配图 ${index + 1}`,
       url,
       type: cleanText(file.type, 80) || 'image/jpeg',
       size: Math.max(0, Number(file.size || 0) || 0),
     };
   }).filter(Boolean);
+}
+
+function rankingRequestBody(req: express.Request) {
+  if (typeof req.body?.payload !== 'string') return (req.body || {}) as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(req.body.payload);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('提交内容格式不正确');
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new Error('提交内容格式不正确');
+  }
 }
 
 async function findRankingDossier(idInput: unknown, entityType: 'dm' | 'store', allowPending = false) {
@@ -12580,11 +12610,15 @@ app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
   try {
     const posterId = getReq(req, 'creatorId');
     const { data, error } = await supabase.from('lc_rankings')
-      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, dm_employment_status_suggestion, dm_employer_store_id_suggestion, content, files, evidence_required, revision_kind, revision_requested_at, revision_count, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, reject_reason, created_at')
+      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, dm_employment_status_suggestion, dm_employer_store_id_suggestion, content, files, display_files, private_evidence_files, evidence_required, revision_kind, revision_requested_at, revision_count, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, reject_reason, created_at')
       .eq('poster_id', posterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    res.json(ok((data || []).map((row: Record<string, unknown>) => withRankingMetrics(row))));
+    res.json(ok((data || []).map((row: Record<string, unknown>) => withRankingMetrics({
+      ...row,
+      display_files: normalizeRankingDisplayFiles(row.display_files),
+      private_evidence_files: publicRankingEvidenceMetadata(row.private_evidence_files),
+    }))));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -12616,9 +12650,21 @@ app.get('/api/lc/rankings/:id', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
+app.post('/api/lc/rankings', authMiddleware, upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES), async (req, res) => {
+  let savedEvidenceFiles: RankingEvidenceFile[] = [];
+  let rankingCommitted = false;
   try {
-    const { type, subjectName, subjectType, subjectCity, subjectUrl, content, paymentProof, newSubject } = req.body;
+    const body = rankingRequestBody(req);
+    const type = cleanText(body.type, 20);
+    const subjectName = cleanText(body.subjectName ?? body.subject_name, 120);
+    const subjectType = cleanText(body.subjectType ?? body.subject_type, 40);
+    const subjectCity = cleanText(body.subjectCity ?? body.subject_city, 80);
+    const subjectUrl = cleanText(body.subjectUrl ?? body.subject_url, 500);
+    const content = cleanText(body.content, 4000);
+    const paymentProof = cleanText(body.paymentProof ?? body.payment_proof, 1000);
+    const newSubject = body.newSubject && typeof body.newSubject === 'object' && !Array.isArray(body.newSubject)
+      ? body.newSubject as Record<string, unknown>
+      : null;
     if (!type || !subjectName || !subjectType || !content) {
       return res.status(400).json(err(new Error('缺少必填字段')));
     }
@@ -12631,30 +12677,41 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
-    const files = normalizeRankingEvidenceFiles(req.body?.files);
+    const displayFiles = normalizeRankingDisplayFiles(body.displayFiles ?? body.display_files);
+    const legacyEvidenceFiles = normalizeRankingDisplayFiles(body.files);
+    const rawEvidenceFiles = Array.isArray(req.files) ? req.files : [];
     const subjectDossier = await resolveRankingSubjectDossier({
       subjectType,
-      subjectName: cleanText(subjectName, 120),
-      subjectCity: cleanText(subjectCity, 80),
-      subjectDossierId: req.body?.subjectDossierId ?? req.body?.subject_dossier_id,
+      subjectName,
+      subjectCity,
+      subjectDossierId: body.subjectDossierId ?? body.subject_dossier_id,
       newSubject,
       profile,
     });
-    const finalSubjectName = cleanText(subjectDossier?.dm_name, 120) || cleanText(subjectName, 120);
-    const finalSubjectCity = cleanText(subjectDossier?.city, 80) || cleanText(subjectCity, 80);
-    const eventContext = await resolveRankingEventContext(req.body as Record<string, unknown>);
-    const employmentSuggestion = await resolveDmEmploymentSuggestion(req.body as Record<string, unknown>, subjectType);
+    const finalSubjectName = cleanText(subjectDossier?.dm_name, 120) || subjectName;
+    const finalSubjectCity = cleanText(subjectDossier?.city, 80) || subjectCity;
+    const eventContext = await resolveRankingEventContext(body);
+    const employmentSuggestion = await resolveDmEmploymentSuggestion(body, String(subjectType));
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'ranking_submit',
       targetType: 'ranking',
       texts: { type, subjectName: finalSubjectName, subjectType, subjectCity: finalSubjectCity, subjectUrl, content },
-      files,
+      files: displayFiles,
       allowContact: false,
     });
 
     const posterId = getReq(req, 'creatorId');
+    const rankingId = randomUUID();
+    if (rawEvidenceFiles.length > 0) {
+      const sanitizedFiles = await Promise.all(rawEvidenceFiles.map(async file => ({
+        originalName: file.originalname,
+        image: await sanitizeUploadedImageFile({ buffer: file.buffer, mimetype: file.mimetype }),
+      })));
+      savedEvidenceFiles = saveRankingEvidenceFiles({ root: PRIVATE_UPLOAD_ROOT, rankingId, files: sanitizedFiles });
+    }
 
     const row: Record<string, unknown> = {
+      id: rankingId,
       type, subject_name: finalSubjectName, subject_type: subjectType, subject_city: finalSubjectCity || null,
       subject_url: subjectUrl || null, content,
       author_name: profile.display_name, poster_id: posterId,
@@ -12668,7 +12725,9 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       revision_requested_at: null,
       initial_amount: amount, payment_proof: paymentProof || null,
       is_realname: !!profile.is_realname, real_name: null,
-      files: files || [],
+      files: legacyEvidenceFiles,
+      display_files: displayFiles,
+      private_evidence_files: savedEvidenceFiles,
       moderation_precheck: moderationPrecheck,
       boost_amount: 0,
       negative_boost_amount: 0,
@@ -12687,12 +12746,13 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
     const { data: ranking, error: insErr } = await supabase.from('lc_rankings').insert(row).select().single();
 
     if (insErr) throw insErr;
+    rankingCommitted = true;
 
-    if (!subjectDossier && newSubject && ranking && newSubject.name) {
+    if (!subjectDossier && newSubject && ranking && cleanText(newSubject.name, 120)) {
       await supabase.from('lc_submitted_subjects').insert({
-        name: newSubject.name, subject_type: newSubject.subject_type || subjectType,
-        city: newSubject.city || subjectCity, description: newSubject.description || null,
-        contact: newSubject.contact || null, ranking_id: ranking.id,
+        name: cleanText(newSubject.name, 120), subject_type: cleanText(newSubject.subject_type, 40) || subjectType,
+        city: cleanText(newSubject.city, 80) || subjectCity, description: cleanText(newSubject.description, 500) || null,
+        contact: cleanText(newSubject.contact, 200) || null, ranking_id: ranking.id,
       });
     }
 
@@ -12700,14 +12760,20 @@ app.post('/api/lc/rankings', authMiddleware, async (req, res) => {
       action: 'ranking_submitted',
       targetType: 'ranking',
       targetId: ranking?.id,
-      metadata: { ranking_type: type, subject_type: subjectType, subject_city: subjectCity || null, subject_dossier_id: subjectDossier?.id || null, amount, evidence_count: files.length, moderation: moderationPrecheck },
+      metadata: { ranking_type: type, subject_type: subjectType, subject_city: subjectCity || null, subject_dossier_id: subjectDossier?.id || null, amount, display_image_count: displayFiles.length, evidence_count: legacyEvidenceFiles.length + savedEvidenceFiles.length, moderation: moderationPrecheck },
     });
     res.json(ok({ id: ranking?.id }));
-  } catch (e) { res.status(500).json(err(e)); }
+  } catch (e) {
+    if (!rankingCommitted && savedEvidenceFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedEvidenceFiles);
+    res.status(500).json(err(e));
+  }
 });
 
-app.put('/api/lc/rankings/:id/resubmit', authMiddleware, async (req, res) => {
+app.put('/api/lc/rankings/:id/resubmit', authMiddleware, upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES), async (req, res) => {
+  let savedEvidenceFiles: RankingEvidenceFile[] = [];
+  let updateCommitted = false;
   try {
+    const body = rankingRequestBody(req);
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const { data: existing, error: findErr } = await supabase.from('lc_rankings')
@@ -12719,14 +12785,20 @@ app.put('/api/lc/rankings/:id/resubmit', authMiddleware, async (req, res) => {
     if (!existing) return res.status(404).json(err(new Error('没有找到这条红黑榜记录')));
     if (existing.status !== 'rejected') return res.status(400).json(err(new Error('只有被打回的记录可以重新提交')));
 
-    const subjectType = cleanText(req.body?.subjectType ?? req.body?.subject_type ?? existing.subject_type, 40);
-    const subjectName = cleanText(req.body?.subjectName ?? req.body?.subject_name, 120);
-    const subjectCity = cleanText(req.body?.subjectCity ?? req.body?.subject_city, 80);
-    const content = cleanText(req.body?.content, 4000);
+    const subjectType = cleanText(body.subjectType ?? body.subject_type ?? existing.subject_type, 40);
+    const subjectName = cleanText(body.subjectName ?? body.subject_name, 120);
+    const subjectCity = cleanText(body.subjectCity ?? body.subject_city, 80);
+    const content = cleanText(body.content, 4000);
     if (!subjectName || !subjectType || !content) return res.status(400).json(err(new Error('请补齐对象和正文内容')));
     if (!RANKING_SUBJECT_TYPES.includes(subjectType)) return res.status(400).json(err(new Error('无效对象分类')));
-    const files = normalizeRankingEvidenceFiles(req.body?.files);
-    if (existing.evidence_required && !hasRankingEvidence(files)) {
+    const displayFiles = normalizeRankingDisplayFiles(body.displayFiles ?? body.display_files);
+    const legacyEvidenceFiles = normalizeRankingDisplayFiles(existing.files);
+    const existingEvidenceFiles = internalRankingEvidenceFiles(existing.private_evidence_files);
+    const rawEvidenceFiles = Array.isArray(req.files) ? req.files : [];
+    if (existingEvidenceFiles.length + rawEvidenceFiles.length > MAX_RANKING_EVIDENCE_FILES) {
+      return res.status(400).json(err(new Error(`审核材料最多上传${MAX_RANKING_EVIDENCE_FILES}张`)));
+    }
+    if (existing.evidence_required && legacyEvidenceFiles.length + existingEvidenceFiles.length + rawEvidenceFiles.length === 0) {
       return res.status(400).json(err(new Error('管理员要求补充证据，请至少上传一张证据图片')));
     }
 
@@ -12734,32 +12806,45 @@ app.put('/api/lc/rankings/:id/resubmit', authMiddleware, async (req, res) => {
       subjectType,
       subjectName,
       subjectCity,
-      subjectDossierId: req.body?.subjectDossierId ?? req.body?.subject_dossier_id ?? existing.subject_dossier_id,
-      newSubject: req.body?.newSubject,
+      subjectDossierId: body.subjectDossierId ?? body.subject_dossier_id ?? existing.subject_dossier_id,
+      newSubject: body.newSubject,
       profile,
       allowPending: true,
     });
     const finalSubjectName = cleanText(subjectDossier?.dm_name, 120) || subjectName;
     const finalSubjectCity = cleanText(subjectDossier?.city, 80) || subjectCity;
-    const eventContext = await resolveRankingEventContext(req.body as Record<string, unknown>);
-    const employmentSuggestion = await resolveDmEmploymentSuggestion(req.body as Record<string, unknown>, subjectType);
+    const eventContext = await resolveRankingEventContext(body);
+    const employmentSuggestion = await resolveDmEmploymentSuggestion(body, subjectType);
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'ranking_resubmit',
       targetType: 'ranking',
-      texts: { type: existing.type, subjectName: finalSubjectName, subjectType, subjectCity: finalSubjectCity, subjectUrl: req.body?.subjectUrl, content },
-      files,
+      texts: { type: existing.type, subjectName: finalSubjectName, subjectType, subjectCity: finalSubjectCity, subjectUrl: body.subjectUrl, content },
+      files: displayFiles,
       allowContact: false,
     });
+    if (rawEvidenceFiles.length > 0) {
+      const sanitizedFiles = await Promise.all(rawEvidenceFiles.map(async file => ({
+        originalName: file.originalname,
+        image: await sanitizeUploadedImageFile({ buffer: file.buffer, mimetype: file.mimetype }),
+      })));
+      savedEvidenceFiles = saveRankingEvidenceFiles({
+        root: PRIVATE_UPLOAD_ROOT,
+        rankingId: existing.id,
+        existingCount: existingEvidenceFiles.length,
+        files: sanitizedFiles,
+      });
+    }
     const { data: updated, error: updateErr } = await supabase.from('lc_rankings').update({
       subject_name: finalSubjectName,
       subject_type: subjectType,
       subject_city: finalSubjectCity || null,
-      subject_url: cleanText(req.body?.subjectUrl ?? req.body?.subject_url, 500) || null,
+      subject_url: cleanText(body.subjectUrl ?? body.subject_url, 500) || null,
       subject_dossier_id: subjectDossier?.id || null,
       ...eventContext,
       ...employmentSuggestion,
       content,
-      files,
+      display_files: displayFiles,
+      private_evidence_files: [...existingEvidenceFiles, ...savedEvidenceFiles],
       status: 'pending',
       reject_reason: null,
       evidence_required: false,
@@ -12768,16 +12853,20 @@ app.put('/api/lc/rankings/:id/resubmit', authMiddleware, async (req, res) => {
       moderation_precheck: moderationPrecheck,
     }).eq('id', existing.id).select('*').single();
     if (updateErr) throw updateErr;
+    updateCommitted = true;
     await logSecurityEvent(req, {
       action: 'ranking_resubmitted',
       targetType: 'ranking',
       targetId: existing.id,
       actorId: profile.id,
       actorRole: profile.role || 'creator',
-      metadata: { prior_revision_kind: existing.revision_kind || null, evidence_count: files.length, subject_dossier_id: subjectDossier?.id || null, moderation: moderationPrecheck },
+      metadata: { prior_revision_kind: existing.revision_kind || null, display_image_count: displayFiles.length, evidence_count: legacyEvidenceFiles.length + existingEvidenceFiles.length + savedEvidenceFiles.length, subject_dossier_id: subjectDossier?.id || null, moderation: moderationPrecheck },
     });
     res.json(ok({ id: updated?.id, status: updated?.status, message: '已重新提交审核，发布评价不扣榜金' }));
-  } catch (e) { res.status(500).json(err(e)); }
+  } catch (e) {
+    if (!updateCommitted && savedEvidenceFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedEvidenceFiles);
+    res.status(500).json(err(e));
+  }
 });
 
 app.put('/api/lc/rankings/:id/withdraw', authMiddleware, async (req, res) => {
@@ -13330,6 +13419,88 @@ app.post('/api/lc/rankings/:id/claim', authMiddleware, async (req, res) => {
 });
 
 // ── 管理 ──
+
+app.get('/api/lc/admin/rankings/:rankingId/evidence/:fileId', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const result = await supabase.from('lc_rankings')
+      .select('id, private_evidence_files')
+      .eq('id', req.params.rankingId)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('榜单或审核材料不存在')));
+    const file = internalRankingEvidenceFiles(result.data.private_evidence_files).find(item => item.id === req.params.fileId);
+    if (!file) return res.status(404).json(err(new Error('审核材料不存在')));
+    const body = readRankingEvidenceFile(PRIVATE_UPLOAD_ROOT, file.relative_path);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Length', String(body.length));
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `inline; filename="ranking-evidence-${file.id}.jpg"`);
+    res.send(body);
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/rankings/:id/display-files/:index/private', authMiddleware, adminMiddleware, async (req, res) => {
+  let savedFiles: RankingEvidenceFile[] = [];
+  let committed = false;
+  try {
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0) return res.status(400).json(err(new Error('配图序号不合法')));
+    const result = await supabase.from('lc_rankings').select('*').eq('id', req.params.id).maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('帖子不存在')));
+    const ranking = result.data as Record<string, unknown>;
+    const displayFiles = normalizeRankingDisplayFiles(ranking.display_files) as Array<{ name: string; url: string; type: string; size: number }>;
+    const target = displayFiles[index];
+    if (!target) return res.status(404).json(err(new Error('正文配图不存在')));
+    const privateFiles = internalRankingEvidenceFiles(ranking.private_evidence_files);
+    if (privateFiles.length >= MAX_RANKING_EVIDENCE_FILES) return res.status(400).json(err(new Error(`审核材料最多上传${MAX_RANKING_EVIDENCE_FILES}张`)));
+
+    const siteOrigin = new URL(LINGQI_SITE_URL).origin;
+    const sourceUrl = new URL(target.url, LINGQI_SITE_URL);
+    if (sourceUrl.origin !== siteOrigin) return res.status(400).json(err(new Error('只有本站上传的配图可以转为审核材料')));
+    const response = await fetch(sourceUrl);
+    if (!response.ok) throw new Error('正文配图读取失败');
+    const sourceBuffer = Buffer.from(await response.arrayBuffer());
+    const image = await sanitizeUploadedImageFile({ buffer: sourceBuffer, mimetype: response.headers.get('content-type') || target.type });
+    savedFiles = saveRankingEvidenceFiles({
+      root: PRIVATE_UPLOAD_ROOT,
+      rankingId: String(ranking.id),
+      existingCount: privateFiles.length,
+      files: [{ originalName: target.name, image }],
+    });
+    const nextDisplayFiles = displayFiles.filter((_, fileIndex) => fileIndex !== index);
+    const { data: updated, error: updateErr } = await supabase.from('lc_rankings').update({
+      display_files: nextDisplayFiles,
+      private_evidence_files: [...privateFiles, ...savedFiles],
+    }).eq('id', req.params.id).select('*').single();
+    if (updateErr) throw updateErr;
+    committed = true;
+    let audit = null;
+    if (ranking.status === 'approved') {
+      audit = await auditApprovedTarget('ranking', updated, 'ranking_public_image_moved_private', getReq(req, 'creatorId'), {
+        before: auditPayload('ranking', ranking),
+        after: auditPayload('ranking', updated),
+        removed_public_image: { name: target.name, index },
+      });
+    }
+    await logSecurityEvent(req, {
+      action: 'admin_ranking_public_image_moved_private',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      metadata: { image_name: target.name, image_index: index, audit_entry_hash: audit?.entry_hash || null },
+    });
+    res.json(ok({
+      display_files: nextDisplayFiles,
+      private_evidence_files: publicRankingEvidenceMetadata([...privateFiles, ...savedFiles]),
+      audit,
+    }));
+  } catch (e) {
+    if (!committed && savedFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedFiles);
+    res.status(500).json(err(e));
+  }
+});
 
 app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {

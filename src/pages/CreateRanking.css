@@ -374,6 +374,35 @@
   line-height: 1.2;
 }
 
+.ranking-upload-grid {
+  align-items: stretch;
+}
+
+.ranking-upload-panel {
+  align-content: start;
+  padding: 13px;
+  border: 1px solid rgba(31, 41, 55, 0.1);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.ranking-upload-panel.is-public {
+  border-color: rgba(39, 83, 137, 0.18);
+  background: #f8fbff;
+}
+
+.ranking-upload-panel.is-private {
+  border-color: rgba(166, 106, 31, 0.18);
+  background: #fffaf2;
+}
+
+.ranking-upload-note {
+  margin: 5px 0 0;
+  color: rgba(71, 85, 105, 0.68);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .ranking-uploading {
   color: #a66a1f;
   font-size: 13px;
@@ -407,6 +436,12 @@
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
+}
+
+.ranking-file-chip.is-stored {
+  border-color: rgba(166, 106, 31, 0.18);
+  background: rgba(255, 248, 232, 0.86);
+  color: #8a5a19;
 }
 
 .ranking-rules-card {

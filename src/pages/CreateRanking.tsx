@@ -18,7 +18,9 @@ const SUBJECT_LABEL: Record<string, string> = {
 };
 
 type RankingType = 'red' | 'black' | 'white';
-type EvidenceFile = { name: string; url: string; type?: string; size?: number };
+type PublicImageFile = { name: string; url: string; type?: string; size?: number };
+type PrivateEvidenceFile = { id: string; file: File };
+type StoredEvidenceFile = { id?: string; name: string; type?: string; size?: number };
 type DossierOption = { id: string; dm_name: string; city?: string | null; workplace?: string | null; employment_status?: 'unknown' | 'store_affiliated' | 'freelance'; employer_store_id?: string | null };
 type ScriptOption = { id: string; name: string };
 
@@ -78,8 +80,11 @@ export default function CreateRanking() {
   const [cityQuery, setCityQuery] = useState('');
   const [subjectUrl, setSubjectUrl] = useState('');
   const [content, setContent] = useState('');
-  const [files, setFiles] = useState<EvidenceFile[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [displayFiles, setDisplayFiles] = useState<PublicImageFile[]>([]);
+  const [evidenceFiles, setEvidenceFiles] = useState<PrivateEvidenceFile[]>([]);
+  const [storedEvidenceFiles, setStoredEvidenceFiles] = useState<StoredEvidenceFile[]>([]);
+  const [legacyEvidenceFiles, setLegacyEvidenceFiles] = useState<StoredEvidenceFile[]>([]);
+  const [uploadingPublic, setUploadingPublic] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
@@ -218,7 +223,9 @@ export default function CreateRanking() {
       setSubjectDossierId(item.subject_dossier_id || '');
       setSubjectMode(item.subject_dossier_id ? 'existing' : 'new');
       setContent(item.content || '');
-      setFiles(Array.isArray(item.files) ? item.files : []);
+      setDisplayFiles(Array.isArray(item.display_files) ? item.display_files : []);
+      setStoredEvidenceFiles(Array.isArray(item.private_evidence_files) ? item.private_evidence_files : []);
+      setLegacyEvidenceFiles(Array.isArray(item.files) ? item.files : []);
       setEventDate(item.event_date || '');
       setEventScriptId(item.event_script_id || '');
       setEventScriptName(item.event_script_name || '');
@@ -251,14 +258,18 @@ export default function CreateRanking() {
     setCityQuery('');
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePublicImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
     if (!auth) return navigate('/login');
-    setUploading(true);
+    if (displayFiles.length + fileList.length > 6) {
+      e.currentTarget.value = '';
+      return setError('正文配图最多上传6张');
+    }
+    setUploadingPublic(true);
     setError('');
     try {
-      const newFiles: EvidenceFile[] = [];
+      const newFiles: PublicImageFile[] = [];
       for (let i = 0; i < fileList.length; i++) {
         const f = fileList[i];
         if (!f.type.startsWith('image/')) {
@@ -271,7 +282,7 @@ export default function CreateRanking() {
         }
         const formData = new FormData();
         formData.append('file', f);
-        formData.append('scope', 'ranking-evidence');
+        formData.append('scope', 'ranking-display');
         const r = await fetch(`${API}/lc/upload`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${auth.token || ''}` },
@@ -289,17 +300,36 @@ export default function CreateRanking() {
           size: d.data?.size || f.size,
         });
       }
-      setFiles(prev => [...prev, ...newFiles]);
+      setDisplayFiles(prev => [...prev, ...newFiles].slice(0, 6));
     } catch (e) {
       setError(e instanceof Error ? e.message : '文件上传失败，请重试');
     } finally {
-      setUploading(false);
+      setUploadingPublic(false);
       e.currentTarget.value = '';
     }
   };
 
-  const removeFile = (idx: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== idx));
+  const removePublicImage = (idx: number) => {
+    setDisplayFiles(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleEvidenceSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []);
+    e.currentTarget.value = '';
+    if (selected.length === 0) return;
+    const existingCount = storedEvidenceFiles.length + legacyEvidenceFiles.length + evidenceFiles.length;
+    if (existingCount + selected.length > 8) return setError('审核材料最多上传8张（含已保留材料）');
+    const invalid = selected.find(file => !file.type.startsWith('image/') || file.size > 8 * 1024 * 1024);
+    if (invalid) return setError(!invalid.type.startsWith('image/') ? `${invalid.name} 不是支持的图片文件` : `${invalid.name} 超过 8MB 限制`);
+    setError('');
+    setEvidenceFiles(previous => [
+      ...previous,
+      ...selected.map(file => ({ id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`, file })),
+    ]);
+  };
+
+  const removeEvidenceFile = (id: string) => {
+    setEvidenceFiles(previous => previous.filter(item => item.id !== id));
   };
 
   const submit = async () => {
@@ -312,7 +342,7 @@ export default function CreateRanking() {
     if (subjectType === 'dm' && subjectMode === 'new' && employmentStatus === 'store_affiliated' && !employerStoreId) return setError('请选择DM的受雇店家，或者选择“无受雇店家（自由DM）”');
     if (subjectType === 'dm' && subjectMode === 'existing' && subjectEmploymentUpdate === 'store_affiliated' && !subjectEmployerStoreId) return setError('请选择要绑定的受雇店家');
     if (subjectType === 'store' && subjectMode === 'new' && !newSubjectWorkplace.trim()) return setError('请填写店家地址、商圈或常驻位置');
-    if (evidenceRequired && files.length === 0) return setError('管理员要求补充证据，请至少上传一张证据图片');
+    if (evidenceRequired && storedEvidenceFiles.length + legacyEvidenceFiles.length + evidenceFiles.length === 0) return setError('管理员要求补充证据，请至少上传一张审核材料');
     if (!rulesAccepted) return setError('请先阅读并确认发布规则');
 
     setSubmitting(true);
@@ -343,12 +373,15 @@ export default function CreateRanking() {
         eventStoreName: (selectedEventStore?.dm_name || eventStoreName).trim() || null,
         content: content.trim(),
         initialAmount: 0,
-        files,
+        displayFiles,
       };
+      const formData = new FormData();
+      formData.append('payload', JSON.stringify(body));
+      evidenceFiles.forEach(item => formData.append('evidenceFiles', item.file, item.file.name));
       const r = await fetch(resubmitId ? `${API}/lc/rankings/${encodeURIComponent(resubmitId)}/resubmit` : `${API}/lc/rankings`, {
         method: resubmitId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token || ''}` },
-        body: JSON.stringify(body),
+        headers: { Authorization: `Bearer ${auth.token || ''}` },
+        body: formData,
       });
       const d = await r.json();
       if (d.success) {
@@ -542,13 +575,19 @@ export default function CreateRanking() {
                   <p style={{ margin: '8px 0 0', color: 'rgba(71,85,105,0.66)', fontSize: 12 }}>这些字段只补充红黑榜事件背景，不参与DM五星综合分。</p>
                 </section>
 
-                <div className="ranking-grid-two">
-                  <Input label="社交主页链接" value={subjectUrl} onChange={setSubjectUrl} placeholder="小红书/微博/抖音链接" />
-                  <UploadField
-                    files={files}
-                    uploading={uploading}
-                    handleFileUpload={handleFileUpload}
-                    removeFile={removeFile}
+                <Input label="社交主页链接" value={subjectUrl} onChange={setSubjectUrl} placeholder="小红书/微博/抖音链接" />
+                <div className="ranking-grid-two ranking-upload-grid">
+                  <PublicImageUploadField
+                    files={displayFiles}
+                    uploading={uploadingPublic}
+                    onUpload={handlePublicImageUpload}
+                    onRemove={removePublicImage}
+                  />
+                  <PrivateEvidenceUploadField
+                    files={evidenceFiles}
+                    storedFiles={[...legacyEvidenceFiles, ...storedEvidenceFiles]}
+                    onSelect={handleEvidenceSelect}
+                    onRemove={removeEvidenceFile}
                   />
                 </div>
               </div>
@@ -556,7 +595,7 @@ export default function CreateRanking() {
               <aside className="ranking-new-right">
                 <RankingRulesNotice type={type} accepted={rulesAccepted} onAcceptedChange={setRulesAccepted} />
                 <AmountSection type={type} />
-                {evidenceRequired && <div className="ranking-error">本次为审核要求补证据，重新提交前必须至少上传一张证据图片。</div>}
+                {evidenceRequired && <div className="ranking-error">本次为审核要求补证据，重新提交前必须至少上传一张仅管理员可见的审核材料。</div>}
                 {(error || rankingDraft.error) && <div className="ranking-error">{error || rankingDraft.error}</div>}
                 <button className="ranking-submit" onClick={submit} disabled={submitting || !rulesAccepted}>
                   {submitting ? '提交中...' : !rulesAccepted ? '请先确认发布规则' : resubmitId ? '重新提交审核' : `免费发布${type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}`}
@@ -690,24 +729,27 @@ function CityPicker({
   );
 }
 
-function UploadField({
+function PublicImageUploadField({
   files,
   uploading,
-  handleFileUpload,
-  removeFile,
+  onUpload,
+  onRemove,
 }: {
-  files: EvidenceFile[];
+  files: PublicImageFile[];
   uploading: boolean;
-  handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  removeFile: (idx: number) => void;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (idx: number) => void;
 }) {
   return (
-    <section className="ranking-new-section">
-      <label className="ranking-new-label">上传证据图片（选填，单张 ≤8MB，第三方请打码）</label>
+    <section className="ranking-new-section ranking-upload-panel is-public">
+      <div>
+        <label className="ranking-new-label">正文配图（选填，最多6张）</label>
+        <p className="ranking-upload-note">审核通过后会和正文一起公开展示，请先给第三方信息打码。</p>
+      </div>
       <label className="ranking-upload-btn">
-        <span>⌘</span>
-        <span>选择文件</span>
-        <input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={handleFileUpload} style={{ display: 'none' }} />
+        <span>＋</span>
+        <span>选择公开配图</span>
+        <input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={onUpload} style={{ display: 'none' }} />
       </label>
       {uploading && <span className="ranking-uploading">上传中...</span>}
       {files.length > 0 && (
@@ -716,7 +758,47 @@ function UploadField({
             <span key={`${file.url}-${index}`} className="ranking-file-chip">
               <span>{file.type?.includes('pdf') ? 'PDF' : 'IMG'}</span>
               <span>{file.name}</span>
-              <button type="button" onClick={() => removeFile(index)}>×</button>
+              <button type="button" onClick={() => onRemove(index)}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PrivateEvidenceUploadField({ files, storedFiles, onSelect, onRemove }: {
+  files: PrivateEvidenceFile[];
+  storedFiles: StoredEvidenceFile[];
+  onSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <section className="ranking-new-section ranking-upload-panel is-private">
+      <div>
+        <label className="ranking-new-label">审核材料（选填，最多8张）</label>
+        <p className="ranking-upload-note">仅管理员审核时可见，不会出现在公开榜单或详情页。</p>
+      </div>
+      <label className="ranking-upload-btn">
+        <span>＋</span>
+        <span>选择私密材料</span>
+        <input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={onSelect} style={{ display: 'none' }} />
+      </label>
+      {storedFiles.length > 0 && (
+        <div className="ranking-file-list">
+          {storedFiles.map((file, index) => (
+            <span key={`${file.id || file.name}-${index}`} className="ranking-file-chip is-stored">
+              <span>已保留</span><span>{file.name}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {files.length > 0 && (
+        <div className="ranking-file-list">
+          {files.map(item => (
+            <span key={item.id} className="ranking-file-chip">
+              <span>私密</span><span>{item.file.name}</span>
+              <button type="button" onClick={() => onRemove(item.id)}>×</button>
             </span>
           ))}
         </div>

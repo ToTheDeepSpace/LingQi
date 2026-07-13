@@ -66,6 +66,7 @@ type Ranking = {
   event_script_name?: string | null;
   event_store_name?: string | null;
   content: string;
+  display_files?: Array<{ name: string; url: string; type?: string; size?: number }>;
   author_name: string;
   is_realname: boolean;
   initial_amount: number;
@@ -238,6 +239,9 @@ const filterBarStyle: React.CSSProperties = {
 const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 10, alignItems: 'start' };
 const readFullLinkStyle: React.CSSProperties = { display: 'inline-flex', marginTop: 6, color: '#275389', fontSize: '0.74rem', fontWeight: 850, textDecoration: 'none' };
+const rankingThumbLinkStyle: React.CSSProperties = { position: 'relative', display: 'block', width: 104, maxWidth: '36%', marginTop: 8, textDecoration: 'none' };
+const rankingThumbStyle: React.CSSProperties = { display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: '1px solid rgba(31,41,55,0.1)', background: '#f8fafc' };
+const rankingThumbCountStyle: React.CSSProperties = { position: 'absolute', right: 5, bottom: 5, padding: '2px 5px', borderRadius: 5, background: 'rgba(17,24,39,0.72)', color: '#fff', fontSize: 10, fontWeight: 800 };
 const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 7, borderTop: '1px solid rgba(31,41,55,0.06)' };
 const compactActionButtonStyle: React.CSSProperties = { border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.66)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 0', fontWeight: 800 };
 const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 4, marginBottom: 5 };
@@ -1618,6 +1622,12 @@ export default function Rankings() {
                         </p>
                         <Link to={`/rankings/${encodeURIComponent(item.id)}`} style={readFullLinkStyle}>查看全文</Link>
                       </div>
+                    )}
+                    {!!item.display_files?.[0]?.url && (
+                      <Link to={`/rankings/${encodeURIComponent(item.id)}`} style={rankingThumbLinkStyle} aria-label="查看正文配图">
+                        <img src={item.display_files[0].url} alt={item.display_files[0].name || '榜单正文配图'} style={rankingThumbStyle} />
+                        {item.display_files.length > 1 && <span style={rankingThumbCountStyle}>共 {item.display_files.length} 张</span>}
+                      </Link>
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                       <span style={{
