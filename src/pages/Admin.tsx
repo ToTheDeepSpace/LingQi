@@ -700,6 +700,10 @@ function publicReviewValueText(key: string, value: unknown, phase: 'before' | 'a
   if (key === 'employer_store_id' && !value) return '无关联店家';
   if (key === 'photo_url' && !value) return '无照片';
   if (value === null || value === undefined || value === '') return '留空';
+  const imageField = ['avatar', 'image_url', 'photo_url', 'photo_files'].includes(key);
+  if (imageField && (typeof value === 'string' || !Array.isArray(value))) {
+    return phase === 'before' ? '原图片' : '已上传新图片（见下方缩略图）';
+  }
   if (key === 'employment_status') {
     if (value === 'store_affiliated') return '已受雇于店家';
     if (value === 'freelance') return '无受雇店家（自由DM）';
@@ -709,14 +713,18 @@ function publicReviewValueText(key: string, value: unknown, phase: 'before' | 'a
     const store = dossiers.find(item => item.entity_type === 'store' && item.id === String(value));
     return store?.dm_name || (phase === 'before' ? '原关联店家' : '待核对店家');
   }
-  if (key === 'photo_url') return phase === 'before' ? '原照片' : '已上传新照片';
+  if (key === 'photo_url') return phase === 'before' ? '原照片' : '已上传新照片（见下方缩略图）';
   if (!Array.isArray(value)) return typeof value === 'object' ? JSON.stringify(value) : String(value);
   if (value.length === 0) return '留空';
   if (value.every(item => typeof item !== 'object' || item === null)) return value.join('、');
   return value.map((raw, index) => {
     if (!raw || typeof raw !== 'object') return String(raw);
     const item = raw as Record<string, unknown>;
-    if (item.url) return `${index + 1}.${String(item.caption || item.name || '照片')}`;
+    if (item.url) {
+      const submittedLabel = String(item.caption || item.name || '').trim();
+      const safeLabel = submittedLabel && !normalizeAdminUrl(submittedLabel, true) && submittedLabel.length <= 80 ? submittedLabel : '照片';
+      return `${index + 1}.${safeLabel}`;
+    }
     if (item.store_name) {
       const period = [item.started_month, item.ended_month || (item.started_month ? '至今' : '')].filter(Boolean).join('~');
       return `${String(item.store_name)}${period ? `(${period})` : ''}`;
@@ -774,7 +782,7 @@ function summarizePublicReviewPayload(
   return Object.entries(payload)
     .filter(([key, value]) => !hiddenKeys.has(key) && value !== undefined && value !== null && value !== '')
     .slice(0, 12)
-    .map(([key, value]) => `${fallbackLabels[key] || '提交资料'}：${Array.isArray(value) ? `${value.length} 项` : typeof value === 'object' ? '已提交结构化资料' : String(value).slice(0, 160)}`);
+    .map(([key, value]) => `${fallbackLabels[key] || '提交资料'}：${['image_url', 'photo_url', 'avatar'].includes(key) ? '已上传图片（见下方缩略图）' : Array.isArray(value) ? `${value.length} 项` : typeof value === 'object' ? '已提交结构化资料' : String(value).slice(0, 160)}`);
 }
 
 function publicReviewProofFiles(item: PublicReview): ProofFile[] {
@@ -2276,7 +2284,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         {sensitiveState.warning && !waitingForDossierOwner && <ReviewNotice tone={sensitiveState.blocked ? 'red' : 'gold'}>{sensitiveState.warning}</ReviewNotice>}
                         {displayedDetails.length > 0 && (
                           <ReviewSection title={item.target_type === 'profile_update' || item.target_type === 'dossier_update' ? '修改对比' : '提交内容'}>
-                            {displayedDetails.map(line => <div key={line}>{line}</div>)}
+                            {displayedDetails.map(line => <ReviewDetailLine key={line} line={line} />)}
                           </ReviewSection>
                         )}
                         {proofFiles.length > 0 && <ReviewSection title="上传材料">
@@ -2738,7 +2746,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         {publicReview?.summary && <ContentBox>{publicReview.summary}</ContentBox>}
                         {details.length > 0 && (
                           <ReviewSection title={publicReview?.target_type === 'profile_update' || publicReview?.target_type === 'dossier_update' ? '修改对比' : '提交内容'}>
-                            {details.map(line => <div key={line}>{line}</div>)}
+                            {details.map(line => <ReviewDetailLine key={line} line={line} />)}
                           </ReviewSection>
                         )}
                         {proofFiles.length > 0 && (
@@ -3090,6 +3098,15 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             flex-wrap: wrap !important;
             width: 100% !important;
           }
+          .admin-review-diff {
+            grid-template-columns: 68px minmax(0, 1fr) !important;
+          }
+          .admin-review-diff > :nth-child(3) {
+            display: none !important;
+          }
+          .admin-review-diff > :nth-child(4) {
+            grid-column: 2 !important;
+          }
         }
       `}</style>
     </div>
@@ -3139,12 +3156,16 @@ function AdminAttachmentLinks({ files, emptyText, compact = false }: { files: Pr
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: compact ? 0 : 7 }}>
       {valid.map(file => {
         const isImage = (file.type || '').startsWith('image/') || /\.(png|jpe?g|webp)(\?|$)/i.test(file.href || '') || (file.href || '').startsWith('/uploads/');
+        const submittedName = String(file.name || '').trim();
+        const displayName = submittedName && !normalizeAdminUrl(submittedName, true) && submittedName.length <= 80
+          ? submittedName
+          : `待审核图片 ${file.index + 1}`;
         if (isImage) return (
           <a key={`${file.href}-${file.index}`} href={file.href || '#'} target="_blank" rel="noreferrer"
             style={{ width: 112, maxWidth: '100%', display: 'grid', gap: 4, color: '#275389', fontSize: '0.7rem', fontWeight: 850, textDecoration: 'none' }}>
-            <img src={file.href || ''} alt={file.name || `待审核图片 ${file.index + 1}`}
+            <img src={file.href || ''} alt={displayName}
               style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff' }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || '查看原图'}{valid.length > 1 ? ` ${file.index + 1}` : ''}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>查看原图{valid.length > 1 ? ` ${file.index + 1}` : ''}</span>
           </a>
         );
         return (
@@ -3327,6 +3348,33 @@ function ReviewSection({ title, children }: { title: string; children: React.Rea
       <div style={{ marginBottom: 4, color: '#8a5a19', fontSize: '0.7rem', fontWeight: 900 }}>{title}</div>
       <div style={{ color: INK, fontSize: '0.79rem', fontWeight: 650, lineHeight: 1.55 }}>{children}</div>
     </section>
+  );
+}
+
+function ReviewDetailLine({ line }: { line: string }) {
+  const separator = line.indexOf('：');
+  const arrow = line.indexOf(' → ', separator + 1);
+  if (separator < 0 || arrow < 0) return <div style={{ padding: '2px 0' }}>{line}</div>;
+
+  const label = line.slice(0, separator);
+  const before = line.slice(separator + 1, arrow);
+  const after = line.slice(arrow + 3);
+  return (
+    <div className="admin-review-diff" style={{
+      display: 'grid',
+      gridTemplateColumns: 'minmax(76px, auto) minmax(0, 1fr) 16px minmax(0, 1.25fr)',
+      alignItems: 'center',
+      gap: 6,
+      padding: '4px 0',
+    }}>
+      <strong style={{ color: '#6b4a19', fontSize: '0.75rem' }}>{label}</strong>
+      <span style={{ minWidth: 0, color: MUTED, fontWeight: 600, overflowWrap: 'anywhere' }}>{before}</span>
+      <span aria-hidden="true" style={{ color: '#b7a88f', textAlign: 'center' }}>→</span>
+      <span style={{ minWidth: 0, padding: '5px 7px', borderLeft: '3px solid #d69a2d', background: '#fff3d6', color: '#5f3b06', fontWeight: 900, overflowWrap: 'anywhere' }}>
+        <small style={{ display: 'inline-block', marginRight: 6, color: '#9a5f18', fontSize: '0.62rem', fontWeight: 950 }}>新增</small>
+        {after}
+      </span>
+    </div>
   );
 }
 
