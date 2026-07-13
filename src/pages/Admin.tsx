@@ -430,6 +430,17 @@ type DossierClaimProof = {
   size: number;
   width: number;
   height: number;
+  public_copy?: { url: string; published_at: string } | null;
+};
+
+type RankingEvidencePublishState = {
+  rankingId: string;
+  file: DossierClaimProof;
+  processedFile: File | null;
+  processingNote: string;
+  confirmed: boolean;
+  saving: boolean;
+  error: string;
 };
 
 type DossierClaimSubmission = {
@@ -934,6 +945,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     revisionKind: 'content',
   });
   const [rankingEdit, setRankingEdit] = useState<{ item: Ranking; form: RankingEditForm; saving: boolean; error: string } | null>(null);
+  const [rankingEvidencePublish, setRankingEvidencePublish] = useState<RankingEvidencePublishState | null>(null);
   const [privateAccountView, setPrivateAccountView] = useState<PrivateAccountView | null>(null);
 
   const loadAccounts = useCallback(async (token: string | undefined, page: number, search: string) => {
@@ -1146,6 +1158,62 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       display_files: payload.data.display_files || [],
       private_evidence_files: payload.data.private_evidence_files || [],
     } : item));
+  };
+
+  const openRankingEvidencePublish = (rankingId: string, file: DossierClaimProof) => {
+    setRankingEvidencePublish({
+      rankingId,
+      file,
+      processedFile: null,
+      processingNote: '',
+      confirmed: false,
+      saving: false,
+      error: '',
+    });
+  };
+
+  const publishRankingEvidenceCopy = async () => {
+    if (!rankingEvidencePublish || rankingEvidencePublish.saving) return;
+    if (!rankingEvidencePublish.processedFile) {
+      setRankingEvidencePublish(current => current ? { ...current, error: '请上传完成打码或裁剪后的图片' } : current);
+      return;
+    }
+    if (rankingEvidencePublish.processingNote.trim().length < 4) {
+      setRankingEvidencePublish(current => current ? { ...current, error: '请填写至少4个字的处理说明' } : current);
+      return;
+    }
+    if (!rankingEvidencePublish.confirmed) {
+      setRankingEvidencePublish(current => current ? { ...current, error: '请确认公开副本已经完成隐私处理' } : current);
+      return;
+    }
+    setRankingEvidencePublish(current => current ? { ...current, saving: true, error: '' } : current);
+    try {
+      const form = new FormData();
+      form.append('processedImage', rankingEvidencePublish.processedFile, rankingEvidencePublish.processedFile.name);
+      form.append('processingNote', rankingEvidencePublish.processingNote.trim());
+      form.append('confirmed', 'true');
+      const response = await fetch(`${API}/lc/admin/rankings/${encodeURIComponent(rankingEvidencePublish.rankingId)}/evidence/${encodeURIComponent(rankingEvidencePublish.file.id)}/public-copy`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: form,
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '公开副本生成失败');
+      const applyResult = (item: Ranking) => item.id === rankingEvidencePublish.rankingId ? {
+        ...item,
+        display_files: payload.data.display_files || [],
+        private_evidence_files: payload.data.private_evidence_files || [],
+      } : item;
+      setRankings(previous => previous.map(applyResult));
+      setApprovedRankings(previous => previous.map(applyResult));
+      setRankingEvidencePublish(null);
+    } catch (publishError) {
+      setRankingEvidencePublish(current => current ? {
+        ...current,
+        saving: false,
+        error: publishError instanceof Error ? publishError.message : '公开副本生成失败',
+      } : current);
+    }
   };
 
   const openRankingEdit = (item: Ranking) => {
@@ -2127,7 +2195,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ModerationPrecheckBadge value={r.moderation_precheck} />
                       <ContentBox>{r.content}</ContentBox>
                       <AdminRankingPublicImages rankingId={r.id} files={r.display_files || []} onMovePrivate={moveRankingImageToEvidence} />
-                      <AdminRankingPrivateEvidence rankingId={r.id} files={r.private_evidence_files || []} />
+                      <AdminRankingPrivateEvidence rankingId={r.id} files={r.private_evidence_files || []} onPreparePublic={openRankingEvidencePublish} />
                       {!!r.files?.length && (
                         <ReviewSection title="历史审核材料（旧版，仅后台显示）">
                           <AdminAttachmentLinks files={r.files} compact />
@@ -2167,7 +2235,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       {r.subject_url && <Meta>链接：{r.subject_url}</Meta>}
                       <ContentBox>{r.content}</ContentBox>
                       <AdminRankingPublicImages rankingId={r.id} files={r.display_files || []} onMovePrivate={moveRankingImageToEvidence} />
-                      <AdminRankingPrivateEvidence rankingId={r.id} files={r.private_evidence_files || []} />
+                      <AdminRankingPrivateEvidence rankingId={r.id} files={r.private_evidence_files || []} onPreparePublic={openRankingEvidencePublish} />
                       {!!r.files?.length && (
                         <ReviewSection title="历史审核材料（旧版，仅后台显示）">
                           <AdminAttachmentLinks files={r.files} compact />
@@ -2931,6 +2999,41 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         </div>
       )}
 
+      {rankingEvidencePublish && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: 20 }}>
+          <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(39,83,137,0.20)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 460, boxShadow: '0 24px 64px rgba(31,41,55,0.20)' }}>
+            <h3 style={{ margin: 0, color: INK, fontSize: '1rem', fontWeight: 850 }}>处理后生成公开副本</h3>
+            <p style={{ margin: '7px 0 16px', color: MUTED, fontSize: '0.78rem', lineHeight: 1.6 }}>
+              原始审核材料继续私密保存。请先下载原图完成打码或裁剪，再上传处理后的新图片；本次确认会作为二次审核记录。
+            </p>
+            <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+              <span style={{ color: INK, fontSize: '0.76rem', fontWeight: 800 }}>处理后的图片</span>
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={event => setRankingEvidencePublish(current => current ? { ...current, processedFile: event.target.files?.[0] || null, error: '' } : current)}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', border: `1px solid ${LINE}`, borderRadius: 8, background: '#fff', color: INK, fontSize: '0.76rem' }} />
+            </label>
+            <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+              <span style={{ color: INK, fontSize: '0.76rem', fontWeight: 800 }}>处理说明</span>
+              <textarea value={rankingEvidencePublish.processingNote} onChange={event => setRankingEvidencePublish(current => current ? { ...current, processingNote: event.target.value, error: '' } : current)} rows={3}
+                placeholder="例如：已遮盖第三方手机号、微信号和头像"
+                style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '10px 12px', border: `1px solid ${LINE}`, borderRadius: 8, background: '#fff', color: INK, fontSize: '0.8rem', lineHeight: 1.6 }} />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '9px 10px', border: '1px solid rgba(39,83,137,0.14)', borderRadius: 8, background: '#f8fbff', color: '#334155', fontSize: '0.76rem', lineHeight: 1.5 }}>
+              <input type="checkbox" checked={rankingEvidencePublish.confirmed} onChange={event => setRankingEvidencePublish(current => current ? { ...current, confirmed: event.target.checked, error: '' } : current)} style={{ marginTop: 2 }} />
+              我已核对公开副本，确认其中不含未获授权的第三方隐私或其他不应公开的信息。
+            </label>
+            {rankingEvidencePublish.error && <p style={{ margin: '10px 0 0', color: '#b91c1c', fontSize: '0.78rem' }}>{rankingEvidencePublish.error}</p>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button type="button" onClick={() => setRankingEvidencePublish(null)} disabled={rankingEvidencePublish.saving}
+                style={{ flex: 1, minHeight: 38, border: `1px solid ${LINE}`, borderRadius: 8, background: '#fff', color: MUTED, cursor: rankingEvidencePublish.saving ? 'not-allowed' : 'pointer', fontWeight: 750 }}>取消</button>
+              <button type="button" onClick={publishRankingEvidenceCopy} disabled={rankingEvidencePublish.saving}
+                style={{ flex: 1.5, minHeight: 38, border: 'none', borderRadius: 8, background: '#275389', color: '#fff', cursor: rankingEvidencePublish.saving ? 'not-allowed' : 'pointer', fontWeight: 850, opacity: rankingEvidencePublish.saving ? 0.6 : 1 }}>
+                {rankingEvidencePublish.saving ? '处理中…' : '确认并生成公开副本'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {rejectModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(217,168,87,0.24)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 28px 80px rgba(31,41,55,0.22)' }}>
@@ -3085,19 +3188,19 @@ function AdminRankingPublicImages({ rankingId, files, onMovePrivate }: { ranking
   );
 }
 
-function AdminRankingPrivateEvidence({ rankingId, files }: { rankingId: string; files: DossierClaimProof[] }) {
+function AdminRankingPrivateEvidence({ rankingId, files, onPreparePublic }: { rankingId: string; files: DossierClaimProof[]; onPreparePublic: (rankingId: string, file: DossierClaimProof) => void }) {
   return (
     <ReviewSection title="私密审核材料（仅管理员可见）">
       {files.length === 0 ? <Meta>没有私密审核材料</Meta> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 180px))', gap: 9 }}>
-          {files.map((file, index) => <AdminRankingPrivateEvidenceImage key={file.id} rankingId={rankingId} file={file} index={index} />)}
+          {files.map((file, index) => <AdminRankingPrivateEvidenceImage key={file.id} rankingId={rankingId} file={file} index={index} onPreparePublic={onPreparePublic} />)}
         </div>
       )}
     </ReviewSection>
   );
 }
 
-function AdminRankingPrivateEvidenceImage({ rankingId, file, index }: { rankingId: string; file: DossierClaimProof; index: number }) {
+function AdminRankingPrivateEvidenceImage({ rankingId, file, index, onPreparePublic }: { rankingId: string; file: DossierClaimProof; index: number; onPreparePublic: (rankingId: string, file: DossierClaimProof) => void }) {
   const [source, setSource] = useState('');
   const [loadError, setLoadError] = useState('');
   useEffect(() => {
@@ -3123,10 +3226,17 @@ function AdminRankingPrivateEvidenceImage({ rankingId, file, index }: { rankingI
   if (loadError) return <div style={{ minHeight: 96, padding: 9, border: '1px solid rgba(185,28,28,0.18)', borderRadius: 7, background: '#fff', color: '#991b1b', fontSize: 11 }}>{loadError}</div>;
   if (!source) return <div style={{ minHeight: 96, display: 'grid', placeItems: 'center', border: `1px solid ${LINE}`, borderRadius: 7, background: '#fff', color: MUTED, fontSize: 11 }}>读取中…</div>;
   return (
-    <a href={source} target="_blank" rel="noreferrer" style={{ display: 'block', color: '#275389', textDecoration: 'none' }}>
-      <img src={source} alt={`审核材料 ${index + 1}`} style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: `1px solid ${LINE}`, background: '#fff' }} />
-      <div style={{ overflow: 'hidden', marginTop: 4, fontSize: 10, fontWeight: 800, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || `材料 ${index + 1}`}</div>
-    </a>
+    <div style={{ display: 'grid', gap: 5 }}>
+      <a href={source} target="_blank" rel="noreferrer" style={{ display: 'block', color: '#275389', textDecoration: 'none' }}>
+        <img src={source} alt={`审核材料 ${index + 1}`} style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: `1px solid ${LINE}`, background: '#fff' }} />
+        <div style={{ overflow: 'hidden', marginTop: 4, fontSize: 10, fontWeight: 800, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || `材料 ${index + 1}`}</div>
+      </a>
+      {file.public_copy ? (
+        <a href={file.public_copy.url} target="_blank" rel="noreferrer" style={{ minHeight: 30, display: 'grid', placeItems: 'center', border: '1px solid rgba(22,101,52,0.18)', borderRadius: 7, background: '#f0fdf4', color: '#166534', fontSize: 11, fontWeight: 850, textDecoration: 'none' }}>已生成公开副本</a>
+      ) : (
+        <button type="button" onClick={() => onPreparePublic(rankingId, file)} style={{ minHeight: 30, border: '1px solid rgba(39,83,137,0.20)', borderRadius: 7, background: '#eff6ff', color: '#275389', cursor: 'pointer', fontSize: 11, fontWeight: 850 }}>打码后生成公开副本</button>
+      )}
+    </div>
   );
 }
 

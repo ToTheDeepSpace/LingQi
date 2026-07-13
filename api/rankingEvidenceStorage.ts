@@ -13,6 +13,12 @@ export type RankingEvidenceFile = {
   width: number;
   height: number;
   relative_path: string;
+  public_copy?: {
+    url: string;
+    published_at: string;
+    published_by: string;
+    processing_note: string;
+  } | null;
 };
 
 type RankingEvidenceInput = {
@@ -116,6 +122,18 @@ export function internalRankingEvidenceFiles(value: unknown): RankingEvidenceFil
   return value.slice(0, MAX_RANKING_EVIDENCE_FILES).map(item => {
     const file = item && typeof item === 'object' ? item as Record<string, unknown> : {};
     const relativePath = normalizedPrivateRelativePath(file.relative_path);
+    const rawPublicCopy = file.public_copy && typeof file.public_copy === 'object'
+      ? file.public_copy as Record<string, unknown>
+      : null;
+    const publicCopyUrl = rawPublicCopy ? String(rawPublicCopy.url || '').trim() : '';
+    const publicCopy = rawPublicCopy && /^https?:\/\//i.test(publicCopyUrl)
+      ? {
+          url: publicCopyUrl.slice(0, 1000),
+          published_at: String(rawPublicCopy.published_at || '').slice(0, 40),
+          published_by: String(rawPublicCopy.published_by || '').slice(0, 80),
+          processing_note: String(rawPublicCopy.processing_note || '').slice(0, 300),
+        }
+      : null;
     return {
       id: String(file.id || ''),
       name: String(file.name || '审核材料.jpg'),
@@ -124,6 +142,7 @@ export function internalRankingEvidenceFiles(value: unknown): RankingEvidenceFil
       width: Number(file.width || 0),
       height: Number(file.height || 0),
       relative_path: relativePath || '',
+      public_copy: publicCopy,
     };
   }).filter(file => /^[a-z0-9-]+$/i.test(file.id) && file.relative_path.startsWith('ranking-evidence/'));
 }
@@ -136,5 +155,25 @@ export function publicRankingEvidenceMetadata(value: unknown) {
     size: file.size,
     width: file.width,
     height: file.height,
+    public_copy: file.public_copy ? {
+      url: file.public_copy.url,
+      published_at: file.public_copy.published_at,
+    } : null,
   }));
+}
+
+export function validateRankingEvidencePublicCopy(input: {
+  confirmed: boolean;
+  processingNote: unknown;
+  hasProcessedImage: boolean;
+  publicImageCount: number;
+  alreadyPublished: boolean;
+}) {
+  if (input.alreadyPublished) throw new Error('这份审核材料已经生成过公开副本');
+  if (input.publicImageCount >= 6) throw new Error('正文配图最多上传6张');
+  if (!input.hasProcessedImage) throw new Error('请上传完成打码或裁剪后的公开副本');
+  if (!input.confirmed) throw new Error('请确认公开副本已完成隐私处理');
+  const processingNote = String(input.processingNote || '').trim();
+  if (processingNote.length < 4) throw new Error('请填写至少4个字的处理说明');
+  return processingNote.slice(0, 300);
 }

@@ -40,6 +40,7 @@ import {
   readRankingEvidenceFile,
   removeRankingEvidenceFiles,
   saveRankingEvidenceFiles,
+  validateRankingEvidencePublicCopy,
   type RankingEvidenceFile,
 } from './rankingEvidenceStorage.js';
 import {
@@ -13441,6 +13442,86 @@ app.get('/api/lc/admin/rankings/:rankingId/evidence/:fileId', authMiddleware, ad
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.post('/api/lc/admin/rankings/:id/evidence/:fileId/public-copy', authMiddleware, adminMiddleware, upload.single('processedImage'), async (req, res) => {
+  try {
+    const result = await supabase.from('lc_rankings').select('*').eq('id', req.params.id).maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('帖子不存在')));
+    const ranking = result.data as Record<string, unknown>;
+    const privateFiles = internalRankingEvidenceFiles(ranking.private_evidence_files);
+    const evidenceIndex = privateFiles.findIndex(file => file.id === req.params.fileId);
+    if (evidenceIndex < 0) return res.status(404).json(err(new Error('审核材料不存在')));
+    const evidence = privateFiles[evidenceIndex];
+    const displayFiles = normalizeRankingDisplayFiles(ranking.display_files) as Array<{ name: string; url: string; type: string; size: number }>;
+    const processingNote = validateRankingEvidencePublicCopy({
+      confirmed: String(req.body?.confirmed || '').toLowerCase() === 'true',
+      processingNote: req.body?.processingNote,
+      hasProcessedImage: !!req.file,
+      publicImageCount: displayFiles.length,
+      alreadyPublished: !!evidence.public_copy,
+    });
+    const processedFile = req.file!;
+    const image = await sanitizeUploadedImageFile({ buffer: processedFile.buffer, mimetype: processedFile.mimetype });
+    const digest = createHash('sha256').update(processedFile.buffer).digest('hex').slice(0, 16);
+    const adminId = getReq(req, 'creatorId');
+    const saved = await saveLingqiSanitizedUploadImage(image, `${adminId}/ranking-display-redacted`, {
+      env: process.env,
+      localUploadRoot: LOCAL_UPLOAD_ROOT,
+      siteUrl: LINGQI_SITE_URL,
+      randomId: () => `${Date.now()}-${digest}`,
+      cosTransport: LINGQI_COS_UPLOAD_TRANSPORT,
+    });
+    const publishedAt = new Date().toISOString();
+    const publicImage = {
+      name: cleanText(processedFile.originalname, 120) || `处理后的${evidence.name}`,
+      url: saved.url,
+      type: image.contentType,
+      size: image.buffer.length,
+    };
+    const nextPrivateFiles = privateFiles.map((file, index) => index === evidenceIndex ? {
+      ...file,
+      public_copy: {
+        url: saved.url,
+        published_at: publishedAt,
+        published_by: adminId,
+        processing_note: processingNote,
+      },
+    } : file);
+    const nextDisplayFiles = [...displayFiles, publicImage];
+    const { data: updated, error: updateErr } = await supabase.from('lc_rankings').update({
+      display_files: nextDisplayFiles,
+      private_evidence_files: nextPrivateFiles,
+    }).eq('id', req.params.id).select('*').single();
+    if (updateErr) throw updateErr;
+    let audit = null;
+    if (ranking.status === 'approved') {
+      audit = await auditApprovedTarget('ranking', updated, 'ranking_private_evidence_redacted_copy_published', adminId, {
+        before: auditPayload('ranking', ranking),
+        after: auditPayload('ranking', updated),
+        source_evidence_id: evidence.id,
+        public_image: { name: publicImage.name, url: publicImage.url },
+        processing_note: processingNote,
+      });
+    }
+    await logSecurityEvent(req, {
+      action: 'admin_ranking_private_evidence_redacted_copy_published',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      metadata: {
+        source_evidence_id: evidence.id,
+        public_image_url: publicImage.url,
+        processing_note: processingNote,
+        audit_entry_hash: audit?.entry_hash || null,
+      },
+    });
+    res.json(ok({
+      display_files: nextDisplayFiles,
+      private_evidence_files: publicRankingEvidenceMetadata(nextPrivateFiles),
+      audit,
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.put('/api/lc/admin/rankings/:id/display-files/:index/private', authMiddleware, adminMiddleware, async (req, res) => {
   let savedFiles: RankingEvidenceFile[] = [];
   let committed = false;
@@ -13455,25 +13536,31 @@ app.put('/api/lc/admin/rankings/:id/display-files/:index/private', authMiddlewar
     const target = displayFiles[index];
     if (!target) return res.status(404).json(err(new Error('正文配图不存在')));
     const privateFiles = internalRankingEvidenceFiles(ranking.private_evidence_files);
-    if (privateFiles.length >= MAX_RANKING_EVIDENCE_FILES) return res.status(400).json(err(new Error(`审核材料最多上传${MAX_RANKING_EVIDENCE_FILES}张`)));
+    const sourceEvidenceIndex = privateFiles.findIndex(file => file.public_copy?.url === target.url);
+    if (sourceEvidenceIndex < 0 && privateFiles.length >= MAX_RANKING_EVIDENCE_FILES) return res.status(400).json(err(new Error(`审核材料最多上传${MAX_RANKING_EVIDENCE_FILES}张`)));
 
-    const siteOrigin = new URL(LINGQI_SITE_URL).origin;
-    const sourceUrl = new URL(target.url, LINGQI_SITE_URL);
-    if (sourceUrl.origin !== siteOrigin) return res.status(400).json(err(new Error('只有本站上传的配图可以转为审核材料')));
-    const response = await fetch(sourceUrl);
-    if (!response.ok) throw new Error('正文配图读取失败');
-    const sourceBuffer = Buffer.from(await response.arrayBuffer());
-    const image = await sanitizeUploadedImageFile({ buffer: sourceBuffer, mimetype: response.headers.get('content-type') || target.type });
-    savedFiles = saveRankingEvidenceFiles({
-      root: PRIVATE_UPLOAD_ROOT,
-      rankingId: String(ranking.id),
-      existingCount: privateFiles.length,
-      files: [{ originalName: target.name, image }],
-    });
+    if (sourceEvidenceIndex < 0) {
+      const siteOrigin = new URL(LINGQI_SITE_URL).origin;
+      const sourceUrl = new URL(target.url, LINGQI_SITE_URL);
+      if (sourceUrl.origin !== siteOrigin) return res.status(400).json(err(new Error('只有本站上传的配图可以转为审核材料')));
+      const response = await fetch(sourceUrl);
+      if (!response.ok) throw new Error('正文配图读取失败');
+      const sourceBuffer = Buffer.from(await response.arrayBuffer());
+      const image = await sanitizeUploadedImageFile({ buffer: sourceBuffer, mimetype: response.headers.get('content-type') || target.type });
+      savedFiles = saveRankingEvidenceFiles({
+        root: PRIVATE_UPLOAD_ROOT,
+        rankingId: String(ranking.id),
+        existingCount: privateFiles.length,
+        files: [{ originalName: target.name, image }],
+      });
+    }
     const nextDisplayFiles = displayFiles.filter((_, fileIndex) => fileIndex !== index);
+    const nextPrivateFiles = sourceEvidenceIndex >= 0
+      ? privateFiles.map((file, fileIndex) => fileIndex === sourceEvidenceIndex ? { ...file, public_copy: null } : file)
+      : [...privateFiles, ...savedFiles];
     const { data: updated, error: updateErr } = await supabase.from('lc_rankings').update({
       display_files: nextDisplayFiles,
-      private_evidence_files: [...privateFiles, ...savedFiles],
+      private_evidence_files: nextPrivateFiles,
     }).eq('id', req.params.id).select('*').single();
     if (updateErr) throw updateErr;
     committed = true;
@@ -13482,18 +13569,18 @@ app.put('/api/lc/admin/rankings/:id/display-files/:index/private', authMiddlewar
       audit = await auditApprovedTarget('ranking', updated, 'ranking_public_image_moved_private', getReq(req, 'creatorId'), {
         before: auditPayload('ranking', ranking),
         after: auditPayload('ranking', updated),
-        removed_public_image: { name: target.name, index },
+        removed_public_image: { name: target.name, index, restored_source_evidence: sourceEvidenceIndex >= 0 },
       });
     }
     await logSecurityEvent(req, {
       action: 'admin_ranking_public_image_moved_private',
       targetType: 'ranking',
       targetId: req.params.id,
-      metadata: { image_name: target.name, image_index: index, audit_entry_hash: audit?.entry_hash || null },
+      metadata: { image_name: target.name, image_index: index, restored_source_evidence: sourceEvidenceIndex >= 0, audit_entry_hash: audit?.entry_hash || null },
     });
     res.json(ok({
       display_files: nextDisplayFiles,
-      private_evidence_files: publicRankingEvidenceMetadata([...privateFiles, ...savedFiles]),
+      private_evidence_files: publicRankingEvidenceMetadata(nextPrivateFiles),
       audit,
     }));
   } catch (e) {
