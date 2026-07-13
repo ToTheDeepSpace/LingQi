@@ -13453,13 +13453,22 @@ app.post('/api/lc/admin/rankings/:id/evidence/:fileId/public-copy', authMiddlewa
     if (evidenceIndex < 0) return res.status(404).json(err(new Error('审核材料不存在')));
     const evidence = privateFiles[evidenceIndex];
     const displayFiles = normalizeRankingDisplayFiles(ranking.display_files) as Array<{ name: string; url: string; type: string; size: number }>;
-    const processingNote = validateRankingEvidencePublicCopy({
-      confirmed: String(req.body?.confirmed || '').toLowerCase() === 'true',
-      processingNote: req.body?.processingNote,
-      hasProcessedImage: !!req.file,
-      publicImageCount: displayFiles.length,
-      alreadyPublished: !!evidence.public_copy,
-    });
+    let editActionsInput: unknown = [];
+    try { editActionsInput = JSON.parse(String(req.body?.editActions || '[]')); } catch { editActionsInput = []; }
+    let validatedPublicCopy: ReturnType<typeof validateRankingEvidencePublicCopy>;
+    try {
+      validatedPublicCopy = validateRankingEvidencePublicCopy({
+        confirmed: String(req.body?.confirmed || '').toLowerCase() === 'true',
+        processingNote: req.body?.processingNote,
+        hasProcessedImage: !!req.file,
+        publicImageCount: displayFiles.length,
+        alreadyPublished: !!evidence.public_copy,
+        editActions: editActionsInput,
+      });
+    } catch (validationError) {
+      return res.status(400).json(err(validationError));
+    }
+    const { processingNote, editActions } = validatedPublicCopy;
     const processedFile = req.file!;
     const image = await sanitizeUploadedImageFile({ buffer: processedFile.buffer, mimetype: processedFile.mimetype });
     const digest = createHash('sha256').update(processedFile.buffer).digest('hex').slice(0, 16);
@@ -13485,6 +13494,7 @@ app.post('/api/lc/admin/rankings/:id/evidence/:fileId/public-copy', authMiddlewa
         published_at: publishedAt,
         published_by: adminId,
         processing_note: processingNote,
+        edit_actions: editActions,
       },
     } : file);
     const nextDisplayFiles = [...displayFiles, publicImage];
@@ -13501,6 +13511,7 @@ app.post('/api/lc/admin/rankings/:id/evidence/:fileId/public-copy', authMiddlewa
         source_evidence_id: evidence.id,
         public_image: { name: publicImage.name, url: publicImage.url },
         processing_note: processingNote,
+        edit_actions: editActions,
       });
     }
     await logSecurityEvent(req, {
@@ -13511,6 +13522,7 @@ app.post('/api/lc/admin/rankings/:id/evidence/:fileId/public-copy', authMiddlewa
         source_evidence_id: evidence.id,
         public_image_url: publicImage.url,
         processing_note: processingNote,
+        edit_actions: editActions,
         audit_entry_hash: audit?.entry_hash || null,
       },
     });

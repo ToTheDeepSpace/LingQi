@@ -18,6 +18,7 @@ export type RankingEvidenceFile = {
     published_at: string;
     published_by: string;
     processing_note: string;
+    edit_actions: string[];
   } | null;
 };
 
@@ -132,6 +133,9 @@ export function internalRankingEvidenceFiles(value: unknown): RankingEvidenceFil
           published_at: String(rawPublicCopy.published_at || '').slice(0, 40),
           published_by: String(rawPublicCopy.published_by || '').slice(0, 80),
           processing_note: String(rawPublicCopy.processing_note || '').slice(0, 300),
+          edit_actions: Array.isArray(rawPublicCopy.edit_actions)
+            ? rawPublicCopy.edit_actions.map(value => String(value || '')).slice(0, 16)
+            : [],
         }
       : null;
     return {
@@ -168,12 +172,18 @@ export function validateRankingEvidencePublicCopy(input: {
   hasProcessedImage: boolean;
   publicImageCount: number;
   alreadyPublished: boolean;
+  editActions: unknown;
 }) {
   if (input.alreadyPublished) throw new Error('这份审核材料已经生成过公开副本');
   if (input.publicImageCount >= 6) throw new Error('正文配图最多上传6张');
   if (!input.hasProcessedImage) throw new Error('请上传完成打码或裁剪后的公开副本');
   if (!input.confirmed) throw new Error('请确认公开副本已完成隐私处理');
+  const allowedActions = new Set(['裁剪', '马赛克', '模糊', '遮挡', '向左旋转', '向右旋转']);
+  const editActions = Array.isArray(input.editActions)
+    ? input.editActions.map(value => String(value || '').trim()).filter(value => allowedActions.has(value)).slice(0, 16)
+    : [];
+  if (editActions.length === 0) throw new Error('请先在前端编辑器中处理图片');
   const processingNote = String(input.processingNote || '').trim();
   if (processingNote.length < 4) throw new Error('请填写至少4个字的处理说明');
-  return processingNote.slice(0, 300);
+  return { processingNote: processingNote.slice(0, 300), editActions };
 }

@@ -32,6 +32,7 @@ test('榜单审核材料保存在私密目录，公开元数据不泄露路径',
       published_at: '2026-07-13T12:00:00.000Z',
       published_by: 'admin-id',
       processing_note: '内部处理说明',
+      edit_actions: ['遮挡'],
     } }])[0];
     assert.deepEqual(promotedMetadata.public_copy, {
       url: 'https://jumulu.jusichen.com/uploads/public-copy.jpg',
@@ -57,14 +58,16 @@ test('榜单审核材料拒绝目录穿越和超量上传', () => {
 });
 
 test('私密材料只能通过已处理副本和二次确认转公开', () => {
-  assert.equal(validateRankingEvidencePublicCopy({
+  assert.deepEqual(validateRankingEvidencePublicCopy({
     confirmed: true,
     processingNote: '已遮盖第三方手机号',
     hasProcessedImage: true,
     publicImageCount: 2,
     alreadyPublished: false,
-  }), '已遮盖第三方手机号');
-  assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: false, processingNote: '已打码', hasProcessedImage: true, publicImageCount: 0, alreadyPublished: false }), /确认/);
-  assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: true, processingNote: '已打码', hasProcessedImage: false, publicImageCount: 0, alreadyPublished: false }), /上传/);
-  assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: true, processingNote: '已打码', hasProcessedImage: true, publicImageCount: 0, alreadyPublished: true }), /已经生成过/);
+    editActions: ['裁剪', '遮挡'],
+  }), { processingNote: '已遮盖第三方手机号', editActions: ['裁剪', '遮挡'] });
+  assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: false, processingNote: '已打码', hasProcessedImage: true, publicImageCount: 0, alreadyPublished: false, editActions: ['遮挡'] }), /确认/);
+  assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: true, processingNote: '已打码', hasProcessedImage: false, publicImageCount: 0, alreadyPublished: false, editActions: ['遮挡'] }), /上传/);
+  assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: true, processingNote: '已打码', hasProcessedImage: true, publicImageCount: 0, alreadyPublished: true, editActions: ['遮挡'] }), /已经生成过/);
+  assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: true, processingNote: '已打码', hasProcessedImage: true, publicImageCount: 0, alreadyPublished: false, editActions: [] }), /前端编辑器/);
 });
