@@ -12550,7 +12550,7 @@ app.get('/api/lc/rankings', async (req, res) => {
       const isExpired = Number.isFinite(expiresAt) && expiresAt <= now;
       return expiredOnly ? isExpired : !isExpired;
     });
-    const visible = sortRankingFeed(visibleRows, feedMode).map((row: Record<string, unknown>) => publicRankingPayload(row));
+    const visible = visibleRows.map((row: Record<string, unknown>) => publicRankingPayload(row));
 
     const visibleWithAudit = await attachAuditProof('ranking', visible);
     const rankingIds = visibleWithAudit.map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
@@ -12571,10 +12571,10 @@ app.get('/api/lc/rankings', async (req, res) => {
       }, new Map<string, PinnedCommentRow[]>());
     }
 
-    const withPinnedComments = visibleWithAudit.map((row: Record<string, unknown>) => ({
+    const withPinnedComments = sortRankingFeed(visibleWithAudit.map((row: Record<string, unknown>) => ({
       ...withRankingMetrics(row),
       pinned_comments: pinnedByRanking.get(String(row.id)) || [],
-    }));
+    })), feedMode);
 
     if (!viewerId || withPinnedComments.length === 0) return res.json(ok(withPinnedComments));
 
