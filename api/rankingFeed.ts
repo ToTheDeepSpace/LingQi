@@ -25,11 +25,21 @@ export function rankingRecentDiscussionScore(row: RankingFeedRow, now = Date.now
 }
 
 export function sortRankingFeed<T extends RankingFeedRow>(rows: T[], mode: 'latest' | 'discussed', now = Date.now()) {
-  return [...rows].sort((left, right) => {
+  const ranked = rows.map((row, index) => ({
+    row,
+    index,
+    activityTime: rankingActivityTime(row),
+    discussionScore: rankingRecentDiscussionScore(row, now),
+  }));
+
+  ranked.sort((left, right) => {
     if (mode === 'discussed') {
-      const scoreDelta = rankingRecentDiscussionScore(right, now) - rankingRecentDiscussionScore(left, now);
+      const scoreDelta = right.discussionScore - left.discussionScore;
       if (Math.abs(scoreDelta) > 0.000001) return scoreDelta;
     }
-    return rankingActivityTime(right) - rankingActivityTime(left);
+    const activityDelta = right.activityTime - left.activityTime;
+    return activityDelta || left.index - right.index;
   });
+
+  return ranked.map(item => item.row);
 }
