@@ -12,7 +12,7 @@ import {
   preferredPublicDmAffiliation,
 } from './dmAffiliationWorkflow.js';
 import { normalizeRankingRevisionKind } from './rankingWorkflow.js';
-import { sortRankingFeedDiscussed, sortRankingFeedLatest } from './rankingFeed.js';
+import { rankingRecentDiscussionScore, sortRankingFeedDiscussed, sortRankingFeedLatest } from './rankingFeed.js';
 import {
   findSharedRole,
   findSharedScript,
@@ -12583,6 +12583,8 @@ app.get('/api/lc/rankings', async (req, res) => {
         feedMode,
         rowCount: feedRows.length,
         maxParticipants: Math.max(0, ...feedRows.map(row => Number(row.agree_count || 0) + Number(row.oppose_count || 0) + Number(row.joys || 0))),
+        maxScore: Math.max(0, ...feedRows.map(row => rankingRecentDiscussionScore(row))),
+        sortProbe: [0, 4, 1].sort((left, right) => right - left),
         firstBefore: (feedRows[0] as Record<string, unknown> | undefined)?.subject_name,
         firstAfter: (withPinnedComments[0] as Record<string, unknown> | undefined)?.subject_name,
       }));
