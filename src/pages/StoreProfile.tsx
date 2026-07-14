@@ -34,7 +34,7 @@ type StoreDetail = {
   summary: { avg: number | null; review_count: number; player_count: number; sample_status: 'insufficient' | 'stable' };
   ratings: Array<{ id: string; profile_id?: string | null; profile_name: string; script_name: string; visited_on: string; rating: number; content: string; tags?: string[]; reaction: RatingReaction; official_response?: RatingOfficialResponse | null }>;
   reputation_summary: { event_count: number; red_count: number; black_count: number; white_count: number };
-  reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; poster_id?: string | null; event_date?: string | null; event_script_name?: string | null; created_at: string }>;
+  reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; poster_id?: string | null; event_date?: string | null; event_script_name?: string | null; created_at: string; last_activity_at?: string | null }>;
 };
 
 export default function StoreProfile() {
@@ -143,16 +143,16 @@ export default function StoreProfile() {
               </section>
 
               <section style={{ ...jumuluCardStyle, padding: 16 }}>
-                <h2 style={sectionTitleStyle}>关联红黑榜事件</h2>
-                <p style={{ margin: '8px 0 12px', color: MUTED, fontSize: 13, lineHeight: 1.65 }}>五星记录长期体验，红黑榜保留具体事件，两套数据分开。</p>
+                <h2 style={sectionTitleStyle}>关联口碑事件</h2>
+                <p style={{ margin: '8px 0 12px', color: MUTED, fontSize: 13, lineHeight: 1.65 }}>五星记录长期体验，事件记录保留具体经过，并按最新有效进展排列。</p>
                 <div style={listStyle}>
                   {data.reputation_events.slice(0, 6).map(event => (
-                    <article key={event.id} style={eventStyle}>
+                    <Link key={event.id} to={`/rankings/${encodeURIComponent(event.id)}`} style={{ ...eventStyle, display: 'block', color: 'inherit', textDecoration: 'none' }}>
                       <strong style={{ color: event.type === 'black' ? '#475569' : event.type === 'red' ? '#b91c1c' : GOLD }}>{event.type === 'red' ? '红榜事件' : event.type === 'black' ? '黑榜事件' : '白榜记录'}</strong>
-                      <p style={{ margin: '6px 0 0', color: MUTED, fontSize: 12 }}>{event.event_script_name ? `《${event.event_script_name}》 · ` : ''}{event.event_date || event.created_at?.slice(0, 10)}</p>
-                      <p style={{ margin: '8px 0 0', color: INK, fontSize: 13, lineHeight: 1.6 }}>{event.content}</p>
-                      <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 12 }}>发布人：<ProfileNameLink profileId={event.poster_id}>{event.author_name}</ProfileNameLink></p>
-                    </article>
+                      <p style={{ margin: '6px 0 0', color: MUTED, fontSize: 12 }}>{event.event_script_name ? `《${event.event_script_name}》 · ` : ''}更新于 {(event.last_activity_at || event.created_at)?.slice(0, 10)}</p>
+                      <p style={{ margin: '8px 0 0', color: INK, fontSize: 13, lineHeight: 1.6, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }}>{event.content}</p>
+                      <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 12 }}>发布人：{event.author_name} · 查看全文与评论 →</p>
+                    </Link>
                   ))}
                   {data.reputation_events.length === 0 && <div style={emptyStyle}>暂无关联事件。</div>}
                 </div>

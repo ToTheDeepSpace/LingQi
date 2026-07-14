@@ -1,0 +1,35 @@
+export type RankingFeedRow = Record<string, unknown> & {
+  created_at?: string | null;
+  last_activity_at?: string | null;
+  agree_count?: number | null;
+  oppose_count?: number | null;
+  joys?: number | null;
+};
+
+function timestamp(value: unknown) {
+  const parsed = typeof value === 'string' ? new Date(value).getTime() : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function rankingActivityTime(row: RankingFeedRow) {
+  return timestamp(row.last_activity_at) || timestamp(row.created_at);
+}
+
+export function rankingRecentDiscussionScore(row: RankingFeedRow, now = Date.now()) {
+  const participants = Math.max(0,
+    Number(row.agree_count || 0)
+    + Number(row.oppose_count || 0)
+    + Number(row.joys || 0));
+  const ageDays = Math.max(0, (now - rankingActivityTime(row)) / (24 * 60 * 60 * 1000));
+  return Math.log1p(participants) * Math.exp(-ageDays / 7);
+}
+
+export function sortRankingFeed<T extends RankingFeedRow>(rows: T[], mode: 'latest' | 'discussed', now = Date.now()) {
+  return [...rows].sort((left, right) => {
+    if (mode === 'discussed') {
+      const scoreDelta = rankingRecentDiscussionScore(right, now) - rankingRecentDiscussionScore(left, now);
+      if (Math.abs(scoreDelta) > 0.000001) return scoreDelta;
+    }
+    return rankingActivityTime(right) - rankingActivityTime(left);
+  });
+}

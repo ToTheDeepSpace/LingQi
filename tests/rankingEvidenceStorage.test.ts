@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  internalRankingEvidenceFiles,
   publicRankingEvidenceMetadata,
+  resolveLegacyRankingEvidenceSourceUrl,
   readRankingEvidenceFile,
   removeRankingEvidenceFiles,
   saveRankingEvidenceFiles,
@@ -70,4 +72,41 @@ test('私密材料只能通过已处理副本和二次确认转公开', () => {
   assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: true, processingNote: '已打码', hasProcessedImage: false, publicImageCount: 0, alreadyPublished: false, editActions: ['遮挡'] }), /上传/);
   assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: true, processingNote: '已打码', hasProcessedImage: true, publicImageCount: 0, alreadyPublished: true, editActions: ['遮挡'] }), /已经生成过/);
   assert.throws(() => validateRankingEvidencePublicCopy({ confirmed: true, processingNote: '已打码', hasProcessedImage: true, publicImageCount: 0, alreadyPublished: false, editActions: [] }), /前端编辑器/);
+});
+
+test('旧版材料来源只在后台内部保留，不进入公开元数据', () => {
+  const files = internalRankingEvidenceFiles([{
+    id: 'legacy-proof-1',
+    name: 'old.jpg',
+    type: 'image/jpeg',
+    size: 10,
+    width: 20,
+    height: 30,
+    relative_path: `ranking-evidence/${RANKING_ID}/legacy-proof-1.jpg`,
+    legacy_source: {
+      index: 0,
+      url: 'https://jumulu.jusichen.com/uploads/old.jpg',
+      adopted_at: '2026-07-14T00:00:00Z',
+      adopted_by: 'admin',
+    },
+  }]);
+  assert.equal(files[0]?.legacy_source?.index, 0);
+  const publicFiles = publicRankingEvidenceMetadata(files) as Array<Record<string, unknown>>;
+  assert.equal('legacy_source' in publicFiles[0], false);
+  assert.equal('relative_path' in publicFiles[0], false);
+});
+
+test('历史材料只允许新旧官方域名下的 uploads 图片', () => {
+  assert.equal(
+    resolveLegacyRankingEvidenceSourceUrl('https://lingqi.jusichen.com/uploads/old-proof.jpg', 'https://jumulu.jusichen.com').origin,
+    'https://lingqi.jusichen.com',
+  );
+  assert.equal(
+    resolveLegacyRankingEvidenceSourceUrl('/uploads/current-proof.jpg', 'https://jumulu.jusichen.com').origin,
+    'https://jumulu.jusichen.com',
+  );
+  assert.throws(
+    () => resolveLegacyRankingEvidenceSourceUrl('https://example.com/uploads/proof.jpg', 'https://jumulu.jusichen.com'),
+    /不是本站存储/,
+  );
 });

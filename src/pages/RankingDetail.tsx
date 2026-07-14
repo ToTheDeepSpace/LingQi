@@ -32,6 +32,7 @@ type Ranking = {
   joys?: number;
   boost_amount?: number;
   created_at: string;
+  last_activity_at?: string | null;
 };
 
 type Comment = {
@@ -95,7 +96,7 @@ export default function RankingDetail() {
           <article style={{ ...articleStyle, borderColor: kind.border }}>
             <div style={articleHeaderStyle}>
               <span style={{ ...kindBadgeStyle, color: kind.color, background: kind.background, borderColor: kind.border }}>{kind.label}</span>
-              <span style={dateStyle}>{formatDate(ranking.created_at)}</span>
+              <span style={dateStyle}>更新于 {formatDate(ranking.last_activity_at || ranking.created_at)}</span>
             </div>
 
             <div style={subjectLineStyle}>
@@ -103,6 +104,7 @@ export default function RankingDetail() {
             </div>
 
             <h1 style={titleStyle}><Link to={subjectUrl} style={titleLinkStyle}>{ranking.subject_name}</Link></h1>
+            {ranking.subject_url && <a href={normalizeExternalUrl(ranking.subject_url)} target="_blank" rel="noreferrer" style={externalLinkStyle}>对象社交主页 ↗</a>}
             <p style={contentStyle}>{ranking.content}</p>
 
             {!!ranking.display_files?.length && (
@@ -135,8 +137,9 @@ export default function RankingDetail() {
                 <Stat label="同意" value={ranking.agree_count || 0} />
                 <Stat label="反对" value={ranking.oppose_count || 0} />
                 <Stat label="欢乐" value={ranking.joys || 0} />
-                <Stat label="榜金" value={ranking.boost_amount || 0} />
+                <Stat label="历史打榜" value={ranking.boost_amount || 0} />
               </div>
+              {(ranking.boost_amount || 0) > 0 && <p style={historyNoteStyle}>事件帖打榜已经下线，此处只保留过去产生的记录，不再影响列表排序。</p>}
               <Link to={`/rankings#ranking-${encodeURIComponent(ranking.id)}`} style={interactionLinkStyle}>返回榜单参与互动</Link>
             </section>
           </aside>
@@ -191,6 +194,10 @@ function formatDate(value: string) {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('zh-CN');
 }
 
+function normalizeExternalUrl(value: string) {
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
 function Stat({ label, value }: { label: string; value: number }) {
   return <div style={statStyle}><strong>{value}</strong><span>{label}</span></div>;
 }
@@ -208,6 +215,7 @@ const dateStyle: React.CSSProperties = { color: MUTED, fontSize: 12 };
 const subjectLineStyle: React.CSSProperties = { display: 'flex', gap: 7, alignItems: 'baseline', flexWrap: 'wrap', marginTop: 14, color: MUTED, fontSize: 12, fontWeight: 750 };
 const titleStyle: React.CSSProperties = { margin: '14px 0 0', color: INK, fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.55rem, 4vw, 2.15rem)', lineHeight: 1.25, overflowWrap: 'anywhere' };
 const titleLinkStyle: React.CSSProperties = { color: INK, textDecoration: 'none' };
+const externalLinkStyle: React.CSSProperties = { display: 'inline-flex', marginTop: 8, color: BLUE, fontSize: 12, fontWeight: 800, textDecoration: 'none' };
 const contentStyle: React.CSSProperties = { margin: '18px 0 0', color: 'rgba(31,41,55,0.9)', fontSize: 15, fontWeight: 600, lineHeight: 1.85, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 const galleryStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: 8, marginTop: 16 };
 const galleryLinkStyle: React.CSSProperties = { display: 'block', minWidth: 0 };
@@ -220,6 +228,7 @@ const sideTitleStyle: React.CSSProperties = { margin: 0, color: INK, fontSize: 1
 const statGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 7, marginTop: 12 };
 const statStyle: React.CSSProperties = { minHeight: 58, display: 'grid', placeContent: 'center', gap: 4, border: '1px solid rgba(39,83,137,0.09)', borderRadius: 7, background: '#f8fbff', color: MUTED, textAlign: 'center', fontSize: 11 };
 const interactionLinkStyle: React.CSSProperties = { minHeight: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 7, background: BLUE, color: '#fff', textDecoration: 'none', fontSize: 12, fontWeight: 900 };
+const historyNoteStyle: React.CSSProperties = { margin: '9px 0 0', color: MUTED, fontSize: 11, lineHeight: 1.55 };
 const commentsStyle: React.CSSProperties = { gridColumn: '1 / -1', border: '1px solid rgba(31,41,55,0.08)', borderRadius: 8, padding: 16, background: '#fff' };
 const commentsHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 };
 const commentListStyle: React.CSSProperties = { display: 'grid', gap: 8, marginTop: 12 };

@@ -38,6 +38,7 @@ type ReputationItem = {
   praise_value: number;
   reputation_value: number;
   praise_people: number;
+  participant_count: number;
   event_count: number;
   red_count: number;
   white_count: number;
@@ -191,9 +192,9 @@ export default function CityReputation() {
                 </div>
 
                 <div style={metricRowStyle}>
-                  <span style={goldMetricChipStyle}>{item.praise_value} 打榜值</span>
+                  <span style={goldMetricChipStyle}>{item.praise_people} 人同意</span>
                   <span style={metricChipStyle}>{item.reputation_value} 口碑值</span>
-                  <span style={metricChipStyle}>{item.praise_people} 人参与</span>
+                  <span style={metricChipStyle}>{item.participant_count || 0} 人参与</span>
                 </div>
 
                 {item.subject_type === 'store' && (

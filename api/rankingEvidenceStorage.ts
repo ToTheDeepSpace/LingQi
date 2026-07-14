@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { SanitizedUploadImage } from './uploadSecurity.js';
 
 export const MAX_RANKING_EVIDENCE_FILES = 8;
+const LEGACY_RANKING_EVIDENCE_ORIGINS = ['https://lingqi.jusichen.com'];
 
 export type RankingEvidenceFile = {
   id: string;
@@ -13,6 +14,12 @@ export type RankingEvidenceFile = {
   width: number;
   height: number;
   relative_path: string;
+  legacy_source?: {
+    index: number;
+    url: string;
+    adopted_at: string;
+    adopted_by: string;
+  } | null;
   public_copy?: {
     url: string;
     published_at: string;
@@ -21,6 +28,16 @@ export type RankingEvidenceFile = {
     edit_actions: string[];
   } | null;
 };
+
+export function resolveLegacyRankingEvidenceSourceUrl(rawUrl: unknown, siteUrl: string) {
+  const currentOrigin = new URL(siteUrl).origin;
+  const allowedOrigins = new Set([currentOrigin, ...LEGACY_RANKING_EVIDENCE_ORIGINS.map(value => new URL(value).origin)]);
+  const sourceUrl = new URL(String(rawUrl || ''), siteUrl);
+  if (sourceUrl.protocol !== 'https:' || !allowedOrigins.has(sourceUrl.origin) || !sourceUrl.pathname.startsWith('/uploads/')) {
+    throw new Error('这份旧材料不是本站存储的图片，请下载后通过新版审核材料入口重新上传');
+  }
+  return sourceUrl;
+}
 
 type RankingEvidenceInput = {
   originalName: string;
@@ -138,6 +155,18 @@ export function internalRankingEvidenceFiles(value: unknown): RankingEvidenceFil
             : [],
         }
       : null;
+    const rawLegacySource = file.legacy_source && typeof file.legacy_source === 'object'
+      ? file.legacy_source as Record<string, unknown>
+      : null;
+    const legacySourceUrl = rawLegacySource ? String(rawLegacySource.url || '').trim() : '';
+    const legacySource = rawLegacySource && Number.isInteger(Number(rawLegacySource.index)) && legacySourceUrl
+      ? {
+          index: Number(rawLegacySource.index),
+          url: legacySourceUrl.slice(0, 1000),
+          adopted_at: String(rawLegacySource.adopted_at || '').slice(0, 40),
+          adopted_by: String(rawLegacySource.adopted_by || '').slice(0, 80),
+        }
+      : null;
     return {
       id: String(file.id || ''),
       name: String(file.name || '审核材料.jpg'),
@@ -146,6 +175,7 @@ export function internalRankingEvidenceFiles(value: unknown): RankingEvidenceFil
       width: Number(file.width || 0),
       height: Number(file.height || 0),
       relative_path: relativePath || '',
+      legacy_source: legacySource,
       public_copy: publicCopy,
     };
   }).filter(file => /^[a-z0-9-]+$/i.test(file.id) && file.relative_path.startsWith('ranking-evidence/'));

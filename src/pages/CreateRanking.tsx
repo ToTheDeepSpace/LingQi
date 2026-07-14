@@ -425,7 +425,8 @@ export default function CreateRanking() {
               setSubjectCity('');
               setSubjectUrl('');
               setContent('');
-              setFiles([]);
+              setDisplayFiles([]);
+              setEvidenceFiles([]);
               setError('');
               setRulesAccepted(false);
             }}

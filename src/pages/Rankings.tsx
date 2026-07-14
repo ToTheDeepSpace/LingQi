@@ -23,7 +23,6 @@ const API = '/api';
 const C = '#f6efe4';
 const GOLD = '#a66a1f';
 const RED = '#f87171';
-const BLK = '#94a3b8';
 
 const SUBJECT_LABEL: Record<string, string> = {
   creator: '委托师',
@@ -78,6 +77,7 @@ type Ranking = {
   agree_count?: number;
   oppose_count?: number;
   created_at: string;
+  last_activity_at?: string | null;
   expires_at?: string;
   expiry_override?: string;
   lc_profiles?: { display_name?: string; avatar?: string | null; verified_dm?: boolean; verified_shop?: boolean; role?: string };
@@ -104,26 +104,7 @@ type Comment = {
   created_at: string;
 };
 
-type VoteRecord = {
-  id: string;
-  vote_type: 'like' | 'dislike' | 'joy';
-  voter_name: string;
-  voter_is_realname: boolean;
-  created_at: string;
-};
-
-type BoostRecord = {
-  id: string;
-  direction: 'boost' | 'negative_boost';
-  contributor_name: string;
-  contributor_is_realname: boolean;
-  amount: number;
-  created_at: string;
-  is_initial?: boolean;
-};
-
 type VoteModal = { id: string; voteType: 'like' | 'dislike' | 'joy' } | null;
-type PaidBoostModal = { id: string; direction: 'boost' } | null;
 type CommentModal = { rankingId: string } | null;
 type RelatedFile = { name: string; url: string; type?: string };
 type RelatedCertModal = { rankingId: string; commentId: string } | null;
@@ -153,7 +134,7 @@ type AuditData = {
   target?: Record<string, unknown> | null;
 };
 type AuditModal = { item: Ranking; loading: boolean; error: string; data?: AuditData } | null;
-type BoardMode = 'reputation' | 'money';
+type FeedMode = 'latest' | 'discussed';
 
 function rankingCityStorageKey(userId?: string) {
   return `${RANKING_CITY_STORAGE_PREFIX}:${userId || 'guest'}`;
@@ -197,21 +178,6 @@ const inputStyle: React.CSSProperties = {
   fontSize: '0.875rem', boxSizing: 'border-box',
 };
 
-const walletChipStyle: React.CSSProperties = {
-  minHeight: 34,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: 999,
-  border: '1px solid rgba(217,168,87,0.28)',
-  background: '#fff8e8',
-  color: GOLD,
-  padding: '0 12px',
-  textDecoration: 'none',
-  fontSize: 12,
-  fontWeight: 900,
-};
-
 function hubToggleStyle(active: boolean, color: string): React.CSSProperties {
   return {
     minHeight: 34,
@@ -238,21 +204,13 @@ const filterBarStyle: React.CSSProperties = {
 
 const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 10, alignItems: 'start' };
-const readFullLinkStyle: React.CSSProperties = { display: 'inline-flex', marginTop: 6, color: '#275389', fontSize: '0.74rem', fontWeight: 850, textDecoration: 'none' };
-const rankingThumbLinkStyle: React.CSSProperties = { position: 'relative', display: 'block', width: 104, maxWidth: '36%', marginTop: 8, textDecoration: 'none' };
+const rankingThumbLinkStyle: React.CSSProperties = { position: 'relative', display: 'block', width: 82, maxWidth: '28%', marginTop: 7, textDecoration: 'none' };
 const rankingThumbStyle: React.CSSProperties = { display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: '1px solid rgba(31,41,55,0.1)', background: '#f8fafc' };
 const rankingThumbCountStyle: React.CSSProperties = { position: 'absolute', right: 5, bottom: 5, padding: '2px 5px', borderRadius: 5, background: 'rgba(17,24,39,0.72)', color: '#fff', fontSize: 10, fontWeight: 800 };
 const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 7, borderTop: '1px solid rgba(31,41,55,0.06)' };
 const compactActionButtonStyle: React.CSSProperties = { border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.66)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 0', fontWeight: 800 };
-const voteZoneGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 4, marginBottom: 5 };
-const paidVoteZoneStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 10,
-  flexWrap: 'wrap',
-  borderTop: '1px solid rgba(166,106,31,0.22)',
-  padding: '6px 0 2px',
-};
+const overflowActionStyle: React.CSSProperties = { border: 'none', borderRadius: 5, background: 'transparent', color: 'rgba(31,41,55,0.72)', cursor: 'pointer', padding: '7px 8px', textAlign: 'left', fontSize: '0.74rem', fontWeight: 750 };
+const commentMinorActionStyle: React.CSSProperties = { border: 'none', background: 'transparent', color: 'rgba(39,83,137,0.72)', cursor: 'pointer', padding: 0, fontSize: '0.68rem', fontWeight: 760 };
 const freeVoteZoneStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -261,7 +219,6 @@ const freeVoteZoneStyle: React.CSSProperties = {
   borderTop: '1px solid rgba(39,83,137,0.16)',
   padding: '6px 0 2px',
 };
-const voteZoneKickerStyle: React.CSSProperties = { fontSize: '0.7rem', fontWeight: 950 };
 
 function getAuth(): AuthSession | null {
   const data = readStoredCreatorAuth();
@@ -277,11 +234,6 @@ function getAuth(): AuthSession | null {
     city: fallbackCity || null,
     availableCities: availableCities.length > 0 ? availableCities : (fallbackCity ? [fallbackCity] : []),
   };
-}
-
-function normalizeUrl(url: string): string {
-  if (/^https?:\/\//i.test(url)) return url;
-  return `https://${url}`;
 }
 
 function dossierUrl(item: Pick<Ranking, 'subject_name' | 'subject_type' | 'subject_city' | 'subject_dossier_id'>) {
@@ -336,14 +288,6 @@ function voteCopy(voteType: MyVote['vote_type'], rankingType?: Ranking['type']) 
   return { label: '欢乐', icon: '😂' };
 }
 
-function paidBoostCopy() {
-  return { label: '打榜', icon: '榜' };
-}
-
-function boostAmount(item: Ranking) {
-  return item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0);
-}
-
 function agreeCount(item: Ranking) {
   return item.agree_count ?? 0;
 }
@@ -365,47 +309,6 @@ function applyMetricPatch(item: Ranking, data: Partial<Ranking>) {
   };
 }
 
-function reputationScore(item: Ranking) {
-  return agreeCount(item) - opposeCount(item);
-}
-
-function reputationParticipation(item: Ranking) {
-  return agreeCount(item) + opposeCount(item) + (item.joys || 0);
-}
-
-function moneyScore(item: Ranking) {
-  return boostAmount(item);
-}
-
-function boardRankScore(item: Ranking, mode: BoardMode) {
-  if (mode === 'money') return moneyScore(item);
-  return reputationScore(item);
-}
-
-function voteRecordText(vote: VoteRecord, itemType?: Ranking['type']) {
-  void itemType;
-  if (vote.vote_type === 'like') return '同意';
-  if (vote.vote_type === 'dislike') return '反对';
-  return '欢乐';
-}
-
-function voteRecordIcon(vote: VoteRecord, itemType?: Ranking['type']) {
-  void itemType;
-  if (vote.vote_type === 'like') return '同';
-  if (vote.vote_type === 'dislike') return '反';
-  return '😂';
-}
-
-function votesToggleLabel(item: Ranking, showVotes: boolean) {
-  void item;
-  if (showVotes) return '收起票数';
-  return '票数明细';
-}
-
-function emptyVoteRecordText(item: Ranking) {
-  void item;
-  return '暂无同意、反对或欢乐记录';
-}
 
 function isVoteAllowed(item: Ranking | undefined, voteType: MyVote['vote_type']) {
   if (!item) return false;
@@ -465,16 +368,6 @@ function formatAuditValue(field: string, value: unknown) {
   }
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
   return JSON.stringify(value);
-}
-
-function paidBoostBreakdown(item: Ranking) {
-  const total = boostAmount(item);
-  const initial = Math.max(0, Math.trunc(Number(item.initial_amount || 0)));
-  return {
-    total,
-    initial,
-    paid: Math.max(0, total - initial),
-  };
 }
 
 function formatAuditTime(value?: string) {
@@ -640,7 +533,7 @@ export default function Rankings() {
   const initialPreferredCities = initialAuth?.availableCities || [];
   const storedCity = readStoredRankingCity(initialAuth?.userId);
   const [tab, setTab] = useState<'red' | 'black' | 'white'>('red');
-  const [boardMode, setBoardMode] = useState<BoardMode>('reputation');
+  const [feedMode, setFeedMode] = useState<FeedMode>('latest');
   const [blackView, setBlackView] = useState<'active' | 'expired'>('active');
   const [subjectTab, setSubjectTab] = useState<string>('all');
   const [city, setCity] = useState(storedCity || (initialPreferredCities.length > 0 ? 'preferred' : 'all'));
@@ -653,18 +546,10 @@ export default function Rankings() {
   const [error, setError] = useState('');
   const [mentionMap, setMentionMap] = useState<Record<string, string>>({});
 
-  const [balance, setBalance] = useState<number | null>(null);
-  const [walletLoading, setWalletLoading] = useState(false);
-
   const [voteModal, setVoteModal] = useState<VoteModal>(null);
   const [voteCommentText, setVoteCommentText] = useState('');
   const [voting, setVoting] = useState(false);
   const [voteError, setVoteError] = useState('');
-  const [paidBoostModal, setPaidBoostModal] = useState<PaidBoostModal>(null);
-  const [paidBoostAmount, setPaidBoostAmount] = useState('10');
-  const [paidBoostComment, setPaidBoostComment] = useState('');
-  const [paidBoosting, setPaidBoosting] = useState(false);
-  const [paidBoostError, setPaidBoostError] = useState('');
 
   const [certifyingComment, setCertifyingComment] = useState('');
   const [relatedModal, setRelatedModal] = useState<RelatedCertModal>(null);
@@ -684,10 +569,6 @@ export default function Rankings() {
   const [likingComment, setLikingComment] = useState('');
   const [deletingComment, setDeletingComment] = useState('');
 
-  const [openVotes, setOpenVotes] = useState<Set<string>>(new Set());
-  const [votesMap, setVotesMap] = useState<Record<string, VoteRecord[]>>({});
-  const [openBoosts, setOpenBoosts] = useState<Set<string>>(new Set());
-  const [boostsMap, setBoostsMap] = useState<Record<string, BoostRecord[]>>({});
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [auditModal, setAuditModal] = useState<AuditModal>(null);
   const [showOnboarding, setShowOnboarding] = useState(() => {
@@ -746,16 +627,6 @@ export default function Rankings() {
     return current;
   };
 
-  const fetchWallet = useCallback(() => {
-    const current = getAuth();
-    if (!current) return;
-    setWalletLoading(true);
-    fetch(`${API}/lc/wallet`, { headers: { Authorization: `Bearer ${current.token}` } })
-      .then(r => r.json())
-      .then(d => { if (d.success) setBalance(d.data.balance); })
-      .finally(() => setWalletLoading(false));
-  }, []);
-
   const fetchMentions = async (list: Ranking[]) => {
     const names = new Set<string>();
     list.forEach(item => {
@@ -807,9 +678,9 @@ export default function Rankings() {
     const loadRankings = async () => {
       setLoading(true);
       setError('');
-      fetchWallet();
       try {
         const params = new URLSearchParams({ type: tab });
+        params.set('sort', feedMode);
         if (subjectTab !== 'all') params.set('subjectType', subjectTab);
         if (city === 'preferred' && preferredCityParam) params.set('cities', preferredCityParam);
         else if (city !== 'all' && city !== 'preferred') params.set('city', city);
@@ -835,7 +706,7 @@ export default function Rankings() {
     };
     void loadRankings();
     return () => { alive = false; };
-  }, [tab, blackView, subjectTab, city, preferredCityParam, fetchWallet]);
+  }, [tab, blackView, subjectTab, city, preferredCityParam, feedMode]);
 
   const setCityAndClose = (nextCity: string) => {
     setCityTouched(true);
@@ -851,21 +722,7 @@ export default function Rankings() {
     return CITIES.filter(c => c.includes(q));
   }, [cityQuery]);
 
-  const rankedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
-      const byScore = boardRankScore(b, boardMode) - boardRankScore(a, boardMode);
-      if (byScore !== 0) return byScore;
-      if (boardMode === 'reputation') {
-        const byParticipation = reputationParticipation(b) - reputationParticipation(a);
-        if (byParticipation !== 0) return byParticipation;
-      }
-      if (boardMode === 'money') {
-        const byBoost = boostAmount(b) - boostAmount(a);
-        if (byBoost !== 0) return byBoost;
-      }
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-  }, [items, boardMode]);
+  const rankedItems = items;
 
   const daysLeft = (item: Ranking) => {
     if (item.type !== 'black' || !item.expires_at) return null;
@@ -891,37 +748,11 @@ export default function Rankings() {
     });
   };
 
-  const fetchVotes = (rankingId: string) => {
-    fetch(`${API}/lc/rankings/${rankingId}/votes`)
-      .then(r => r.json())
-      .then(d => { if (d.success) setVotesMap(prev => ({ ...prev, [rankingId]: d.data || [] })); });
-  };
-
-  const fetchBoosts = (rankingId: string) => {
-    fetch(`${API}/lc/rankings/${rankingId}/boosts`)
-      .then(r => r.json())
-      .then(d => { if (d.success) setBoostsMap(prev => ({ ...prev, [rankingId]: d.data || [] })); });
-  };
-
   const toggleComments = (id: string) => {
     const next = new Set(openComments);
     if (next.has(id)) next.delete(id);
     else { next.add(id); fetchComments(id); }
     setOpenComments(next);
-  };
-
-  const toggleVotes = (id: string) => {
-    const next = new Set(openVotes);
-    if (next.has(id)) next.delete(id);
-    else { next.add(id); fetchVotes(id); }
-    setOpenVotes(next);
-  };
-
-  const toggleBoosts = (id: string) => {
-    const next = new Set(openBoosts);
-    if (next.has(id)) next.delete(id);
-    else { next.add(id); fetchBoosts(id); }
-    setOpenBoosts(next);
   };
 
 	  const submitVote = async () => {
@@ -945,9 +776,7 @@ export default function Rankings() {
           ...applyMetricPatch(i, d.data),
           my_vote: d.data.myVote || null,
         } : i));
-	        fetchVotes(voteModal.id);
 	        if (voteCommentText.trim()) fetchComments(voteModal.id);
-	        fetchWallet();
 	        setVoteModal(null);
 	        setVoteCommentText('');
       } else {
@@ -977,8 +806,6 @@ export default function Rankings() {
           ...applyMetricPatch(i, d.data),
           my_vote: null,
         } : i));
-	        fetchVotes(voteModal.id);
-	        fetchWallet();
 	        setVoteModal(null);
 	        setVoteCommentText('');
       } else {
@@ -1167,61 +994,6 @@ export default function Rankings() {
 		    setVoteError('');
 		  };
 
-  const openPaidBoostModal = (id: string) => {
-    const current = requireAuth();
-    if (!current) return;
-    setPaidBoostModal({ id, direction: 'boost' });
-    setPaidBoostAmount('10');
-    setPaidBoostComment('');
-    setPaidBoostError('');
-    fetchWallet();
-  };
-
-  const closePaidBoostModal = () => {
-    setPaidBoostModal(null);
-    setPaidBoostAmount('10');
-    setPaidBoostComment('');
-    setPaidBoostError('');
-  };
-
-  const submitPaidBoost = async () => {
-    if (!paidBoostModal) return;
-    const current = requireAuth();
-    if (!current) return;
-    const amount = Number.parseInt(paidBoostAmount, 10);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setPaidBoostError('请输入大于 0 的整数金额');
-      return;
-    }
-    setPaidBoosting(true);
-    setPaidBoostError('');
-    try {
-      const r = await fetch(`${API}/lc/rankings/${paidBoostModal.id}/paid-boost`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
-        body: JSON.stringify({
-          direction: paidBoostModal.direction,
-          amount,
-          comment: paidBoostComment.trim() || undefined,
-        }),
-      });
-      const d = await r.json();
-      if (d.success) {
-        setItems(prev => prev.map(i => i.id === paidBoostModal.id ? applyMetricPatch(i, d.data) : i));
-        if (openBoosts.has(paidBoostModal.id)) fetchBoosts(paidBoostModal.id);
-        if (paidBoostComment.trim()) fetchComments(paidBoostModal.id);
-        fetchWallet();
-        closePaidBoostModal();
-      } else {
-        setPaidBoostError(d.error || '操作失败');
-      }
-    } catch {
-      setPaidBoostError('网络错误');
-    } finally {
-      setPaidBoosting(false);
-    }
-  };
-
 	  const closeVoteModal = () => {
 	    setVoteModal(null);
 	    setVoteCommentText('');
@@ -1281,16 +1053,14 @@ export default function Rankings() {
     : name;
 
 	  const voteModalItem = voteModal ? items.find(item => item.id === voteModal.id) : undefined;
+  const commentsViewerId = Array.from(openComments)[0] || '';
+  const commentsViewerItem = commentsViewerId ? items.find(item => item.id === commentsViewerId) : undefined;
+  const commentsViewerComments = commentsViewerId ? commentsMap[commentsViewerId] || [] : [];
 	  const existingMyVote = voteModalItem?.my_vote || null;
 	  const existingVoteCopy = existingMyVote ? voteCopy(existingMyVote.vote_type, voteModalItem?.type) : null;
 	  const requestedVoteCopy = voteModal ? voteCopy(voteModal.voteType, voteModalItem?.type) : null;
 	  const canCancelExistingVote = voteCanCancel(existingMyVote);
 	  const isChangingVote = !!existingMyVote && !!voteModal && existingMyVote.vote_type !== voteModal.voteType;
-  const paidBoostItem = paidBoostModal ? items.find(item => item.id === paidBoostModal.id) : undefined;
-  const paidBoostRequestCopy = paidBoostModal ? paidBoostCopy() : null;
-  const paidBoostAmountNumber = Number.parseInt(paidBoostAmount, 10);
-  const paidBoostAmountValid = Number.isFinite(paidBoostAmountNumber) && paidBoostAmountNumber > 0;
-  const paidBoostBalanceNotEnough = paidBoostAmountValid && balance !== null && balance < paidBoostAmountNumber;
 	  const showVoteCommentBox = !!voteModal;
 	  const voteCommentField = showVoteCommentBox ? (
 	    <div style={{ marginBottom: 14 }}>
@@ -1362,7 +1132,7 @@ export default function Rankings() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10, marginBottom: 16 }}>
               {[
                 ['红黑白榜', '红榜夸好事，黑榜记录风险，白榜放事实、笑话和普通线索。'],
-                ['口碑榜 / 真金榜', '口碑榜看一人一票，真金榜看真实打榜值，两套榜单分开看。'],
+                ['事件与档案分开', '事件榜看最近发生的事；搜索某位 DM 时，到其档案看长期评分和全部关联事件。'],
                 ['万物皆可评分', '剧本、角色、DM、店家、玩家、圈内行为都可以继续沉淀 tag 和评价。'],
                 ['公开内容会审核', '证据首次提交选填；审核需要时会要求补充，涉及第三方隐私必须打码。'],
               ].map(([title, desc]) => (
@@ -1398,15 +1168,10 @@ export default function Rankings() {
         <JumuluCompactHeader
           eyebrow="沉浸式娱乐事件口碑"
           title="红黑榜"
-          description="记录值得推荐、需要提醒和应当留档的具体事件；口碑票与正向榜金分开统计。"
+          description="看最近发生的事，也把每条事件沉淀进对象档案。帖子不再接受付费打榜。"
           aside={<div style={filterGroupStyle}>
-            {auth && (
-              <Link to="/wallet" style={walletChipStyle}>
-                {walletLoading ? '榜金 ...' : `榜金 ${balance || 0}`}
-              </Link>
-            )}
-            <button onClick={() => setBoardMode('reputation')} style={hubToggleStyle(boardMode === 'reputation', '#275389')}>口碑榜</button>
-            <button onClick={() => setBoardMode('money')} style={hubToggleStyle(boardMode === 'money', GOLD)}>真金榜</button>
+            <button onClick={() => setFeedMode('latest')} style={hubToggleStyle(feedMode === 'latest', '#275389')}>最新动态</button>
+            <button onClick={() => setFeedMode('discussed')} style={hubToggleStyle(feedMode === 'discussed', GOLD)}>近期热议</button>
             <Link to="/rankings/new" style={jumuluPrimaryLinkStyle}>发布评价</Link>
           </div>}
         />
@@ -1441,9 +1206,9 @@ export default function Rankings() {
         <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.7 }}>
-            {TAB_HINT[tab]} {boardMode === 'reputation'
-              ? '口碑榜按口碑票排序，优先看一人一票的真实参与人数。'
-              : '真金榜只按正向打榜值排序，不提供付费踩榜，也不影响口碑榜。'}
+            {TAB_HINT[tab]} {feedMode === 'latest'
+              ? '按审核通过的新进展排序，普通评论和投票不会把旧帖顶回来。'
+              : '按近期独立参与人数与时间衰减排序，只反映最近讨论热度。'}
           </span>
           {tab === 'black' && (
             <span style={{ display: 'inline-flex', gap: 6 }}>
@@ -1463,7 +1228,7 @@ export default function Rankings() {
               lineHeight: 1.7,
               maxWidth: 860,
             }}>
-              主帖证据首次提交选填；审核员认为内容不足时可以打回并要求补充。涉及第三方隐私的信息请先打码。口碑票一人一票，可改票；榜金只用于正向打榜，不提供付费踩榜，也不代表平台事实裁判。发布者对事实、证据、隐私打码和言论后果负责。
+              主帖证据首次提交选填；审核员认为内容不足时可以打回并要求补充。涉及第三方隐私的信息请先打码。口碑票一人一票，可改票；事件帖不接受付费打榜。发布者对事实、证据、隐私打码和言论后果负责。
             </div>
           </details>
         </div>
@@ -1504,25 +1269,14 @@ export default function Rankings() {
         {!loading && !error && rankedItems.length > 0 && (
           <div style={rankingGridStyle}>
             {rankedItems.map((item, idx) => {
-              const accentColor = item.type === 'red' ? '#b91c1c' : item.type === 'black' ? BLK : GOLD;
-              const subtleAccentBg = item.type === 'red' ? 'rgba(185,28,28,0.08)' : item.type === 'black' ? 'rgba(148,163,184,0.10)' : 'rgba(166,106,31,0.10)';
               const subtleAccentBorder = item.type === 'red' ? 'rgba(185,28,28,0.16)' : item.type === 'black' ? 'rgba(148,163,184,0.20)' : 'rgba(166,106,31,0.24)';
-              const loadedComments = commentsMap[item.id];
-              const comments = loadedComments || item.pinned_comments || [];
-              const pinnedComments = (loadedComments || item.pinned_comments || []).filter(c => c.is_pinned);
-              const normalComments = (loadedComments || []).filter(c => !c.is_pinned);
-              const votes = votesMap[item.id] || [];
-              const boosts = boostsMap[item.id] || [];
-              const showComments = openComments.has(item.id);
-              const showVotes = openVotes.has(item.id);
-              const showBoosts = openBoosts.has(item.id);
+              const pinnedComment = (item.pinned_comments || []).find(comment => comment.is_pinned);
               const left = daysLeft(item);
               const myVote = item.my_vote || null;
-              const boostStats = paidBoostBreakdown(item);
               const kind = eventKindCopy(item.type);
               const heading = eventTitle(item.content);
               const summary = eventSummary(item.content);
-              const currentBoardScore = boardRankScore(item, boardMode);
+              const activityDate = (item.last_activity_at || item.created_at)?.slice(0, 10);
 
               return (
                 <div key={item.id}
@@ -1583,46 +1337,31 @@ export default function Rankings() {
                         fontWeight: 950,
                         whiteSpace: 'nowrap',
                       }}>{kind.label}</span>
-                      <span style={{
-                        padding: '1px 7px',
-                        borderRadius: 999,
-                        background: subtleAccentBg,
-                        border: `1px solid ${subtleAccentBorder}`,
-                        color: accentColor,
-                        fontSize: '0.64rem',
-                        fontWeight: 900,
-                        marginLeft: 'auto',
-                      }}>{boardMode === 'reputation' ? '口碑' : '真金'} #{idx + 1} · {currentBoardScore}</span>
-                    </div>
-                    <div style={{ marginBottom: summary ? 6 : 0 }}>
-                      <Link to={dossierUrl(item)}
-                        style={{ display: 'inline', color: 'rgba(31,41,55,0.94)', fontSize: '1.12rem', lineHeight: 1.3, fontWeight: 950, textDecoration: 'none', overflowWrap: 'anywhere' }}
-                        onMouseEnter={e => (e.currentTarget.style.color = GOLD)}
-                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(31,41,55,0.94)')}>
-                        {item.subject_name}
-                      </Link>
-                      <span style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.7rem', fontWeight: 760 }}>
-                        {' · '}{SUBJECT_LABEL[item.subject_type] || item.subject_type}{item.subject_city ? ` · ${item.subject_city}` : ''}
+                      <span style={{ marginLeft: 'auto', color: 'rgba(71,85,105,0.48)', fontSize: '0.66rem', fontWeight: 800 }}>
+                        {feedMode === 'latest' ? `动态 ${idx + 1}` : `热议 ${idx + 1}`}
                       </span>
                     </div>
                     {summary && (
                       <div style={{ margin: 0 }}>
                         <p style={{
-                          fontSize: '0.9rem',
-                          color: 'rgba(31,41,55,0.92)',
-                          lineHeight: 1.6,
+                          fontSize: '0.98rem',
+                          color: 'rgba(17,24,39,0.94)',
+                          lineHeight: 1.55,
                           margin: '0',
-                          fontWeight: 650,
+                          fontWeight: 760,
                           display: '-webkit-box',
                           WebkitBoxOrient: 'vertical',
-                          WebkitLineClamp: 2,
+                          WebkitLineClamp: 3,
                           overflow: 'hidden',
                         }}>
                           {renderContent(summary)}
                         </p>
-                        <Link to={`/rankings/${encodeURIComponent(item.id)}`} style={readFullLinkStyle}>查看全文</Link>
                       </div>
                     )}
+                    <div style={{ marginTop: 7, color: 'rgba(71,85,105,0.58)', fontSize: '0.7rem', fontWeight: 760 }}>
+                      <Link to={dossierUrl(item)} style={{ color: 'rgba(31,41,55,0.78)', fontWeight: 900, textDecoration: 'none' }}>{item.subject_name}</Link>
+                      {' · '}{SUBJECT_LABEL[item.subject_type] || item.subject_type}{item.subject_city ? ` · ${item.subject_city}` : ''}
+                    </div>
                     {!!item.display_files?.[0]?.url && (
                       <Link to={`/rankings/${encodeURIComponent(item.id)}`} style={rankingThumbLinkStyle} aria-label="查看正文配图">
                         <img src={item.display_files[0].url} alt={item.display_files[0].name || '榜单正文配图'} style={rankingThumbStyle} />
@@ -1645,10 +1384,6 @@ export default function Rankings() {
                       {item.lc_profiles?.verified_dm && (
                         <span style={{ padding: '1px 6px', borderRadius: 999, fontSize: '0.62rem', fontWeight: 800, background: 'linear-gradient(135deg, #d9a857, #b8860b)', color: '#0F1117' }} title="已认证DM">DM</span>
                       )}
-                      {item.subject_url && (
-                        <a href={normalizeUrl(item.subject_url)} target="_blank" rel="noreferrer"
-                          style={{ fontSize: '0.7rem', color: GOLD, textDecoration: 'none' }}>主页 ↗</a>
-                      )}
                       {left !== null && left !== undefined && (
                         <span style={{
                           padding: '2px 8px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 750,
@@ -1667,205 +1402,40 @@ export default function Rankings() {
                     </div>
                   </div>
 
-                  <div style={voteZoneGridStyle}>
-                    <div style={paidVoteZoneStyle}>
-                      <span style={{ ...voteZoneKickerStyle, color: GOLD }}>真金打榜</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', flexWrap: 'wrap' }}>
-                        <button onClick={() => openPaidBoostModal(item.id)}
-                          aria-label={`给事件「${heading}」打榜`}
-                          style={{ ...compactActionButtonStyle, color: boostStats.total > 0 ? GOLD : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
-                          打榜 {boostStats.total}
-                        </button>
-                        <button type="button" onClick={() => toggleBoosts(item.id)} style={{ ...compactActionButtonStyle, marginLeft: 'auto' }}>
-                          {showBoosts ? '收起记录' : '打榜记录'}
-                        </button>
-                      </div>
-                    </div>
-                    <div style={freeVoteZoneStyle}>
-                      <span style={{ ...voteZoneKickerStyle, color: '#275389' }}>口碑票</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', flexWrap: 'wrap' }}>
-                        <button onClick={() => openVoteModal(item.id, 'like')}
-                          style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'like' ? '#8f3732' : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
-                          {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}
-                        </button>
-                        <button onClick={() => openVoteModal(item.id, 'joy')}
-                          style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'joy' ? GOLD : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
-                          欢乐 {item.joys || 0}
-                        </button>
-                        <button onClick={() => openVoteModal(item.id, 'dislike')}
-                          style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'dislike' ? '#303846' : 'rgba(71,85,105,0.66)', fontSize: '0.84rem' }}>
-                          {myVote?.vote_type === 'dislike' ? '已反对' : '反对'} {opposeCount(item)}
-                        </button>
-                      </div>
-                    </div>
+                  <div style={freeVoteZoneStyle}>
+                    <button onClick={() => openVoteModal(item.id, 'like')}
+                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'like' ? '#8f3732' : 'rgba(71,85,105,0.66)' }}>
+                      {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}
+                    </button>
+                    <button onClick={() => openVoteModal(item.id, 'joy')}
+                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'joy' ? GOLD : 'rgba(71,85,105,0.66)' }}>
+                      欢乐 {item.joys || 0}
+                    </button>
+                    <button onClick={() => openVoteModal(item.id, 'dislike')}
+                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'dislike' ? '#303846' : 'rgba(71,85,105,0.66)' }}>
+                      {myVote?.vote_type === 'dislike' ? '已反对' : '反对'} {opposeCount(item)}
+                    </button>
+                    <button onClick={() => toggleComments(item.id)} style={compactActionButtonStyle}>评论</button>
                   </div>
 
-                  {showBoosts && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, paddingBottom: 12 }}>
-                      {boosts.length === 0 ? (
-                        <span style={{ fontSize: '0.74rem', color: 'rgba(71,85,105,0.48)' }}>暂无真金白银记录</span>
-                      ) : boosts.map(record => (
-                        <span key={record.id} style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 5,
-                          padding: '4px 9px',
-                          borderRadius: 999,
-                          border: record.direction === 'negative_boost' ? '1px solid rgba(48,56,70,0.18)' : '1px solid rgba(143,55,50,0.18)',
-                          background: record.direction === 'negative_boost' ? 'rgba(71,85,105,0.07)' : 'rgba(201,120,112,0.10)',
-                          color: record.direction === 'negative_boost' ? '#303846' : '#8f3732',
-                          fontSize: '0.72rem',
-                          fontWeight: 850,
-                        }}>
-                          {record.direction === 'negative_boost' ? '踩榜' : (record.is_initial ? '初始' : '打榜')} {record.amount}
-                          <span style={{ color: 'rgba(71,85,105,0.58)', fontWeight: 750 }}>
-                            · {record.contributor_is_realname ? `⭐ ${record.contributor_name}` : record.contributor_name}
-                          </span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {pinnedComments.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-                      {pinnedComments.map(c => (
-                        <div key={c.id} style={{
-                          border: '1px solid rgba(166,106,31,0.22)',
-                          background: 'linear-gradient(135deg, #fff7ed 0%, #fffdf8 100%)',
-                          borderRadius: 10,
-                          padding: '10px 12px',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
-                            <span style={{ padding: '2px 8px', borderRadius: 999, background: 'rgba(166,106,31,0.12)', color: GOLD, fontSize: '0.7rem', fontWeight: 900 }}>
-                              置顶 · {c.pin_label || '相关方回应'}
-                            </span>
-                            <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.72rem' }}>
-                              <ProfileNameLink profileId={c.author_id}>{renderName(c.author_name, c.is_realname)}</ProfileNameLink> · {c.created_at?.slice(0, 10)}
-                            </span>
-                            {auth?.userId && c.author_id === auth.userId && (
-                              <button onClick={() => deleteOwnComment(item.id, c.id)} disabled={deletingComment === c.id}
-                                style={{ marginLeft: 'auto', border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.50)', cursor: deletingComment === c.id ? 'not-allowed' : 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
-                                {deletingComment === c.id ? '删除中...' : '删除'}
-                              </button>
-                            )}
-                            <button
-                              onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${heading} 的置顶回应` })}
-                              style={{ marginLeft: auth?.userId && c.author_id === auth.userId ? 0 : 'auto', border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.40)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
-                              举报
-                            </button>
-                          </div>
-                          <p style={{ color: 'rgba(31,41,55,0.88)', fontSize: '0.82rem', lineHeight: 1.65, margin: 0 }}>
-                            {c.content}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
+                  {pinnedComment && (
+                    <Link to={`/rankings/${encodeURIComponent(item.id)}`} style={{ display: 'flex', gap: 6, alignItems: 'baseline', minWidth: 0, margin: '7px 0', padding: '7px 9px', border: '1px solid rgba(166,106,31,0.18)', borderRadius: 7, background: '#fffaf2', color: 'rgba(31,41,55,0.78)', textDecoration: 'none', fontSize: '0.72rem' }}>
+                      <strong style={{ flex: '0 0 auto', color: GOLD }}>{pinnedComment.pin_label || '相关方已回应'}</strong>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pinnedComment.content}</span>
+                    </Link>
                   )}
 
                   <div style={compactActionRowStyle}>
-                    <button onClick={() => toggleComments(item.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
-                      onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
-                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>
-                      💬 {showComments ? '收起评论' : `评论 ${comments.length}`}
-                    </button>
-	                    <button onClick={() => openCommentModal(item.id)}
-	                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
-	                      onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
-	                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>写评论</button>
-                    <button onClick={() => toggleVotes(item.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.68)', fontSize: '0.8rem', padding: '4px 0' }}
-                      onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
-                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.68)')}>
-                        {votesToggleLabel(item, showVotes)}
-                    </button>
-                    <button
-                      onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: heading })}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.42)', fontSize: '0.78rem', padding: '4px 0', fontWeight: 600 }}
-                      onMouseEnter={e => (e.currentTarget.style.color = 'rgba(185,28,28,0.78)')}
-                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.42)')}>
-                      举报
-                    </button>
-                    {item.audit_proof && (
-                      <button
-                        type="button"
-                        onClick={() => openAuditModal(item)}
-                        title={`内容校验码：${item.audit_proof.content_hash}`}
-                        style={{
-                          border: 'none',
-                          background: 'transparent',
-                          color: 'rgba(71,85,105,0.38)',
-                          padding: '4px 0',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.color = '#275389')}
-                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(71,85,105,0.38)')}
-                      >
-                        审计 {shortHash(item.audit_proof.entry_hash)}
-                      </button>
-                    )}
-                    <div style={{ flex: 1 }} />
-                    <span style={{ marginLeft: 'auto', color: 'rgba(71,85,105,0.42)', fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
-                      {item.created_at?.slice(0, 10)}
-                      </span>
-                    </div>
-                    {(item.event_date || item.event_script_name || item.event_store_name) && (
-                      <div style={{ color: 'rgba(71,85,105,0.66)', fontSize: '0.76rem', fontWeight: 720, marginBottom: 10 }}>
-                        事件背景：{[item.event_date, item.event_script_name, item.event_store_name].filter(Boolean).join(' · ')}
+                    <Link to={`/rankings/${encodeURIComponent(item.id)}`} style={{ color: '#275389', fontSize: '0.74rem', fontWeight: 850, textDecoration: 'none' }}>全文与评论</Link>
+                    <details style={{ position: 'relative', marginLeft: 'auto' }}>
+                      <summary aria-label="更多操作" style={{ listStyle: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.42)', fontSize: '1rem', lineHeight: 1 }}>···</summary>
+                      <div style={{ position: 'absolute', right: 0, bottom: 24, zIndex: 4, display: 'grid', minWidth: 116, padding: 6, border: '1px solid rgba(31,41,55,0.10)', borderRadius: 7, background: '#fff', boxShadow: '0 8px 24px rgba(31,41,55,0.12)' }}>
+                        <button onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: heading })} style={overflowActionStyle}>举报</button>
+                        {item.audit_proof && <button onClick={() => openAuditModal(item)} style={overflowActionStyle}>查看审计</button>}
                       </div>
-                    )}
-
-                  {showVotes && (
-                    <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {votes.length === 0 ? (
-                        <span style={{ fontSize: '0.78rem', color: 'rgba(71,85,105,0.48)' }}>{emptyVoteRecordText(item)}</span>
-                      ) : votes.map(v => (
-                        <span key={v.id} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5,
-                          padding: '4px 10px', borderRadius: 999, fontSize: '0.74rem',
-                          color: v.vote_type === 'like' ? '#34d399' : v.vote_type === 'dislike' ? RED : GOLD,
-                          background: v.vote_type === 'like' ? 'rgba(52,211,153,0.08)' : v.vote_type === 'dislike' ? 'rgba(248,113,113,0.08)' : 'rgba(217,168,87,0.10)',
-                          border: `1px solid ${v.vote_type === 'like' ? 'rgba(52,211,153,0.18)' : v.vote_type === 'dislike' ? 'rgba(248,113,113,0.18)' : 'rgba(166,106,31,0.18)'}`,
-	                        }}>{voteRecordIcon(v, item.type)} {voteRecordText(v, item.type)} · {v.voter_is_realname ? `⭐ ${v.voter_name}` : v.voter_name}</span>
-                      ))}
+                    </details>
+                    <span style={{ color: 'rgba(71,85,105,0.42)', fontSize: '0.68rem', whiteSpace: 'nowrap' }}>{activityDate}</span>
                     </div>
-                  )}
-
-                  {showComments && (
-                    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {normalComments.length === 0 ? (
-                        <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.48)', textAlign: 'center', padding: '12px 0' }}>暂无评论，等待审核中...</p>
-                      ) : normalComments.map(c => (
-                        <div key={c.id} style={{ backgroundColor: '#fff7ed', border: '1px solid rgba(166,106,31,0.12)', borderRadius: 10, padding: '10px 14px', fontSize: '0.84rem' }}>
-                          <p style={{ color: 'rgba(31,41,55,0.86)', lineHeight: 1.7, marginBottom: 6 }}>{c.content}</p>
-                          <span style={{ fontSize: '0.72rem', color: 'rgba(71,85,105,0.52)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            — <ProfileNameLink profileId={c.author_id}>{renderName(c.author_name, c.is_realname)}</ProfileNameLink> · {c.created_at?.slice(0, 10)}
-                            {auth?.userId && c.author_id === auth.userId && !c.is_pinned && (
-                              <button onClick={() => openRelatedCertModal(item.id, c.id)} disabled={certifyingComment === c.id}
-                                style={{ border: '1px solid rgba(166,106,31,0.2)', background: 'rgba(166,106,31,0.08)', color: GOLD, borderRadius: 999, cursor: certifyingComment === c.id ? 'not-allowed' : 'pointer', fontSize: '0.72rem', padding: '2px 8px', fontWeight: 800 }}>
-                                {certifyingComment === c.id ? '提交中...' : '我是相关方，我要发表置顶回应'}
-                              </button>
-                            )}
-                            <button onClick={() => likeComment(item.id, c.id)} disabled={likingComment === c.id}
-                              style={{ marginLeft: 'auto', border: 'none', background: 'none', color: '#34d399', cursor: 'pointer', fontSize: '0.75rem' }}>👍 {c.likes}</button>
-                            {auth?.userId && c.author_id === auth.userId && (
-                              <button onClick={() => deleteOwnComment(item.id, c.id)} disabled={deletingComment === c.id}
-                                style={{ border: 'none', background: 'none', color: 'rgba(71,85,105,0.48)', cursor: deletingComment === c.id ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>
-                                {deletingComment === c.id ? '删除中...' : '删除'}
-                              </button>
-                            )}
-                            <button
-                              onClick={() => openReportModal({ targetType: 'comment', targetId: c.id, targetTitle: `${heading} 的评论` })}
-                              style={{ border: 'none', background: 'none', color: 'rgba(71,85,105,0.42)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>
-                              举报
-                            </button>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -1873,6 +1443,41 @@ export default function Rankings() {
         )}
         </div>
       </ReputationHubShell>
+
+      {commentsViewerId && commentsViewerItem && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 96, display: 'grid', placeItems: 'center', padding: 16, background: 'rgba(17,24,39,0.58)' }}>
+          <section style={{ width: 'min(560px, 100%)', maxHeight: 'min(720px, 86vh)', overflowY: 'auto', borderRadius: 10, border: '1px solid rgba(31,41,55,0.12)', background: '#fffdf8', padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#1f2937', fontSize: '0.94rem' }}>{eventTitle(commentsViewerItem.content)}</strong>
+                <span style={{ color: 'rgba(71,85,105,0.56)', fontSize: '0.7rem' }}>{commentsViewerComments.length} 条公开评论</span>
+              </div>
+              <button onClick={() => setOpenComments(new Set())} aria-label="关闭评论" style={{ border: 'none', background: 'transparent', color: 'rgba(71,85,105,0.55)', cursor: 'pointer', fontSize: 20 }}>×</button>
+            </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {commentsViewerComments.map(comment => (
+                <article key={comment.id} style={{ border: comment.is_pinned ? '1px solid rgba(166,106,31,0.2)' : '1px solid rgba(31,41,55,0.08)', borderRadius: 7, background: comment.is_pinned ? '#fffaf2' : '#fff', padding: 10 }}>
+                  {comment.is_pinned && <strong style={{ display: 'block', marginBottom: 5, color: GOLD, fontSize: '0.7rem' }}>{comment.pin_label || '相关方回应'}</strong>}
+                  <p style={{ margin: 0, color: 'rgba(31,41,55,0.86)', fontSize: '0.82rem', lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>{comment.content}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 7, color: 'rgba(71,85,105,0.5)', fontSize: '0.68rem' }}>
+                    <ProfileNameLink profileId={comment.author_id}>{renderName(comment.author_name, comment.is_realname)}</ProfileNameLink>
+                    <span>{comment.created_at?.slice(0, 10)}</span>
+                    {auth?.userId && comment.author_id === auth.userId && !comment.is_pinned && <button onClick={() => openRelatedCertModal(commentsViewerId, comment.id)} style={commentMinorActionStyle}>认证为相关方回应</button>}
+                    <button onClick={() => likeComment(commentsViewerId, comment.id)} disabled={likingComment === comment.id} style={{ ...commentMinorActionStyle, marginLeft: 'auto' }}>赞 {comment.likes}</button>
+                    {auth?.userId && comment.author_id === auth.userId && <button onClick={() => deleteOwnComment(commentsViewerId, comment.id)} disabled={deletingComment === comment.id} style={commentMinorActionStyle}>删除</button>}
+                    <button onClick={() => openReportModal({ targetType: 'comment', targetId: comment.id, targetTitle: `${eventTitle(commentsViewerItem.content)}的评论` })} style={commentMinorActionStyle}>举报</button>
+                  </div>
+                </article>
+              ))}
+              {commentsViewerComments.length === 0 && <p style={{ margin: 0, padding: '28px 0', color: 'rgba(71,85,105,0.5)', textAlign: 'center', fontSize: '0.8rem' }}>还没有公开评论。</p>}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button onClick={() => openCommentModal(commentsViewerId)} style={{ flex: 1, minHeight: 38, border: 'none', borderRadius: 7, background: '#275389', color: '#fff', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 850 }}>发表评论</button>
+              <Link to={`/rankings/${encodeURIComponent(commentsViewerId)}`} style={{ flex: 1, minHeight: 38, display: 'grid', placeItems: 'center', border: '1px solid rgba(39,83,137,0.16)', borderRadius: 7, background: '#fff', color: '#275389', textDecoration: 'none', fontSize: '0.78rem', fontWeight: 850 }}>进入详情页</Link>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* Free Vote Modal */}
       {voteModal && (
@@ -1935,63 +1540,6 @@ export default function Rankings() {
                 </div>
               </>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Paid Boost Modal */}
-      {paidBoostModal && paidBoostRequestCopy && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
-          <div style={{ backgroundColor: '#fffdf8', color: '#1f2937', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 20, padding: 32, maxWidth: 440, width: '100%', boxShadow: '0 22px 60px rgba(17,24,39,0.22)' }}>
-            <h3 style={{ fontWeight: 900, fontSize: '1.16rem', marginBottom: 8 }}>
-              {paidBoostRequestCopy.icon} {paidBoostRequestCopy.label}
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 14 }}>
-              {paidBoostItem?.content ? `给事件「${eventTitle(paidBoostItem.content)}」` : '给这条事件'}投入榜金。榜金只用于正向打榜，不提供付费踩榜。
-            </p>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>榜金数量</label>
-              <input
-                value={paidBoostAmount}
-                onChange={e => setPaidBoostAmount(e.target.value.replace(/[^\d]/g, ''))}
-                inputMode="numeric"
-                placeholder="输入金额"
-                style={inputStyle}
-              />
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                {[10, 50, 100, 500].map(amount => (
-                  <button key={amount} type="button" onClick={() => setPaidBoostAmount(String(amount))}
-                    style={{ padding: '5px 10px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.18)', background: '#fffaf2', color: GOLD, cursor: 'pointer', fontSize: '0.76rem', fontWeight: 800 }}>
-                    {amount}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'rgba(71,85,105,0.82)', marginBottom: 6 }}>
-                顺带评论 <span style={{ color: 'rgba(71,85,105,0.50)', fontWeight: 600 }}>免费，可选</span>
-              </label>
-              <textarea
-                value={paidBoostComment}
-                onChange={e => setPaidBoostComment(e.target.value)}
-                rows={3}
-                maxLength={600}
-                placeholder="可以补一句为什么打榜。评论会进入审核队列。"
-                style={{ ...inputStyle, resize: 'none' }}
-              />
-            </div>
-            <p style={{ fontSize: '0.85rem', color: paidBoostBalanceNotEnough ? RED : '#219669', lineHeight: 1.7, marginBottom: 12 }}>
-              当前榜金：{walletLoading ? '...' : balance ?? 0} {paidBoostBalanceNotEnough && <Link to="/wallet" style={{ color: GOLD }}>（榜金不足，去充值）</Link>}
-            </p>
-            {paidBoostError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{paidBoostError}</p>}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={closePaidBoostModal}
-                style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>
-              <button onClick={submitPaidBoost} disabled={paidBoosting || !paidBoostAmountValid || paidBoostBalanceNotEnough}
-                style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none', cursor: paidBoosting || !paidBoostAmountValid || paidBoostBalanceNotEnough ? 'not-allowed' : 'pointer', background: paidBoosting || !paidBoostAmountValid || paidBoostBalanceNotEnough ? 'rgba(71,85,105,0.08)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: paidBoosting || !paidBoostAmountValid || paidBoostBalanceNotEnough ? 'rgba(71,85,105,0.52)' : C, fontWeight: 850, fontSize: '0.875rem', opacity: paidBoosting ? 0.6 : 1 }}>
-                {paidBoosting ? '提交中...' : `确认${paidBoostRequestCopy.label}`}
-              </button>
-            </div>
           </div>
         </div>
       )}

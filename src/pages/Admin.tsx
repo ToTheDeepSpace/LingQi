@@ -1201,6 +1201,24 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     }
   };
 
+  const adoptLegacyRankingEvidence = async (rankingId: string, index: number) => {
+    const response = await fetch(`${API}/lc/admin/rankings/${encodeURIComponent(rankingId)}/legacy-evidence/${index}/adopt`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '旧版材料处理失败');
+    }
+    const applyResult = (item: Ranking) => item.id === rankingId ? {
+      ...item,
+      private_evidence_files: payload.data.private_evidence_files || [],
+    } : item;
+    setRankings(previous => previous.map(applyResult));
+    setApprovedRankings(previous => previous.map(applyResult));
+    await openRankingEvidencePublish(rankingId, payload.data.file as DossierClaimProof);
+  };
+
   const publishRankingEvidenceCopy = async () => {
     if (!rankingEvidencePublish || rankingEvidencePublish.saving) return;
     if (!rankingEvidencePublish.processedFile) {
@@ -2226,11 +2244,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ContentBox>{r.content}</ContentBox>
                       <AdminRankingPublicImages rankingId={r.id} files={r.display_files || []} onMovePrivate={moveRankingImageToEvidence} />
                       <AdminRankingPrivateEvidence rankingId={r.id} files={r.private_evidence_files || []} onPreparePublic={openRankingEvidencePublish} />
-                      {!!r.files?.length && (
-                        <ReviewSection title="历史审核材料（旧版，仅后台显示）">
-                          <AdminAttachmentLinks files={r.files} compact />
-                        </ReviewSection>
-                      )}
+                      {!!r.files?.length && <AdminRankingLegacyEvidence rankingId={r.id} files={r.files} onAdopt={adoptLegacyRankingEvidence} />}
                       {r.payment_proof && <AdminLinkedValue label="旧支付凭证" value={r.payment_proof} />}
                     </div>
                     <Actions vertical>
@@ -2266,11 +2280,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ContentBox>{r.content}</ContentBox>
                       <AdminRankingPublicImages rankingId={r.id} files={r.display_files || []} onMovePrivate={moveRankingImageToEvidence} />
                       <AdminRankingPrivateEvidence rankingId={r.id} files={r.private_evidence_files || []} onPreparePublic={openRankingEvidencePublish} />
-                      {!!r.files?.length && (
-                        <ReviewSection title="历史审核材料（旧版，仅后台显示）">
-                          <AdminAttachmentLinks files={r.files} compact />
-                        </ReviewSection>
-                      )}
+                      {!!r.files?.length && <AdminRankingLegacyEvidence rankingId={r.id} files={r.files} onAdopt={adoptLegacyRankingEvidence} />}
                     </div>
                     <Actions vertical>
                       <ActionButton onClick={() => openRankingEdit(r)}>编辑并留痕</ActionButton>
@@ -3296,6 +3306,46 @@ function AdminRankingPrivateEvidenceImage({ rankingId, file, index, onPreparePub
       ) : (
         <button type="button" onClick={() => onPreparePublic(rankingId, file)} style={{ minHeight: 30, border: '1px solid rgba(39,83,137,0.20)', borderRadius: 7, background: '#eff6ff', color: '#275389', cursor: 'pointer', fontSize: 11, fontWeight: 850 }}>打码后生成公开副本</button>
       )}
+    </div>
+  );
+}
+
+function AdminRankingLegacyEvidence({ rankingId, files, onAdopt }: { rankingId: string; files: ProofFile[]; onAdopt: (rankingId: string, index: number) => Promise<void> }) {
+  return (
+    <ReviewSection title="历史审核材料（原图仅后台可见）">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 180px))', gap: 9 }}>
+        {files.map((file, index) => <AdminRankingLegacyEvidenceImage key={`${file.url}-${index}`} rankingId={rankingId} file={file} index={index} onAdopt={onAdopt} />)}
+      </div>
+    </ReviewSection>
+  );
+}
+
+function AdminRankingLegacyEvidenceImage({ rankingId, file, index, onAdopt }: { rankingId: string; file: ProofFile; index: number; onAdopt: (rankingId: string, index: number) => Promise<void> }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const href = normalizeAdminUrl(file.url, true) || '';
+  const adopt = async () => {
+    if (loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      await onAdopt(rankingId, index);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '旧版材料处理失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <div style={{ display: 'grid', gap: 5 }}>
+      <a href={href || '#'} target="_blank" rel="noreferrer" style={{ color: '#275389', textDecoration: 'none' }}>
+        <img src={href} alt={file.name || `历史材料 ${index + 1}`} style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: `1px solid ${LINE}`, background: '#fff' }} />
+        <div style={{ overflow: 'hidden', marginTop: 4, fontSize: 10, fontWeight: 800, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || `历史材料 ${index + 1}`}</div>
+      </a>
+      <button type="button" onClick={adopt} disabled={loading} style={{ minHeight: 30, border: '1px solid rgba(39,83,137,0.20)', borderRadius: 7, background: '#eff6ff', color: '#275389', cursor: loading ? 'wait' : 'pointer', fontSize: 11, fontWeight: 850 }}>
+        {loading ? '读取中…' : '处理后公开'}
+      </button>
+      {error && <div style={{ color: '#991b1b', fontSize: 10, lineHeight: 1.4 }}>{error}</div>}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   preferredPublicDmAffiliation,
 } from './dmAffiliationWorkflow.js';
 import { normalizeRankingRevisionKind } from './rankingWorkflow.js';
+import { sortRankingFeed } from './rankingFeed.js';
 import {
   findSharedRole,
   findSharedScript,
@@ -39,6 +40,7 @@ import {
   publicRankingEvidenceMetadata,
   readRankingEvidenceFile,
   removeRankingEvidenceFiles,
+  resolveLegacyRankingEvidenceSourceUrl,
   saveRankingEvidenceFiles,
   validateRankingEvidencePublicCopy,
   type RankingEvidenceFile,
@@ -3563,12 +3565,6 @@ function withRankingMetrics<T extends Record<string, unknown>>(row: T): T & Rank
   };
 }
 
-function reputationPraiseValue(row: Record<string, unknown>) {
-  const metrics = rankingMetrics(row);
-  if (row.type === 'red' || row.type === 'white') return metrics.boost_amount;
-  return 0;
-}
-
 function reputationTags(rows: Record<string, unknown>[]) {
   const text = rows.map(row => `${row.subject_name || ''} ${row.content || ''}`).join(' ');
   return REPUTATION_TAGS.filter(tag => text.includes(tag)).slice(0, 6);
@@ -3578,39 +3574,34 @@ function buildReputationSummary(
   rows: Record<string, unknown>[],
   votes: Record<string, unknown>[] = [],
   comments: Record<string, unknown>[] = [],
-  transactions: Record<string, unknown>[] = [],
 ) {
   const rankingIds = new Set(rows.map(row => String(row.id)));
   const relatedVotes = votes.filter(vote => rankingIds.has(String(vote.ranking_id)));
   const relatedComments = comments.filter(comment => rankingIds.has(String(comment.ranking_id)));
-  const relatedTransactions = transactions.filter(tx => rankingIds.has(String(tx.ref_id)));
-  const praiseVoters = new Set<string>();
+  const supportVoters = new Set<string>();
+  const participants = new Set<string>();
   relatedVotes.forEach(vote => {
-    if (vote.source !== 'legacy_paid_boost') return;
-    if (vote.vote_type !== 'like') return;
+    if (vote.source !== 'free_vote') return;
     const voterKey = cleanText(vote.voter_id, 80) || cleanText(vote.voter_name, 80);
-    if (voterKey) praiseVoters.add(voterKey);
-  });
-  relatedTransactions.forEach(tx => {
-    if (!['ranking_paid_boost', 'ranking_vote'].includes(cleanText(tx.ref_type, 80))) return;
-    if (Number(tx.amount || 0) >= 0) return;
-    const voterKey = cleanText(tx.profile_id, 80);
-    if (voterKey) praiseVoters.add(voterKey);
+    if (!voterKey) return;
+    participants.add(voterKey);
+    if (vote.vote_type === 'like') supportVoters.add(voterKey);
   });
   rows.forEach(row => {
-    if (row.type !== 'red') return;
     const authorKey = cleanText(row.poster_id, 80) || cleanText(row.author_name, 80);
-    if (authorKey) praiseVoters.add(authorKey);
+    if (!authorKey) return;
+    participants.add(authorKey);
+    if (row.type === 'red') supportVoters.add(authorKey);
   });
 
   const redCount = rows.filter(row => row.type === 'red').length;
   const whiteCount = rows.filter(row => row.type === 'white').length;
   const blackCount = rows.filter(row => row.type === 'black').length;
-  const praiseValue = rows.reduce((sum, row) => sum + reputationPraiseValue(row), 0);
-  const praisePeople = praiseVoters.size;
+  const praisePeople = supportVoters.size;
+  const participantCount = participants.size;
   const commentCount = relatedComments.length;
   const latestAt = rows.reduce((latest, row) => {
-    const time = new Date(String(row.created_at || '')).getTime();
+    const time = new Date(String(row.last_activity_at || row.created_at || '')).getTime();
     return Number.isFinite(time) ? Math.max(latest, time) : latest;
   }, 0);
   const recentDays = latestAt > 0 ? Math.max(0, Math.min(30, Math.ceil((Date.now() - latestAt) / (24 * 60 * 60 * 1000)))) : 30;
@@ -3620,15 +3611,17 @@ function buildReputationSummary(
     + redCount * 10
     + whiteCount * 3
     + commentCount * 2
-    + Math.min(praiseValue, 200) * 0.45
+    + Math.min(participantCount, 200) * 1.5
     + recentScore * 0.8
     - blackCount * 8
   ));
 
   return {
-    praise_value: praiseValue,
+    // Keep praise_value for old clients, but it now means unique free supporters.
+    praise_value: praisePeople,
     reputation_value: reputationValue,
     praise_people: praisePeople,
+    participant_count: participantCount,
     comment_count: commentCount,
     event_count: rows.length,
     red_count: redCount,
@@ -3669,6 +3662,7 @@ function publicRankingPayload(row: Record<string, unknown>) {
     agree_count: metrics.agree_count,
     oppose_count: metrics.oppose_count,
     created_at: row.created_at,
+    last_activity_at: row.last_activity_at || row.created_at,
     expires_at: row.expires_at,
     expiry_override: row.expiry_override,
   };
@@ -4262,12 +4256,6 @@ type RankingVoteRpcResult = {
   vote_created_at?: string;
   is_duplicate?: boolean;
 };
-type RankingPaidBoostRpcResult = RankingMetrics & {
-  balance: number;
-  paid_amount: number;
-  transaction_id?: string;
-};
-
 const VOTE_CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function voteRefundAmount() {
@@ -9565,7 +9553,7 @@ app.get('/api/lc/reputation/city', async (req, res) => {
 
     let query = supabase
       .from('lc_rankings')
-      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, expires_at, expiry_override, created_at')
+      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, expires_at, expiry_override, created_at, last_activity_at')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .limit(500);
@@ -9578,13 +9566,12 @@ app.get('/api/lc/reputation/city', async (req, res) => {
 
     const rows = (data || []).filter(row => isPublicRankingVisible(row as Record<string, unknown>)) as Record<string, unknown>[];
     const rankingIds = rows.map(row => String(row.id)).filter(Boolean);
-    const [{ data: votes }, { data: comments }, { data: transactions }] = rankingIds.length > 0
+    const [{ data: votes }, { data: comments }] = rankingIds.length > 0
       ? await Promise.all([
           supabase.from('lc_votes').select('ranking_id, vote_type, voter_id, voter_name, source, created_at').in('ranking_id', rankingIds).limit(2000),
           supabase.from('lc_comments').select('ranking_id, id, likes, created_at').in('ranking_id', rankingIds).eq('status', 'approved').limit(2000),
-          supabase.from('lc_transactions').select('ref_id, profile_id, ref_type, amount, status').in('ref_id', rankingIds).in('ref_type', ['ranking_paid_boost', 'ranking_vote']).eq('status', 'approved').lt('amount', 0).limit(3000),
         ])
-      : [{ data: [] }, { data: [] }, { data: [] }];
+      : [{ data: [] }, { data: [] }];
 
     let storeDossiers: Record<string, unknown>[] = [];
     let storeRatingRows: Record<string, unknown>[] = [];
@@ -9619,9 +9606,9 @@ app.get('/api/lc/reputation/city', async (req, res) => {
 
     const items: Record<string, unknown>[] = [...grouped.entries()].map(([key, subjectRows]) => {
       const first = subjectRows[0] || {};
-      const summary = buildReputationSummary(subjectRows, votes || [], comments || [], transactions || []);
+      const summary = buildReputationSummary(subjectRows, votes || [], comments || []);
       const latestEvents = [...subjectRows]
-        .sort((a, b) => new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime())
+        .sort((a, b) => new Date(String(b.last_activity_at || b.created_at)).getTime() - new Date(String(a.last_activity_at || a.created_at)).getTime())
         .slice(0, 3)
         .map(publicRankingPayload);
       return {
@@ -9669,6 +9656,7 @@ app.get('/api/lc/reputation/city', async (req, res) => {
         praise_value: 0,
         reputation_value: 0,
         praise_people: 0,
+        participant_count: 0,
         event_count: 0,
         red_count: 0,
         white_count: 0,
@@ -9682,10 +9670,10 @@ app.get('/api/lc/reputation/city', async (req, res) => {
     });
 
     const sortedItems = items.sort((a, b) => {
-      if (sort === 'praise') return Number(b.praise_value || 0) - Number(a.praise_value || 0) || Number(b.praise_people || 0) - Number(a.praise_people || 0);
+      if (sort === 'praise') return Number(b.praise_people || 0) - Number(a.praise_people || 0) || Number(b.reputation_value || 0) - Number(a.reputation_value || 0);
       if (sort === 'people') return Number(b.praise_people || 0) - Number(a.praise_people || 0) || Number(b.reputation_value || 0) - Number(a.reputation_value || 0);
       if (sort === 'new') return new Date(String(b.latest_at || 0)).getTime() - new Date(String(a.latest_at || 0)).getTime();
-      return Number(b.reputation_value || 0) - Number(a.reputation_value || 0) || Number(b.praise_value || 0) - Number(a.praise_value || 0);
+      return Number(b.reputation_value || 0) - Number(a.reputation_value || 0) || Number(b.praise_people || 0) - Number(a.praise_people || 0);
     }).slice(0, 100);
 
     res.json(ok({ city: city || 'all', subject_type: subjectType || 'all', sort, items: sortedItems }));
@@ -9702,7 +9690,7 @@ app.get('/api/lc/reputation/dossier', async (req, res) => {
 
     let query = supabase
       .from('lc_rankings')
-      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, expires_at, expiry_override, created_at')
+      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, content, author_name, poster_id, is_realname, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, expires_at, expiry_override, created_at, last_activity_at')
       .eq('status', 'approved')
       .eq('subject_type', subjectType)
       .order('created_at', { ascending: false })
@@ -9715,13 +9703,12 @@ app.get('/api/lc/reputation/dossier', async (req, res) => {
     if (error) throw error;
     const rows = (data || []).filter(row => isPublicRankingVisible(row as Record<string, unknown>)) as Record<string, unknown>[];
     const rankingIds = rows.map(row => String(row.id)).filter(Boolean);
-    const [{ data: votes }, { data: comments }, { data: transactions }] = rankingIds.length > 0
+    const [{ data: votes }, { data: comments }] = rankingIds.length > 0
       ? await Promise.all([
           supabase.from('lc_votes').select('ranking_id, vote_type, voter_id, voter_name, source, created_at').in('ranking_id', rankingIds).limit(2000),
           supabase.from('lc_comments').select('ranking_id, id, content, author_name, is_realname, is_pinned, pin_label, likes, created_at').in('ranking_id', rankingIds).eq('status', 'approved').limit(2000),
-          supabase.from('lc_transactions').select('ref_id, profile_id, ref_type, amount, status').in('ref_id', rankingIds).in('ref_type', ['ranking_paid_boost', 'ranking_vote']).eq('status', 'approved').lt('amount', 0).limit(3000),
         ])
-      : [{ data: [] }, { data: [] }, { data: [] }];
+      : [{ data: [] }, { data: [] }];
 
     let profilePayload: Record<string, unknown> | null = null;
     let availability: Record<string, unknown>[] = [];
@@ -9750,7 +9737,7 @@ app.get('/api/lc/reputation/dossier', async (req, res) => {
       }
     }
 
-    const summary = buildReputationSummary(rows, votes || [], comments || [], transactions || []);
+    const summary = buildReputationSummary(rows, votes || [], comments || []);
     const events = rows.map(publicRankingPayload);
     const commentsByRanking = (comments || []).reduce((map: Record<string, unknown[]>, comment: Record<string, unknown>) => {
       const key = String(comment.ranking_id || '');
@@ -10227,6 +10214,7 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
       .select('*')
       .eq('subject_dossier_id', req.params.id)
       .eq('status', 'approved')
+      .order('last_activity_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .limit(100);
     if (rankingResult.error) throw rankingResult.error;
@@ -10480,6 +10468,7 @@ app.get('/api/lc/store-dossiers/:id', async (req, res) => {
       .eq('subject_dossier_id', req.params.id)
       .eq('subject_type', 'store')
       .eq('status', 'approved')
+      .order('last_activity_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .limit(100);
     if (rankingResult.error) throw rankingResult.error;
@@ -12535,6 +12524,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     const cities = normalizeActivityCities(req.query.cities);
     const subjectType = req.query.subjectType as string;
     const expiredOnly = type === 'black' && req.query.expired === 'true';
+    const feedMode = req.query.sort === 'discussed' ? 'discussed' : 'latest';
     const viewerId = getOptionalCreatorId(req);
     let query = supabase
       .from('lc_rankings')
@@ -12544,8 +12534,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     if (subjectType && subjectType !== 'all') query = query.eq('subject_type', subjectType);
     if (cities.length > 0) query = query.in('subject_city', cities);
     else if (city && city !== 'all') query = query.eq('subject_city', city);
-    if (type === 'black') query = query.order('boost_amount', { ascending: false }).order('agree_count', { ascending: false }).order('created_at', { ascending: false });
-    else query = query.order('boost_amount', { ascending: false }).order('created_at', { ascending: false });
+    query = query.order('last_activity_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false });
 
     const { data, error } = await query;
     if (error) throw error;
@@ -12560,7 +12549,7 @@ app.get('/api/lc/rankings', async (req, res) => {
       const isExpired = Number.isFinite(expiresAt) && expiresAt <= now;
       return expiredOnly ? isExpired : !isExpired;
     });
-    const visible = visibleRows.map((row: Record<string, unknown>) => publicRankingPayload(row));
+    const visible = sortRankingFeed(visibleRows, feedMode).map((row: Record<string, unknown>) => publicRankingPayload(row));
 
     const visibleWithAudit = await attachAuditProof('ranking', visible);
     const rankingIds = visibleWithAudit.map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
@@ -12611,7 +12600,7 @@ app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
   try {
     const posterId = getReq(req, 'creatorId');
     const { data, error } = await supabase.from('lc_rankings')
-      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, dm_employment_status_suggestion, dm_employer_store_id_suggestion, content, files, display_files, private_evidence_files, evidence_required, revision_kind, revision_requested_at, revision_count, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, reject_reason, created_at')
+      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, dm_employment_status_suggestion, dm_employer_store_id_suggestion, content, files, display_files, private_evidence_files, evidence_required, revision_kind, revision_requested_at, revision_count, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, reject_reason, created_at, last_activity_at')
       .eq('poster_id', posterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -12903,87 +12892,7 @@ app.put('/api/lc/rankings/:id/withdraw', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/lc/rankings/:id/paid-boost', authMiddleware, async (req, res) => {
-  try {
-    const direction = cleanText(req.body?.direction, 40);
-    const amount = parseCoinAmount(req.body?.amount, 0);
-    const attachedComment = cleanText(req.body?.comment, 600);
-    if (direction !== 'boost') return res.status(400).json(err(new Error('踩榜功能已下线；榜金只用于正向打榜')));
-    if (amount <= 0) return res.status(400).json(err(new Error('请输入大于 0 的榜金数量')));
-
-    const profile = await getAuthedProfile(req);
-    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    const speakBlock = getSpeakBlockReason(profile);
-    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
-
-    const { data: targetRanking, error: targetErr } = await supabase.from('lc_rankings')
-      .select('id, type, status, subject_name')
-      .eq('id', req.params.id)
-      .maybeSingle();
-    if (targetErr) throw targetErr;
-    if (!targetRanking) return res.status(404).json(err(new Error('帖子不存在')));
-    if (targetRanking.status !== 'approved') return res.status(400).json(err(new Error('只有已公开内容可以打榜')));
-
-    const { data, error: boostErr } = await supabase.rpc('lc_apply_ranking_paid_boost', {
-      p_ranking_id: req.params.id,
-      p_profile_id: profile.id,
-      p_direction: direction,
-      p_amount: amount,
-      p_actor_name: profile.display_name,
-    });
-    if (boostErr) return res.status(rankingVoteRpcStatus(boostErr.message || '')).json(err(new Error(boostErr.message || '打榜失败')));
-
-    const row = firstRpcRow<RankingPaidBoostRpcResult>(data);
-    if (!row) throw new Error('打榜结果为空');
-
-    let attachedCommentId: string | null = null;
-    let attachedCommentError = '';
-    if (attachedComment) {
-      const moderationPrecheck = runLocalModerationPrecheck({
-        scene: 'ranking_vote_attached_comment',
-        targetType: 'comment',
-        texts: { content: attachedComment },
-      });
-      const { data: comment, error: commentErr } = await supabase.from('lc_comments').insert({
-        ranking_id: req.params.id,
-        content: attachedComment,
-        author_id: profile.id,
-        author_name: profile.display_name,
-        is_realname: !!profile.is_realname,
-        real_name: null,
-        moderation_precheck: moderationPrecheck,
-      }).select('id').single();
-      if (commentErr) attachedCommentError = getErrorText(commentErr);
-      else attachedCommentId = comment?.id || null;
-    }
-
-    await logSecurityEvent(req, {
-      action: 'ranking_paid_boost_applied',
-      targetType: 'ranking',
-      targetId: req.params.id,
-      metadata: {
-        direction,
-        amount,
-        transaction_id: row.transaction_id || null,
-        attached_comment_id: attachedCommentId,
-        attached_comment_error: attachedCommentError || null,
-      },
-    });
-
-    res.json(ok({
-      likes: row.likes,
-      dislikes: row.dislikes,
-      joys: row.joys,
-      boost_amount: row.boost_amount,
-      negative_boost_amount: row.negative_boost_amount,
-      agree_count: row.agree_count,
-      oppose_count: row.oppose_count,
-      balance: row.balance,
-      paidAmount: row.paid_amount,
-      transactionId: row.transaction_id || null,
-      comment: attachedCommentId ? { id: attachedCommentId, status: 'pending' } : null,
-      commentError: attachedCommentError || null,
-    }));
-  } catch (e) { res.status(500).json(err(e)); }
+  res.status(410).json(err(new Error('事件帖付费打榜已经下线；支持DM请前往其档案送缠头')));
 });
 
 app.get('/api/lc/rankings/:id/boosts', async (req, res) => {
@@ -13501,6 +13410,7 @@ app.post('/api/lc/admin/rankings/:id/evidence/:fileId/public-copy', authMiddlewa
     const { data: updated, error: updateErr } = await supabase.from('lc_rankings').update({
       display_files: nextDisplayFiles,
       private_evidence_files: nextPrivateFiles,
+      ...(ranking.status === 'approved' ? { last_activity_at: publishedAt } : {}),
     }).eq('id', req.params.id).select('*').single();
     if (updateErr) throw updateErr;
     let audit = null;
@@ -13601,6 +13511,59 @@ app.put('/api/lc/admin/rankings/:id/display-files/:index/private', authMiddlewar
   }
 });
 
+app.post('/api/lc/admin/rankings/:id/legacy-evidence/:index/adopt', authMiddleware, adminMiddleware, async (req, res) => {
+  let savedFiles: RankingEvidenceFile[] = [];
+  let committed = false;
+  try {
+    const legacyIndex = Number(req.params.index);
+    if (!Number.isInteger(legacyIndex) || legacyIndex < 0) return res.status(400).json(err(new Error('旧版材料序号不合法')));
+    const result = await supabase.from('lc_rankings').select('id, files, private_evidence_files').eq('id', req.params.id).maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('帖子不存在')));
+    const legacyFiles = normalizeRankingDisplayFiles(result.data.files) as Array<{ name: string; url: string; type: string; size: number }>;
+    const target = legacyFiles[legacyIndex];
+    if (!target) return res.status(404).json(err(new Error('旧版审核材料不存在')));
+    const privateFiles = internalRankingEvidenceFiles(result.data.private_evidence_files);
+    const existing = privateFiles.find(file => file.legacy_source?.index === legacyIndex && file.legacy_source?.url === target.url);
+    if (existing) return res.json(ok({ file: publicRankingEvidenceMetadata([existing])[0], private_evidence_files: publicRankingEvidenceMetadata(privateFiles), adopted: false }));
+    if (privateFiles.length >= MAX_RANKING_EVIDENCE_FILES) return res.status(400).json(err(new Error(`私密审核材料最多${MAX_RANKING_EVIDENCE_FILES}张`)));
+
+    let sourceUrl: URL;
+    try { sourceUrl = resolveLegacyRankingEvidenceSourceUrl(target.url, LINGQI_SITE_URL); }
+    catch (sourceError) { return res.status(400).json(err(sourceError)); }
+    const response = await fetch(sourceUrl);
+    if (!response.ok) throw new Error('旧版审核材料读取失败');
+    const sourceBuffer = Buffer.from(await response.arrayBuffer());
+    const image = await sanitizeUploadedImageFile({ buffer: sourceBuffer, mimetype: response.headers.get('content-type') || target.type });
+    savedFiles = saveRankingEvidenceFiles({
+      root: PRIVATE_UPLOAD_ROOT,
+      rankingId: String(result.data.id),
+      existingCount: privateFiles.length,
+      files: [{ originalName: target.name, image }],
+    });
+    const adminId = getReq(req, 'creatorId');
+    const adoptedAt = new Date().toISOString();
+    const adopted = {
+      ...savedFiles[0],
+      legacy_source: { index: legacyIndex, url: target.url, adopted_at: adoptedAt, adopted_by: adminId },
+    };
+    const nextPrivateFiles = [...privateFiles, adopted];
+    const updateResult = await supabase.from('lc_rankings').update({ private_evidence_files: nextPrivateFiles }).eq('id', req.params.id);
+    if (updateResult.error) throw updateResult.error;
+    committed = true;
+    await logSecurityEvent(req, {
+      action: 'admin_ranking_legacy_evidence_adopted',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      metadata: { legacy_index: legacyIndex, legacy_url: target.url, evidence_id: adopted.id },
+    });
+    res.json(ok({ file: publicRankingEvidenceMetadata([adopted])[0], private_evidence_files: publicRankingEvidenceMetadata(nextPrivateFiles), adopted: true }));
+  } catch (e) {
+    if (!committed && savedFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedFiles);
+    res.status(500).json(err(e));
+  }
+});
+
 app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const targetType = ['red', 'black', 'white'].includes(req.body?.targetType) ? req.body.targetType : null;
@@ -13646,6 +13609,7 @@ app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, a
       likes: nextType === 'red' ? r.initial_amount : 0,
       dislikes: 0,
       joys: 0,
+      last_activity_at: new Date().toISOString(),
     };
     if (nextType === 'black') {
       patch.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -13728,11 +13692,11 @@ app.put('/api/lc/admin/rankings/:id/edit', authMiddleware, adminMiddleware, asyn
     } else if (nextType !== 'black' && before.type === 'black') {
       patch.expires_at = null;
     }
-
     const changedFields = Object.keys(patch).filter(field => !auditValuesEqual(before[field], patch[field]));
     if (changedFields.length === 0) {
       return res.json(ok({ item: before, changes: [] }));
     }
+    if (before.status === 'approved') patch.last_activity_at = new Date().toISOString();
 
     const { data: updated, error: updErr } = await supabase.from('lc_rankings')
       .update(patch)
@@ -13795,6 +13759,13 @@ app.put('/api/lc/admin/comments/:id/approve', authMiddleware, adminMiddleware, a
       .single();
     if (updErr) throw updErr;
     const audit = await auditApprovedTarget('comment', approved, approved?.is_pinned ? 'related_reply_pinned' : 'comment_approved', getReq(req, 'creatorId'));
+    if (approved?.is_pinned && approved?.ranking_id) {
+      const touchResult = await supabase.from('lc_rankings')
+        .update({ last_activity_at: new Date().toISOString() })
+        .eq('id', approved.ranking_id)
+        .eq('status', 'approved');
+      if (touchResult.error) throw touchResult.error;
+    }
     await runReferralSideEffect('stage2-after-comment-approved', () => maybeAwardReferralStage2(approved?.author_id, 'comment_approved'));
     await logSecurityEvent(req, {
       action: approved?.is_pinned ? 'admin_related_reply_approved' : 'admin_comment_approved',

@@ -37,6 +37,7 @@ type DossierEvent = {
   negative_boost_amount?: number;
   agree_count?: number;
   oppose_count?: number;
+  last_activity_at?: string | null;
   created_at: string;
 };
 
@@ -49,6 +50,7 @@ type DossierData = {
     praise_value: number;
     reputation_value: number;
     praise_people: number;
+    participant_count: number;
     event_count: number;
     red_count: number;
     white_count: number;
@@ -146,9 +148,9 @@ export default function ReputationDossier() {
         ) : data ? (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
-              <Metric label="打榜值" value={data.metrics.praise_value} />
+              <Metric label="同意人数" value={data.metrics.praise_people} />
               <Metric label="口碑值" value={data.metrics.reputation_value} />
-              <Metric label="打榜人数" value={data.metrics.praise_people} />
+              <Metric label="参与人数" value={data.metrics.participant_count || 0} />
               <Metric label="事件数" value={data.metrics.event_count} />
             </div>
 
@@ -168,7 +170,7 @@ export default function ReputationDossier() {
                           {event.type === 'red' ? '红榜事件' : event.type === 'black' ? '黑榜事件' : '白榜记录'}
                         </span>
                         <span style={{ color: 'rgba(71,85,105,0.58)', fontSize: 13 }}>
-                          <ProfileNameLink profileId={event.poster_id}>{event.is_realname ? `实名玩家 ${event.author_name}` : event.author_name}</ProfileNameLink> · {event.created_at?.slice(0, 10)}
+                          <ProfileNameLink profileId={event.poster_id}>{event.is_realname ? `实名玩家 ${event.author_name}` : event.author_name}</ProfileNameLink> · 更新于 {(event.last_activity_at || event.created_at)?.slice(0, 10)}
                         </span>
                       </div>
                       <p style={{ margin: '0 0 10px', color: 'rgba(31,41,55,0.86)', lineHeight: 1.75 }}>{event.content}</p>

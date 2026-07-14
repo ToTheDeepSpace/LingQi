@@ -60,7 +60,7 @@ type DmDetail = {
   summary: { avg: number | null; review_count: number; player_count: number; sample_status: 'insufficient' | 'stable' };
   ratings: Array<{ id: string; profile_id?: string | null; profile_name: string; script_name: string; store_dossier_id?: string | null; store_name: string; played_on: string; replay_number: number; rating: number; content: string; tags?: string[]; reaction: RatingReaction; official_response?: RatingOfficialResponse | null }>;
   reputation_summary: { event_count: number; red_count: number; black_count: number; white_count: number };
-  reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; poster_id?: string | null; event_date?: string | null; event_script_name?: string | null; event_store_name?: string | null; created_at: string }>;
+  reputation_events: Array<{ id: string; type: 'red' | 'black' | 'white'; content: string; author_name: string; poster_id?: string | null; event_date?: string | null; event_script_name?: string | null; event_store_name?: string | null; created_at: string; last_activity_at?: string | null }>;
   chanto_summary?: { total: number; gift_count: number; supporter_count: number; recent: Array<{ id: string; amount: number; supporter_name: string; created_at: string }> };
 };
 
@@ -281,18 +281,19 @@ export default function DmProfile() {
           </div>}
         </section>
         <section style={cardStyle}>
-          <h2 style={headingStyle}>红黑榜记录</h2>
-          <p style={{ margin: '-6px 0 14px', color: MUTED, fontSize: 13 }}>红榜、黑榜和白榜是事件口碑，不参与上方五星综合分。</p>
+          <h2 style={headingStyle}>事件口碑</h2>
+          <p style={{ margin: '-6px 0 14px', color: MUTED, fontSize: 13 }}>与这位 DM 关联的红、黑、白榜事件按最新有效进展排列，不参与上方五星综合分。</p>
           {reputationEvents.length === 0 ? <p style={{ color: MUTED }}>暂无关联到这份DM档案的红黑榜记录。</p> : <div style={{ display: 'grid', gap: 12 }}>
             {reputationEvents.map(item => (
-              <article key={item.id} style={{ borderTop: '1px solid rgba(31,41,55,0.09)', paddingTop: 14 }}>
+              <Link key={item.id} to={`/rankings/${encodeURIComponent(item.id)}`} style={{ display: 'block', borderTop: '1px solid rgba(31,41,55,0.09)', paddingTop: 12, color: 'inherit', textDecoration: 'none' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <strong style={{ color: item.type === 'red' ? '#b91c1c' : item.type === 'black' ? '#334155' : '#8a5a19' }}>{item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'}</strong>
-                  <span style={{ color: MUTED, fontSize: 13 }}><ProfileNameLink profileId={item.poster_id}>{item.author_name}</ProfileNameLink> · {item.created_at?.slice(0, 10)}</span>
+                  <span style={{ color: MUTED, fontSize: 12 }}>更新于 {(item.last_activity_at || item.created_at)?.slice(0, 10)}</span>
                 </div>
                 {(item.event_date || item.event_script_name || item.event_store_name) && <div style={{ color: MUTED, fontSize: 13, marginTop: 6 }}>{[item.event_date, item.event_script_name, item.event_store_name].filter(Boolean).join(' · ')}</div>}
-                <p style={{ margin: '9px 0 0', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{item.content}</p>
-              </article>
+                <p style={{ margin: '8px 0 0', lineHeight: 1.65, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }}>{item.content}</p>
+                <div style={{ marginTop: 7, color: MUTED, fontSize: 12 }}>发布人 {item.author_name} · 查看完整事件与评论 →</div>
+              </Link>
             ))}
           </div>}
         </section>
