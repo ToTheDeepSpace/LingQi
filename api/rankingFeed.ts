@@ -24,22 +24,37 @@ export function rankingRecentDiscussionScore(row: RankingFeedRow, now = Date.now
   return Math.log1p(participants) * Math.exp(-ageDays / 7);
 }
 
-export function sortRankingFeed<T extends RankingFeedRow>(rows: T[], mode: 'latest' | 'discussed', now = Date.now()) {
-  const ranked = rows.map((row, index) => ({
+function rankRows<T extends RankingFeedRow>(rows: T[], now: number) {
+  return rows.map((row, index) => ({
     row,
     index,
     activityTime: rankingActivityTime(row),
     discussionScore: rankingRecentDiscussionScore(row, now),
   }));
+}
 
+export function sortRankingFeedLatest<T extends RankingFeedRow>(rows: T[], now = Date.now()) {
+  const ranked = rankRows(rows, now);
   ranked.sort((left, right) => {
-    if (mode === 'discussed') {
-      const scoreDelta = right.discussionScore - left.discussionScore;
-      if (Math.abs(scoreDelta) > 0.000001) return scoreDelta;
-    }
     const activityDelta = right.activityTime - left.activityTime;
     return activityDelta || left.index - right.index;
   });
-
   return ranked.map(item => item.row);
+}
+
+export function sortRankingFeedDiscussed<T extends RankingFeedRow>(rows: T[], now = Date.now()) {
+  const ranked = rankRows(rows, now);
+  ranked.sort((left, right) => {
+    const scoreDelta = right.discussionScore - left.discussionScore;
+    if (Math.abs(scoreDelta) > 0.000001) return scoreDelta;
+    const activityDelta = right.activityTime - left.activityTime;
+    return activityDelta || left.index - right.index;
+  });
+  return ranked.map(item => item.row);
+}
+
+export function sortRankingFeed<T extends RankingFeedRow>(rows: T[], mode: 'latest' | 'discussed', now = Date.now()) {
+  return mode === 'discussed'
+    ? sortRankingFeedDiscussed(rows, now)
+    : sortRankingFeedLatest(rows, now);
 }
