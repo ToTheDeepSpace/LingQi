@@ -1,13 +1,17 @@
 export type RankingFeedRow = Record<string, unknown> & {
-  created_at?: string | null;
-  last_activity_at?: string | null;
+  created_at?: string | Date | null;
+  last_activity_at?: string | Date | null;
   agree_count?: number | null;
   oppose_count?: number | null;
   joys?: number | null;
 };
 
 function timestamp(value: unknown) {
-  const parsed = typeof value === 'string' ? new Date(value).getTime() : Number.NaN;
+  const parsed = value instanceof Date
+    ? value.getTime()
+    : typeof value === 'string'
+      ? new Date(value).getTime()
+      : Number.NaN;
   return Number.isFinite(parsed) ? parsed : 0;
 }
 

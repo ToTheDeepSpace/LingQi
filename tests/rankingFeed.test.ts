@@ -21,3 +21,13 @@ test('recent discussion uses unique free-vote participation with time decay', ()
   const stale = { created_at: '2026-04-01T00:00:00Z', agree_count: 500, oppose_count: 0, joys: 0 };
   assert.ok(rankingRecentDiscussionScore(active, now) > rankingRecentDiscussionScore(stale, now));
 });
+
+test('feed accepts PostgreSQL Date objects before JSON serialization', () => {
+  const now = new Date('2026-07-14T00:00:00.000Z').getTime();
+  const rows = [
+    { id: 'fresh', last_activity_at: new Date('2026-07-13T00:00:00.000Z'), agree_count: 0 },
+    { id: 'discussed', last_activity_at: new Date('2026-07-12T00:00:00.000Z'), agree_count: 2 },
+  ];
+
+  assert.equal(sortRankingFeed(rows, 'discussed', now)[0].id, 'discussed');
+});
