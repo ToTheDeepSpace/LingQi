@@ -12578,6 +12578,15 @@ app.get('/api/lc/rankings', async (req, res) => {
     const withPinnedComments = feedMode === 'discussed'
       ? sortRankingFeedDiscussed(feedRows)
       : sortRankingFeedLatest(feedRows);
+    if (req.query.debugFeed === '1') {
+      console.error('[ranking-feed-debug]', JSON.stringify({
+        feedMode,
+        rowCount: feedRows.length,
+        maxParticipants: Math.max(0, ...feedRows.map(row => Number(row.agree_count || 0) + Number(row.oppose_count || 0) + Number(row.joys || 0))),
+        firstBefore: (feedRows[0] as Record<string, unknown> | undefined)?.subject_name,
+        firstAfter: (withPinnedComments[0] as Record<string, unknown> | undefined)?.subject_name,
+      }));
+    }
 
     if (!viewerId || withPinnedComments.length === 0) return res.json(ok(withPinnedComments));
 
