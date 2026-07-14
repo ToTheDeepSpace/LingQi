@@ -12524,7 +12524,8 @@ app.get('/api/lc/rankings', async (req, res) => {
     const cities = normalizeActivityCities(req.query.cities);
     const subjectType = req.query.subjectType as string;
     const expiredOnly = type === 'black' && req.query.expired === 'true';
-    const feedMode = req.query.sort === 'discussed' ? 'discussed' : 'latest';
+    const feedMode = cleanText(req.query.sort, 20).toLowerCase() === 'discussed' ? 'discussed' : 'latest';
+    res.setHeader('X-Ranking-Feed-Mode', feedMode);
     const viewerId = getOptionalCreatorId(req);
     let query = supabase
       .from('lc_rankings')
