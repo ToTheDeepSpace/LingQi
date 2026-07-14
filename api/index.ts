@@ -12,7 +12,7 @@ import {
   preferredPublicDmAffiliation,
 } from './dmAffiliationWorkflow.js';
 import { normalizeRankingRevisionKind } from './rankingWorkflow.js';
-import { sortRankingFeed } from './rankingFeed.js';
+import { rankingRecentDiscussionScore, sortRankingFeed } from './rankingFeed.js';
 import {
   findSharedRole,
   findSharedScript,
@@ -12575,6 +12575,11 @@ app.get('/api/lc/rankings', async (req, res) => {
       ...withRankingMetrics(row),
       pinned_comments: pinnedByRanking.get(String(row.id)) || [],
     })), feedMode);
+    if (withPinnedComments[0]) {
+      const firstFeedRow = withPinnedComments[0] as Record<string, unknown>;
+      res.setHeader('X-Ranking-Feed-First', encodeURIComponent(String(firstFeedRow.subject_name || '')));
+      res.setHeader('X-Ranking-Feed-First-Score', String(rankingRecentDiscussionScore(firstFeedRow)));
+    }
 
     if (!viewerId || withPinnedComments.length === 0) return res.json(ok(withPinnedComments));
 
