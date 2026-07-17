@@ -233,6 +233,21 @@ type RankingEditForm = {
   subject_dossier_id: string;
 };
 
+type RankingAuthorEditRequest = {
+  id: string;
+  ranking_id: string;
+  author_id: string;
+  request_kind: 'edit' | 'restore';
+  before_snapshot: Record<string, unknown>;
+  proposed_patch: Record<string, unknown>;
+  changes: Array<{ field: string; label: string; before: unknown; after: unknown }>;
+  change_metrics?: Record<string, number>;
+  moderation_precheck?: ModerationPrecheck | null;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  reject_reason?: string | null;
+  created_at: string;
+};
+
 type DossierOption = {
   id: string;
   entity_type: 'dm' | 'store';
@@ -594,15 +609,15 @@ type GuideWithdrawalReview = {
   created_at: string;
 };
 
-type RejectType = 'profile' | 'ranking' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'dmRating' | 'storeRating' | 'publicReview' | 'guide' | 'guideWithdrawal';
-type Tab = 'allPending' | 'siteData' | 'publishedDmDossiers' | 'publishedStoreDossiers' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
+type RejectType = 'profile' | 'ranking' | 'rankingEdit' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'dmRating' | 'storeRating' | 'publicReview' | 'guide' | 'guideWithdrawal';
+type Tab = 'allPending' | 'siteData' | 'publishedDmDossiers' | 'publishedStoreDossiers' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'rankingEdits' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
 type AdminGroup = 'all' | 'data' | 'dm' | 'store' | 'content' | 'finance' | 'appeals' | 'history' | 'accounts';
 
 function adminGroupForTab(tab: Tab): AdminGroup {
   if (['siteData', 'publishedDmDossiers', 'publishedStoreDossiers', 'publishedRankings'].includes(tab)) return 'data';
   if (['dmDossiers', 'dmDossierEdits', 'dmCerts', 'dmRatings', 'dmWithdrawals'].includes(tab)) return 'dm';
   if (['storeDossiers', 'storeDossierEdits', 'storeCerts', 'storeRatings'].includes(tab)) return 'store';
-  if (['rankings', 'publicReviews', 'comments', 'commissions', 'carpools', 'scriptContributions', 'guides'].includes(tab)) return 'content';
+  if (['rankings', 'rankingEdits', 'publicReviews', 'comments', 'commissions', 'carpools', 'scriptContributions', 'guides'].includes(tab)) return 'content';
   if (['wallet', 'guideWithdrawals'].includes(tab)) return 'finance';
   if (['reports', 'messages', 'claims', 'requests'].includes(tab)) return 'appeals';
   if (tab === 'reviewHistory') return 'history';
@@ -735,6 +750,13 @@ function publicReviewValueText(key: string, value: unknown, phase: 'before' | 'a
     }
     return String(item.name || item.label || item.id || `第${index + 1}项`);
   }).join('、');
+}
+
+function rankingEditValueText(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '未填写';
+  if (Array.isArray(value)) return value.length ? value.map(item => rankingEditValueText(item)).join('、') : '未填写';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
 }
 
 function publicReviewSensitiveState(item: PublicReview) {
@@ -924,6 +946,7 @@ export default function Admin() {
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [requests, setRequests] = useState<ContactReq[]>([]);
   const [rankings, setRankings] = useState<Ranking[]>([]);
+  const [rankingEditRequests, setRankingEditRequests] = useState<RankingAuthorEditRequest[]>([]);
   const [approvedRankings, setApprovedRankings] = useState<Ranking[]>([]);
   const [comments, setComments] = useState<CommentReview[]>([]);
   const [claims, setClaims] = useState<ClaimReview[]>([]);
@@ -994,6 +1017,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setProfiles((d.data as { profiles: Profile[] }).profiles || []);
         setRequests((d.data as { contactRequests: ContactReq[] }).contactRequests || []);
         setRankings((d.data as { rankings: Ranking[] }).rankings || []);
+        setRankingEditRequests((d.data as { rankingEditRequests: RankingAuthorEditRequest[] }).rankingEditRequests || []);
         setApprovedRankings((d.data as { approvedRankings: Ranking[] }).approvedRankings || []);
         setComments((d.data as { comments: CommentReview[] }).comments || []);
         setClaims((d.data as { claims: ClaimReview[] }).claims || []);
@@ -1147,6 +1171,20 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ targetType }),
     });
+    void loadData();
+  };
+
+  const approveRankingEdit = async (id: string) => {
+    const response = await fetch(`${API}/lc/admin/ranking-edits/${id}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      window.alert(typeof payload.error === 'string' ? payload.error : payload.error?.message || '处理失败');
+      return;
+    }
+    setRankingEditRequests(previous => previous.filter(item => item.id !== id));
     void loadData();
   };
 
@@ -1549,6 +1587,10 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
 
   const confirmReject = async () => {
     const { id, reason, type, revisionKind } = rejectModal;
+    if (type === 'rankingEdit' && reason.trim().length < 2) {
+      window.alert('请填写驳回原因，发布人会在“我的发布”中看到');
+      return;
+    }
     setRejectModal({ open: false, id: '', reason: '', type: 'profile', revisionKind: 'content' });
 
     const headers = { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
@@ -1560,6 +1602,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     } else if (type === 'ranking') {
       await fetch(`${API}/lc/admin/rankings/${id}/reject`, { method: 'PUT', headers, body });
       setRankings(prev => prev.filter(r => r.id !== id));
+    } else if (type === 'rankingEdit') {
+      await fetch(`${API}/lc/admin/ranking-edits/${id}/reject`, { method: 'PUT', headers, body });
+      setRankingEditRequests(prev => prev.filter(item => item.id !== id));
     } else if (type === 'comment') {
       await fetch(`${API}/lc/admin/comments/${id}/reject`, { method: 'PUT', headers });
       setComments(prev => prev.filter(c => c.id !== id));
@@ -1623,6 +1668,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setStoreRatings([]);
     setDmIdentityWithdrawals([]);
     setDossierOptions([]);
+    setRankingEditRequests([]);
     setReports([]);
     setSiteMessages([]);
     setSecurityEvents([]);
@@ -1656,6 +1702,18 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       createdAt: r.created_at,
       accent: r.type === 'red' ? '#dc2626' : r.type === 'black' ? '#475569' : '#d9a857',
       tags: [rankingTypeLabel(r.type), SUBJECT_LABEL[r.subject_type] || r.subject_type, r.subject_city || '未知城市'],
+    })),
+    ...rankingEditRequests.map(item => ({
+      id: `ranking-edit-${item.id}`,
+      tab: 'rankingEdits' as const,
+      category: item.request_kind === 'restore' ? '口碑恢复' : '口碑修改',
+      title: String(item.before_snapshot?.subject_name || '未命名口碑'),
+      meta: item.request_kind === 'restore'
+        ? '原发布人申请重新公开已下架内容'
+        : `原发布人申请修改 ${item.changes?.length || 0} 个字段`,
+      createdAt: item.created_at,
+      accent: item.request_kind === 'restore' ? '#15803d' : '#2563eb',
+      tags: [item.request_kind === 'restore' ? '恢复公开' : '小幅修改', String(item.before_snapshot?.type || '')].filter(Boolean),
     })),
     ...publicReviews.map(item => ({
       id: `public-${item.id}`,
@@ -1863,6 +1921,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     content: [
       { tab: 'publicReviews', label: '主页与公开资料', count: contentPublicReviews.length },
       { tab: 'rankings', label: '红黑榜', count: rankings.length },
+      { tab: 'rankingEdits', label: '口碑修改 / 恢复', count: rankingEditRequests.length },
       { tab: 'comments', label: '评论', count: comments.length },
       { tab: 'commissions', label: '委托', count: commissions.length },
       { tab: 'carpools', label: '拼车', count: carpools.length },
@@ -2257,6 +2316,56 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ActionButton kind="bad" onClick={() => openRejectModal(r.id, 'ranking', 'evidence')}>要求补证据</ActionButton>
                     </Actions>
                   </Row>
+                  );
+                })}
+              </ListEmpty>
+            )}
+
+            {tab === 'rankingEdits' && (
+              <ListEmpty empty={rankingEditRequests.length === 0} text="暂无待审核的口碑修改或恢复申请">
+                {rankingEditRequests.map(item => {
+                  const snapshot = item.before_snapshot || {};
+                  const isRestore = item.request_kind === 'restore';
+                  return (
+                    <Row key={item.id} accent={isRestore ? '#15803d' : '#2563eb'}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <TitleLine title={String(snapshot.subject_name || '未命名口碑')} pill={isRestore ? '申请恢复公开' : '原作者修改'} />
+                        <Meta>
+                          {rankingTypeLabel(String(snapshot.type || ''))} · {SUBJECT_LABEL[String(snapshot.subject_type || '')] || String(snapshot.subject_type || '未知对象')}
+                          {snapshot.subject_city ? ` · ${String(snapshot.subject_city)}` : ''}
+                          {snapshot.author_name ? ` · 发布人：${String(snapshot.author_name)}` : ''}
+                          {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
+                        </Meta>
+                        <ModerationPrecheckBadge value={item.moderation_precheck} />
+                        {isRestore ? (
+                          <ReviewSection title="申请恢复的原帖">
+                            <p style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', color: INK, fontSize: '0.84rem', lineHeight: 1.7 }}>{String(snapshot.content || '')}</p>
+                            <p style={{ margin: '8px 0 0', color: MUTED, fontSize: '0.76rem', lineHeight: 1.55 }}>通过后重新公开；黑榜会从恢复日重新计算 30 天公开期。</p>
+                          </ReviewSection>
+                        ) : (
+                          <div style={{ display: 'grid', gap: 9, marginTop: 10 }}>
+                            {(item.changes || []).map(change => (
+                              <ReviewSection key={change.field} title={change.label || change.field}>
+                                <div className="ranking-edit-compare" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                                  <div style={{ minWidth: 0, borderRadius: 7, padding: 9, background: '#fff5f5', color: '#7f1d1d', fontSize: '0.78rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                                    <strong style={{ display: 'block', marginBottom: 4 }}>原版</strong>
+                                    <s>{rankingEditValueText(change.before)}</s>
+                                  </div>
+                                  <div style={{ minWidth: 0, borderRadius: 7, padding: 9, background: '#f0fdf4', color: '#166534', fontSize: '0.78rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                                    <strong style={{ display: 'block', marginBottom: 4 }}>修改版</strong>
+                                    {rankingEditValueText(change.after)}
+                                  </div>
+                                </div>
+                              </ReviewSection>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <Actions vertical>
+                        <ActionButton kind="ok" onClick={() => void approveRankingEdit(item.id)}>{isRestore ? '恢复公开' : '通过修改'}</ActionButton>
+                        <ActionButton kind="bad" onClick={() => openRejectModal(item.id, 'rankingEdit')}>驳回</ActionButton>
+                      </Actions>
+                    </Row>
                   );
                 })}
               </ListEmpty>
@@ -3087,7 +3196,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       {rejectModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(217,168,87,0.24)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 28px 80px rgba(31,41,55,0.22)' }}>
-            <h3 style={{ fontWeight: 800, fontSize: '1rem', marginBottom: 8, color: INK }}>{rejectModal.type === 'ranking' ? (rejectModal.revisionKind === 'evidence' ? '要求补证据' : '打回修改原因') : '填写拒绝原因'}</h3>
+            <h3 style={{ fontWeight: 800, fontSize: '1rem', marginBottom: 8, color: INK }}>{rejectModal.type === 'ranking' ? (rejectModal.revisionKind === 'evidence' ? '要求补证据' : '打回修改原因') : rejectModal.type === 'rankingEdit' ? '驳回修改 / 恢复申请' : '填写拒绝原因'}</h3>
             <p style={{ fontSize: '0.8rem', color: MUTED, marginBottom: 16 }}>
               {rejectModal.type === 'ranking'
                 ? rejectModal.revisionKind === 'evidence'
@@ -3115,6 +3224,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @media (max-width: 720px) {
+          .ranking-edit-compare {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
           .ranking-evidence-editor-modal {
             padding: 14px !important;
             max-height: 96vh !important;

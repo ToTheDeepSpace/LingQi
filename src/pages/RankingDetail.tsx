@@ -47,6 +47,15 @@ type Comment = {
   created_at: string;
 };
 
+type RankingVersion = {
+  id: string;
+  version_number: number;
+  source: 'original' | 'author_edit' | 'admin_edit' | 'restore';
+  snapshot: Record<string, unknown>;
+  changes: Array<{ field: string; label: string; before: unknown; after: unknown }>;
+  created_at: string;
+};
+
 const SUBJECT_LABEL: Record<string, string> = {
   dm: 'DM',
   store: '店家',
@@ -58,6 +67,7 @@ export default function RankingDetail() {
   const { id = '' } = useParams();
   const [ranking, setRanking] = useState<Ranking | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [versions, setVersions] = useState<RankingVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -68,11 +78,13 @@ export default function RankingDetail() {
     Promise.all([
       fetch(`${API}/lc/rankings/${encodeURIComponent(id)}`, { signal: controller.signal, headers }),
       fetch(`${API}/lc/rankings/${encodeURIComponent(id)}/comments`, { signal: controller.signal }),
-    ]).then(async ([rankingResponse, commentsResponse]) => {
-      const [rankingPayload, commentsPayload] = await Promise.all([rankingResponse.json(), commentsResponse.json()]);
+      fetch(`${API}/lc/rankings/${encodeURIComponent(id)}/versions`, { signal: controller.signal }),
+    ]).then(async ([rankingResponse, commentsResponse, versionsResponse]) => {
+      const [rankingPayload, commentsPayload, versionsPayload] = await Promise.all([rankingResponse.json(), commentsResponse.json(), versionsResponse.json()]);
       if (!rankingResponse.ok || !rankingPayload.success) throw new Error(rankingPayload.error || '榜单详情加载失败');
       setRanking(rankingPayload.data);
       if (commentsResponse.ok && commentsPayload.success) setComments(commentsPayload.data || []);
+      if (versionsResponse.ok && versionsPayload.success) setVersions(versionsPayload.data || []);
     }).catch(reason => {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : '榜单详情加载失败');
     }).finally(() => {
@@ -128,6 +140,28 @@ export default function RankingDetail() {
               <span>发布人</span>
               <ProfileNameLink profileId={ranking.poster_id}>{ranking.is_realname ? `实名 · ${ranking.author_name}` : ranking.author_name}</ProfileNameLink>
             </div>
+
+            {versions.length > 1 && (
+              <details style={versionHistoryStyle}>
+                <summary style={versionSummaryStyle}>修改记录 · {versions.length - 1} 次</summary>
+                <div style={versionListStyle}>
+                  {versions.filter(version => version.source !== 'original').map(version => (
+                    <section key={version.id} style={versionItemStyle}>
+                      <div style={versionHeaderStyle}>
+                        <strong>第 {version.version_number} 版 · {versionSourceLabel(version.source)}</strong>
+                        <span>{formatDate(version.created_at)}</span>
+                      </div>
+                      {(version.changes || []).map(change => (
+                        <div key={`${version.id}-${change.field}`} className="ranking-version-diff" style={versionDiffStyle}>
+                          <div style={versionBeforeStyle}><span>{change.label || change.field} · 原版</span><s>{versionValue(change.before)}</s></div>
+                          <div style={versionAfterStyle}><span>{change.label || change.field} · 修改版</span><p>{versionValue(change.after)}</p></div>
+                        </div>
+                      ))}
+                    </section>
+                  ))}
+                </div>
+              </details>
+            )}
           </article>
 
           <aside style={sideStyle}>
@@ -171,6 +205,9 @@ export default function RankingDetail() {
           .ranking-detail-layout {
             grid-template-columns: minmax(0, 1fr) !important;
           }
+          .ranking-version-diff {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
         }
       `}</style>
     </ReputationHubShell>
@@ -198,6 +235,20 @@ function normalizeExternalUrl(value: string) {
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
 }
 
+function versionSourceLabel(source: RankingVersion['source']) {
+  if (source === 'author_edit') return '原发布人修改';
+  if (source === 'admin_edit') return '管理员校正';
+  if (source === 'restore') return '恢复公开';
+  return '原始版本';
+}
+
+function versionValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '未填写';
+  if (Array.isArray(value)) return value.length ? value.map(versionValue).join('、') : '未填写';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
 function Stat({ label, value }: { label: string; value: number }) {
   return <div style={statStyle}><strong>{value}</strong><span>{label}</span></div>;
 }
@@ -222,6 +273,14 @@ const galleryLinkStyle: React.CSSProperties = { display: 'block', minWidth: 0 };
 const galleryImageStyle: React.CSSProperties = { display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(31,41,55,0.1)', background: '#f8fafc' };
 const contextStyle: React.CSSProperties = { display: 'grid', gap: 5, marginTop: 18, borderTop: '1px solid rgba(31,41,55,0.08)', paddingTop: 14, color: MUTED, fontSize: 12, lineHeight: 1.6 };
 const authorStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, color: MUTED, fontSize: 12 };
+const versionHistoryStyle: React.CSSProperties = { marginTop: 16, borderTop: '1px solid rgba(31,41,55,0.08)', paddingTop: 12 };
+const versionSummaryStyle: React.CSSProperties = { width: 'fit-content', cursor: 'pointer', color: BLUE, fontSize: 12, fontWeight: 900 };
+const versionListStyle: React.CSSProperties = { display: 'grid', gap: 9, marginTop: 10 };
+const versionItemStyle: React.CSSProperties = { border: '1px solid rgba(39,83,137,0.1)', borderRadius: 8, padding: 10, background: '#fbfdff' };
+const versionHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, color: MUTED, fontSize: 11 };
+const versionDiffStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 7, marginTop: 8 };
+const versionBeforeStyle: React.CSSProperties = { minWidth: 0, borderRadius: 7, padding: 9, background: '#fff5f5', color: '#7f1d1d', fontSize: 11, lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', display: 'grid', gap: 4 };
+const versionAfterStyle: React.CSSProperties = { minWidth: 0, borderRadius: 7, padding: 9, background: '#f0fdf4', color: '#166534', fontSize: 11, lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', display: 'grid', gap: 4 };
 const sideStyle: React.CSSProperties = { display: 'grid', gap: 12 };
 const statsStyle: React.CSSProperties = { border: '1px solid rgba(31,41,55,0.08)', borderRadius: 8, padding: 14, background: '#fff' };
 const sideTitleStyle: React.CSSProperties = { margin: 0, color: INK, fontSize: 15 };

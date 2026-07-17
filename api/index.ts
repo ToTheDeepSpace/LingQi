@@ -13,6 +13,7 @@ import {
 } from './dmAffiliationWorkflow.js';
 import { normalizeRankingRevisionKind } from './rankingWorkflow.js';
 import { sortRankingFeedDiscussed, sortRankingFeedLatest } from './rankingFeed.js';
+import { assessRankingAuthorEdit, RANKING_AUTHOR_EDITABLE_FIELDS } from './rankingAuthorEditPolicy.js';
 import {
   findSharedRole,
   findSharedScript,
@@ -3967,6 +3968,207 @@ function buildRankingChanges(before: Record<string, unknown>, after: Record<stri
       before: before[field] ?? null,
       after: after[field] ?? null,
     }));
+}
+
+const RANKING_VERSION_FIELDS = [
+  'id', 'type', 'subject_name', 'subject_type', 'subject_city', 'subject_url', 'subject_dossier_id',
+  'event_date', 'event_script_id', 'event_script_name', 'event_store_dossier_id', 'event_store_name',
+  'content', 'display_files', 'author_name', 'poster_id', 'is_realname', 'status', 'expires_at',
+  'created_at', 'last_activity_at',
+] as const;
+
+function rankingVersionSnapshot(row: Record<string, unknown>) {
+  return RANKING_VERSION_FIELDS.reduce<Record<string, unknown>>((snapshot, field) => {
+    snapshot[field] = field === 'display_files'
+      ? normalizeRankingDisplayFiles(row[field])
+      : row[field] ?? null;
+    return snapshot;
+  }, {});
+}
+
+function publicRankingVersionSnapshot(value: unknown) {
+  const snapshot = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  return rankingVersionSnapshot(snapshot);
+}
+
+async function ensureInitialRankingVersion(row: Record<string, unknown>, actorId?: string | null) {
+  const rankingId = cleanText(row.id, 80);
+  if (!rankingId) return;
+  const snapshot = rankingVersionSnapshot(row);
+  if (useTencentPg) {
+    await tencentPgPool.query(
+      `insert into lc_ranking_versions
+        (ranking_id, version_number, source, snapshot, changes, actor_id)
+       values ($1, 1, 'original', $2::jsonb, '[]'::jsonb, $3)
+       on conflict (ranking_id, version_number) do nothing`,
+      [rankingId, JSON.stringify(snapshot), actorId || null],
+    );
+    return;
+  }
+  const existing = await supabase.from('lc_ranking_versions')
+    .select('id')
+    .eq('ranking_id', rankingId)
+    .eq('version_number', 1)
+    .maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data) return;
+  const inserted = await supabase.from('lc_ranking_versions').insert({
+    ranking_id: rankingId,
+    version_number: 1,
+    source: 'original',
+    snapshot,
+    changes: [],
+    actor_id: actorId || null,
+  });
+  if (inserted.error) throw inserted.error;
+}
+
+async function appendRankingVersion(args: {
+  row: Record<string, unknown>;
+  source: 'author_edit' | 'admin_edit' | 'restore';
+  changes?: unknown[];
+  actorId?: string | null;
+  editRequestId?: string | null;
+}) {
+  const rankingId = cleanText(args.row.id, 80);
+  if (!rankingId) return null;
+  const snapshot = rankingVersionSnapshot(args.row);
+  if (useTencentPg) {
+    const result = await tencentPgPool.query(
+      `insert into lc_ranking_versions
+        (ranking_id, version_number, source, snapshot, changes, actor_id, edit_request_id)
+       select $1, coalesce(max(version_number), 0) + 1, $2, $3::jsonb, $4::jsonb, $5, $6
+         from lc_ranking_versions
+        where ranking_id = $1
+       returning *`,
+      [rankingId, args.source, JSON.stringify(snapshot), JSON.stringify(args.changes || []), args.actorId || null, args.editRequestId || null],
+    );
+    return result.rows[0] || null;
+  }
+  const existing = await supabase.from('lc_ranking_versions')
+    .select('version_number')
+    .eq('ranking_id', rankingId)
+    .order('version_number', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existing.error) throw existing.error;
+  const inserted = await supabase.from('lc_ranking_versions').insert({
+    ranking_id: rankingId,
+    version_number: Number(existing.data?.version_number || 0) + 1,
+    source: args.source,
+    snapshot,
+    changes: args.changes || [],
+    actor_id: args.actorId || null,
+    edit_request_id: args.editRequestId || null,
+  }).select('*').single();
+  if (inserted.error) throw inserted.error;
+  return inserted.data;
+}
+
+async function finalizeRankingEditRequestOnTencent(requestId: string, reviewerId: string | null) {
+  const client = await tencentPgPool.connect();
+  try {
+    await client.query('BEGIN');
+    const requestResult = await client.query(
+      `select * from lc_ranking_edit_requests where id = $1 and status = 'pending' for update`,
+      [requestId],
+    );
+    const editRequest = requestResult.rows[0] as Record<string, unknown> | undefined;
+    if (!editRequest) throw new Error('修改或恢复申请不存在，或已经处理过');
+    const rankingResult = await client.query(
+      `select * from lc_rankings where id = $1 for update`,
+      [editRequest.ranking_id],
+    );
+    const ranking = rankingResult.rows[0] as Record<string, unknown> | undefined;
+    if (!ranking) throw new Error('原帖不存在');
+    if (ranking.poster_id !== editRequest.author_id) throw new Error('申请人与原发布人不一致，已停止处理');
+
+    const requestKind = String(editRequest.request_kind || 'edit');
+    const beforeSnapshot = objectPayload(editRequest.before_snapshot);
+    const now = new Date().toISOString();
+    let updated: Record<string, unknown>;
+    let changes: unknown[];
+    let versionSource: 'author_edit' | 'restore';
+
+    if (requestKind === 'restore') {
+      if (ranking.status !== 'withdrawn') throw new Error('原帖当前不是已下架状态，不能恢复');
+      const originalSnapshot = rankingVersionSnapshot({ ...ranking, status: 'approved' });
+      await client.query(
+        `insert into lc_ranking_versions
+          (ranking_id, version_number, source, snapshot, changes, actor_id)
+         values ($1, 1, 'original', $2::jsonb, '[]'::jsonb, $3)
+         on conflict (ranking_id, version_number) do nothing`,
+        [ranking.id, JSON.stringify(originalSnapshot), editRequest.author_id || null],
+      );
+      const restoreResult = await client.query(
+        `update lc_rankings
+            set status = 'approved', withdrawn_at = null, withdrawn_by = null, withdrawal_reason = null,
+                last_activity_at = $2,
+                expires_at = case when type = 'black' then $3 else expires_at end
+          where id = $1 and status = 'withdrawn'
+          returning *`,
+        [ranking.id, now, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()],
+      );
+      if (!restoreResult.rows[0]) throw new Error('原帖状态已变化，恢复失败');
+      updated = restoreResult.rows[0] as Record<string, unknown>;
+      changes = [{ field: 'status', label: '公开状态', before: 'withdrawn', after: 'approved' }];
+      versionSource = 'restore';
+    } else {
+      if (ranking.status !== 'approved') throw new Error('原帖已不在公开状态，不能应用修改');
+      const staleFields = RANKING_AUTHOR_EDITABLE_FIELDS.filter(field => !auditValuesEqual(ranking[field], beforeSnapshot[field]));
+      if (staleFields.length > 0) throw new Error('原帖在申请后又发生了变化，请驳回本次申请并让发布人重新提交');
+      const proposedPatch = objectPayload(editRequest.proposed_patch);
+      const assessment = assessRankingAuthorEdit(ranking, proposedPatch);
+      if (!assessment.allowed) throw new Error(assessment.reason || '修改已不符合当前规则');
+      await client.query(
+        `insert into lc_ranking_versions
+          (ranking_id, version_number, source, snapshot, changes, actor_id)
+         values ($1, 1, 'original', $2::jsonb, '[]'::jsonb, $3)
+         on conflict (ranking_id, version_number) do nothing`,
+        [ranking.id, JSON.stringify(rankingVersionSnapshot(ranking)), editRequest.author_id || null],
+      );
+      const patchJson = JSON.stringify(assessment.patch);
+      const updateResult = await client.query(
+        `update lc_rankings
+            set content = case when $2::jsonb ? 'content' then $2::jsonb ->> 'content' else content end,
+                subject_url = case when $2::jsonb ? 'subject_url' then nullif($2::jsonb ->> 'subject_url', '') else subject_url end,
+                event_date = case when $2::jsonb ? 'event_date' then nullif($2::jsonb ->> 'event_date', '')::date else event_date end,
+                event_script_name = case when $2::jsonb ? 'event_script_name' then nullif($2::jsonb ->> 'event_script_name', '') else event_script_name end,
+                event_store_name = case when $2::jsonb ? 'event_store_name' then nullif($2::jsonb ->> 'event_store_name', '') else event_store_name end,
+                last_activity_at = $3
+          where id = $1 and status = 'approved'
+          returning *`,
+        [ranking.id, patchJson, now],
+      );
+      if (!updateResult.rows[0]) throw new Error('原帖状态已变化，修改失败');
+      updated = updateResult.rows[0] as Record<string, unknown>;
+      changes = assessment.changes;
+      versionSource = 'author_edit';
+    }
+
+    await client.query(
+      `insert into lc_ranking_versions
+        (ranking_id, version_number, source, snapshot, changes, actor_id, edit_request_id)
+       select $1, coalesce(max(version_number), 0) + 1, $2, $3::jsonb, $4::jsonb, $5, $6
+         from lc_ranking_versions where ranking_id = $1`,
+      [ranking.id, versionSource, JSON.stringify(rankingVersionSnapshot(updated)), JSON.stringify(changes), requestKind === 'restore' ? reviewerId : editRequest.author_id, requestId],
+    );
+    await client.query(
+      `update lc_ranking_edit_requests
+          set status = 'approved', reject_reason = null, reviewed_by = $2, reviewed_at = $3, updated_at = $3
+        where id = $1 and status = 'pending'`,
+      [requestId, reviewerId, now],
+    );
+    await client.query('COMMIT');
+    return { editRequest, ranking, requestKind, beforeSnapshot, updated, changes };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 type PublicAuditProof = {
@@ -7936,11 +8138,12 @@ app.post('/api/lc/admin/profiles/:id/private-access', authMiddleware, adminMiddl
 app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, res) => {
   try {
     await processDueDossierOwnerReviews();
-    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, approvedDmDossiersResult, dmRatingsResult, storeRatingsResult, dmIdentityWithdrawalsResult, publicReviewsResult, reviewHistoryResult, guidesResult, withdrawalsResult] = await Promise.all([
+    const [{ data: profiles }, { data: requests }, { data: rankings }, { data: approvedRankings }, rankingEditRequestsResult, { data: comments }, { data: claims }, { data: commissions }, { data: transactions }, { data: certifications }, { data: carpools }, { data: reports }, { data: siteMessages }, { data: scriptContributions }, { data: securityEvents }, dmDossiersResult, approvedDmDossiersResult, dmRatingsResult, storeRatingsResult, dmIdentityWithdrawalsResult, publicReviewsResult, reviewHistoryResult, guidesResult, withdrawalsResult] = await Promise.all([
       supabase.from('lc_profiles').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('lc_contact_requests').select('*, lc_profiles!inner(display_name)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_rankings').select('*').eq('status', 'approved').order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_ranking_edit_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200),
       supabase.from('lc_comments').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_claims').select('*, lc_rankings(subject_name, type)').eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('lc_commissions').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
@@ -7970,6 +8173,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       .order('created_at', { ascending: false })
       .limit(100);
     if (dmDossiersResult.error && !isMissingRelation(dmDossiersResult.error, 'lc_dm_dossiers')) throw dmDossiersResult.error;
+    if (rankingEditRequestsResult.error && !isMissingRelation(rankingEditRequestsResult.error, 'lc_ranking_edit_requests')) throw rankingEditRequestsResult.error;
     if (dmClaimsResult.error && !isMissingRelation(dmClaimsResult.error, 'lc_dm_dossier_claims')) throw dmClaimsResult.error;
     if (approvedDmDossiersResult.error && !isMissingRelation(approvedDmDossiersResult.error, 'lc_dm_dossiers')) throw approvedDmDossiersResult.error;
     if (dmRatingsResult.error && !isMissingRelation(dmRatingsResult.error, 'lc_dm_ratings')) throw dmRatingsResult.error;
@@ -8036,6 +8240,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
         display_files: normalizeRankingDisplayFiles(ranking.display_files),
         private_evidence_files: publicRankingEvidenceMetadata(ranking.private_evidence_files),
       })),
+      rankingEditRequests: rankingEditRequestsResult.error ? [] : (rankingEditRequestsResult.data || []),
       comments: comments || [],
       claims: claims || [],
       commissions: commissions || [],
@@ -12603,15 +12808,30 @@ app.get('/api/lc/rankings', async (req, res) => {
 app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
   try {
     const posterId = getReq(req, 'creatorId');
-    const { data, error } = await supabase.from('lc_rankings')
-      .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, dm_employment_status_suggestion, dm_employer_store_id_suggestion, content, files, display_files, private_evidence_files, evidence_required, revision_kind, revision_requested_at, revision_count, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, reject_reason, created_at, last_activity_at')
-      .eq('poster_id', posterId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
+    const [rankingResult, editRequestResult] = await Promise.all([
+      supabase.from('lc_rankings')
+        .select('id, type, subject_name, subject_type, subject_city, subject_url, subject_dossier_id, event_date, event_script_id, event_script_name, event_store_dossier_id, event_store_name, dm_employment_status_suggestion, dm_employer_store_id_suggestion, content, files, display_files, private_evidence_files, evidence_required, revision_kind, revision_requested_at, revision_count, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count, status, reject_reason, withdrawn_at, withdrawal_reason, created_at, last_activity_at')
+        .eq('poster_id', posterId)
+        .order('created_at', { ascending: false }),
+      supabase.from('lc_ranking_edit_requests')
+        .select('id, ranking_id, request_kind, status, reject_reason, changes, proposed_patch, created_at, reviewed_at')
+        .eq('author_id', posterId)
+        .order('created_at', { ascending: false })
+        .limit(300),
+    ]);
+    if (rankingResult.error) throw rankingResult.error;
+    if (editRequestResult.error && !isMissingRelation(editRequestResult.error, 'lc_ranking_edit_requests')) throw editRequestResult.error;
+    const latestRequestByRanking = new Map<string, Record<string, unknown>>();
+    ((editRequestResult.data || []) as Record<string, unknown>[]).forEach(request => {
+      const rankingId = String(request.ranking_id || '');
+      if (rankingId && !latestRequestByRanking.has(rankingId)) latestRequestByRanking.set(rankingId, request);
+    });
+    const data = rankingResult.data || [];
     res.json(ok((data || []).map((row: Record<string, unknown>) => withRankingMetrics({
       ...row,
       display_files: normalizeRankingDisplayFiles(row.display_files),
       private_evidence_files: publicRankingEvidenceMetadata(row.private_evidence_files),
+      latest_edit_request: latestRequestByRanking.get(String(row.id)) || null,
     }))));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -12641,6 +12861,150 @@ app.get('/api/lc/rankings/:id', async (req, res) => {
       if (voteResult.data) myVote = serializeMyVote(voteResult.data as RankingVoteRow);
     }
     res.json(ok({ ...withRankingMetrics(withAudit), my_vote: myVote }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/rankings/:id/versions', async (req, res) => {
+  try {
+    const rankingResult = await supabase.from('lc_rankings')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('status', 'approved')
+      .maybeSingle();
+    if (rankingResult.error) throw rankingResult.error;
+    if (!rankingResult.data || !isPublicRankingVisible(rankingResult.data as Record<string, unknown>)) {
+      return res.status(404).json(err(new Error('榜单不存在或尚未公开')));
+    }
+    const versionResult = await supabase.from('lc_ranking_versions')
+      .select('id, version_number, source, snapshot, changes, created_at')
+      .eq('ranking_id', req.params.id)
+      .order('version_number', { ascending: false });
+    if (versionResult.error && !isMissingRelation(versionResult.error, 'lc_ranking_versions')) throw versionResult.error;
+    const versions = versionResult.error || !versionResult.data?.length
+      ? [{
+          id: `current-${req.params.id}`,
+          version_number: 1,
+          source: 'original',
+          snapshot: rankingVersionSnapshot(rankingResult.data as Record<string, unknown>),
+          changes: [],
+          created_at: rankingResult.data.created_at,
+        }]
+      : (versionResult.data || []).map(version => ({
+          ...version,
+          snapshot: publicRankingVersionSnapshot(version.snapshot),
+          changes: Array.isArray(version.changes) ? version.changes : [],
+        }));
+    res.json(ok(versions));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/rankings/:id/edit-requests', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const rankingResult = await supabase.from('lc_rankings')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (rankingResult.error) throw rankingResult.error;
+    const ranking = rankingResult.data as Record<string, unknown> | null;
+    if (!ranking) return res.status(404).json(err(new Error('内容不存在')));
+    if (ranking.poster_id !== profile.id) return res.status(403).json(err(new Error('只能修改自己发布的内容')));
+    if (ranking.status !== 'approved') return res.status(400).json(err(new Error('只有已发布内容可以申请修改')));
+
+    const pendingResult = await supabase.from('lc_ranking_edit_requests')
+      .select('id, request_kind')
+      .eq('ranking_id', req.params.id)
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (pendingResult.error) throw pendingResult.error;
+    if (pendingResult.data) return res.status(409).json(err(new Error('这条内容已有修改或恢复申请正在审核')));
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body as Record<string, unknown>
+      : {};
+    const assessment = assessRankingAuthorEdit(ranking, body);
+    if (!assessment.allowed) return res.status(400).json(err(new Error(assessment.reason || '修改不符合要求')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'ranking_author_edit',
+      targetType: 'ranking_edit',
+      texts: {
+        content: assessment.patch.content ?? ranking.content,
+        subjectUrl: assessment.patch.subject_url ?? ranking.subject_url,
+        eventScriptName: assessment.patch.event_script_name ?? ranking.event_script_name,
+        eventStoreName: assessment.patch.event_store_name ?? ranking.event_store_name,
+      },
+      files: normalizeRankingDisplayFiles(ranking.display_files),
+      allowContact: false,
+    });
+    await ensureInitialRankingVersion(ranking, profile.id);
+    const requestId = randomUUID();
+    const insertResult = await supabase.from('lc_ranking_edit_requests').insert({
+      id: requestId,
+      ranking_id: req.params.id,
+      author_id: profile.id,
+      request_kind: 'edit',
+      before_snapshot: rankingVersionSnapshot(ranking),
+      proposed_patch: assessment.patch,
+      changes: assessment.changes,
+      change_metrics: assessment.metrics,
+      moderation_precheck: moderationPrecheck,
+      status: 'pending',
+    }).select('*').single();
+    if (insertResult.error) throw insertResult.error;
+    await logSecurityEvent(req, {
+      action: 'ranking_author_edit_submitted',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { edit_request_id: requestId, changed_fields: assessment.changes.map(change => change.field), moderation: moderationPrecheck },
+    });
+    res.json(ok({ id: requestId, status: 'pending', message: '修改申请已提交，审核通过前继续展示当前版本' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/rankings/:id/restore-request', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const rankingResult = await supabase.from('lc_rankings').select('*').eq('id', req.params.id).maybeSingle();
+    if (rankingResult.error) throw rankingResult.error;
+    const ranking = rankingResult.data as Record<string, unknown> | null;
+    if (!ranking) return res.status(404).json(err(new Error('内容不存在')));
+    if (ranking.poster_id !== profile.id) return res.status(403).json(err(new Error('只能恢复自己发布的内容')));
+    if (ranking.status !== 'withdrawn') return res.status(400).json(err(new Error('只有已下架内容可以申请恢复')));
+    const pendingResult = await supabase.from('lc_ranking_edit_requests')
+      .select('id')
+      .eq('ranking_id', req.params.id)
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (pendingResult.error) throw pendingResult.error;
+    if (pendingResult.data) return res.status(409).json(err(new Error('这条内容已有申请正在审核')));
+    const requestId = randomUUID();
+    const insertResult = await supabase.from('lc_ranking_edit_requests').insert({
+      id: requestId,
+      ranking_id: req.params.id,
+      author_id: profile.id,
+      request_kind: 'restore',
+      before_snapshot: rankingVersionSnapshot(ranking),
+      proposed_patch: {},
+      changes: [],
+      change_metrics: {},
+      status: 'pending',
+    }).select('id').single();
+    if (insertResult.error) throw insertResult.error;
+    await logSecurityEvent(req, {
+      action: 'ranking_restore_requested',
+      targetType: 'ranking',
+      targetId: req.params.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { edit_request_id: requestId },
+    });
+    res.json(ok({ id: requestId, status: 'pending', message: '恢复申请已提交，管理员通过后重新公开' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -12868,30 +13232,48 @@ app.put('/api/lc/rankings/:id/withdraw', authMiddleware, async (req, res) => {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const { data: ranking } = await supabase.from('lc_rankings')
-      .select('id, poster_id, status, initial_amount, likes, dislikes, joys, boost_amount, negative_boost_amount, agree_count, oppose_count')
+      .select('*')
       .eq('id', req.params.id)
       .single();
     if (!ranking) return res.status(404).json(err(new Error('内容不存在')));
     if (ranking.poster_id !== profile.id) return res.status(403).json(err(new Error('只能撤回自己的内容')));
-    if (ranking.status !== 'pending') return res.status(400).json(err(new Error('只有待审核内容可以撤回')));
-    if ((ranking.initial_amount || 0) > 0) return res.status(400).json(err(new Error('付费内容撤回涉及榜金退款，请联系管理员处理')));
-    const metrics = rankingMetrics(ranking as Record<string, unknown>);
-    if (metrics.likes > 0 || metrics.dislikes > 0 || metrics.joys > 0) {
-      return res.status(400).json(err(new Error('已有互动记录的内容不能自助撤回')));
+    if (!['pending', 'approved', 'rejected'].includes(String(ranking.status))) {
+      return res.status(400).json(err(new Error(ranking.status === 'withdrawn' ? '这条内容已经下架' : '当前状态不能下架')));
     }
 
+    if (ranking.status === 'approved') await ensureInitialRankingVersion(ranking as Record<string, unknown>, profile.id);
+    const now = new Date().toISOString();
+    const reason = cleanText(req.body?.reason, 300) || (ranking.status === 'approved' ? '原发布人主动下架' : '原发布人撤回');
+
     const { error: updErr } = await supabase.from('lc_rankings')
-      .update({ status: 'withdrawn' })
+      .update({ status: 'withdrawn', withdrawn_at: now, withdrawn_by: profile.id, withdrawal_reason: reason })
       .eq('id', req.params.id)
       .eq('poster_id', profile.id)
-      .eq('status', 'pending');
+      .eq('status', ranking.status);
     if (updErr) throw updErr;
+    const cancelResult = await supabase.from('lc_ranking_edit_requests')
+      .update({ status: 'cancelled', reject_reason: '原发布人已下架内容', reviewed_at: now, updated_at: now })
+      .eq('ranking_id', req.params.id)
+      .eq('status', 'pending');
+    if (cancelResult.error && !isMissingRelation(cancelResult.error, 'lc_ranking_edit_requests')) throw cancelResult.error;
+    const audit = await appendAuditEntry({
+      targetType: 'ranking',
+      targetId: req.params.id,
+      eventType: 'ranking_withdrawn_by_author',
+      payload: auditPayload('ranking', { ...ranking, status: 'withdrawn' }),
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { prior_status: ranking.status, reason, public_removed: ranking.status === 'approved' },
+    });
     await logSecurityEvent(req, {
       action: 'ranking_withdrawn_by_author',
       targetType: 'ranking',
       targetId: req.params.id,
+      actorId: profile.id,
+      actorRole: profile.role || 'creator',
+      metadata: { prior_status: ranking.status, reason, audit_entry_hash: audit?.entry_hash || null },
     });
-    res.json(ok({ id: req.params.id, status: 'withdrawn' }));
+    res.json(ok({ id: req.params.id, status: 'withdrawn', public_removed: ranking.status === 'approved' }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -13624,6 +14006,7 @@ app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, a
       .select('*')
       .single();
     if (updErr) throw updErr;
+    await ensureInitialRankingVersion(approved as Record<string, unknown>, getReq(req, 'creatorId'));
     const audit = await auditApprovedTarget('ranking', approved, targetType ? 'ranking_reclassified_approved' : 'ranking_approved', getReq(req, 'creatorId'), {
       target_type_override: targetType,
     });
@@ -13701,6 +14084,7 @@ app.put('/api/lc/admin/rankings/:id/edit', authMiddleware, adminMiddleware, asyn
       return res.json(ok({ item: before, changes: [] }));
     }
     if (before.status === 'approved') patch.last_activity_at = new Date().toISOString();
+    if (before.status === 'approved') await ensureInitialRankingVersion(before as Record<string, unknown>, getReq(req, 'creatorId'));
 
     const { data: updated, error: updErr } = await supabase.from('lc_rankings')
       .update(patch)
@@ -13710,6 +14094,14 @@ app.put('/api/lc/admin/rankings/:id/edit', authMiddleware, adminMiddleware, asyn
     if (updErr) throw updErr;
 
     const changes = buildRankingChanges(before, updated, changedFields);
+    if (before.status === 'approved') {
+      await appendRankingVersion({
+        row: updated as Record<string, unknown>,
+        source: 'admin_edit',
+        changes,
+        actorId: getReq(req, 'creatorId'),
+      });
+    }
     const audit = await auditApprovedTarget('ranking', updated, 'ranking_admin_edited', getReq(req, 'creatorId'), {
       before: auditPayload('ranking', before),
       after: auditPayload('ranking', updated),
@@ -13722,6 +14114,146 @@ app.put('/api/lc/admin/rankings/:id/edit', authMiddleware, adminMiddleware, asyn
       metadata: { changed_fields: changedFields, audit_entry_hash: audit?.entry_hash || null },
     });
     res.json(ok({ item: updated, changes, audit }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/ranking-edits/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    if (useTencentPg) {
+      const reviewerId = getReq(req, 'creatorId');
+      const finalized = await finalizeRankingEditRequestOnTencent(req.params.id, reviewerId);
+      const audit = await auditApprovedTarget(
+        'ranking',
+        finalized.updated,
+        finalized.requestKind === 'restore' ? 'ranking_restore_approved' : 'ranking_author_edit_approved',
+        reviewerId,
+        { edit_request_id: req.params.id, before: finalized.beforeSnapshot, after: auditPayload('ranking', finalized.updated), changes: finalized.changes },
+      );
+      await logSecurityEvent(req, {
+        action: finalized.requestKind === 'restore' ? 'admin_ranking_restore_approved' : 'admin_ranking_author_edit_approved',
+        targetType: 'ranking',
+        targetId: String(finalized.ranking.id),
+        metadata: { edit_request_id: req.params.id, audit_entry_hash: audit?.entry_hash || null },
+      });
+      return res.json(ok({ item: finalized.updated, changes: finalized.changes, audit }));
+    }
+    const requestResult = await supabase.from('lc_ranking_edit_requests')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (requestResult.error) throw requestResult.error;
+    const editRequest = requestResult.data as Record<string, unknown> | null;
+    if (!editRequest) return res.status(404).json(err(new Error('修改或恢复申请不存在，或已经处理过')));
+    const rankingResult = await supabase.from('lc_rankings')
+      .select('*')
+      .eq('id', editRequest.ranking_id)
+      .maybeSingle();
+    if (rankingResult.error) throw rankingResult.error;
+    const ranking = rankingResult.data as Record<string, unknown> | null;
+    if (!ranking) return res.status(404).json(err(new Error('原帖不存在')));
+    if (ranking.poster_id !== editRequest.author_id) return res.status(409).json(err(new Error('申请人与原发布人不一致，已停止处理')));
+
+    const reviewerId = getReq(req, 'creatorId');
+    const now = new Date().toISOString();
+    const requestKind = String(editRequest.request_kind || 'edit');
+    const beforeSnapshot = objectPayload(editRequest.before_snapshot);
+    let updated: Record<string, unknown>;
+    let changes: unknown[] = [];
+
+    if (requestKind === 'restore') {
+      if (ranking.status !== 'withdrawn') return res.status(409).json(err(new Error('原帖当前不是已下架状态，不能恢复')));
+      await ensureInitialRankingVersion({ ...ranking, status: 'approved' }, editRequest.author_id as string);
+      const restorePatch: Record<string, unknown> = {
+        status: 'approved',
+        withdrawn_at: null,
+        withdrawn_by: null,
+        withdrawal_reason: null,
+        last_activity_at: now,
+      };
+      if (ranking.type === 'black') restorePatch.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const updateResult = await supabase.from('lc_rankings')
+        .update(restorePatch)
+        .eq('id', ranking.id)
+        .eq('status', 'withdrawn')
+        .select('*')
+        .single();
+      if (updateResult.error) throw updateResult.error;
+      updated = updateResult.data as Record<string, unknown>;
+      changes = [{ field: 'status', label: '公开状态', before: 'withdrawn', after: 'approved' }];
+      await appendRankingVersion({ row: updated, source: 'restore', changes, actorId: reviewerId, editRequestId: req.params.id });
+    } else {
+      if (ranking.status !== 'approved') return res.status(409).json(err(new Error('原帖已不在公开状态，不能应用修改')));
+      const staleFields = RANKING_AUTHOR_EDITABLE_FIELDS.filter(field => !auditValuesEqual(ranking[field], beforeSnapshot[field]));
+      if (staleFields.length > 0) {
+        return res.status(409).json(err(new Error('原帖在申请后又发生了变化，请驳回本次申请并让发布人重新提交')));
+      }
+      const proposedPatch = objectPayload(editRequest.proposed_patch);
+      const assessment = assessRankingAuthorEdit(ranking, proposedPatch);
+      if (!assessment.allowed) return res.status(409).json(err(new Error(assessment.reason || '修改已不符合当前规则')));
+      await ensureInitialRankingVersion(ranking, editRequest.author_id as string);
+      const updateResult = await supabase.from('lc_rankings')
+        .update({ ...assessment.patch, last_activity_at: now })
+        .eq('id', ranking.id)
+        .eq('status', 'approved')
+        .select('*')
+        .single();
+      if (updateResult.error) throw updateResult.error;
+      updated = updateResult.data as Record<string, unknown>;
+      changes = assessment.changes;
+      await appendRankingVersion({ row: updated, source: 'author_edit', changes, actorId: editRequest.author_id as string, editRequestId: req.params.id });
+    }
+
+    const requestUpdate = await supabase.from('lc_ranking_edit_requests').update({
+      status: 'approved',
+      reject_reason: null,
+      reviewed_by: reviewerId,
+      reviewed_at: now,
+      updated_at: now,
+    }).eq('id', req.params.id).eq('status', 'pending');
+    if (requestUpdate.error) throw requestUpdate.error;
+    const audit = await auditApprovedTarget(
+      'ranking',
+      updated,
+      requestKind === 'restore' ? 'ranking_restore_approved' : 'ranking_author_edit_approved',
+      reviewerId,
+      { edit_request_id: req.params.id, before: beforeSnapshot, after: auditPayload('ranking', updated), changes },
+    );
+    await logSecurityEvent(req, {
+      action: requestKind === 'restore' ? 'admin_ranking_restore_approved' : 'admin_ranking_author_edit_approved',
+      targetType: 'ranking',
+      targetId: String(ranking.id),
+      metadata: { edit_request_id: req.params.id, audit_entry_hash: audit?.entry_hash || null },
+    });
+    res.json(ok({ item: updated, changes, audit }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/ranking-edits/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const rejectReason = cleanText(req.body?.rejectReason ?? req.body?.reason, 500);
+    if (rejectReason.length < 2) return res.status(400).json(err(new Error('请填写驳回原因')));
+    const now = new Date().toISOString();
+    const requestResult = await supabase.from('lc_ranking_edit_requests')
+      .update({
+        status: 'rejected',
+        reject_reason: rejectReason,
+        reviewed_by: getReq(req, 'creatorId'),
+        reviewed_at: now,
+        updated_at: now,
+      })
+      .eq('id', req.params.id)
+      .eq('status', 'pending')
+      .select('id, ranking_id, request_kind')
+      .single();
+    if (requestResult.error) throw requestResult.error;
+    await logSecurityEvent(req, {
+      action: requestResult.data?.request_kind === 'restore' ? 'admin_ranking_restore_rejected' : 'admin_ranking_author_edit_rejected',
+      targetType: 'ranking',
+      targetId: String(requestResult.data?.ranking_id || ''),
+      metadata: { edit_request_id: req.params.id, reason: rejectReason },
+    });
+    res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
 

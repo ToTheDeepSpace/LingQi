@@ -71,6 +71,11 @@ type MyRanking = {
   type: 'red' | 'black' | 'white';
   subject_name: string;
   subject_city?: string | null;
+  subject_url?: string | null;
+  content: string;
+  event_date?: string | null;
+  event_script_name?: string | null;
+  event_store_name?: string | null;
   initial_amount: number;
   likes: number;
   dislikes: number;
@@ -81,6 +86,13 @@ type MyRanking = {
   oppose_count?: number;
   status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
   reject_reason?: string | null;
+  latest_edit_request?: {
+    id: string;
+    request_kind: 'edit' | 'restore';
+    status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+    reject_reason?: string | null;
+    created_at: string;
+  } | null;
   evidence_required?: boolean;
   revision_kind?: 'content' | 'evidence' | null;
   created_at: string;
@@ -561,6 +573,16 @@ export default function Dashboard() {
   const [msg, setMsg]           = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(true);
+  const [rankingEdit, setRankingEdit] = useState<{
+    item: MyRanking;
+    content: string;
+    subject_url: string;
+    event_date: string;
+    event_script_name: string;
+    event_store_name: string;
+    saving: boolean;
+    error: string;
+  } | null>(null);
 
   const [form, setForm] = useState<ProfileForm>(() => blankProfileForm());
   const [newSvc, setNewSvc] = useState<ServiceDraft>(() => blankServiceDraft());
@@ -1263,14 +1285,18 @@ export default function Dashboard() {
   };
 
   const withdrawRanking = async (id: string) => {
-    if (!confirm('确定撤回这条待审核口碑吗？撤回后不会进入审核队列。')) return;
+    const item = myRankings.find(ranking => ranking.id === id);
+    const message = item?.status === 'approved'
+      ? '确定下架这条已发布口碑吗？下架后公开页面会立即消失，历史互动、证据和版本仍由平台留存；以后恢复需要重新审核。'
+      : '确定撤回这条口碑吗？撤回后不会继续进入审核队列。';
+    if (!confirm(message)) return;
     setError('');
     try {
       const r = await fetch(`${API}/lc/rankings/${id}/withdraw`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
       const d = await r.json();
       if (d.success) {
         setMyRankings(prev => prev.map(item => item.id === id ? { ...item, status: 'withdrawn' } : item));
-        setMsg('口碑已撤回');
+        setMsg(item?.status === 'approved' ? '口碑已下架，公开端已隐藏' : '口碑已撤回');
         setTimeout(() => setMsg(''), 2500);
       } else {
         const msg = typeof d.error === 'string' ? d.error : (d.error?.message || '撤回失败');
@@ -1278,6 +1304,66 @@ export default function Dashboard() {
       }
     } catch {
       setError('网络错误，请重试');
+    }
+  };
+
+  const requestRankingRestore = async (id: string) => {
+    setError('');
+    try {
+      const response = await fetch(`${API}/lc/rankings/${id}/restore-request`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '恢复申请提交失败');
+      setMyRankings(previous => previous.map(item => item.id === id ? {
+        ...item,
+        latest_edit_request: { id: payload.data.id, request_kind: 'restore', status: 'pending', created_at: new Date().toISOString() },
+      } : item));
+      setMsg('恢复申请已提交');
+    } catch (restoreError) {
+      setError(restoreError instanceof Error ? restoreError.message : '恢复申请提交失败');
+    }
+  };
+
+  const openRankingAuthorEdit = (item: MyRanking) => {
+    setRankingEdit({
+      item,
+      content: item.content || '',
+      subject_url: item.subject_url || '',
+      event_date: item.event_date || '',
+      event_script_name: item.event_script_name || '',
+      event_store_name: item.event_store_name || '',
+      saving: false,
+      error: '',
+    });
+  };
+
+  const submitRankingAuthorEdit = async () => {
+    if (!rankingEdit) return;
+    setRankingEdit(current => current ? { ...current, saving: true, error: '' } : current);
+    try {
+      const response = await fetch(`${API}/lc/rankings/${rankingEdit.item.id}/edit-requests`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: rankingEdit.content,
+          subject_url: rankingEdit.subject_url,
+          event_date: rankingEdit.event_date,
+          event_script_name: rankingEdit.event_script_name,
+          event_store_name: rankingEdit.event_store_name,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '修改申请提交失败');
+      setMyRankings(previous => previous.map(item => item.id === rankingEdit.item.id ? {
+        ...item,
+        latest_edit_request: { id: payload.data.id, request_kind: 'edit', status: 'pending', created_at: new Date().toISOString() },
+      } : item));
+      setRankingEdit(null);
+      setMsg('修改申请已提交，审核前仍展示原版');
+    } catch (editError) {
+      setRankingEdit(current => current ? { ...current, saving: false, error: editError instanceof Error ? editError.message : '修改申请提交失败' } : current);
     }
   };
 
@@ -1536,6 +1622,47 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-page" style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
+      {rankingEdit && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14, background: 'rgba(15,23,42,0.45)' }}>
+          <section style={{ width: '100%', maxWidth: 660, maxHeight: 'calc(100svh - 28px)', overflowY: 'auto', borderRadius: 14, border: '1px solid rgba(201,146,46,0.24)', background: '#fffdf8', boxShadow: '0 28px 80px rgba(15,23,42,0.22)', padding: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <p style={{ margin: 0, color: '#925f18', fontSize: 12, fontWeight: 900 }}>小幅修改申请</p>
+                <h2 style={{ margin: '4px 0 0', color: INK, fontSize: 18 }}>修改“{rankingEdit.item.subject_name}”的口碑</h2>
+              </div>
+              <button type="button" aria-label="关闭" onClick={() => setRankingEdit(null)} style={{ border: 0, background: 'transparent', color: MUTED, fontSize: 22, cursor: 'pointer' }}>×</button>
+            </div>
+            <p style={{ margin: '9px 0 14px', color: MUTED, fontSize: 12, lineHeight: 1.65 }}>
+              可订正错字、补充上下文和事件信息。榜单类型、评价对象、城市、关联档案与发布人不能变更；审核通过前继续展示当前版本。
+            </p>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: INK, fontSize: 12, fontWeight: 850 }}>正文内容</span>
+              <textarea rows={7} maxLength={4000} value={rankingEdit.content} onChange={event => setRankingEdit(current => current ? { ...current, content: event.target.value, error: '' } : current)} style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', border: '1px solid rgba(201,146,46,0.22)', borderRadius: 9, padding: 11, background: '#fff', color: INK, fontSize: 14, lineHeight: 1.7 }} />
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 9, marginTop: 10 }}>
+              {([
+                ['event_date', '事件日期', '例：2026-07-17'],
+                ['event_script_name', '相关剧本', '可留空'],
+                ['event_store_name', '相关店家', '可留空'],
+              ] as const).map(([field, label, placeholder]) => (
+                <label key={field} style={{ display: 'grid', gap: 5 }}>
+                  <span style={{ color: INK, fontSize: 11, fontWeight: 800 }}>{label}</span>
+                  <input type={field === 'event_date' ? 'date' : 'text'} value={rankingEdit[field]} placeholder={placeholder} onChange={event => setRankingEdit(current => current ? { ...current, [field]: event.target.value, error: '' } : current)} style={{ minWidth: 0, height: 38, boxSizing: 'border-box', border: '1px solid rgba(201,146,46,0.22)', borderRadius: 8, padding: '0 10px', background: '#fff', color: INK }} />
+                </label>
+              ))}
+            </div>
+            <label style={{ display: 'grid', gap: 5, marginTop: 10 }}>
+              <span style={{ color: INK, fontSize: 11, fontWeight: 800 }}>对象社交主页</span>
+              <input value={rankingEdit.subject_url} placeholder="可留空" onChange={event => setRankingEdit(current => current ? { ...current, subject_url: event.target.value, error: '' } : current)} style={{ height: 38, boxSizing: 'border-box', border: '1px solid rgba(201,146,46,0.22)', borderRadius: 8, padding: '0 10px', background: '#fff', color: INK }} />
+            </label>
+            {rankingEdit.error && <p style={{ margin: '10px 0 0', color: '#b91c1c', fontSize: 12, lineHeight: 1.55 }}>{rankingEdit.error}</p>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <button type="button" onClick={() => setRankingEdit(null)} style={{ ...miniButtonStyle, minWidth: 74 }}>取消</button>
+              <button type="button" disabled={rankingEdit.saving} onClick={() => void submitRankingAuthorEdit()} style={{ ...darkActionStyle, minHeight: 36, padding: '7px 14px', opacity: rankingEdit.saving ? 0.6 : 1 }}>{rankingEdit.saving ? '提交中...' : '提交修改审核'}</button>
+            </div>
+          </section>
+        </div>
+      )}
       {showOnboarding && (
         <div className="onboarding-backdrop" style={{
           position: 'fixed',
@@ -2834,8 +2961,14 @@ export default function Dashboard() {
                       title={item.subject_name}
                       meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · 免费发布 · 打榜${item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0)}${item.negative_boost_amount ? ` · 历史踩榜${item.negative_boost_amount}` : ''} · 同意${item.agree_count ?? 0} 反对${item.oppose_count ?? 0} 离谱${item.joys || 0}`}
                       status={item.status}
-                      note={item.status === 'rejected' && item.reject_reason ? `${item.evidence_required ? '需补证据' : '打回修改'}：${item.reject_reason}` : undefined}
-                      to="/rankings"
+                      note={item.status === 'rejected' && item.reject_reason
+                        ? `${item.evidence_required ? '需补证据' : '打回修改'}：${item.reject_reason}`
+                        : item.latest_edit_request?.status === 'rejected' && item.latest_edit_request.reject_reason
+                          ? `${item.latest_edit_request.request_kind === 'restore' ? '恢复申请' : '修改申请'}未通过：${item.latest_edit_request.reject_reason}`
+                          : item.latest_edit_request?.status === 'pending'
+                            ? (item.latest_edit_request.request_kind === 'restore' ? '恢复申请审核中' : '修改审核中，当前公开版保持不变')
+                            : undefined}
+                      to={item.status === 'approved' ? `/rankings/${item.id}` : '/rankings'}
                       action={item.status === 'rejected' ? (
                         <Link to={`/rankings/new?resubmit=${encodeURIComponent(item.id)}`} style={miniButtonStyle}>
                           {item.evidence_required ? '补证据并重新提交' : '修改并重新提交'}
@@ -2844,6 +2977,13 @@ export default function Dashboard() {
                         <button onClick={() => withdrawRanking(item.id)} style={miniButtonStyle}>
                           撤回
                         </button>
+                      ) : item.status === 'approved' ? (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          {item.latest_edit_request?.status !== 'pending' && <button onClick={() => openRankingAuthorEdit(item)} style={miniButtonStyle}>修改</button>}
+                          <button onClick={() => withdrawRanking(item.id)} style={miniButtonStyle}>下架</button>
+                        </div>
+                      ) : item.status === 'withdrawn' && item.latest_edit_request?.status !== 'pending' ? (
+                        <button onClick={() => requestRankingRestore(item.id)} style={miniButtonStyle}>申请恢复</button>
                       ) : null}
                     />
                   ))}
@@ -3692,7 +3832,7 @@ function MineRow({ title, meta, status, to, action, note }: { title: string; met
     approved: { label: '已公开', color: '#15803d', bg: 'rgba(220,252,231,0.78)' },
     rejected: { label: '未通过', color: '#b91c1c', bg: 'rgba(254,242,242,0.9)' },
     closed: { label: '已关闭', color: '#64748b', bg: 'rgba(241,245,249,0.9)' },
-    withdrawn: { label: '已撤回', color: '#64748b', bg: 'rgba(241,245,249,0.9)' },
+    withdrawn: { label: '已下架', color: '#64748b', bg: 'rgba(241,245,249,0.9)' },
   };
   const item = statusMap[status] || statusMap.pending;
   return (
