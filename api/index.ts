@@ -87,6 +87,12 @@ import { extractSharedUrl } from '../src/lib/socialLinks.js';
 import { CHANTO_MAX_AMOUNT, CHANTO_MIN_AMOUNT, isValidChantoAmount } from '../src/lib/chanto.js';
 import { CITIES } from '../src/constants/cities.js';
 import { adminPrivateAccountPayload, adminProfileListPayload } from './adminPrivacy.js';
+import {
+  allowedWebOrigin,
+  publicApiErrorMessage,
+  publicAuditMetadata,
+  publicProfileAllowlist,
+} from './securityPolicy.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -103,7 +109,6 @@ function envValue(name: string) {
 
 // --- 环境变量 ---
 const JWT_SECRET = process.env.JWT_SECRET || 'lingqi-dev-secret-change-in-production';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const JUZHANGGUI_TENANT_ID = process.env.JUZHANGGUI_TENANT_ID || 'f0d6e011-6e75-4c14-95e9-dc61b26871e3';
@@ -176,7 +181,16 @@ type TencentCloudSdk = {
 
 const useTencentPg = Boolean(process.env.DATABASE_URL || process.env.PGHOST);
 const supabase = useTencentPg ? createTencentPgClient() : createClient(SUPABASE_URL, SUPABASE_KEY);
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 1,
+    fields: 8,
+    parts: 10,
+    fieldSize: 64 * 1024,
+  },
+});
 const LOCAL_UPLOAD_ROOT = process.env.LOCAL_UPLOAD_ROOT || `${process.cwd()}/public/uploads`;
 const PRIVATE_UPLOAD_ROOT = process.env.PRIVATE_UPLOAD_ROOT || privateClaimRootFromPublicUploadRoot(LOCAL_UPLOAD_ROOT);
 const LINGQI_COS_UPLOAD_CONFIG = getLingqiCosUploadConfig(process.env);
@@ -238,8 +252,78 @@ async function submitSharedScriptContribution(contribution: Record<string, unkno
   return script;
 }
 
+type RateLimitEntry = { count: number; resetAt: number };
+
+function createRateLimiter(name: string, windowMs: number, max: number) {
+  const entries = new Map<string, RateLimitEntry>();
+  let requestsSinceCleanup = 0;
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const now = Date.now();
+    requestsSinceCleanup += 1;
+    if (requestsSinceCleanup >= 500 || entries.size > 10_000) {
+      requestsSinceCleanup = 0;
+      for (const [key, entry] of entries) {
+        if (entry.resetAt <= now) entries.delete(key);
+      }
+    }
+    const key = `${name}:${req.ip || req.socket.remoteAddress || 'unknown'}`;
+    const current = entries.get(key);
+    const entry = !current || current.resetAt <= now
+      ? { count: 0, resetAt: now + windowMs }
+      : current;
+    entry.count += 1;
+    entries.set(key, entry);
+    res.setHeader('RateLimit-Limit', String(max));
+    res.setHeader('RateLimit-Remaining', String(Math.max(0, max - entry.count)));
+    res.setHeader('RateLimit-Reset', String(Math.ceil(entry.resetAt / 1000)));
+    if (entry.count > max) {
+      res.setHeader('Retry-After', String(Math.max(1, Math.ceil((entry.resetAt - now) / 1000))));
+      return res.status(429).json(err(new Error('操作太频繁，请稍后再试')));
+    }
+    next();
+  };
+}
+
+const authRateLimit = createRateLimiter('auth', 15 * 60 * 1000, 40);
+const verificationRateLimit = createRateLimiter('verification', 10 * 60 * 1000, 6);
+const uploadRateLimit = createRateLimiter('upload', 10 * 60 * 1000, 30);
+const contactRateLimit = createRateLimiter('contact', 60 * 60 * 1000, 10);
+const reportRateLimit = createRateLimiter('report', 60 * 60 * 1000, 20);
+const paymentRateLimit = createRateLimiter('payment', 15 * 60 * 1000, 20);
+
 const app = express();
-app.use(cors());
+app.set('trust proxy', 'loopback');
+const extraCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(item => item.trim()).filter(Boolean);
+app.use(cors({
+  origin(origin, callback) {
+    if (allowedWebOrigin(origin, extraCorsOrigins)) return callback(null, true);
+    callback(new Error('CORS origin denied'));
+  },
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Shared-Library-Token'],
+  maxAge: 86400,
+}));
+app.use((req, res, next) => {
+  const path = req.path;
+  if (path === '/api/lc/auth/send-code' || path === '/api/lc/auth/email/send-code') {
+    return verificationRateLimit(req, res, next);
+  }
+  if ((path.startsWith('/api/lc/auth') && path !== '/api/lc/auth/config') || path === '/api/lc/admin/login') {
+    return authRateLimit(req, res, next);
+  }
+  if (path === '/api/lc/upload') return uploadRateLimit(req, res, next);
+  if (path === '/api/lc/contact-request') return contactRateLimit(req, res, next);
+  if (path === '/api/lc/reports' || path === '/api/lc/site-messages') return reportRateLimit(req, res, next);
+  if (req.method === 'POST' && (
+    path.includes('/purchase')
+    || path === '/api/lc/wallet/recharge'
+    || path === '/api/lc/wallet/alipay/create'
+    || path === '/api/lc/wallet/wechat/create'
+  )) {
+    return paymentRateLimit(req, res, next);
+  }
+  next();
+});
 app.get(/^\/uploads\/lc-portfolio\/(.+)$/, async (req, res, next) => {
   if (!LINGQI_COS_UPLOAD_CONFIG || !LINGQI_COS_UPLOAD_TRANSPORT?.getObject) return next();
   try {
@@ -261,7 +345,7 @@ app.get(/^\/uploads\/lc-portfolio\/(.+)$/, async (req, res, next) => {
 });
 app.use('/uploads', express.static(LOCAL_UPLOAD_ROOT));
 app.use(express.json({
-  limit: '25mb',
+  limit: '2mb',
   verify: (req, _res, buf) => {
     (req as Record<string, unknown>).rawBody = buf.toString('utf8');
   },
@@ -271,13 +355,8 @@ app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 // --- 工具函数 ---
 function ok(d?: unknown) { return { success: true, data: d }; }
 function err(e: unknown) {
-  const publicMessage = (value: string) => value.replaceAll('契约币', '榜金');
-  if (e instanceof Error) return { success: false, error: publicMessage(e.message) };
-  if (typeof e === 'string') return { success: false, error: publicMessage(e) };
-  if (e && typeof e === 'object' && 'message' in (e as Record<string,unknown>)) {
-    return { success: false, error: publicMessage(String((e as Record<string,unknown>).message)) };
-  }
-  return { success: false, error: '服务器错误' };
+  const message = publicApiErrorMessage(e, process.env.NODE_ENV === 'production').replaceAll('契约币', '榜金');
+  return { success: false, error: message };
 }
 
 function singleQueryValue(value: unknown): string {
@@ -341,32 +420,36 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
     return res.status(401).json(err(new Error('登录已过期，请重新登录')));
   }
 
-  (req as Record<string, unknown>).creatorId = decoded.creatorId;
-  (req as Record<string, unknown>).role = decoded.role || 'creator';
-
   try {
-    if (decoded.role !== 'admin') {
-      const { data: profile, error: profileErr } = await supabase.from('lc_profiles')
-        .select('is_banned, ban_reason, last_seen_at')
-        .eq('id', decoded.creatorId)
-        .maybeSingle();
-      if (profileErr && !isMissingRelation(profileErr, 'is_banned')) throw profileErr;
-      if (profile?.is_banned) {
-        await logSecurityEvent(req, {
-          action: 'auth_blocked_banned_user',
-          actorId: decoded.creatorId,
-          actorRole: decoded.role || 'creator',
-          targetType: 'profile',
-          targetId: decoded.creatorId,
-          metadata: { reason: profile.ban_reason || null },
-        });
-        return res.status(403).json(err(new Error('账号已被限制发布，请联系管理员申诉')));
-      }
-      const seenResult = await supabase.from('lc_profiles')
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq('id', decoded.creatorId);
-      if (seenResult.error && !isMissingRelation(seenResult.error, 'last_seen_at')) throw seenResult.error;
+    if (!decoded.creatorId || decoded.creatorId === 'admin') {
+      return res.status(401).json(err(new Error('旧管理员登录已停用，请使用管理员账号重新登录')));
     }
+    const { data: profile, error: profileErr } = await supabase.from('lc_profiles')
+      .select('id, role, is_banned, ban_reason, last_seen_at')
+      .eq('id', decoded.creatorId)
+      .maybeSingle();
+    if (profileErr && !isMissingRelation(profileErr, 'is_banned')) throw profileErr;
+    if (!profile) return res.status(401).json(err(new Error('账号不存在，请重新登录')));
+
+    const actualRole = profileAuthRole(profile);
+    (req as Record<string, unknown>).creatorId = decoded.creatorId;
+    (req as Record<string, unknown>).role = actualRole;
+
+    if (profile.is_banned) {
+      await logSecurityEvent(req, {
+        action: 'auth_blocked_banned_user',
+        actorId: decoded.creatorId,
+        actorRole: actualRole,
+        targetType: 'profile',
+        targetId: decoded.creatorId,
+        metadata: { reason: profile.ban_reason || null },
+      });
+      return res.status(403).json(err(new Error('账号已被限制发布，请联系管理员申诉')));
+    }
+    const seenResult = await supabase.from('lc_profiles')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('id', decoded.creatorId);
+    if (seenResult.error && !isMissingRelation(seenResult.error, 'last_seen_at')) throw seenResult.error;
     next();
   } catch (profileErr) {
     console.error('[auth] profile status check failed', getErrorText(profileErr));
@@ -396,9 +479,11 @@ function publicRecord(value: unknown) {
 }
 
 function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
-  const safe = { ...profile };
-  if (isOwner) safe.has_password = Boolean(profile.password_hash);
-  delete safe.password_hash;
+  const safe = isOwner ? { ...profile } : publicProfileAllowlist(profile);
+  if (isOwner) {
+    safe.has_password = Boolean(profile.password_hash);
+    delete safe.password_hash;
+  }
   safe.tags = publicStringArray(profile.tags);
   safe.available_cities = publicStringArray(profile.available_cities);
   safe.preferred_story_lines = publicStringArray(profile.preferred_story_lines);
@@ -408,28 +493,6 @@ function sanitizeProfile(profile: Record<string, unknown>, isOwner = false) {
   safe.is_realname = Boolean(profile.is_realname);
   safe.verified_dm = Boolean(profile.verified_dm);
   safe.verified_shop = Boolean(profile.verified_shop);
-  if (!isOwner) {
-    delete safe.phone;
-    delete safe.email;
-    delete safe.wechat;
-    delete safe.balance;
-    delete safe.paid_balance;
-    delete safe.bonus_balance;
-    delete safe.contact_phone;
-    delete safe.contact_wechat;
-    delete safe.phone_verified_at;
-    delete safe.email_verified_at;
-    delete safe.auth_provider;
-    delete safe.wechat_openid;
-    delete safe.wechat_mini_openid;
-    delete safe.wechat_unionid;
-    delete safe.wechat_avatar;
-    delete safe.wechat_nickname;
-    delete safe.wechat_bound_at;
-    delete safe.is_banned;
-    delete safe.ban_reason;
-    delete safe.banned_at;
-  }
   return safe;
 }
 
@@ -3402,6 +3465,90 @@ async function refreshAuditDailyRoot(chainDate: string) {
   return { rootHash, entryCount: hashes.length, firstHash, lastHash };
 }
 
+async function appendAuditEntryOnTencent(args: {
+  targetType: AuditTargetType;
+  targetId: string;
+  eventType: string;
+  payload: unknown;
+  actorId?: string | null;
+  actorRole?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const client = await tencentPgPool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`select pg_advisory_xact_lock(hashtext('lc_audit_chain_entries'))`);
+    const createdAt = new Date().toISOString();
+    const chainDate = createdAt.slice(0, 10);
+    const canonicalPayload = normalizeAuditValue(args.payload);
+    const contentHash = sha256(stableJson(canonicalPayload));
+    const latestResult = await client.query(
+      `select entry_hash from lc_audit_chain_entries order by created_at desc, id desc limit 1`,
+    );
+    const previousHash = latestResult.rows[0]?.entry_hash || null;
+    const actorRole = args.actorRole || 'system';
+    const entryHash = sha256(stableJson({
+      version: 'lc-audit-entry-v1',
+      target_type: args.targetType,
+      target_id: args.targetId,
+      event_type: args.eventType,
+      content_hash: contentHash,
+      previous_hash: previousHash,
+      canonical_payload: canonicalPayload,
+      actor_id: args.actorId || null,
+      actor_role: actorRole,
+      created_at: createdAt,
+    }));
+    const inserted = await client.query(
+      `insert into lc_audit_chain_entries
+        (target_type, target_id, event_type, content_hash, previous_hash, entry_hash,
+         canonical_payload, actor_id, actor_role, metadata, chain_date, created_at)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb, $11, $12)
+       returning id, entry_hash, content_hash, chain_date, created_at`,
+      [
+        args.targetType,
+        args.targetId,
+        args.eventType,
+        contentHash,
+        previousHash,
+        entryHash,
+        JSON.stringify(canonicalPayload),
+        args.actorId || null,
+        actorRole,
+        JSON.stringify(args.metadata || {}),
+        chainDate,
+        createdAt,
+      ],
+    );
+    const hashResult = await client.query(
+      `select entry_hash from lc_audit_chain_entries
+        where chain_date = $1 order by created_at, id`,
+      [chainDate],
+    );
+    const hashes = hashResult.rows.map((row: { entry_hash: string }) => row.entry_hash);
+    const rootHash = sha256(stableJson({ version: 'lc-audit-root-v1', chainDate, hashes }));
+    await client.query(
+      `insert into lc_audit_daily_roots
+        (audit_date, root_hash, entry_count, first_entry_hash, last_entry_hash, generated_at)
+       values ($1, $2, $3, $4, $5, $6)
+       on conflict (audit_date) do update
+         set root_hash = excluded.root_hash,
+             entry_count = excluded.entry_count,
+             first_entry_hash = excluded.first_entry_hash,
+             last_entry_hash = excluded.last_entry_hash,
+             generated_at = excluded.generated_at`,
+      [chainDate, rootHash, hashes.length, hashes[0], hashes[hashes.length - 1], createdAt],
+    );
+    await client.query('COMMIT');
+    return inserted.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function appendAuditEntry(args: {
   targetType: AuditTargetType;
   targetId: string;
@@ -3412,6 +3559,7 @@ async function appendAuditEntry(args: {
   metadata?: Record<string, unknown>;
 }) {
   try {
+    if (useTencentPg) return await appendAuditEntryOnTencent(args);
     const createdAt = new Date().toISOString();
     const chainDate = createdAt.slice(0, 10);
     const canonicalPayload = normalizeAuditValue(args.payload);
@@ -5527,8 +5675,7 @@ app.get('/api/lc/creators/:id', async (req, res) => {
   try {
     const { data: profile } = await supabase.from('lc_profiles').select('*').eq('id', req.params.id).single();
     if (!profile) return res.status(404).json(err(new Error('创作者不存在')));
-    const viewerId = getOptionalCreatorId(req);
-    const profilePayload = sanitizeProfile(profile, viewerId === profile.id);
+    const profilePayload = sanitizeProfile(profile);
 
     const [{ data: services }, { data: portfolio }, { data: pendingCerts }, { data: pendingDmClaims }, rolePreferences] = await Promise.all([
       supabase.from('lc_services').select('*').eq('creator_id', req.params.id).eq('is_active', true),
@@ -6120,17 +6267,47 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
 
 // ==================== 联系申请 ====================
 
-app.post('/api/lc/contact-request', async (req, res) => {
+app.post('/api/lc/contact-request', authMiddleware, async (req, res) => {
   try {
-    const { creatorId, requesterName, requesterWechat, message, intentAmount, paymentProof } = req.body;
-    if (!creatorId || !requesterName || !requesterWechat) {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+
+    const creatorId = cleanText(req.body?.creatorId, 80);
+    const requesterWechat = cleanText(req.body?.requesterWechat, 80);
+    const message = cleanText(req.body?.message, 1000);
+    const paymentProof = cleanText(req.body?.paymentProof, 500);
+    if (!creatorId || !requesterWechat) {
       return res.status(400).json(err(new Error('缺少必填信息')));
     }
-    const { data } = await supabase.from('lc_contact_requests').insert({
-      creator_id: creatorId, requester_name: requesterName, requester_wechat: requesterWechat, requester_message: message || null,
-      intent_amount: Math.max(0, parseInt(intentAmount || 0) || 0),
+    if (/^(?:data|blob):/i.test(paymentProof)) {
+      return res.status(400).json(err(new Error('支付凭证请填写简短备注，不要粘贴图片数据')));
+    }
+    const { data: creator, error: creatorErr } = await supabase.from('lc_profiles')
+      .select('id, contact_unlock_enabled, contact_intent_amount')
+      .eq('id', creatorId)
+      .maybeSingle();
+    if (creatorErr) throw creatorErr;
+    if (!creator) return res.status(404).json(err(new Error('服务者不存在')));
+
+    const { data, error: insertErr } = await supabase.from('lc_contact_requests').insert({
+      creator_id: creatorId,
+      requester_name: cleanText(profile.display_name, 80) || '已登录用户',
+      requester_wechat: requesterWechat,
+      requester_message: message || null,
+      intent_amount: creator.contact_unlock_enabled ? Math.max(0, Number(creator.contact_intent_amount || 0)) : 0,
       payment_proof: paymentProof || null,
     }).select().single();
+    if (insertErr) throw insertErr;
+    await logSecurityEvent(req, {
+      action: 'contact_request_created',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: 'contact_request',
+      targetId: String(data?.id || ''),
+      metadata: { creator_id: creatorId },
+    });
     res.json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -7806,6 +7983,109 @@ async function refreshWithdrawableIncome(profileId: string) {
     .lte('available_at', new Date().toISOString());
 }
 
+async function requestCreatorWithdrawalOnTencent(args: {
+  creatorId: string;
+  amount: number;
+  accountType: string;
+  accountName: string;
+  accountIdentifier: string;
+}) {
+  const client = await tencentPgPool.connect();
+  try {
+    await client.query('BEGIN');
+    const profileResult = await client.query(
+      `select id from lc_profiles where id = $1 for update`,
+      [args.creatorId],
+    );
+    if (!profileResult.rows[0]) throw new Error('用户不存在');
+    await client.query(
+      `update lc_creator_income_entries
+          set status = 'withdrawable', updated_at = now()
+        where creator_id = $1 and status = 'frozen' and available_at <= now()`,
+      [args.creatorId],
+    );
+    const entriesResult = await client.query(
+      `select id, creator_amount from lc_creator_income_entries
+        where creator_id = $1 and status = 'withdrawable'
+        order by created_at for update`,
+      [args.creatorId],
+    );
+    const available = entriesResult.rows.reduce((sum: number, row: { creator_amount: number }) => sum + Number(row.creator_amount || 0), 0);
+    if (available < args.amount) throw new Error('可提现收入不足');
+    if (available !== args.amount) throw new Error('第一版提现请一次性申请全部可提现收入，避免拆分流水对账出错');
+    const withdrawalResult = await client.query(
+      `insert into lc_creator_withdrawals
+        (creator_id, amount, account_type, account_name, account_identifier, status)
+       values ($1, $2, $3, $4, $5, 'pending')
+       returning *`,
+      [args.creatorId, args.amount, args.accountType, args.accountName, args.accountIdentifier],
+    );
+    const withdrawal = withdrawalResult.rows[0];
+    const entryIds = entriesResult.rows.map((row: { id: string }) => row.id);
+    if (entryIds.length) {
+      const updatedEntries = await client.query(
+        `update lc_creator_income_entries
+            set status = 'withdraw_requested', withdrawal_id = $2, updated_at = now()
+          where id = any($1::uuid[]) and creator_id = $3 and status = 'withdrawable'
+          returning id`,
+        [entryIds, withdrawal.id, args.creatorId],
+      );
+      if (updatedEntries.rowCount !== entryIds.length) throw new Error('收入状态发生变化，请重新提交提现申请');
+    }
+    await client.query('COMMIT');
+    return withdrawal;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function decideCreatorWithdrawalOnTencent(args: {
+  withdrawalId: string;
+  decision: 'paid' | 'rejected';
+  adminNote: string | null;
+}) {
+  const client = await tencentPgPool.connect();
+  try {
+    await client.query('BEGIN');
+    const withdrawalResult = await client.query(
+      `select * from lc_creator_withdrawals where id = $1 and status = 'pending' for update`,
+      [args.withdrawalId],
+    );
+    const withdrawal = withdrawalResult.rows[0];
+    if (!withdrawal) throw new Error('提现申请不存在或已经处理');
+    const updatedResult = await client.query(
+      `update lc_creator_withdrawals
+          set status = $2,
+              admin_note = $3,
+              paid_at = case when $2 = 'paid' then now() else paid_at end,
+              updated_at = now()
+        where id = $1 and status = 'pending'
+        returning *`,
+      [args.withdrawalId, args.decision, args.adminNote],
+    );
+    const nextIncomeStatus = args.decision === 'paid' ? 'withdraw_paid' : 'withdrawable';
+    const clearWithdrawal = args.decision === 'rejected';
+    await client.query(
+      `update lc_creator_income_entries
+          set status = $2,
+              withdrawal_id = case when $3 then null else withdrawal_id end,
+              updated_at = now()
+        where withdrawal_id = $1 and status = 'withdraw_requested'`,
+      [args.withdrawalId, nextIncomeStatus, clearWithdrawal],
+    );
+    await client.query('COMMIT');
+    return updatedResult.rows[0];
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 app.get('/api/lc/guides', async (req, res) => {
   try {
     const type = cleanText(req.query.type, 40);
@@ -7880,12 +8160,11 @@ app.get('/api/lc/guides/income/me', authMiddleware, async (req, res) => {
 
 app.post('/api/lc/guides/withdrawals', authMiddleware, async (req, res) => {
   try {
+    if (!useTencentPg) return res.status(503).json(err(new Error('提现当前只允许在正式 PostgreSQL 主库执行')));
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
-    await refreshWithdrawableIncome(profile.id);
-
     const amount = Math.max(0, Math.trunc(Number(req.body?.amount || 0)));
     const accountType = normalizeGuideChoice(req.body?.accountType, ['alipay', 'wechat', 'bank', 'other'], 'alipay');
     const accountName = cleanText(req.body?.accountName, 80);
@@ -7893,33 +8172,13 @@ app.post('/api/lc/guides/withdrawals', authMiddleware, async (req, res) => {
     if (amount < 30) return res.status(400).json(err(new Error('提现金额最低 30')));
     if (!accountName || !accountIdentifier) return res.status(400).json(err(new Error('请填写提现账号和姓名')));
 
-    const { data: entries, error: eErr } = await supabase.from('lc_creator_income_entries')
-      .select('id, creator_amount')
-      .eq('creator_id', profile.id)
-      .eq('status', 'withdrawable')
-      .order('created_at', { ascending: true });
-    if (eErr) throw eErr;
-    const available = (entries || []).reduce((sum, item) => sum + Number(item.creator_amount || 0), 0);
-    if (available < amount) return res.status(400).json(err(new Error('可提现收入不足')));
-    if (available !== amount) return res.status(400).json(err(new Error('第一版提现请一次性申请全部可提现收入，避免拆分流水对账出错')));
-
-    const selected = (entries || []).map(item => item.id);
-
-    const { data: withdrawal, error: wErr } = await supabase.from('lc_creator_withdrawals').insert({
-      creator_id: profile.id,
+    const withdrawal = await requestCreatorWithdrawalOnTencent({
+      creatorId: profile.id,
       amount,
-      account_type: accountType,
-      account_name: accountName,
-      account_identifier: accountIdentifier,
-      status: 'pending',
-    }).select('*').single();
-    if (wErr) throw wErr;
-
-    if (selected.length > 0) {
-      await supabase.from('lc_creator_income_entries')
-        .update({ status: 'withdraw_requested', withdrawal_id: withdrawal.id, updated_at: new Date().toISOString() })
-        .in('id', selected);
-    }
+      accountType,
+      accountName,
+      accountIdentifier,
+    });
 
     await logSecurityEvent(req, {
       action: 'guide_income_withdrawal_requested',
@@ -8058,26 +8317,7 @@ app.get('/api/lc/contact-requests/:creatorId', authMiddleware, async (req, res) 
 // ==================== 管理员 ====================
 
 app.post('/api/lc/admin/login', async (req, res) => {
-  try {
-    if (req.body.password !== ADMIN_PASSWORD) {
-      await logSecurityEvent(req, {
-        action: 'admin_login_failed',
-        actorRole: 'admin',
-        targetType: 'admin',
-        targetId: 'admin',
-      });
-      return res.status(401).json(err(new Error('密码错误')));
-    }
-    const token = jwt.sign({ creatorId: 'admin', role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
-    await logSecurityEvent(req, {
-      action: 'admin_login_success',
-      actorId: 'admin',
-      actorRole: 'admin',
-      targetType: 'admin',
-      targetId: 'admin',
-    });
-    res.json(ok({ authed: true, token }));
-  } catch (e) { res.status(500).json(err(e)); }
+  res.status(410).json(err(new Error('独立管理密码已停用，请使用管理员手机号或邮箱在普通登录页登录')));
 });
 
 app.get('/api/lc/admin/profiles', authMiddleware, adminMiddleware, async (req, res) => {
@@ -8332,36 +8572,18 @@ app.put('/api/lc/admin/guides/:id/reject', authMiddleware, adminMiddleware, asyn
 
 app.put('/api/lc/admin/guide-withdrawals/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    if (!useTencentPg) return res.status(503).json(err(new Error('提现审核当前只允许在正式 PostgreSQL 主库执行')));
     const adminNote = cleanText(req.body?.adminNote, 500);
-    const { data: withdrawal, error: findErr } = await supabase.from('lc_creator_withdrawals')
-      .select('*')
-      .eq('id', req.params.id)
-      .eq('status', 'pending')
-      .single();
-    if (findErr && isMissingRelation(findErr, 'lc_creator_withdrawals')) return res.status(503).json(err(new Error('提现数据表尚未初始化')));
-    if (findErr) throw findErr;
-    if (!withdrawal) return res.status(404).json(err(new Error('提现申请不存在')));
-
-    const { data: updated, error: updErr } = await supabase.from('lc_creator_withdrawals')
-      .update({
-        status: 'paid',
-        admin_note: adminNote || null,
-        paid_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', req.params.id)
-      .select('*')
-      .single();
-    if (updErr) throw updErr;
-    await supabase.from('lc_creator_income_entries')
-      .update({ status: 'withdraw_paid', updated_at: new Date().toISOString() })
-      .eq('withdrawal_id', req.params.id)
-      .eq('status', 'withdraw_requested');
+    const updated = await decideCreatorWithdrawalOnTencent({
+      withdrawalId: req.params.id,
+      decision: 'paid',
+      adminNote: adminNote || null,
+    });
     await logSecurityEvent(req, {
       action: 'admin_guide_withdrawal_paid',
       targetType: 'creator_withdrawal',
       targetId: req.params.id,
-      metadata: { amount: withdrawal.amount, admin_note: adminNote || null },
+      metadata: { amount: updated.amount, admin_note: adminNote || null },
     });
     res.json(ok(updated));
   } catch (e) { res.status(500).json(err(e)); }
@@ -8369,23 +8591,13 @@ app.put('/api/lc/admin/guide-withdrawals/:id/approve', authMiddleware, adminMidd
 
 app.put('/api/lc/admin/guide-withdrawals/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    if (!useTencentPg) return res.status(503).json(err(new Error('提现审核当前只允许在正式 PostgreSQL 主库执行')));
     const rejectReason = cleanText(req.body?.rejectReason, 500) || '提现申请未通过';
-    const { data: updated, error: updErr } = await supabase.from('lc_creator_withdrawals')
-      .update({
-        status: 'rejected',
-        admin_note: rejectReason,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', req.params.id)
-      .eq('status', 'pending')
-      .select('*')
-      .single();
-    if (updErr && isMissingRelation(updErr, 'lc_creator_withdrawals')) return res.status(503).json(err(new Error('提现数据表尚未初始化')));
-    if (updErr) throw updErr;
-    await supabase.from('lc_creator_income_entries')
-      .update({ status: 'withdrawable', withdrawal_id: null, updated_at: new Date().toISOString() })
-      .eq('withdrawal_id', req.params.id)
-      .eq('status', 'withdraw_requested');
+    const updated = await decideCreatorWithdrawalOnTencent({
+      withdrawalId: req.params.id,
+      decision: 'rejected',
+      adminNote: rejectReason,
+    });
     await logSecurityEvent(req, {
       action: 'admin_guide_withdrawal_rejected',
       targetType: 'creator_withdrawal',
@@ -9469,9 +9681,7 @@ app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
     if (!['ranking', 'comment', 'commission', 'carpool'].includes(targetType)) {
       return res.status(400).json(err(new Error('无效审计对象')));
     }
-    const selectFields = targetType === 'ranking'
-      ? 'id,target_type,target_id,event_type,content_hash,previous_hash,entry_hash,chain_date,created_at,canonical_payload,metadata'
-      : 'id,target_type,target_id,event_type,content_hash,previous_hash,entry_hash,chain_date,created_at';
+    const selectFields = 'id,target_type,target_id,event_type,content_hash,previous_hash,entry_hash,chain_date,created_at,metadata';
     const { data: rawEntries, error: qErr } = await supabase.from('lc_audit_chain_entries')
       .select(selectFields)
       .eq('target_type', targetType)
@@ -9482,18 +9692,43 @@ app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
       return res.json(ok({ entries: [], daily_roots: [], target: null }));
     }
     if (qErr) throw qErr;
-    const entries = (rawEntries || []) as unknown as Array<Record<string, unknown> & { chain_date: string }>;
-
     let target: Record<string, unknown> | null = null;
+    let publicTarget = false;
     if (targetType === 'ranking') {
       const { data: ranking, error: targetErr } = await supabase.from('lc_rankings')
         .select('*')
         .eq('id', req.params.id)
         .maybeSingle();
       if (targetErr) throw targetErr;
-      target = ranking ? auditPayload('ranking', ranking) : null;
+      publicTarget = Boolean(ranking && ranking.status === 'approved' && isPublicRankingVisible(ranking));
+      target = publicTarget && ranking ? publicRankingPayload(ranking) : null;
+    } else {
+      const table = targetType === 'comment'
+        ? 'lc_comments'
+        : targetType === 'commission'
+          ? 'lc_commissions'
+          : 'lc_carpools';
+      const { data: row, error: targetErr } = await supabase.from(table)
+        .select('id,status')
+        .eq('id', req.params.id)
+        .maybeSingle();
+      if (targetErr) throw targetErr;
+      publicTarget = Boolean(row && ['approved', 'open', 'closed'].includes(String(row.status || '')));
     }
+    if (!publicTarget) return res.status(404).json(err(new Error('公开审计记录不存在')));
 
+    const entries = ((rawEntries || []) as unknown as Array<Record<string, unknown> & { chain_date: string }>).map(entry => ({
+      id: entry.id,
+      target_type: entry.target_type,
+      target_id: entry.target_id,
+      event_type: entry.event_type,
+      content_hash: entry.content_hash,
+      previous_hash: entry.previous_hash,
+      entry_hash: entry.entry_hash,
+      chain_date: entry.chain_date,
+      created_at: entry.created_at,
+      metadata: publicAuditMetadata(entry.metadata),
+    }));
     const dates = Array.from(new Set(entries.map(entry => entry.chain_date).filter(Boolean)));
     let roots: Record<string, unknown>[] = [];
     if (dates.length > 0) {
@@ -9504,6 +9739,30 @@ app.get('/api/lc/audit/:targetType/:id', async (req, res) => {
       roots = dailyRoots || [];
     }
     res.json(ok({ entries: entries || [], daily_roots: roots, target }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/admin/audit/:targetType/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const targetType = req.params.targetType as AuditTargetType;
+    if (!['ranking', 'comment', 'commission', 'carpool'].includes(targetType)) {
+      return res.status(400).json(err(new Error('无效审计对象')));
+    }
+    const { data, error: queryErr } = await supabase.from('lc_audit_chain_entries')
+      .select('*')
+      .eq('target_type', targetType)
+      .eq('target_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (queryErr) throw queryErr;
+    await logSecurityEvent(req, {
+      action: 'admin_audit_detail_viewed',
+      targetType,
+      targetId: req.params.id,
+      metadata: { entry_count: data?.length || 0 },
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(ok({ entries: data || [] }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -15409,6 +15668,27 @@ app.put('/api/lc/admin/certifications/:id/reject', authMiddleware, adminMiddlewa
     });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) return next(error);
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (error instanceof multer.MulterError) {
+    const multerError = error as multer.MulterError;
+    const status = multerError.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    return res.status(status).json(err(new Error(multerError.code === 'LIMIT_FILE_SIZE' ? '文件不能超过 10MB' : '上传内容不符合要求')));
+  }
+  if (/request entity too large/i.test(message)) {
+    return res.status(413).json(err(new Error('提交内容过大')));
+  }
+  if (/CORS origin denied/i.test(message)) {
+    return res.status(403).json(err(new Error('当前来源不允许访问此接口')));
+  }
+  if (error instanceof SyntaxError) {
+    return res.status(400).json(err(new Error('请求内容格式不正确')));
+  }
+  console.error('[api] unhandled middleware error', message);
+  return res.status(500).json(err({ code: 'INTERNAL_ERROR', message }));
 });
 
 export default app;

@@ -937,7 +937,6 @@ export default function Admin() {
     const t = getToken();
     return !!t && !isTokenExpired(t);
   });
-  const [password, setPassword] = useState('');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [managedProfiles, setManagedProfiles] = useState<Profile[]>([]);
   const [profilesTotal, setProfilesTotal] = useState(0);
@@ -1065,29 +1064,6 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     const timer = window.setTimeout(() => void loadAccounts(undefined, accountPage, accountSearch), 250);
     return () => window.clearTimeout(timer);
   }, [authed, accountPage, accountSearch, loadAccounts]);
-
-  const login = async () => {
-    setError('');
-    try {
-      const r = await fetch(`${API}/lc/admin/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
-      const d = await r.json();
-      if (d.success) {
-        localStorage.setItem('lc_admin_token', d.data.token);
-        localStorage.setItem('lc_admin_last_login_at', new Date().toISOString());
-        window.dispatchEvent(new Event('lc-auth-changed'));
-        setAuthed(true);
-      } else {
-        const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '密码错误');
-        setError(errMsg);
-      }
-    } catch {
-      setError('网络错误');
-    }
-  };
 
   const approveProfile = async (id: string) => {
     await fetch(`${API}/lc/admin/profile/${id}/unflag`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
@@ -1968,16 +1944,15 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         </div>
         <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(217,168,87,0.26)', borderRadius: 16, padding: '30px 28px', boxShadow: '0 24px 60px rgba(31,41,55,0.08)' }}>
           <div style={{ width: 48, height: 2, background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`, margin: '0 auto 24px' }} />
-          <h2 style={{ textAlign: 'center', fontWeight: 800, marginBottom: 24, color: INK }}>管理员登录</h2>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && login()}
-            placeholder="管理密码"
-            style={{ width: '100%', padding: '12px 16px', borderRadius: 10, border: `1px solid ${LINE}`, backgroundColor: SURFACE, color: INK, fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', marginBottom: 16 }} />
-          <button onClick={login}
-            style={{ width: '100%', padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer', background: INK, color: BG, fontWeight: 800, fontSize: '0.9rem' }}>
-            登录
-          </button>
-          {error && <p style={{ textAlign: 'center', color: '#f87171', fontSize: '0.82rem', marginTop: 12 }}>{error}</p>}
+          <h2 style={{ textAlign: 'center', fontWeight: 800, marginBottom: 10, color: INK }}>管理员登录</h2>
+          <p style={{ color: MUTED, fontSize: '0.82rem', lineHeight: 1.7, textAlign: 'center', margin: '0 0 18px' }}>
+            管理后台不再使用独立管理密码。请用已授予管理员权限的手机号或邮箱登录。
+          </p>
+          <Link to="/login?redirect=%2Fadmin"
+            style={{ display: 'block', width: '100%', padding: '12px', borderRadius: 10, textAlign: 'center', textDecoration: 'none', boxSizing: 'border-box', background: INK, color: BG, fontWeight: 800, fontSize: '0.9rem' }}>
+            前往账号登录
+          </Link>
+          {error && <p style={{ textAlign: 'center', color: '#b91c1c', fontSize: '0.82rem', marginTop: 12 }}>{error}</p>}
         </div>
       </div>
     </div>

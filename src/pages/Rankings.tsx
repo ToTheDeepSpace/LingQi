@@ -111,7 +111,7 @@ type RelatedCertModal = { rankingId: string; commentId: string } | null;
 type ReportTarget = { targetType: ReportTargetType; targetId: string; targetTitle: string };
 type RankingCommentDraft = { content: string };
 type RelatedCertDraft = { note: string };
-type AuditChange = { field: string; label?: string; before?: unknown; after?: unknown };
+type AuditChange = { field: string; label?: string };
 type AuditEntry = {
   id: string;
   event_type: string;
@@ -120,10 +120,8 @@ type AuditEntry = {
   entry_hash: string;
   chain_date: string;
   created_at: string;
-  canonical_payload?: Record<string, unknown> | null;
   metadata?: {
-    before?: Record<string, unknown>;
-    after?: Record<string, unknown>;
+    changed_fields?: string[];
     changes?: AuditChange[];
     [key: string]: unknown;
   } | null;
@@ -354,21 +352,6 @@ const AUDIT_FIELD_LABEL: Record<string, string> = {
   content: '正文内容',
   expires_at: '黑榜到期时间',
 };
-
-function formatAuditValue(field: string, value: unknown) {
-  if (value === null || value === undefined || value === '') return '未填写';
-  if (field === 'type') {
-    if (value === 'red') return '红榜';
-    if (value === 'black') return '黑榜';
-    if (value === 'white') return '白榜';
-  }
-  if (field === 'subject_type' && typeof value === 'string') return SUBJECT_LABEL[value] || value;
-  if (field.endsWith('_at') && typeof value === 'string') {
-    return new Date(value).toLocaleString('zh-CN', { hour12: false });
-  }
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return JSON.stringify(value);
-}
 
 function formatAuditTime(value?: string) {
   if (!value) return '';
@@ -1701,7 +1684,6 @@ export default function Rankings() {
                 )}
                 {(auditModal.data?.entries || []).map(entry => {
                   const changes = entry.metadata?.changes || [];
-                  const payload = entry.canonical_payload || {};
                   return (
                     <div key={entry.id} style={{ border: '1px solid rgba(166,106,31,0.14)', background: '#fffaf2', borderRadius: 14, padding: '13px 14px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -1714,25 +1696,16 @@ export default function Rankings() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                           {changes.map(change => (
                             <div key={`${entry.id}-${change.field}`} style={{ fontSize: '0.8rem', color: 'rgba(31,41,55,0.82)', lineHeight: 1.7 }}>
-                              <span style={{ display: 'inline-block', minWidth: 82, color: 'rgba(71,85,105,0.58)', fontWeight: 800 }}>
+                              <span style={{ color: 'rgba(71,85,105,0.72)', fontWeight: 800 }}>
                                 {change.label || AUDIT_FIELD_LABEL[change.field] || change.field}
                               </span>
-                              <del style={{ color: 'rgba(185,28,28,0.72)', background: 'rgba(254,226,226,0.55)', padding: '1px 4px', borderRadius: 4 }}>
-                                {formatAuditValue(change.field, change.before)}
-                              </del>
-                              <span style={{ color: 'rgba(71,85,105,0.42)', margin: '0 6px' }}>→</span>
-                              <span style={{ color: '#15803d', background: 'rgba(220,252,231,0.72)', padding: '1px 4px', borderRadius: 4 }}>
-                                {formatAuditValue(change.field, change.after)}
-                              </span>
+                              <span style={{ color: 'rgba(71,85,105,0.58)' }}> 已修改；原版仅保留校验存证，公开页展示审核后的当前版本。</span>
                             </div>
                           ))}
                         </div>
                       ) : (
                         <div style={{ fontSize: '0.8rem', color: 'rgba(31,41,55,0.78)', lineHeight: 1.75 }}>
-                          <div><strong style={{ color: 'rgba(71,85,105,0.68)' }}>对象：</strong>{formatAuditValue('subject_name', payload.subject_name)} · {formatAuditValue('type', payload.type)}</div>
-                          {typeof payload.content === 'string' && (
-                            <div style={{ marginTop: 5 }}><strong style={{ color: 'rgba(71,85,105,0.68)' }}>原文：</strong>{payload.content}</div>
-                          )}
+                          本次公开版本已生成内容校验值。正文请以帖子当前详情为准。
                         </div>
                       )}
                       <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8, color: 'rgba(71,85,105,0.44)', fontSize: '0.7rem' }}>

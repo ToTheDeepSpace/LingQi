@@ -46,7 +46,6 @@ async function readJsonSafe(url: string, init?: RequestInit) {
 }
 
 type ContactRequestDraft = {
-  name: string;
   wechat: string;
   message: string;
 };
@@ -76,26 +75,25 @@ export default function CreatorProfile() {
   const [loading, setLoading]     = useState(true);
 
   const [contactShown, setContactShown] = useState(false);
-  const [formName, setFormName]         = useState('');
   const [formWechat, setFormWechat]     = useState('');
   const [formMsg, setFormMsg]           = useState('');
   const [paymentProof, setPaymentProof] = useState('');
   const [contactSent, setContactSent]   = useState(false);
+  const [contactSubmitting, setContactSubmitting] = useState(false);
+  const [contactError, setContactError] = useState('');
   const [reportOpen, setReportOpen] = useState(false);
   const contactDraftValue = useMemo<ContactRequestDraft>(() => ({
-    name: formName,
     wechat: formWechat,
     message: formMsg,
-  }), [formMsg, formName, formWechat]);
+  }), [formMsg, formWechat]);
   const contactDraft = useDraftAutosave<ContactRequestDraft>({
     key: `lc:draft:creator-contact:${id || 'unknown'}`,
     version: 1,
     enabled: !!id && !contactSent,
     value: contactDraftValue,
-    shouldSave: data => !!(data.name.trim() || data.wechat.trim() || data.message.trim()),
+    shouldSave: data => !!(data.wechat.trim() || data.message.trim()),
     onRestore: data => {
       setContactShown(true);
-      setFormName(data.name || '');
       setFormWechat(data.wechat || '');
       setFormMsg(data.message || '');
     },
@@ -169,21 +167,45 @@ export default function CreatorProfile() {
   };
 
   const submitContact = async () => {
-    if (!formName || !formWechat) return;
-    await fetch(`${API}/lc/contact-request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        creatorId: id,
-        requesterName: formName,
-        requesterWechat: formWechat,
-        message: formMsg,
-        intentAmount: creator?.contact_unlock_enabled ? creator.contact_intent_amount || 0 : 0,
-        paymentProof,
-      }),
-    });
-    contactDraft.clearDraft();
-    setContactSent(true);
+    const auth = readStoredCreatorAuth();
+    if (!auth?.token) {
+      navigate(`/login?redirect=${encodeURIComponent(`/creators/${id || ''}`)}`);
+      return;
+    }
+    if (!formWechat.trim()) {
+      setContactError('请填写方便对方联系你的微信号');
+      return;
+    }
+    setContactSubmitting(true);
+    setContactError('');
+    try {
+      const response = await fetch(`${API}/lc/contact-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify({
+          creatorId: id,
+          requesterWechat: formWechat.trim(),
+          message: formMsg,
+          paymentProof,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '预约意向提交失败');
+      contactDraft.clearDraft();
+      setContactSent(true);
+    } catch (error) {
+      setContactError(error instanceof Error ? error.message : '预约意向提交失败');
+    } finally {
+      setContactSubmitting(false);
+    }
+  };
+
+  const openContactForm = () => {
+    if (!readStoredCreatorAuth()?.token) {
+      navigate(`/login?redirect=${encodeURIComponent(`/creators/${id || ''}`)}`);
+      return;
+    }
+    setContactShown(true);
   };
 
   const inputStyle: React.CSSProperties = {
@@ -402,22 +424,25 @@ export default function CreatorProfile() {
                     error={contactDraft.error}
                     note="未提交的预约意向会自动保存到当前浏览器；支付凭证/备注不会保存。"
                   />
-                  <input value={formName} onChange={e => setFormName(e.target.value)} placeholder="你的称呼" style={inputStyle} />
+                  <p style={{ margin: 0, fontSize: '0.76rem', color: 'rgba(71,85,105,0.62)' }}>
+                    将以当前登录账号的公开昵称提交。
+                  </p>
                   <input value={formWechat} onChange={e => setFormWechat(e.target.value)} placeholder="你的微信号" style={inputStyle} />
                   <textarea value={formMsg} onChange={e => setFormMsg(e.target.value)} placeholder="想预约什么？（可选）" rows={3}
                     style={{ ...inputStyle, resize: 'none' }} />
                   {creator.contact_unlock_enabled && (
-                    <input value={paymentProof} onChange={e => setPaymentProof(e.target.value)} placeholder="预约意向金支付凭证/备注（可选）" style={inputStyle} />
+                    <input value={paymentProof} onChange={e => setPaymentProof(e.target.value)} placeholder="预约意向金支付备注（可选，不要粘贴图片）" style={inputStyle} />
                   )}
-                  <button onClick={submitContact} disabled={contactSent}
+                  <button onClick={submitContact} disabled={contactSent || contactSubmitting}
                     style={{
-                      padding: '10px', borderRadius: 10, border: 'none', cursor: contactSent ? 'default' : 'pointer',
-                      background: contactSent ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                      color: contactSent ? 'rgba(71,85,105,0.6)' : INK,
+                      padding: '10px', borderRadius: 10, border: 'none', cursor: contactSent || contactSubmitting ? 'default' : 'pointer',
+                      background: contactSent || contactSubmitting ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
+                      color: contactSent || contactSubmitting ? 'rgba(71,85,105,0.6)' : INK,
                       fontWeight: 600, fontSize: '0.875rem',
                     }}>
-                    {contactSent ? '已发送 ✓ 等待回复' : '提交预约意向'}
+                    {contactSent ? '已发送 ✓ 等待回复' : contactSubmitting ? '提交中...' : '提交预约意向'}
                   </button>
+                  {contactError && <p style={{ margin: 0, color: '#b91c1c', fontSize: '0.76rem', textAlign: 'center' }}>{contactError}</p>}
                   {!contactSent && (
                     <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.56)', textAlign: 'center' }}>
                       通过后再进入联系方式沟通，不引导公开暴露微信。
@@ -425,7 +450,7 @@ export default function CreatorProfile() {
                   )}
                 </div>
               ) : (
-                <button onClick={() => setContactShown(true)}
+                <button onClick={openContactForm}
                   style={{
                     width: '100%', padding: '11px', borderRadius: 10, border: 'none', cursor: 'pointer',
                     background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
