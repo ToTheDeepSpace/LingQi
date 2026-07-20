@@ -292,6 +292,7 @@ const reportRateLimit = createRateLimiter('report', 60 * 60 * 1000, 20);
 const paymentRateLimit = createRateLimiter('payment', 15 * 60 * 1000, 20);
 
 const app = express();
+app.disable('x-powered-by');
 app.set('trust proxy', 'loopback');
 const extraCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(item => item.trim()).filter(Boolean);
 app.use(cors({
