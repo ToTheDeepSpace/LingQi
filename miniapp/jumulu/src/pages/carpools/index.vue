@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Carpool } from '../../types'
@@ -13,7 +14,6 @@ const loading = ref(false)
 const error = ref('')
 const query = ref('')
 const city = ref(String(uni.getStorageSync(CITY_KEY) || '全部城市'))
-const cities = computed(() => ['全部城市', ...Array.from(new Set(items.value.map(item => item.city).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'zh-CN'))])
 const visible = computed(() => items.value.filter(item => !item.is_expired && (city.value === '全部城市' || item.city === city.value) && (!query.value.trim() || [item.title, item.script_name, item.role_name, item.content].join(' ').toLocaleLowerCase('zh-CN').includes(query.value.trim().toLocaleLowerCase('zh-CN')))))
 
 async function load() {
@@ -22,7 +22,7 @@ async function load() {
   catch (err) { error.value = err instanceof Error ? err.message : '加载失败' }
   finally { loading.value = false; uni.stopPullDownRefresh() }
 }
-function selectCity(event: { detail: { value: string } }) { city.value = cities.value[Number(event.detail.value)] || '全部城市'; uni.setStorageSync(CITY_KEY, city.value) }
+function selectCity(value: string) { city.value = value || '全部城市'; uni.setStorageSync(CITY_KEY, city.value) }
 async function showContact(item: Carpool) {
   try {
     await requireLogin()
@@ -38,7 +38,7 @@ onPullDownRefresh(load)
   <view class="page">
     <PageIntro eyebrow="同城拼车" title="找角色，找搭子" description="按日期、城市、剧本和角色寻找正在招募的车。" />
     <view class="filter surface">
-      <picker :range="cities" :value="Math.max(0, cities.indexOf(city))" @change="selectCity"><view class="picker-field">{{ city }}</view></picker>
+      <CitySearchPicker :value="city" @change="selectCity" />
       <input v-model="query" class="input" placeholder="搜索剧本或角色" />
     </view>
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visible.length" empty-text="暂时没有符合条件的拼车" @retry="load" />

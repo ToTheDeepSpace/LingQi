@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import DossierCard from '../../components/DossierCard.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
@@ -14,7 +15,6 @@ const error = ref('')
 const query = ref('')
 const city = ref(String(uni.getStorageSync(CITY_KEY) || '全部城市'))
 
-const cities = computed(() => ['全部城市', ...Array.from(new Set(items.value.map(item => item.city).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, 'zh-CN'))])
 const visibleItems = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   return items.value.filter(item => {
@@ -33,8 +33,8 @@ async function load() {
   finally { loading.value = false; uni.stopPullDownRefresh() }
 }
 
-function selectCity(event: { detail: { value: string } }) {
-  city.value = cities.value[Number(event.detail.value)] || '全部城市'
+function selectCity(value: string) {
+  city.value = value || '全部城市'
   uni.setStorageSync(CITY_KEY, city.value)
 }
 
@@ -51,9 +51,7 @@ onPullDownRefresh(load)
       <button class="primary-button intro-action" @tap="rate">给 DM 评分</button>
     </PageIntro>
     <view class="filter surface">
-      <picker :range="cities" :value="Math.max(0, cities.indexOf(city))" @change="selectCity">
-        <view class="picker-field">{{ city }}</view>
-      </picker>
+      <CitySearchPicker :value="city" @change="selectCity" />
       <input v-model="query" class="input" placeholder="搜索名称、标签或常开剧本" />
     </view>
     <text v-if="!loading && !error" class="result-count">{{ visibleItems.length }} 份公开档案</text>
