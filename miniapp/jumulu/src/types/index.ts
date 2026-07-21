@@ -58,6 +58,17 @@ export type Dossier = {
   rating_summary?: RatingSummary
 }
 
+export type NewDossierDraft = {
+  entityType: 'dm' | 'store'
+  name: string
+  city: string
+  workplace: string
+  employmentStatus: 'unknown' | 'freelance'
+  photoUrl: string
+  note: string
+  tags: string[]
+}
+
 export type DossierRating = {
   id: string
   profile_id?: string | null

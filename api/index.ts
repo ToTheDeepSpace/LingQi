@@ -10046,6 +10046,9 @@ async function resolveDmEmployment(input: Record<string, unknown>, fallbackWorkp
     };
   }
   const workplace = cleanText(input.workplace, 160) || cleanText(fallbackWorkplace, 160);
+  if (requestedStatus === 'unknown' && !workplace) {
+    return { employment_status: 'unknown', employer_store_id: null, workplace: null };
+  }
   if (requestedStatus === 'store_affiliated' && !workplace) throw new Error('请选择受雇店家');
   if (!workplace) throw new Error('请选择受雇店家，或选择“无受雇店家（自由DM）”');
   return { employment_status: 'unknown', employer_store_id: null, workplace };
@@ -12006,8 +12009,12 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
     const scriptKey = normalizeDmLookupText(scriptName);
 
     const storeId = cleanText(req.body?.storeId ?? req.body?.store_id, 120);
-    const storeDossierId = cleanText(req.body?.storeDossierId ?? req.body?.store_dossier_id, 120);
+    let storeDossierId = cleanText(req.body?.storeDossierId ?? req.body?.store_dossier_id, 120);
     let storeName = cleanText(req.body?.storeName ?? req.body?.store_name, 160);
+    let createdStoreDossierId = '';
+    const newStore = req.body?.newStore && typeof req.body.newStore === 'object'
+      ? req.body.newStore as Record<string, unknown>
+      : null;
     if (storeId) {
       const storeResult = await supabase.from('jzg_stores').select('id, name, city, status').eq('id', storeId).maybeSingle();
       if (storeResult.error) throw storeResult.error;
@@ -12024,6 +12031,43 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
       if (dossierResult.error) throw dossierResult.error;
       if (!dossierResult.data) return res.status(400).json(err(new Error('选择的店家档案不存在或尚未公开')));
       storeName = cleanText(dossierResult.data.dm_name, 160);
+    } else if (newStore) {
+      storeName = cleanText(newStore.storeName ?? newStore.name, 100);
+      const city = cleanText(newStore.city, 80);
+      const workplace = cleanText(newStore.workplace ?? newStore.address, 160);
+      const rawPhotoUrl = newStore.photoUrl ?? newStore.photo_url;
+      const photoUrl = normalizeOptionalPublicUrl(rawPhotoUrl, 800, true);
+      const photoFiles = photoUrl ? [{ name: `${storeName || '店家'}照片`, url: photoUrl, type: 'image/jpeg' }] : [];
+      if (!storeName) return res.status(400).json(err(new Error('请填写店家名称')));
+      if (!city) return res.status(400).json(err(new Error('请选择店家所在城市')));
+      if (!workplace) return res.status(400).json(err(new Error('请填写店家地址、商圈或常驻位置')));
+      if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) return res.status(400).json(err(new Error('店铺照片链接格式不正确，也可以直接留空')));
+      const storePrecheck = runLocalModerationPrecheck({
+        scene: 'store_dossier_submit_with_dm_rating',
+        targetType: 'dm_dossier',
+        texts: { storeName, city, workplace, note: cleanText(newStore.note, 600) },
+        files: photoFiles,
+      });
+      const { data: insertedStore, error: storeInsertErr } = await supabase.from('lc_dm_dossiers').insert({
+        entity_type: 'store',
+        dm_name: storeName,
+        city,
+        workplace,
+        employment_status: 'unknown',
+        employer_store_id: null,
+        photo_url: photoUrl || null,
+        photo_files: photoFiles,
+        note: cleanText(newStore.note, 600) || null,
+        tags: cleanTextArray(newStore.tags, 8, 18),
+        submitted_by: profile.id,
+        submitted_by_name: profile.display_name,
+        status: 'pending',
+        claim_status: 'unclaimed',
+        moderation_precheck: storePrecheck,
+      }).select('id').single();
+      if (storeInsertErr) throw storeInsertErr;
+      storeDossierId = cleanText(insertedStore.id, 120);
+      createdStoreDossierId = storeDossierId;
     }
     if (!storeName) return res.status(400).json(err(new Error('请选择或填写本次体验的店家或场地')));
 
@@ -12216,6 +12260,7 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
       status: 'pending',
       dm_id: dmId,
       new_dm: !!newDm,
+      new_store: Boolean(createdStoreDossierId),
       similar_candidates: newDmCandidates,
       message: '评分和DM资料已提交审核，通过后公开并计入综合分',
     }));

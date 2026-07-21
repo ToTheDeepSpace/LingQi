@@ -68,3 +68,25 @@ export async function checkMiniContent(content: string, scene: string) {
     data: { content: content.trim(), scene },
   })
 }
+
+export async function uploadImageFile(filePath: string, scope: string) {
+  const auth = await requireLogin()
+  const response = await new Promise<UniApp.UploadFileSuccessCallbackResult>((resolve, reject) => {
+    uni.uploadFile({
+      url: `${API_BASE}/lc/upload`,
+      filePath,
+      name: 'file',
+      formData: { scope },
+      header: { Authorization: `Bearer ${auth.token}`, 'X-LC-Client': 'wechat-miniapp' },
+      success: resolve,
+      fail: reject,
+    })
+  })
+  let body: ApiEnvelope<{ url: string }>
+  try { body = JSON.parse(response.data) as ApiEnvelope<{ url: string }> }
+  catch { throw new Error('图片上传返回格式不正确') }
+  if (response.statusCode < 200 || response.statusCode >= 300 || !body.success || !body.data?.url) {
+    throw new Error(errorText(body.error, `图片上传失败 ${response.statusCode}`))
+  }
+  return body.data.url
+}

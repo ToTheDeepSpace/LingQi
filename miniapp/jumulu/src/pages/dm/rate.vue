@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
+import DossierSearchPicker from '../../components/DossierSearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
-import type { Dossier, Script } from '../../types'
+import type { Dossier, NewDossierDraft, Script } from '../../types'
 import { apiRequest, checkMiniContent, requireLogin } from '../../utils/api'
 import { currentDate } from '../../utils/format'
 
@@ -11,6 +13,11 @@ const stores = ref<Dossier[]>([])
 const scripts = ref<Script[]>([])
 const dmId = ref('')
 const storeId = ref('')
+const newDm = ref<NewDossierDraft | null>(null)
+const newStore = ref<NewDossierDraft | null>(null)
+const createOpen = ref(false)
+const createKind = ref<'dm' | 'store'>('dm')
+const createInitialName = ref('')
 const scriptId = ref('')
 const rating = ref(5)
 const playedOn = ref(currentDate())
@@ -23,6 +30,8 @@ const formStartedAt = Date.now()
 const selectedDm = computed(() => dms.value.find(item => item.id === dmId.value))
 const selectedStore = computed(() => stores.value.find(item => item.id === storeId.value))
 const selectedScript = computed(() => scripts.value.find(item => item.id === scriptId.value))
+const dmName = computed(() => selectedDm.value?.dm_name || newDm.value?.name || '')
+const storeName = computed(() => selectedStore.value?.dm_name || newStore.value?.name || '')
 
 async function load(initialDmId = '') {
   try {
@@ -32,29 +41,53 @@ async function load(initialDmId = '') {
       apiRequest<Script[]>('/lc/scripts'),
     ])
     dms.value = dmItems; stores.value = storeItems; scripts.value = scriptItems
-    dmId.value = initialDmId && dmItems.some(item => item.id === initialDmId) ? initialDmId : dmItems[0]?.id || ''
-    storeId.value = storeItems[0]?.id || ''
+    dmId.value = initialDmId && dmItems.some(item => item.id === initialDmId) ? initialDmId : ''
+    storeId.value = ''
     scriptId.value = scriptItems[0]?.id || ''
   } catch (err) { uni.showToast({ title: (err as Error).message, icon: 'none' }) }
   finally { loading.value = false }
 }
 
 function pickValue<T extends { id: string }>(event: { detail: { value: string } }, list: T[]) { return list[Number(event.detail.value)]?.id || '' }
+function selectDm(id: string) { dmId.value = id; newDm.value = null }
+function selectStore(id: string) { storeId.value = id; newStore.value = null }
+function create(kind: 'dm' | 'store', initialName = '') { createKind.value = kind; createInitialName.value = initialName; createOpen.value = true }
+function acceptDraft(draft: NewDossierDraft) {
+  if (draft.entityType === 'dm') { newDm.value = draft; dmId.value = '' }
+  else { newStore.value = draft; storeId.value = '' }
+}
 async function submit() {
   try {
     await requireLogin()
-    if (!selectedDm.value) throw new Error('请选择 DM')
-    if (!selectedStore.value) throw new Error('请选择本次体验店家')
+    if (!selectedDm.value && !newDm.value) throw new Error('请选择 DM，或者新建一个档案')
+    if (!selectedStore.value && !newStore.value) throw new Error('请选择本次体验店家，或者新建一个档案')
     if (!selectedScript.value) throw new Error('请选择本次体验剧本')
     if (content.value.trim().length < 12) throw new Error('请至少写 12 个字说明体验')
     submitting.value = true
-    await checkMiniContent(`${selectedDm.value.dm_name} ${content.value} ${tags.value}`, 'dm_rating')
+    await checkMiniContent(`${dmName.value} ${storeName.value} ${content.value} ${tags.value}`, 'dm_rating')
     const result = await apiRequest<{ message?: string }>('/lc/dm-ratings', {
       method: 'POST',
       data: {
-        dmId: selectedDm.value.id,
-        storeDossierId: selectedStore.value.id,
-        storeName: selectedStore.value.dm_name,
+        dmId: selectedDm.value?.id,
+        newDm: newDm.value ? {
+          dmName: newDm.value.name,
+          city: newDm.value.city,
+          workplace: newDm.value.workplace,
+          employmentStatus: newDm.value.employmentStatus,
+          photoUrl: newDm.value.photoUrl,
+          note: newDm.value.note,
+          tags: newDm.value.tags,
+        } : undefined,
+        storeDossierId: selectedStore.value?.id,
+        storeName: storeName.value,
+        newStore: newStore.value ? {
+          storeName: newStore.value.name,
+          city: newStore.value.city,
+          workplace: newStore.value.workplace,
+          photoUrl: newStore.value.photoUrl,
+          note: newStore.value.note,
+          tags: newStore.value.tags,
+        } : undefined,
         scriptId: selectedScript.value.id,
         scriptName: selectedScript.value.name,
         playedOn: playedOn.value,
@@ -81,9 +114,9 @@ onLoad(options => { void load(String(options?.dmId || '')) })
     <view v-if="loading" class="surface loading">正在加载...</view>
     <view v-else class="form surface">
       <text class="field-label">DM</text>
-      <picker :range="dms" range-key="dm_name" :value="Math.max(0, dms.findIndex(item => item.id === dmId))" @change="dmId = pickValue($event, dms)"><view class="picker-field">{{ selectedDm?.dm_name || '请选择' }}</view></picker>
+      <DossierSearchPicker kind="dm" :items="dms" :value="dmId" :draft-label="newDm?.name" placeholder="搜索并选择 DM" @select="selectDm" @create="create('dm', $event)" />
       <text class="field-label">店家</text>
-      <picker :range="stores" range-key="dm_name" :value="Math.max(0, stores.findIndex(item => item.id === storeId))" @change="storeId = pickValue($event, stores)"><view class="picker-field">{{ selectedStore?.dm_name || '请选择' }}</view></picker>
+      <DossierSearchPicker kind="store" :items="stores" :value="storeId" :draft-label="newStore?.name" placeholder="搜索并选择店家" @select="selectStore" @create="create('store', $event)" />
       <text class="field-label">剧本</text>
       <picker :range="scripts" range-key="name" :value="Math.max(0, scripts.findIndex(item => item.id === scriptId))" @change="scriptId = pickValue($event, scripts)"><view class="picker-field">{{ selectedScript?.name || '请选择' }}</view></picker>
       <view class="two-columns">
@@ -98,6 +131,7 @@ onLoad(options => { void load(String(options?.dmId || '')) })
       <input v-model="tags" class="input" placeholder="用逗号分隔，例如：控场稳、演绎细腻" />
       <button class="primary-button submit" :loading="submitting" :disabled="submitting" @tap="submit">提交审核</button>
     </view>
+    <DossierCreateSheet :open="createOpen" :entity-type="createKind" :initial-name="createInitialName" mode="draft" @close="createOpen = false" @created="acceptDraft" />
   </view>
 </template>
 

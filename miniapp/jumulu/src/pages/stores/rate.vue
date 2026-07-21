@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
+import DossierSearchPicker from '../../components/DossierSearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
-import type { Dossier, Script } from '../../types'
+import type { Dossier, NewDossierDraft, Script } from '../../types'
 import { apiRequest, checkMiniContent, requireLogin } from '../../utils/api'
 import { currentDate } from '../../utils/format'
 
 const stores = ref<Dossier[]>([])
 const scripts = ref<Script[]>([])
 const storeId = ref('')
+const newStore = ref<NewDossierDraft | null>(null)
+const createOpen = ref(false)
+const createInitialName = ref('')
 const scriptId = ref('')
 const rating = ref(5)
 const visitedOn = ref(currentDate())
@@ -19,27 +24,49 @@ const submitting = ref(false)
 const formStartedAt = Date.now()
 const selectedStore = computed(() => stores.value.find(item => item.id === storeId.value))
 const selectedScript = computed(() => scripts.value.find(item => item.id === scriptId.value))
+const storeName = computed(() => selectedStore.value?.dm_name || newStore.value?.name || '')
 
 async function load(initialStoreId = '') {
   try {
     const [storeItems, scriptItems] = await Promise.all([apiRequest<Dossier[]>('/lc/dm-dossiers?entityType=store'), apiRequest<Script[]>('/lc/scripts')])
     stores.value = storeItems; scripts.value = scriptItems
-    storeId.value = initialStoreId && storeItems.some(item => item.id === initialStoreId) ? initialStoreId : storeItems[0]?.id || ''
+    storeId.value = initialStoreId && storeItems.some(item => item.id === initialStoreId) ? initialStoreId : ''
     scriptId.value = scriptItems[0]?.id || ''
   } catch (err) { uni.showToast({ title: (err as Error).message, icon: 'none' }) }
   finally { loading.value = false }
 }
 function pickValue<T extends { id: string }>(event: { detail: { value: string } }, list: T[]) { return list[Number(event.detail.value)]?.id || '' }
+function selectStore(id: string) { storeId.value = id; newStore.value = null }
+function create(initialName = '') { createInitialName.value = initialName; createOpen.value = true }
+function acceptDraft(draft: NewDossierDraft) { newStore.value = draft; storeId.value = '' }
 async function submit() {
   try {
     await requireLogin()
-    if (!selectedStore.value || !selectedScript.value) throw new Error('请选择店家和剧本')
+    if (!selectedStore.value && !newStore.value) throw new Error('请选择店家，或者新建一个档案')
+    if (!selectedScript.value) throw new Error('请选择剧本')
     if (content.value.trim().length < 12) throw new Error('请至少写 12 个字说明到店体验')
     submitting.value = true
-    await checkMiniContent(`${selectedStore.value.dm_name} ${content.value} ${tags.value}`, 'store_rating')
+    await checkMiniContent(`${storeName.value} ${content.value} ${tags.value}`, 'store_rating')
     const result = await apiRequest<{ message?: string }>('/lc/store-ratings', {
       method: 'POST',
-      data: { storeDossierId: selectedStore.value.id, scriptId: selectedScript.value.id, scriptName: selectedScript.value.name, visitedOn: visitedOn.value, rating: rating.value, content: content.value.trim(), tags: tags.value.split(/[，,、\n]/).map(tag => tag.trim()).filter(Boolean), formStartedAt },
+      data: {
+        storeDossierId: selectedStore.value?.id,
+        newStore: newStore.value ? {
+          storeName: newStore.value.name,
+          city: newStore.value.city,
+          workplace: newStore.value.workplace,
+          photoUrl: newStore.value.photoUrl,
+          note: newStore.value.note,
+          tags: newStore.value.tags,
+        } : undefined,
+        scriptId: selectedScript.value.id,
+        scriptName: selectedScript.value.name,
+        visitedOn: visitedOn.value,
+        rating: rating.value,
+        content: content.value.trim(),
+        tags: tags.value.split(/[，,、\n]/).map(tag => tag.trim()).filter(Boolean),
+        formStartedAt,
+      },
     })
     uni.showModal({ title: '评价已提交', content: result.message || '审核通过后会公开并计入综合分。', showCancel: false, success: () => uni.navigateBack() })
   } catch (err) {
@@ -56,7 +83,7 @@ onLoad(options => { void load(String(options?.storeId || '')) })
     <view v-if="loading" class="surface loading">正在加载...</view>
     <view v-else class="form surface">
       <text class="field-label">店家</text>
-      <picker :range="stores" range-key="dm_name" :value="Math.max(0, stores.findIndex(item => item.id === storeId))" @change="storeId = pickValue($event, stores)"><view class="picker-field">{{ selectedStore?.dm_name || '请选择' }}</view></picker>
+      <DossierSearchPicker kind="store" :items="stores" :value="storeId" :draft-label="newStore?.name" placeholder="搜索并选择店家" @select="selectStore" @create="create" />
       <text class="field-label">体验剧本</text>
       <picker :range="scripts" range-key="name" :value="Math.max(0, scripts.findIndex(item => item.id === scriptId))" @change="scriptId = pickValue($event, scripts)"><view class="picker-field">{{ selectedScript?.name || '请选择' }}</view></picker>
       <text class="field-label">到店日期</text>
@@ -69,6 +96,7 @@ onLoad(options => { void load(String(options?.storeId || '')) })
       <input v-model="tags" class="input" placeholder="用逗号分隔，例如：环境干净、服务主动" />
       <button class="primary-button submit" :loading="submitting" :disabled="submitting" @tap="submit">提交审核</button>
     </view>
+    <DossierCreateSheet :open="createOpen" entity-type="store" :initial-name="createInitialName" mode="draft" @close="createOpen = false" @created="acceptDraft" />
   </view>
 </template>
 

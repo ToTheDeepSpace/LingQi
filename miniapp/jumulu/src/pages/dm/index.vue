@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
+import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
 import DossierCard from '../../components/DossierCard.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
@@ -14,6 +15,8 @@ const loading = ref(false)
 const error = ref('')
 const query = ref('')
 const city = ref(String(uni.getStorageSync(CITY_KEY) || '全部城市'))
+const createOpen = ref(false)
+const createInitialName = ref('')
 
 const visibleItems = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
@@ -40,6 +43,10 @@ function selectCity(value: string) {
 
 function open(item: Dossier) { uni.navigateTo({ url: `/pages/dm/detail?id=${encoded(item.id)}` }) }
 function rate() { uni.navigateTo({ url: '/pages/dm/rate' }) }
+function create(initialName = '') { createInitialName.value = initialName; createOpen.value = true }
+function created() {
+  uni.showModal({ title: '档案已提交', content: '这份资料已标注为社区提供，后台审核通过后会出现在 DM 列表。', showCancel: false })
+}
 
 onShow(() => { if (!items.value.length) void load() })
 onPullDownRefresh(load)
@@ -47,21 +54,32 @@ onPullDownRefresh(load)
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="剧本杀 DM 评分" title="查 DM，评体验" description="按姓名、城市、店家、标签或常开剧本查找 DM。">
-      <button class="primary-button intro-action" @tap="rate">给 DM 评分</button>
-    </PageIntro>
+    <PageIntro eyebrow="剧本杀 DM 评分" title="查 DM，评体验" description="按姓名、城市、店家、标签或常开剧本查找 DM。" />
     <view class="filter surface">
       <CitySearchPicker :value="city" @change="selectCity" />
       <input v-model="query" class="input" placeholder="搜索名称、标签或常开剧本" />
     </view>
+    <view class="actions">
+      <button class="primary-button" @tap="rate">给 DM 评分</button>
+      <button class="secondary-button" @tap="create(query.trim())">新建 DM 档案</button>
+    </view>
     <text v-if="!loading && !error" class="result-count">{{ visibleItems.length }} 份公开档案</text>
-    <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visibleItems.length" empty-text="没有找到符合条件的 DM" @retry="load" />
+    <StatePanel :loading="loading" :error="error" :empty="false" @retry="load" />
+    <view v-if="!loading && !error && !visibleItems.length" class="empty surface">
+      <text>没有找到符合条件的 DM</text>
+      <button class="secondary-button" @tap="create(query.trim())">新建{{ query.trim() ? `“${query.trim()}”` : '' }}档案</button>
+    </view>
     <DossierCard v-for="item in visibleItems" :key="item.id" :item="item" @open="open" />
+    <DossierCreateSheet :open="createOpen" entity-type="dm" :initial-name="createInitialName" @close="createOpen = false" @created="created" />
   </view>
 </template>
 
 <style scoped>
-.intro-action { width: 100%; margin-top: 18rpx; }
 .filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; margin: 14rpx 0; padding: 12rpx; }
+.actions { display: grid; grid-template-columns: 1.15fr 1fr; gap: 12rpx; margin-bottom: 14rpx; }
+.actions button { width: 100%; margin: 0; }
 .result-count { display: block; margin: 4rpx 4rpx 14rpx; color: #7b8492; font-size: 22rpx; }
+.empty { margin-bottom: 14rpx; padding: 34rpx 22rpx; color: #7b8492; text-align: center; }
+.empty text { display: block; font-size: 25rpx; }
+.empty button { width: 360rpx; margin: 20rpx auto 0; }
 </style>
