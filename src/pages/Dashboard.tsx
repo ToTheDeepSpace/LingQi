@@ -1088,6 +1088,8 @@ export default function Dashboard() {
       });
       const d = await r.json();
       if (!d.success) throw new Error(d.error || '设置密码失败');
+      if (!d.data?.token) throw new Error('新登录状态生成失败，请重新登录');
+      refreshStoredAuth({ token: d.data.token, has_password: true });
       setCreator(prev => prev ? { ...prev, has_password: true } : prev);
       setBindPassword('');
       setPasswordVerifyCode('');

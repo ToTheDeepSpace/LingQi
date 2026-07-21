@@ -93,6 +93,11 @@ import {
   publicAuditMetadata,
   publicProfileAllowlist,
 } from './securityPolicy.js';
+import {
+  authSessionMatches,
+  nextSessionVersion,
+  sessionVersionOf,
+} from './authSessionPolicy.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -108,7 +113,11 @@ function envValue(name: string) {
 }
 
 // --- 环境变量 ---
-const JWT_SECRET = process.env.JWT_SECRET || 'lingqi-dev-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+  if (process.env.NODE_ENV === 'production') throw new Error('Missing JWT_SECRET');
+  console.warn('JWT_SECRET is not set; using local development fallback.');
+  return 'lingqi-dev-secret-change-in-production';
+})();
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const JUZHANGGUI_TENANT_ID = process.env.JUZHANGGUI_TENANT_ID || 'f0d6e011-6e75-4c14-95e9-dc61b26871e3';
@@ -414,9 +423,9 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
   if (!auth?.startsWith('Bearer ')) {
     return res.status(401).json(err(new Error('请先登录')));
   }
-  let decoded: { creatorId: string; role?: string };
+  let decoded: { creatorId: string; role?: string; sessionVersion?: number };
   try {
-    decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId: string; role?: string };
+    decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId: string; role?: string; sessionVersion?: number };
   } catch {
     return res.status(401).json(err(new Error('登录已过期，请重新登录')));
   }
@@ -426,7 +435,7 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
       return res.status(401).json(err(new Error('旧管理员登录已停用，请使用管理员账号重新登录')));
     }
     const { data: profile, error: profileErr } = await supabase.from('lc_profiles')
-      .select('id, role, is_banned, ban_reason, last_seen_at')
+      .select('id, role, is_banned, ban_reason, last_seen_at, session_version')
       .eq('id', decoded.creatorId)
       .maybeSingle();
     if (profileErr && !isMissingRelation(profileErr, 'is_banned')) throw profileErr;
@@ -447,6 +456,9 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
       });
       return res.status(403).json(err(new Error('账号已被限制发布，请联系管理员申诉')));
     }
+    if (!authSessionMatches(decoded.sessionVersion, profile.session_version)) {
+      return res.status(401).json(err(new Error('登录状态已失效，请重新登录')));
+    }
     const seenResult = await supabase.from('lc_profiles')
       .update({ last_seen_at: new Date().toISOString() })
       .eq('id', decoded.creatorId);
@@ -458,12 +470,18 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
   }
 }
 
-function getOptionalCreatorId(req: express.Request) {
+async function getOptionalCreatorId(req: express.Request) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) return null;
   try {
-    const decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId?: string };
-    return decoded.creatorId || null;
+    const decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId?: string; sessionVersion?: number };
+    if (!decoded.creatorId) return null;
+    const { data: profile, error } = await supabase.from('lc_profiles')
+      .select('id, is_banned, session_version')
+      .eq('id', decoded.creatorId)
+      .maybeSingle();
+    if (error || !profile || profile.is_banned) return null;
+    return authSessionMatches(decoded.sessionVersion, profile.session_version) ? decoded.creatorId : null;
   } catch {
     return null;
   }
@@ -555,7 +573,11 @@ function profileAuthRole(profile: Record<string, unknown> | null | undefined) {
 }
 
 function signProfileAuthToken(profile: Record<string, unknown>) {
-  return jwt.sign({ creatorId: String(profile.id), role: profileAuthRole(profile) }, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign({
+    creatorId: String(profile.id),
+    role: profileAuthRole(profile),
+    sessionVersion: sessionVersionOf(profile.session_version),
+  }, JWT_SECRET, { expiresIn: '7d' });
 }
 
 function adminMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -4969,7 +4991,12 @@ app.post('/api/lc/auth/reset-password', async (req, res) => {
     }
 
     await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
-    const nextProfile = { ...existing, ...patch, password_hash: patch.password_hash };
+    const nextProfile = {
+      ...existing,
+      ...patch,
+      password_hash: patch.password_hash,
+      session_version: nextSessionVersion(existing.session_version),
+    };
     const token = signProfileAuthToken(nextProfile);
     await logSecurityEvent(req, {
       action: 'auth_password_reset',
@@ -5080,6 +5107,11 @@ app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     await supabase.from('lc_profiles').update({ password_hash: passwordHash }).eq('id', creatorId);
+    const token = signProfileAuthToken({
+      ...current,
+      password_hash: passwordHash,
+      session_version: nextSessionVersion(current.session_version),
+    });
     await logSecurityEvent(req, {
       action: 'auth_password_set',
       targetType: 'profile',
@@ -5093,7 +5125,7 @@ app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
       },
     });
 
-    res.json(ok({ has_password: true }));
+    res.json(ok({ has_password: true, token }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -6499,7 +6531,7 @@ app.get('/api/lc/tags', async (req, res) => {
     const targetType = cleanText(req.query.targetType, 40);
     const targetId = cleanText(req.query.targetId, 120);
     if (!targetType || !targetId) return res.status(400).json(err(new Error('缺少标签对象')));
-    const creatorId = getOptionalCreatorId(req);
+    const creatorId = await getOptionalCreatorId(req);
     const { data, error: qErr } = await supabase.from('lc_entity_tags')
       .select('*')
       .eq('target_type', targetType)
@@ -6590,7 +6622,7 @@ app.post('/api/lc/tags/:id/like', authMiddleware, async (req, res) => {
 app.get('/api/lc/scripts/:id/ratings', async (req, res) => {
   try {
     const scriptId = cleanText(req.params.id, 120);
-    const creatorId = getOptionalCreatorId(req);
+    const creatorId = await getOptionalCreatorId(req);
     const { data, error: qErr } = await supabase.from('lc_script_ratings')
       .select('*')
       .eq('script_id', scriptId)
@@ -6667,7 +6699,7 @@ app.get('/api/lc/entity-ratings', async (req, res) => {
     const targetType = cleanText(req.query.targetType, 40);
     const targetId = cleanText(req.query.targetId, 120);
     if (targetType !== 'script_role' || !targetId) return res.status(400).json(err(new Error('缺少评分对象')));
-    const creatorId = getOptionalCreatorId(req);
+    const creatorId = await getOptionalCreatorId(req);
     const { data, error: qErr } = await supabase.from('lc_entity_ratings')
       .select('*')
       .eq('target_type', targetType)
@@ -6784,7 +6816,7 @@ function playerExperienceSourceLabel(source: string) {
 app.get('/api/lc/creators/:id/experiences', async (req, res) => {
   try {
     const profileId = cleanText(req.params.id, 120);
-    const viewerId = getOptionalCreatorId(req);
+    const viewerId = await getOptionalCreatorId(req);
     const isOwner = viewerId === profileId;
     const [manualResult, roleResult, scriptResult, dmResult, rankingResult, commentResult] = await Promise.all([
       supabase.from('lc_player_script_records').select('*').eq('profile_id', profileId),
@@ -10674,7 +10706,7 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
       .limit(100);
     if (ratingResult.error && !isMissingRelation(ratingResult.error, 'lc_dm_ratings')) throw ratingResult.error;
     const rows = ratingResult.error ? [] : (ratingResult.data || []) as Record<string, unknown>[];
-    const ratingDiscussions = await loadRatingDiscussionPayload('dm', rows, getOptionalCreatorId(req));
+    const ratingDiscussions = await loadRatingDiscussionPayload('dm', rows, await getOptionalCreatorId(req));
     const rankingResult = await supabase.from('lc_rankings')
       .select('*')
       .eq('subject_dossier_id', req.params.id)
@@ -10927,7 +10959,7 @@ app.get('/api/lc/store-dossiers/:id', async (req, res) => {
       .limit(100);
     if (ratingResult.error && !isMissingRelation(ratingResult.error, 'lc_store_ratings')) throw ratingResult.error;
     const rows = ratingResult.error ? [] : (ratingResult.data || []) as Record<string, unknown>[];
-    const ratingDiscussions = await loadRatingDiscussionPayload('store', rows, getOptionalCreatorId(req));
+    const ratingDiscussions = await loadRatingDiscussionPayload('store', rows, await getOptionalCreatorId(req));
     const rankingResult = await supabase.from('lc_rankings')
       .select('*')
       .eq('subject_dossier_id', req.params.id)
@@ -12991,7 +13023,7 @@ app.get('/api/lc/rankings', async (req, res) => {
     const expiredOnly = type === 'black' && req.query.expired === 'true';
     const feedMode = cleanText(req.query.sort, 20).toLowerCase() === 'discussed' ? 'discussed' : 'latest';
     res.setHeader('X-Ranking-Feed-Mode', feedMode);
-    const viewerId = getOptionalCreatorId(req);
+    const viewerId = await getOptionalCreatorId(req);
     let query = supabase
       .from('lc_rankings')
       .select('*, lc_profiles!poster_id(display_name, avatar, verified_dm, verified_shop, role)')
@@ -13098,7 +13130,7 @@ app.get('/api/lc/rankings/mine', authMiddleware, async (req, res) => {
 
 app.get('/api/lc/rankings/:id', async (req, res) => {
   try {
-    const viewerId = getOptionalCreatorId(req);
+    const viewerId = await getOptionalCreatorId(req);
     const { data, error } = await supabase.from('lc_rankings')
       .select('*, lc_profiles!poster_id(display_name, avatar, verified_dm, verified_shop, role)')
       .eq('id', req.params.id)
