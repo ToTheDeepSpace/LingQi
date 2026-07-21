@@ -12,6 +12,7 @@ export type AuthSession = {
   city?: string | null
   role?: string
   auth_provider?: string
+  account_merged?: boolean
 }
 
 export type RatingSummary = {

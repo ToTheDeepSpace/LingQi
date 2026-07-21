@@ -68,7 +68,13 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !item" @retry="load" />
     <template v-if="item">
       <view class="article surface" :class="`article--${item.type}`">
-        <view class="article__top"><text class="article__type">{{ RANKING_TYPE_TEXT[item.type] }}</text><text class="article__city">{{ item.subject_city || '城市待补充' }}</text></view>
+        <view class="article__top">
+          <text class="article__type">{{ RANKING_TYPE_TEXT[item.type] }}</text>
+          <view class="article__tools">
+            <text class="article__city">{{ item.subject_city || '城市待补充' }}</text>
+            <button class="report-icon" aria-label="举报这条内容" @tap="report('ranking', item.id, item.subject_name)">⚑</button>
+          </view>
+        </view>
         <text class="article__subject">{{ item.subject_name }}</text>
         <text class="article__meta"><template v-if="item.event_script_name">《{{ item.event_script_name }}》 · </template><template v-if="item.event_store_name">{{ item.event_store_name }} · </template>{{ dateText(item.event_date || item.created_at) }}</text>
         <text class="article__content">{{ item.content }}</text>
@@ -87,11 +93,6 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
         <button class="vote" :class="{ active: item.my_vote?.vote_type === 'joy' }" @tap="vote('joy')">欢乐 {{ item.joys || 0 }}</button>
       </view>
 
-      <view class="governance surface">
-        <text>对内容有异议？举报会进入网站管理后台，管理员可复核、临时折叠或下架。</text>
-        <button class="secondary-button" @tap="report('ranking', item.id, item.subject_name)">举报这条内容</button>
-      </view>
-
       <text class="section-title">评论</text>
       <view class="composer surface">
         <textarea v-model="commentText" class="textarea" maxlength="600" placeholder="补充事实、体验或不同意见。请勿公开他人隐私。" />
@@ -101,7 +102,10 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
       <view v-for="comment in comments" :key="comment.id" class="comment surface">
         <view class="comment__head"><text :class="{ link: comment.author_id }" @tap="openProfile(comment.author_id)">{{ comment.author_name || '用户' }}</text><text>{{ dateText(comment.created_at) }}</text></view>
         <text class="comment__content">{{ comment.content }}</text>
-        <view class="comment__bottom"><text v-if="comment.is_pinned" class="pinned">相关方回应</text><text @tap="report('comment', comment.id, '榜单评论')">举报</text></view>
+        <view class="comment__bottom">
+          <text v-if="comment.is_pinned" class="pinned">相关方回应</text>
+          <button class="report-icon report-icon--comment" aria-label="举报这条评论" @tap="report('comment', comment.id, '榜单评论')">⚑</button>
+        </view>
       </view>
     </template>
   </view>
@@ -114,6 +118,7 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
 .article--white::before { background: #b7bec8; }
 .article__top, .article__author, .comment__head, .comment__bottom { display: flex; justify-content: space-between; gap: 16rpx; }
 .article__type { color: #9a651e; font-size: 24rpx; font-weight: 900; }
+.article__tools { display: flex; align-items: center; gap: 10rpx; }
 .article__city, .article__meta, .article__author { color: #7b8492; font-size: 22rpx; }
 .article__subject { display: block; margin-top: 12rpx; font-family: serif; font-size: 42rpx; font-weight: 900; }
 .article__meta, .article__content { display: block; margin-top: 12rpx; }
@@ -125,13 +130,15 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
 .votes { display: flex; gap: 10rpx; margin-top: 14rpx; padding: 10rpx; }
 .vote { flex: 1; min-width: 0; border-radius: 8rpx; background: #fff; color: #475569; font-size: 24rpx; }
 .vote.active { background: #f3e4c9; color: #8b5919; font-weight: 850; }
-.governance, .composer { margin-top: 14rpx; padding: 18rpx; }
-.governance text { display: block; color: #64748b; font-size: 23rpx; line-height: 1.55; }
-.governance button, .composer button { width: 100%; margin-top: 14rpx; }
+.composer { margin-top: 14rpx; padding: 18rpx; }
+.composer button { width: 100%; margin-top: 14rpx; }
 .empty { padding: 36rpx; color: #64748b; text-align: center; }
 .comment { margin-top: 12rpx; padding: 18rpx; }
 .comment__head { color: #7b8492; font-size: 22rpx; }
 .comment__content { display: block; margin-top: 12rpx; color: #374151; font-size: 26rpx; line-height: 1.65; white-space: pre-wrap; }
 .comment__bottom { margin-top: 14rpx; color: #7b8492; font-size: 22rpx; }
+.report-icon { display: flex; align-items: center; justify-content: center; width: 48rpx; min-width: 48rpx; height: 48rpx; margin: 0; padding: 0; border: 0; border-radius: 6rpx; background: transparent; color: #7b8492; font-size: 28rpx; line-height: 1; }
+.report-icon::after { border: 0; }
+.report-icon--comment { margin-left: auto; }
 .pinned { color: #9a651e; font-weight: 800; }
 </style>

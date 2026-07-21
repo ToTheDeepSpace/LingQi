@@ -31,7 +31,13 @@ async function bindPhone() {
     const result = await apiRequest<AuthSession>('/lc/auth/bind-phone', { method: 'POST', data: { phone: phone.value, code: code.value } })
     const next = { ...(auth.value || {}), ...result } as AuthSession
     writeAuth(next); auth.value = next; uni.$emit('jumulu:auth-changed', next)
-    uni.showModal({ title: '手机号已验证', content: '现在可以评价、评论、投票和举报，也可以在网站用手机号继续登录。', showCancel: false })
+    uni.showModal({
+      title: result.account_merged ? '账号已合并' : '手机号已验证',
+      content: result.account_merged
+        ? '已切换到原网站账号，原有昵称、资料、内容和榜金均已保留。临时微信账号的 30 榜金不会重复计入。'
+        : '现在可以评价、评论、投票和举报，也可以在网站用手机号继续登录。',
+      showCancel: false,
+    })
   } catch (err) { uni.showToast({ title: (err as Error).message, icon: 'none' }) }
   finally { binding.value = false }
 }

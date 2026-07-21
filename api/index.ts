@@ -99,6 +99,10 @@ import {
   sessionVersionOf,
 } from './authSessionPolicy.js';
 import { interpretWechatContentCheck, type WechatContentCheckPayload } from './wechatMiniContentSafety.js';
+import {
+  miniappAccountMergeErrorMessage,
+  miniappAccountMergePreflight,
+} from './accountMergePolicy.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -5068,7 +5072,55 @@ app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
     if (!current) return res.status(404).json(err(new Error('当前账号不存在')));
     if (current.is_banned) return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
     if (existing && existing.id !== creatorId) {
-      return res.status(409).json(err(new Error('该手机号已绑定其他剧幕录账号，请先用该手机号登录或联系客服合并账号')));
+      const preflightError = miniappAccountMergePreflight(current, existing);
+      if (preflightError) return res.status(409).json(err(new Error(preflightError)));
+
+      const { error: mergeError } = await supabase.rpc('lc_merge_pristine_miniapp_profile', {
+        p_source_profile_id: creatorId,
+        p_target_profile_id: existing.id,
+        p_verified_phone: phone,
+      });
+      if (mergeError) {
+        return res.status(409).json(err(new Error(miniappAccountMergeErrorMessage(mergeError))));
+      }
+
+      const { data: mergedProfile, error: mergedProfileError } = await supabase.from('lc_profiles')
+        .select('*')
+        .eq('id', existing.id)
+        .single();
+      if (mergedProfileError || !mergedProfile) throw mergedProfileError || new Error('合并后的账号不存在');
+      const token = signProfileAuthToken(mergedProfile);
+      await logSecurityEvent(req, {
+        action: 'auth_miniapp_account_merged',
+        targetType: 'profile',
+        targetId: existing.id,
+        actorId: creatorId,
+        actorRole: current.role || 'creator',
+        metadata: {
+          source_profile_id: creatorId,
+          target_profile_id: existing.id,
+          phone_hash: makeAuthPhoneHash(phone),
+          duplicate_welcome_credit_removed: 30,
+        },
+      });
+
+      return res.json(ok({
+        id: mergedProfile.id,
+        display_name: mergedProfile.display_name,
+        avatar: mergedProfile.avatar || null,
+        phone: mergedProfile.phone,
+        phone_verified_at: mergedProfile.phone_verified_at,
+        email: mergedProfile.email || '',
+        email_verified_at: mergedProfile.email_verified_at || null,
+        city: mergedProfile.city || null,
+        available_cities: mergedProfile.available_cities || [],
+        role: mergedProfile.role,
+        role_type: mergedProfile.role_type,
+        identity_roles: mergedProfile.identity_roles || [],
+        token,
+        has_password: Boolean(mergedProfile.password_hash),
+        account_merged: true,
+      }));
     }
 
     const patch = {
@@ -5103,6 +5155,7 @@ app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
       identity_roles: nextProfile.identity_roles || [],
       token,
       has_password: Boolean(nextProfile.password_hash),
+      account_merged: false,
     }));
   } catch (e) { res.status(400).json(err(e)); }
 });
