@@ -1,0 +1,11 @@
+[Unit]
+Description=Anchor the Jumulu audit root daily
+
+[Timer]
+OnCalendar=*-*-* 03:07:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+
