@@ -112,7 +112,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const [chainDate, hashesFile] = process.argv.slice(2);
 const hashes = fs.readFileSync(hashesFile, 'utf8').split(/\r?\n/).filter(Boolean);
-const canonical = JSON.stringify({ version: 'lc-audit-root-v1', chainDate, hashes });
+const canonical = JSON.stringify({ chainDate, hashes, version: 'lc-audit-root-v1' });
 process.stdout.write(crypto.createHash('sha256').update(canonical).digest('hex'));
 NODE
 )"
