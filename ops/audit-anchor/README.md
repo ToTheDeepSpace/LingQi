@@ -13,6 +13,10 @@ The private key must only exist at:
 
 `/srv/secrets/jumulu-audit-anchor/private.pem`
 
+The database connection is loaded from the existing root-only
+`/srv/secrets/lingqi_postgres_app.env`; the service does not switch Unix users
+or receive any Linux capabilities.
+
 The public key is versioned in this repository and installed at:
 
 `/srv/ops/jumulu-audit-anchor/public.pem`

@@ -7,29 +7,35 @@ DATABASE="${AUDIT_ANCHOR_DATABASE:-lingqi_prod_candidate}"
 STATE_DIR="${AUDIT_ANCHOR_STATE_DIR:-/var/lib/jumulu-audit-anchor}"
 PRIVATE_KEY="${AUDIT_ANCHOR_PRIVATE_KEY:-/srv/secrets/jumulu-audit-anchor/private.pem}"
 PUBLIC_KEY="${AUDIT_ANCHOR_PUBLIC_KEY:-/srv/ops/jumulu-audit-anchor/public.pem}"
+PG_SECRET_FILE="${PG_SECRET_FILE:-/srv/secrets/lingqi_postgres_app.env}"
 COS_SECRET_FILE="${COS_SECRET_FILE:-/srv/secrets/jusichen_cos_upload.env}"
 COS_UPLOADER="${COS_UPLOADER:-/srv/ops/postgres-backup/cos-object.mjs}"
 COS_BASE="${AUDIT_ANCHOR_COS_BASE:-system-audit-anchors/jumulu/v1}"
 
-for required_file in "$PRIVATE_KEY" "$PUBLIC_KEY" "$COS_SECRET_FILE" "$COS_UPLOADER"; do
+for required_file in "$PRIVATE_KEY" "$PUBLIC_KEY" "$PG_SECRET_FILE" "$COS_SECRET_FILE" "$COS_UPLOADER"; do
   if [[ ! -r "$required_file" ]]; then
     echo "audit-anchor: required file is missing: $required_file" >&2
     exit 1
   fi
 done
 
+# shellcheck disable=SC1090
+source "$PG_SECRET_FILE"
+export PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD
+
 install -d -m 700 "$STATE_DIR" "$STATE_DIR/anchors"
 
 if [[ -z "${AUDIT_ANCHOR_DATE:-}" ]]; then
-  mapfile -t completed_dates < <(runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -d "$DATABASE" -At -c \
+  completed_dates_output="$(psql -X -v ON_ERROR_STOP=1 -d "$DATABASE" -At -c \
     "select audit_date::text
        from lc_audit_daily_roots
       where audit_date <= ((now() at time zone 'utc')::date - 1)
-      order by audit_date")
-  if (( ${#completed_dates[@]} == 0 )); then
+      order by audit_date")"
+  if [[ -z "$completed_dates_output" ]]; then
     echo "audit-anchor: no completed daily root is available"
     exit 0
   fi
+  mapfile -t completed_dates <<< "$completed_dates_output"
 
   dates_to_anchor=()
   for completed_date in "${completed_dates[@]}"; do
@@ -62,7 +68,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-root_row="$(runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -d "$DATABASE" -AtF $'\t' -c \
+root_row="$(psql -X -v ON_ERROR_STOP=1 -d "$DATABASE" -AtF $'\t' -c \
   "select audit_date::text, root_hash, entry_count::text,
           coalesce(first_entry_hash, ''), coalesce(last_entry_hash, ''), generated_at::text
      from lc_audit_daily_roots
@@ -87,7 +93,7 @@ if [[ ! "$audit_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
 fi
 
 hashes_file="$work_dir/entry-hashes.txt"
-runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -d "$DATABASE" -At -c \
+psql -X -v ON_ERROR_STOP=1 -d "$DATABASE" -At -c \
   "select entry_hash
      from lc_audit_chain_entries
     where chain_date = '$AUDIT_ANCHOR_DATE'
