@@ -335,13 +335,10 @@ export default function CreateRanking() {
   const submit = async () => {
     if (!auth) return navigate('/login');
     if (!subjectName.trim()) return setError('请填写对象名称');
-    if (!subjectCity.trim()) return setError('请选择所在城市');
     if (!content.trim()) return setError('请填写评价内容');
     if (!subjectType) return setError('请选择对象类型');
     if (['dm', 'store'].includes(subjectType) && subjectMode === 'existing' && !subjectDossierId) return setError(`请选择已有${subjectType === 'dm' ? 'DM' : '店家'}档案`);
-    if (subjectType === 'dm' && subjectMode === 'new' && employmentStatus === 'store_affiliated' && !employerStoreId) return setError('请选择DM的受雇店家，或者选择“无受雇店家（自由DM）”');
     if (subjectType === 'dm' && subjectMode === 'existing' && subjectEmploymentUpdate === 'store_affiliated' && !subjectEmployerStoreId) return setError('请选择要绑定的受雇店家');
-    if (subjectType === 'store' && subjectMode === 'new' && !newSubjectWorkplace.trim()) return setError('请填写店家地址、商圈或常驻位置');
     if (evidenceRequired && storedEvidenceFiles.length + legacyEvidenceFiles.length + evidenceFiles.length === 0) return setError('管理员要求补充证据，请至少上传一张审核材料');
     if (!rulesAccepted) return setError('请先阅读并确认发布规则');
 
@@ -363,8 +360,8 @@ export default function CreateRanking() {
         newSubject: ['dm', 'store'].includes(subjectType) && subjectMode === 'new' ? {
           name: subjectName.trim(),
           workplace: newSubjectWorkplace.trim(),
-          employmentStatus: subjectType === 'dm' ? employmentStatus : 'unknown',
-          employerStoreId: subjectType === 'dm' && employmentStatus === 'store_affiliated' ? employerStoreId : null,
+          employmentStatus: subjectType === 'dm' && employmentStatus === 'store_affiliated' && !employerStoreId ? 'unknown' : subjectType === 'dm' ? employmentStatus : 'unknown',
+          employerStoreId: subjectType === 'dm' && employmentStatus === 'store_affiliated' ? employerStoreId || null : null,
         } : null,
         eventDate: eventDate || null,
         eventScriptId: eventScriptId || null,
@@ -499,7 +496,7 @@ export default function CreateRanking() {
 
                 {subjectMode === 'new' && subjectType === 'dm' && (
                   <section className="ranking-new-section">
-                    <label className="ranking-new-label">DM受雇店家 *</label>
+                    <label className="ranking-new-label">DM受雇店家（选填）</label>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
                       <button type="button" className={`ranking-subject-btn ${employmentStatus === 'store_affiliated' ? 'is-active' : ''}`} onClick={() => setEmploymentStatus('store_affiliated')}>选择受雇店家</button>
                       <button type="button" className={`ranking-subject-btn ${employmentStatus === 'freelance' ? 'is-active' : ''}`} onClick={() => { setEmploymentStatus('freelance'); setEmployerStoreId(''); }}>无受雇店家（自由DM）</button>
@@ -539,7 +536,7 @@ export default function CreateRanking() {
                 )}
 
                 {subjectMode === 'new' && subjectType === 'store' && (
-                  <Input label="店家地址 / 商圈 *" value={newSubjectWorkplace} onChange={setNewSubjectWorkplace} placeholder="例：朝阳区三里屯 / XX商场3层" />
+                  <Input label="店家地址 / 商圈（选填）" value={newSubjectWorkplace} onChange={setNewSubjectWorkplace} placeholder="例：朝阳区三里屯 / XX商场3层" />
                 )}
 
                 <div className="ranking-new-section">
@@ -677,9 +674,9 @@ function CityPicker({
 }) {
   return (
     <div className="ranking-new-section ranking-city-field">
-      <label className="ranking-new-label">所在城市 *</label>
+      <label className="ranking-new-label">所在城市（选填）</label>
       <button type="button" className="ranking-city-button" onClick={() => setCityOpen(v => !v)}>
-        <span className={subjectCity ? '' : 'ranking-city-placeholder'}>{subjectCity ? `${selectedProvince} · ${subjectCity}` : '选择省份 / 城市'}</span>
+        <span className={subjectCity ? '' : 'ranking-city-placeholder'}>{subjectCity ? `${selectedProvince} · ${subjectCity}` : '补充省份 / 城市'}</span>
         <span>⌄</span>
       </button>
       {cityOpen && (

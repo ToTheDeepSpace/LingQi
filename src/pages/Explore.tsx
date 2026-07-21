@@ -116,11 +116,11 @@ export default function Explore() {
   };
   const filtered = filter === 'all' ? creators : creators.filter(c => hasIdentity(c, filter));
   return (
-    <JumuluPageFrame currentLabel="服务者">
+    <JumuluPageFrame currentLabel="公开主页">
       <JumuluCompactHeader
-        eyebrow="服务者主页"
-        title="找合适的人接委托"
-        description="按身份和城市查看已经审核上架的服务、报价、档期与个人主页。"
+        eyebrow="主页发现"
+        title="看看同城的人"
+        description="按身份和城市查看已经审核公开的用户主页；发布了服务的人会同时展示报价与档期。"
         aside={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <Link to="/commissions" style={jumuluSecondaryLinkStyle}>查看委托</Link>
@@ -162,7 +162,7 @@ export default function Explore() {
         </div>
         {!loading && !error && (
           <p style={{ margin: '10px 0 0', color: PAPER_DIM, fontSize: 12 }}>
-            当前显示 {filtered.length} 位服务者{city !== 'all' ? ` · ${city}` : ''}
+            当前显示 {filtered.length} 个公开主页{city !== 'all' ? ` · ${city}` : ''}
           </p>
         )}
       </section>
@@ -172,7 +172,7 @@ export default function Explore() {
           <div style={stateWrap}>
             <div style={{ fontSize: 34, marginBottom: 14, color: GOLD }}>✦</div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.3rem', fontWeight: 900, color: PAPER, marginBottom: 8 }}>
-              服务主页暂时没连上
+              公开主页暂时没连上
             </h2>
             <p style={{ color: PAPER_DIM, lineHeight: 1.8, marginBottom: 18 }}>
               可能是网络或服务接口短暂波动。你可以刷新重试，或者先去委托需求墙挂一条需求。
@@ -188,7 +188,7 @@ export default function Explore() {
         {loading && !error && (
           <div style={stateWrap}>
             <div style={{ width: 40, height: 40, border: '2px solid rgba(217,168,87,0.26)', borderTopColor: GOLD, borderRadius: '50%', margin: '0 auto 20px', animation: 'spin 0.8s linear infinite' }} />
-            <p style={{ color: PAPER_DIM }}>正在召唤服务者...</p>
+            <p style={{ color: PAPER_DIM }}>正在读取公开主页...</p>
           </div>
         )}
 
@@ -197,10 +197,10 @@ export default function Explore() {
             <div style={{ maxWidth: 580, margin: '0 auto', textAlign: 'center' }}>
               <div style={{ fontSize: 42, marginBottom: 16, color: GOLD }}>✦</div>
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.35rem', fontWeight: 900, color: PAPER, marginBottom: 10 }}>
-                {city !== 'all' ? `${city} 暂无公开主页` : filter === 'all' ? '还在等待第一批服务者' : '这个身份暂时没有公开主页'}
+                {city !== 'all' ? `${city} 暂无公开主页` : filter === 'all' ? '还没有公开主页' : '这个身份暂时没有公开主页'}
               </h2>
               <p style={{ color: PAPER_DIM, lineHeight: 1.8, marginBottom: 22 }}>
-                可以先发布一条委托需求，让合适的人来回应你；也可以自己入驻，提交服务并通过审核后再出现在这里。
+                可以先完善自己的公开主页，也可以发布一条委托需求，让同城的人回应你。
               </p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                 <Link to="/commissions/new" style={jumuluPrimaryLinkStyle}>发布委托需求</Link>

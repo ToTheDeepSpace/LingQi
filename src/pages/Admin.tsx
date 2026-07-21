@@ -302,6 +302,28 @@ type CommissionReview = {
   created_at: string;
 };
 
+type CommissionApplicationAudit = {
+  id: string;
+  commission_id: string;
+  applicant_id: string;
+  applicant_name: string;
+  applicant_is_realname?: boolean;
+  letter: string;
+  status: 'submitted' | 'accepted' | 'rejected';
+  decided_at?: string | null;
+  contact_unlocked_at?: string | null;
+  created_at: string;
+  commission?: {
+    id: string;
+    poster_id: string;
+    poster_name: string;
+    title: string;
+    city?: string | null;
+    needed_date?: string | null;
+    status?: string;
+  } | null;
+};
+
 type CarpoolReview = {
   id: string;
   poster_name: string;
@@ -610,14 +632,14 @@ type GuideWithdrawalReview = {
 };
 
 type RejectType = 'profile' | 'ranking' | 'rankingEdit' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'dmRating' | 'storeRating' | 'publicReview' | 'guide' | 'guideWithdrawal';
-type Tab = 'allPending' | 'siteData' | 'publishedDmDossiers' | 'publishedStoreDossiers' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'rankingEdits' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
+type Tab = 'allPending' | 'siteData' | 'publishedDmDossiers' | 'publishedStoreDossiers' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'rankingEdits' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'commissionApplications' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
 type AdminGroup = 'all' | 'data' | 'dm' | 'store' | 'content' | 'finance' | 'appeals' | 'history' | 'accounts';
 
 function adminGroupForTab(tab: Tab): AdminGroup {
   if (['siteData', 'publishedDmDossiers', 'publishedStoreDossiers', 'publishedRankings'].includes(tab)) return 'data';
   if (['dmDossiers', 'dmDossierEdits', 'dmCerts', 'dmRatings', 'dmWithdrawals'].includes(tab)) return 'dm';
   if (['storeDossiers', 'storeDossierEdits', 'storeCerts', 'storeRatings'].includes(tab)) return 'store';
-  if (['rankings', 'rankingEdits', 'publicReviews', 'comments', 'commissions', 'carpools', 'scriptContributions', 'guides'].includes(tab)) return 'content';
+  if (['rankings', 'rankingEdits', 'publicReviews', 'comments', 'commissions', 'commissionApplications', 'carpools', 'scriptContributions', 'guides'].includes(tab)) return 'content';
   if (['wallet', 'guideWithdrawals'].includes(tab)) return 'finance';
   if (['reports', 'messages', 'claims', 'requests'].includes(tab)) return 'appeals';
   if (tab === 'reviewHistory') return 'history';
@@ -950,6 +972,8 @@ export default function Admin() {
   const [comments, setComments] = useState<CommentReview[]>([]);
   const [claims, setClaims] = useState<ClaimReview[]>([]);
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
+  const [commissionApplications, setCommissionApplications] = useState<CommissionApplicationAudit[]>([]);
+  const [rankingBatchLoading, setRankingBatchLoading] = useState(false);
   const [carpools, setCarpools] = useState<CarpoolReview[]>([]);
   const [scriptContributions, setScriptContributions] = useState<ScriptContributionReview[]>([]);
   const [dmDossiers, setDmDossiers] = useState<DmDossierReview[]>([]);
@@ -1037,6 +1061,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setReviewHistory((d.data as { reviewHistory: PublicReview[] }).reviewHistory || []);
         setGuides((d.data as { guides: GuideReview[] }).guides || []);
         setGuideWithdrawals((d.data as { guideWithdrawals: GuideWithdrawalReview[] }).guideWithdrawals || []);
+        const applicationResponse = await fetch(`${API}/lc/admin/commission-applications`, { headers: { Authorization: `Bearer ${t}` } });
+        const applicationPayload = await applicationResponse.json();
+        if (applicationResponse.ok && applicationPayload.success) setCommissionApplications(applicationPayload.data || []);
       } else {
         const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '加载失败');
         setError(errMsg);
@@ -1148,6 +1175,29 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       body: JSON.stringify({ targetType }),
     });
     void loadData();
+  };
+
+  const approveSafeRankings = async () => {
+    const ids = rankings.filter(item => item.moderation_precheck?.decision === 'pass' && !item.dm_employment_status_suggestion).map(item => item.id);
+    if (ids.length === 0) return;
+    setRankingBatchLoading(true);
+    try {
+      const response = await fetch(`${API}/lc/admin/rankings/batch-approve`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '批量审核失败');
+      const approved = Array.isArray(payload.data?.approved_ids) ? payload.data.approved_ids.length : 0;
+      const skipped = Array.isArray(payload.data?.skipped) ? payload.data.skipped.length : 0;
+      window.alert(`已通过 ${approved} 条${skipped ? `，另有 ${skipped} 条因档案或风险条件跳过` : ''}`);
+      void loadData();
+    } catch (batchError) {
+      window.alert(batchError instanceof Error ? batchError.message : '批量审核失败');
+    } finally {
+      setRankingBatchLoading(false);
+    }
   };
 
   const approveRankingEdit = async (id: string) => {
@@ -1900,6 +1950,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       { tab: 'rankingEdits', label: '口碑修改 / 恢复', count: rankingEditRequests.length },
       { tab: 'comments', label: '评论', count: comments.length },
       { tab: 'commissions', label: '委托', count: commissions.length },
+      { tab: 'commissionApplications', label: '委托私信', count: commissionApplications.length },
       { tab: 'carpools', label: '拼车', count: carpools.length },
       { tab: 'scriptContributions', label: '剧本库', count: scriptContributions.length },
       { tab: 'guides', label: '攻略', count: guides.length },
@@ -2249,6 +2300,12 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
 
             {tab === 'rankings' && (
               <ListEmpty empty={rankings.length === 0} text="暂无待审核的红黑榜帖子">
+                {rankings.some(item => item.moderation_precheck?.decision === 'pass' && !item.dm_employment_status_suggestion) && (
+                  <div style={{ ...card, marginBottom: 10, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div><strong>安全预审通过</strong><div style={{ marginTop: 3, color: MUTED, fontSize: '0.78rem' }}>仅批量处理无风险、无 DM 任职变更且档案已公开的帖子。</div></div>
+                    <ActionButton kind="ok" disabled={rankingBatchLoading} onClick={() => void approveSafeRankings()}>{rankingBatchLoading ? '处理中...' : '批量通过安全项'}</ActionButton>
+                  </div>
+                )}
                 {rankings.map(r => {
                   const linkedDossier = [...dossierOptions, ...dmDossiers].find(item => item.id === r.subject_dossier_id);
                   const linkedDossierPending = !!r.subject_dossier_id && !dossierOptions.some(item => item.id === r.subject_dossier_id);
@@ -2495,6 +2552,26 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ActionButton kind="ok" onClick={() => approveCommission(c.id)}>通过</ActionButton>
                       <ActionButton kind="bad" onClick={() => openRejectModal(c.id, 'commission')}>拒绝</ActionButton>
                     </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'commissionApplications' && (
+              <ListEmpty empty={commissionApplications.length === 0} text="暂无委托接单私信">
+                {commissionApplications.map(item => (
+                  <Row key={item.id} accent={item.status === 'accepted' ? '#16a34a' : item.status === 'rejected' ? '#94a3b8' : '#d9a857'}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={item.commission?.title || '委托已删除'} pill={item.status === 'accepted' ? '已同意' : item.status === 'rejected' ? '已拒绝' : '待委托人处理'} />
+                      <Meta>
+                        申请人：{item.applicant_is_realname ? `⭐ ${item.applicant_name}` : item.applicant_name}
+                        {item.commission?.poster_name ? ` · 委托人：${item.commission.poster_name}` : ''}
+                        {item.commission?.city ? ` · ${item.commission.city}` : ''}
+                        {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      <ContentBox>{item.letter}</ContentBox>
+                      <Meta>管理员可查看申请内容和处理状态，但双方联系方式始终不在后台接口返回。</Meta>
+                    </div>
                   </Row>
                 ))}
               </ListEmpty>

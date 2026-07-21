@@ -46,6 +46,8 @@ export default function StoreProfile() {
   const [error, setError] = useState('');
   const [editOpen, setEditOpen] = useState(false);
   const [editMessage, setEditMessage] = useState('');
+  const [following, setFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
   const loading = loadedId !== id;
 
   useEffect(() => {
@@ -70,6 +72,38 @@ export default function StoreProfile() {
     return () => controller.abort();
   }, [id, auth?.token]);
 
+  useEffect(() => {
+    if (!auth?.token) return;
+    let alive = true;
+    fetch(`${API}/lc/follows`, { headers: { Authorization: `Bearer ${auth.token}` } })
+      .then(response => response.json())
+      .then(payload => {
+        if (alive && payload.success) setFollowing((payload.data?.stores || []).some((item: { id?: string }) => item.id === id));
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [auth?.token, id]);
+
+  const toggleFollow = async () => {
+    if (!auth?.token) return navigate(`/login?redirect=${encodeURIComponent(`/stores/${id}`)}`);
+    setFollowBusy(true);
+    try {
+      const response = await fetch(`${API}/lc/follows/stores/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ following: !following }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '操作失败');
+      setFollowing(Boolean(payload.data?.following));
+      window.dispatchEvent(new CustomEvent('lc-follows-changed'));
+    } catch (followError) {
+      setEditMessage(followError instanceof Error ? followError.message : '关注操作失败');
+    } finally {
+      setFollowBusy(false);
+    }
+  };
+
   return (
     <JumuluPageFrame
       currentLabel="店家详情"
@@ -93,6 +127,7 @@ export default function StoreProfile() {
               {editMessage && <p style={{ margin: '7px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{editMessage}</p>}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
                 <Link to={`/stores/rate?storeId=${encodeURIComponent(id)}`} style={jumuluPrimaryLinkStyle}>给店家评分</Link>
+                <button type="button" onClick={toggleFollow} disabled={followBusy} style={followButtonStyle(following)}>{followBusy ? '处理中...' : following ? '已关注' : '关注店家'}</button>
                 <Link to="/stores" style={jumuluSecondaryLinkStyle}>返回店家列表</Link>
               </div>
             </div>
@@ -147,12 +182,12 @@ export default function StoreProfile() {
                 <p style={{ margin: '8px 0 12px', color: MUTED, fontSize: 13, lineHeight: 1.65 }}>五星记录长期体验，事件记录保留具体经过，并按最新有效进展排列。</p>
                 <div style={listStyle}>
                   {data.reputation_events.slice(0, 6).map(event => (
-                    <Link key={event.id} to={`/rankings/${encodeURIComponent(event.id)}`} style={{ ...eventStyle, display: 'block', color: 'inherit', textDecoration: 'none' }}>
+                    <article key={event.id} onClick={() => navigate(`/rankings/${encodeURIComponent(event.id)}`)} style={{ ...eventStyle, display: 'block', color: 'inherit', cursor: 'pointer' }}>
                       <strong style={{ color: event.type === 'black' ? '#475569' : event.type === 'red' ? '#b91c1c' : GOLD }}>{event.type === 'red' ? '红榜事件' : event.type === 'black' ? '黑榜事件' : '白榜记录'}</strong>
                       <p style={{ margin: '6px 0 0', color: MUTED, fontSize: 12 }}>{event.event_script_name ? `《${event.event_script_name}》 · ` : ''}更新于 {(event.last_activity_at || event.created_at)?.slice(0, 10)}</p>
                       <p style={{ margin: '8px 0 0', color: INK, fontSize: 13, lineHeight: 1.6, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }}>{event.content}</p>
-                      <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 12 }}>发布人：{event.author_name} · 查看全文与评论 →</p>
-                    </Link>
+                      <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 12 }}>发布人：<ProfileNameLink profileId={event.poster_id}>{event.author_name}</ProfileNameLink> · 查看全文与评论 →</p>
+                    </article>
                   ))}
                   {data.reputation_events.length === 0 && <div style={emptyStyle}>暂无关联事件。</div>}
                 </div>
@@ -230,3 +265,13 @@ const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, b
 const eventStyle: React.CSSProperties = { borderTop: '1px solid rgba(31,41,55,0.08)', paddingTop: 10 };
 const emptyStyle: React.CSSProperties = { padding: 16, borderRadius: 7, border: '1px dashed rgba(31,41,55,0.14)', color: MUTED, textAlign: 'center', fontSize: 13 };
 const stateStyle: React.CSSProperties = { minHeight: 180, display: 'grid', placeContent: 'center', border: '1px dashed rgba(39,83,137,0.22)', borderRadius: 8, background: '#fff', padding: 24, textAlign: 'center' };
+const followButtonStyle = (active: boolean): React.CSSProperties => ({
+  minHeight: 38,
+  padding: '8px 13px',
+  borderRadius: 7,
+  border: active ? '1px solid rgba(39,83,137,0.3)' : '1px solid rgba(166,106,31,0.24)',
+  background: active ? '#eef6ff' : '#fffaf2',
+  color: active ? BLUE : GOLD,
+  cursor: 'pointer',
+  fontWeight: 850,
+});

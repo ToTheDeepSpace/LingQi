@@ -51,6 +51,7 @@ type CommissionDraft = {
   location: string;
   budget: string;
   contactNote: string;
+  privateContact: string;
 };
 
 function shouldSaveCommissionDraft(data: CommissionDraft) {
@@ -64,6 +65,7 @@ function shouldSaveCommissionDraft(data: CommissionDraft) {
     data.location,
     data.budget,
     data.contactNote,
+    data.privateContact,
   ].some(item => item.trim()) || data.targetType !== 'creator';
 }
 
@@ -82,6 +84,7 @@ export default function CreateCommission() {
   const [location, setLocation] = useState('');
   const [budget, setBudget] = useState('');
   const [contactNote, setContactNote] = useState('');
+  const [privateContact, setPrivateContact] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -97,7 +100,8 @@ export default function CreateCommission() {
     location,
     budget,
     contactNote,
-  }), [budget, city, contactNote, content, desiredRole, location, neededDate, scriptId, scriptName, targetType, title]);
+    privateContact,
+  }), [budget, city, contactNote, content, desiredRole, location, neededDate, privateContact, scriptId, scriptName, targetType, title]);
 
   const commissionDraft = useDraftAutosave<CommissionDraft>({
     key: 'lc:draft:commission:new',
@@ -117,6 +121,7 @@ export default function CreateCommission() {
       setLocation(data.location || '');
       setBudget(data.budget || '');
       setContactNote(data.contactNote || '');
+      setPrivateContact(data.privateContact || '');
     },
   });
 
@@ -152,6 +157,10 @@ export default function CreateCommission() {
       setError('请至少填写标题和需求内容');
       return;
     }
+    if (!privateContact.trim()) {
+      setError('请留下接受申请后用于联系的方式');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -170,7 +179,7 @@ export default function CreateCommission() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
         body: JSON.stringify({
-          title, content, scriptId: scriptId || null, scriptName: scriptName.trim() || null, desiredRole, targetType, neededDate, city, location, budget, contactNote, aiAssistContext,
+          title, content, scriptId: scriptId || null, scriptName: scriptName.trim() || null, desiredRole, targetType, neededDate, city, location, budget, contactNote, privateContact: privateContact.trim(), aiAssistContext,
         }),
       });
       const d = await r.json();
@@ -289,6 +298,12 @@ export default function CreateCommission() {
                 <label style={labelStyle}>联系说明（可选）</label>
                 <input value={contactNote} onChange={e => setContactNote(e.target.value)} placeholder="例如：先站内沟通 / 需要预约意向金" style={inputStyle} />
               </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>接受申请后显示的联系方式 *</label>
+              <input value={privateContact} onChange={e => setPrivateContact(e.target.value)} maxLength={300} placeholder="微信号、手机号或其他联系方法" style={inputStyle} />
+              <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 12, lineHeight: 1.6 }}>不会出现在委托墙。你接受某位申请人后，只向你和该申请人互相显示。</p>
             </div>
           </div>
 

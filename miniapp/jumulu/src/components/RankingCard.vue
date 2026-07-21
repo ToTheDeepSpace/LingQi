@@ -4,17 +4,31 @@ import { compactText, dateText, RANKING_TYPE_TEXT } from '../utils/format'
 
 defineProps<{ item: Ranking }>()
 defineEmits<{ open: [item: Ranking] }>()
+
+function eventTitle(content: string) {
+  const text = String(content || '').replace(/\s+/g, ' ').trim()
+  const first = text.split(/[。！？!?；;]/)[0] || text
+  return compactText(first, 34)
+}
+
+function eventSummary(content: string) {
+  const text = String(content || '').replace(/\s+/g, ' ').trim()
+  const index = text.search(/[。！？!?；;]/)
+  return index >= 0 ? compactText(text.slice(index + 1).trim(), 64) : ''
+}
 </script>
 
 <template>
   <view class="ranking surface" :class="`ranking--${item.type}`" @tap="$emit('open', item)">
     <view class="ranking__top">
-      <text class="ranking__type">{{ RANKING_TYPE_TEXT[item.type] }}</text>
+      <view class="ranking__identity"><text class="ranking__type">{{ RANKING_TYPE_TEXT[item.type] }}</text><text class="ranking__subject">{{ item.subject_name }}</text></view>
       <text class="ranking__city">{{ item.subject_city || '城市待补充' }}</text>
     </view>
-    <text class="ranking__subject">{{ item.subject_name }}</text>
-    <text class="ranking__content">{{ compactText(item.content, 130) }}</text>
-    <image v-if="item.display_files?.[0]?.url" class="ranking__image" :src="item.display_files[0].url" mode="aspectFill" />
+    <view class="ranking__body">
+      <view class="ranking__copy"><text class="ranking__title">{{ eventTitle(item.content) }}</text><text v-if="eventSummary(item.content)" class="ranking__content">{{ eventSummary(item.content) }}</text></view>
+      <image v-if="item.display_files?.[0]?.url" class="ranking__image" :src="item.display_files[0].url" mode="aspectFill" />
+    </view>
+    <text v-if="item.event_date && item.event_store_name" class="ranking__context">时间地点已补充</text>
     <view class="ranking__bottom">
       <text>{{ item.author_name || '用户' }} · {{ dateText(item.last_activity_at || item.created_at) }}</text>
       <text>同意 {{ item.agree_count ?? item.likes ?? 0 }} · 反对 {{ item.oppose_count ?? item.dislikes ?? 0 }} · 欢乐 {{ item.joys || 0 }}</text>
@@ -23,17 +37,22 @@ defineEmits<{ open: [item: Ranking] }>()
 </template>
 
 <style scoped>
-.ranking { position: relative; margin-bottom: 14rpx; padding: 20rpx 20rpx 18rpx 24rpx; overflow: hidden; }
+.ranking { position: relative; margin-bottom: 12rpx; padding: 17rpx 18rpx 15rpx 22rpx; overflow: hidden; }
 .ranking::before { position: absolute; inset: 0 auto 0 0; width: 6rpx; background: #b9781f; content: ''; }
 .ranking--black::before { background: #26303f; }
 .ranking--white::before { background: #b7bec8; }
 .ranking__top { display: flex; justify-content: space-between; align-items: center; }
+.ranking__identity { display: flex; align-items: center; min-width: 0; gap: 10rpx; }
 .ranking__type { color: #9a651e; font-size: 23rpx; font-weight: 900; }
 .ranking--black .ranking__type { color: #26303f; }
 .ranking--white .ranking__type { color: #64748b; }
 .ranking__city { color: #94a3b8; font-size: 22rpx; }
-.ranking__subject { display: block; margin-top: 10rpx; color: #1f2937; font-size: 31rpx; font-weight: 850; }
-.ranking__content { display: block; margin-top: 12rpx; color: #374151; font-size: 26rpx; line-height: 1.65; }
-.ranking__image { width: 100%; height: 260rpx; margin-top: 14rpx; border-radius: 10rpx; background: #f3f4f6; }
-.ranking__bottom { display: flex; justify-content: space-between; gap: 14rpx; margin-top: 16rpx; color: #7b8492; font-size: 21rpx; line-height: 1.4; }
+.ranking__subject { min-width: 0; overflow: hidden; color: #1f2937; font-size: 27rpx; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+.ranking__body { display: flex; align-items: flex-start; gap: 14rpx; margin-top: 10rpx; }
+.ranking__copy { min-width: 0; flex: 1; }
+.ranking__title { display: -webkit-box; overflow: hidden; color: #1f2937; font-size: 28rpx; font-weight: 850; line-height: 1.42; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.ranking__content { display: -webkit-box; overflow: hidden; margin-top: 6rpx; color: #64748b; font-size: 23rpx; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.ranking__image { width: 132rpx; height: 100rpx; flex: 0 0 132rpx; border-radius: 8rpx; background: #f3f4f6; }
+.ranking__context { display: inline-block; margin-top: 8rpx; padding: 4rpx 8rpx; border-radius: 6rpx; background: #eef4fb; color: #275389; font-size: 19rpx; font-weight: 800; }
+.ranking__bottom { display: flex; justify-content: space-between; gap: 14rpx; margin-top: 10rpx; color: #7b8492; font-size: 20rpx; line-height: 1.4; }
 </style>

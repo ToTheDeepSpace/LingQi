@@ -71,7 +71,9 @@ export default function Carpools() {
   const [receivedApplications, setReceivedApplications] = useState<CarpoolApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [city, setCity] = useState('all');
+  const [city, setCity] = useState(() => {
+    try { return localStorage.getItem('lc:carpools:last-city') || 'all'; } catch { return 'all'; }
+  });
   const [date, setDate] = useState('');
   const [script, setScript] = useState('');
   const [view, setView] = useState<'active' | 'expired'>('active');
@@ -85,6 +87,11 @@ export default function Carpools() {
   const [contactModal, setContactModal] = useState<{ item: Carpool; loading: boolean; error: string; contact?: { leader_contact: string; contact_note: string | null } } | null>(null);
   const [reportModal, setReportModal] = useState<Carpool | null>(null);
   const submitted = searchParams.get('published') === '1' || searchParams.get('submitted') === '1';
+  const selectCity = (value: string) => {
+    setCity(value);
+    try { localStorage.setItem('lc:carpools:last-city', value); } catch { /* optional */ }
+    setCityOpen(false);
+  };
   const applyDraftKey = applyModal ? `lc:draft:carpool-application:${applyModal.id}` : 'lc:draft:carpool-application:none';
   const applyDraftValue = useMemo<CarpoolApplicationDraft>(() => ({ role: applyRole, message: applyMessage }), [applyMessage, applyRole]);
   const applyDraft = useDraftAutosave<CarpoolApplicationDraft>({
@@ -143,6 +150,16 @@ export default function Carpools() {
       setSentApplications([]);
       setReceivedApplications([]);
     });
+  }, []);
+
+  useEffect(() => {
+    const auth = getAuth();
+    if (!auth) return;
+    try { if (localStorage.getItem('lc:carpools:last-city') !== null) return; } catch { /* optional */ }
+    fetch(`${API}/lc/follows`, { headers: { Authorization: `Bearer ${auth.token}` } })
+      .then(response => response.json())
+      .then(payload => { if (payload.success && payload.data?.cities?.[0]) setCity(payload.data.cities[0]); })
+      .catch(() => undefined);
   }, []);
 
   const privateItems = myItems.filter(item => item.status !== 'approved');
@@ -332,8 +349,8 @@ export default function Carpools() {
               </button>
               {cityOpen && (
                 <div style={{ position: 'absolute', left: 0, right: 0, top: '100%', zIndex: 20, maxHeight: 300, overflow: 'auto', padding: 8, borderRadius: 12, background: '#fffdf8', border: '1px solid rgba(217,168,87,0.28)', boxShadow: '0 16px 44px rgba(31,41,55,0.16)' }}>
-                  <button onClick={() => { setCity('all'); setCityOpen(false); }} style={cityButton(city === 'all')}>全部城市</button>
-                  {CITIES.map(c => <button key={c} onClick={() => { setCity(c); setCityOpen(false); }} style={cityButton(city === c)}>{c}</button>)}
+                  <button onClick={() => selectCity('all')} style={cityButton(city === 'all')}>全部城市</button>
+                  {CITIES.map(c => <button key={c} onClick={() => selectCity(c)} style={cityButton(city === c)}>{c}</button>)}
                 </div>
               )}
             </div>

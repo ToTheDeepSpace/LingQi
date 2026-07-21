@@ -1818,6 +1818,7 @@ export default function Dashboard() {
                     { title: '公开资料', copy: '编辑别人看到的主页信息。', to: '/dashboard/profile' },
                     { title: '服务与作品', copy: '维护摄影、委托和作品集。', to: '/dashboard/services' },
                     { title: '我的发布', copy: '查看发布内容与审核状态。', to: '/dashboard/posts' },
+                    { title: '关注设置', copy: '修改关注城市和店家。', to: '/follows' },
                   ].map(item => (
                     <Link key={item.title} to={item.to} style={{ ...card, minHeight: 110, display: 'grid', gap: 10, textDecoration: 'none' }}>
                       <span style={{ color: INK, fontSize: 15, fontWeight: 900 }}>{item.title}</span>

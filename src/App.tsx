@@ -4,6 +4,7 @@ import type React from 'react';
 import Navbar from './components/Navbar';
 import BrandLogo from './components/BrandLogo';
 import ErrorBoundary from './components/ErrorBoundary';
+import CityFollowGate from './components/CityFollowGate';
 import { pageLoaders, preloadRoute } from './lib/routePreload';
 import './App.css';
 
@@ -12,6 +13,7 @@ const Explore = lazy(pageLoaders.explore);
 const CreatorProfile = lazy(pageLoaders.creatorProfile);
 const Login = lazy(pageLoaders.login);
 const Dashboard = lazy(pageLoaders.dashboard);
+const FollowSettings = lazy(pageLoaders.followSettings);
 const Admin = lazy(pageLoaders.admin);
 const CommunityModeration = lazy(pageLoaders.moderation);
 const Rankings = lazy(pageLoaders.rankings);
@@ -65,6 +67,7 @@ function AppLayout() {
     <>
       <ScrollToTop />
       {showNavbar && <Navbar />}
+      <CityFollowGate />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<Home />} />
@@ -81,6 +84,7 @@ function AppLayout() {
           <Route path="/dashboard/certification" element={<Dashboard />} />
           <Route path="/dashboard/posts" element={<Dashboard />} />
           <Route path="/dashboard/referrals" element={<Dashboard />} />
+          <Route path="/follows" element={<FollowSettings />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/moderation" element={<CommunityModeration />} />
           <Route path="/rankings" element={<Rankings />} />

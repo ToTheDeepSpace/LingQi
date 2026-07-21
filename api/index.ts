@@ -2946,8 +2946,13 @@ function isCarpoolExpired(row: Record<string, unknown>) {
   return isPastDate(row.event_date);
 }
 
+function publicCommissionRow(row: Record<string, unknown>) {
+  const { private_contact: privateContact, ...safe } = row;
+  return { ...safe, has_private_contact: Boolean(cleanText(privateContact, 300)) };
+}
+
 function withCommissionExpiration(rows: Record<string, unknown>[]) {
-  return rows.map(row => ({ ...row, is_expired: isCommissionExpired(row) }));
+  return rows.map(row => ({ ...publicCommissionRow(row), is_expired: isCommissionExpired(row) }));
 }
 
 function withCarpoolExpiration(rows: Record<string, unknown>[]) {
@@ -5686,6 +5691,87 @@ app.get('/api/lc/me', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.get('/api/lc/follows', authMiddleware, async (req, res) => {
+  try {
+    const profileId = getReq(req, 'creatorId');
+    const [cityResult, storeResult] = await Promise.all([
+      supabase.from('lc_profile_city_follows').select('city, created_at').eq('profile_id', profileId).order('created_at', { ascending: true }),
+      supabase.from('lc_store_follows').select('store_dossier_id, created_at').eq('profile_id', profileId).order('created_at', { ascending: false }),
+    ]);
+    if (cityResult.error && !isMissingRelation(cityResult.error, 'lc_profile_city_follows')) throw cityResult.error;
+    if (storeResult.error && !isMissingRelation(storeResult.error, 'lc_store_follows')) throw storeResult.error;
+    const cities = cityResult.error ? [] : (cityResult.data || []).map(item => cleanText(item.city, 40)).filter(Boolean);
+    const storeIds = storeResult.error ? [] : (storeResult.data || []).map(item => item.store_dossier_id).filter(Boolean);
+    const dossierResult = storeIds.length > 0
+      ? await supabase.from('lc_dm_dossiers').select('id, dm_name, city, workplace, photo_url, status, entity_type').in('id', storeIds).eq('entity_type', 'store').eq('status', 'approved')
+      : { data: [], error: null };
+    if (dossierResult.error) throw dossierResult.error;
+    const dossierMap = new Map((dossierResult.data || []).map(item => [item.id, item]));
+    res.json(ok({
+      cities,
+      stores: storeIds.map(id => dossierMap.get(id)).filter(Boolean),
+      onboarding_required: cities.length === 0,
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/follows/cities', authMiddleware, async (req, res) => {
+  const client = await tencentPgPool.connect();
+  try {
+    const profileId = getReq(req, 'creatorId');
+    const cities = normalizeActivityCities(req.body?.cities).filter(city => DOSSIER_CITY_VALUES.has(city)).slice(0, 5);
+    if (cities.length === 0) return res.status(400).json(err(new Error('请至少关注一个城市')));
+    await client.query('BEGIN');
+    await client.query('DELETE FROM lc_profile_city_follows WHERE profile_id = $1', [profileId]);
+    await client.query(
+      `INSERT INTO lc_profile_city_follows (profile_id, city)
+       SELECT $1, city FROM unnest($2::text[]) AS city`,
+      [profileId, cities],
+    );
+    await client.query('COMMIT');
+    await logSecurityEvent(req, {
+      action: 'followed_cities_updated',
+      actorId: profileId,
+      targetType: 'profile_city_follows',
+      targetId: profileId,
+      metadata: { city_count: cities.length },
+    });
+    res.json(ok({ cities, onboarding_required: false }));
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    res.status(500).json(err(e));
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/api/lc/follows/stores/:id', authMiddleware, async (req, res) => {
+  try {
+    const profileId = getReq(req, 'creatorId');
+    const following = req.body?.following !== false;
+    const { data: store, error: storeErr } = await supabase.from('lc_dm_dossiers')
+      .select('id, dm_name, city, workplace, photo_url, status, entity_type')
+      .eq('id', req.params.id)
+      .eq('entity_type', 'store')
+      .eq('status', 'approved')
+      .maybeSingle();
+    if (storeErr) throw storeErr;
+    if (!store) return res.status(404).json(err(new Error('店家档案不存在')));
+    const result = following
+      ? await supabase.from('lc_store_follows').upsert({ profile_id: profileId, store_dossier_id: store.id }, { onConflict: 'profile_id,store_dossier_id' })
+      : await supabase.from('lc_store_follows').delete().eq('profile_id', profileId).eq('store_dossier_id', store.id);
+    if (result.error && isMissingRelation(result.error, 'lc_store_follows')) return res.status(503).json(err(new Error('关注店家数据表尚未初始化')));
+    if (result.error) throw result.error;
+    await logSecurityEvent(req, {
+      action: following ? 'store_followed' : 'store_unfollowed',
+      actorId: profileId,
+      targetType: 'store_dossier',
+      targetId: store.id,
+    });
+    res.json(ok({ following, store }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.get('/api/lc/referrals/resolve/:code', async (req, res) => {
   try {
     const owner = await findReferralOwner(req.params.code);
@@ -5803,6 +5889,7 @@ app.get('/api/lc/creators', async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
     const city = cleanText(req.query.city, 60);
+    const followedCities = normalizeActivityCities(req.query.cities).filter(item => DOSSIER_CITY_VALUES.has(item));
 
     const { data: serviceRows, error: serviceErr } = await supabase
       .from('lc_services')
@@ -5810,9 +5897,6 @@ app.get('/api/lc/creators', async (req, res) => {
       .eq('is_active', true);
     if (serviceErr) throw serviceErr;
 
-    const serviceCreatorIds = Array.from(new Set((serviceRows || [])
-      .map((row: { creator_id?: string | null }) => row.creator_id)
-      .filter((id): id is string => Boolean(id))));
     const serviceTypesByCreator = new Map<string, string[]>();
     const servicesByCreator = new Map<string, Record<string, unknown>[]>();
     for (const row of (serviceRows || []) as Array<Record<string, unknown>>) {
@@ -5834,27 +5918,27 @@ app.get('/api/lc/creators', async (req, res) => {
       servicesByCreator.set(creatorId, creatorServices);
     }
 
-    if (serviceCreatorIds.length === 0) {
-      return res.json(ok({
-        items: [],
-        total: 0,
-        page,
-        totalPages: 1,
-      }));
-    }
-
     const { data } = await supabase
       .from('lc_profiles')
       .select('*')
       .eq('is_visible', true)
-      .in('id', serviceCreatorIds)
       .order('created_at', { ascending: false })
       .limit(500);
 
     const visibleProfiles = (data || []).filter((profile: Record<string, unknown>) => {
-      if (!city) return true;
+      const requestedCities = city ? [city] : followedCities;
+      if (requestedCities.length === 0) return true;
       const availableCities = Array.isArray(profile.available_cities) ? profile.available_cities : [];
-      return profile.city === city || availableCities.includes(city);
+      return requestedCities.some(item => profile.city === item || availableCities.includes(item));
+    }).sort((left: Record<string, unknown>, right: Record<string, unknown>) => {
+      const score = (profile: Record<string, unknown>) =>
+        (cleanText(profile.avatar, 1000) ? 4 : 0)
+        + (cleanText(profile.bio, 1000) ? 3 : 0)
+        + (publicStringArray(profile.tags).length > 0 ? 2 : 0)
+        + ((servicesByCreator.get(String(profile.id)) || []).length > 0 ? 3 : 0);
+      const scoreDiff = score(right) - score(left);
+      if (scoreDiff !== 0) return scoreDiff;
+      return cleanText(right.created_at, 80).localeCompare(cleanText(left.created_at, 80));
     });
     const total = visibleProfiles.length;
     const offset = (page - 1) * limit;
@@ -5882,6 +5966,8 @@ app.get('/api/lc/creators/:id', async (req, res) => {
   try {
     const { data: profile } = await supabase.from('lc_profiles').select('*').eq('id', req.params.id).single();
     if (!profile) return res.status(404).json(err(new Error('创作者不存在')));
+    const viewerId = await getOptionalCreatorId(req);
+    if (!profile.is_visible && viewerId !== profile.id) return res.status(404).json(err(new Error('该主页暂未公开')));
     const profilePayload = sanitizeProfile(profile);
 
     const [{ data: services }, { data: portfolio }, { data: pendingCerts }, { data: pendingDmClaims }, rolePreferences] = await Promise.all([
@@ -6559,10 +6645,12 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
       title, content, desiredRole, targetType, neededDate,
       city, location, budget, contactNote, aiAssistContext,
     } = req.body;
+    const privateContact = cleanText(req.body?.privateContact ?? req.body?.private_contact, 300);
     const scriptIdInput = cleanText(req.body.scriptId, 80);
     let scriptName = cleanText(req.body.scriptName, 100);
     let scriptId: string | null = null;
     if (!title || !content) return res.status(400).json(err(new Error('请填写标题和需求内容')));
+    if (!privateContact) return res.status(400).json(err(new Error('请留下接受申请后用于联系的方式')));
 
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -6598,6 +6686,7 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
       location: location || null,
       budget: budget || null,
       contact_note: contactNote || null,
+      private_contact: privateContact,
       ai_assist_context: aiAssistContext || {},
       moderation_precheck: moderationPrecheck,
     }).select().single();
@@ -8034,7 +8123,7 @@ app.get('/api/lc/commissions/applications/received', authMiddleware, async (req,
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
 
     const { data: commissions, error: cErr } = await supabase.from('lc_commissions')
-      .select('id, title, city, needed_date')
+      .select('id, title, city, needed_date, private_contact')
       .eq('poster_id', profile.id);
     if (cErr) throw cErr;
     const ids = (commissions || []).map(item => item.id);
@@ -8047,7 +8136,19 @@ app.get('/api/lc/commissions/applications/received', authMiddleware, async (req,
       .order('created_at', { ascending: false });
     if (qErr && isMissingRelation(qErr, 'lc_commission_applications')) return res.json(ok([]));
     if (qErr) throw qErr;
-    res.json(ok((data || []).map(item => ({ ...item, commission: meta.get(item.commission_id) || null }))));
+    res.json(ok((data || []).map(item => {
+      const commission = meta.get(item.commission_id) as Record<string, unknown> | undefined;
+      const accepted = item.status === 'accepted';
+      const { private_contact: applicantContact, ...safeApplication } = item as Record<string, unknown>;
+      return {
+        ...safeApplication,
+        commission: commission ? publicCommissionRow(commission) : null,
+        contacts: accepted ? {
+          poster: cleanText(commission?.private_contact, 300),
+          applicant: cleanText(applicantContact, 300),
+        } : null,
+      };
+    })));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -8056,19 +8157,41 @@ app.get('/api/lc/commissions/applications/sent', authMiddleware, async (req, res
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const { data, error: qErr } = await supabase.from('lc_commission_applications')
-      .select('id, commission_id, status, created_at')
+      .select('*')
       .eq('applicant_id', profile.id)
       .order('created_at', { ascending: false });
     if (qErr && isMissingRelation(qErr, 'lc_commission_applications')) return res.json(ok([]));
     if (qErr) throw qErr;
-    res.json(ok(data || []));
+    const commissionIds = Array.from(new Set((data || []).map(item => item.commission_id).filter(Boolean)));
+    const commissionResult = commissionIds.length > 0
+      ? await supabase.from('lc_commissions').select('id, title, city, needed_date, private_contact').in('id', commissionIds)
+      : { data: [], error: null };
+    if (commissionResult.error) throw commissionResult.error;
+    const commissionMap = new Map((commissionResult.data || []).map(item => [item.id, item]));
+    res.json(ok((data || []).map(item => {
+      const commission = commissionMap.get(item.commission_id) as Record<string, unknown> | undefined;
+      const accepted = item.status === 'accepted';
+      const safeApplication = { ...(item as Record<string, unknown>) };
+      const applicantContact = safeApplication.private_contact;
+      delete safeApplication.private_contact;
+      return {
+        ...safeApplication,
+        commission: commission ? publicCommissionRow(commission) : null,
+        contacts: accepted ? {
+          poster: cleanText(commission?.private_contact, 300),
+          applicant: cleanText(applicantContact, 300),
+        } : null,
+      };
+    })));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res) => {
   try {
     const letter = typeof req.body?.letter === 'string' ? req.body.letter.trim().slice(0, 1200) : '';
+    const privateContact = cleanText(req.body?.privateContact ?? req.body?.private_contact, 300);
     if (!letter) return res.status(400).json(err(new Error('请填写申请信')));
+    if (!privateContact) return res.status(400).json(err(new Error('请留下申请通过后用于联系的方式')));
 
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -8090,14 +8213,106 @@ app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res
       applicant_name: profile.display_name,
       applicant_is_realname: !!profile.is_realname,
       letter,
+      private_contact: privateContact,
     }).select('id').single();
     if (insErr) {
       if (insErr.code === '23505') return res.status(409).json(err(new Error('你已经提交过接单申请了')));
       if (isMissingRelation(insErr, 'lc_commission_applications')) return res.status(503).json(err(new Error('接单申请数据表尚未初始化，请先执行 Supabase migration')));
       throw insErr;
     }
+    await logSecurityEvent(req, {
+      action: 'commission_application_submitted',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: 'commission_application',
+      targetId: String(data?.id || ''),
+      metadata: { commission_id: req.params.id },
+    });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/commissions/applications/:id/decision', authMiddleware, async (req, res) => {
+  try {
+    const decision = cleanText(req.body?.decision, 20);
+    if (decision !== 'accepted' && decision !== 'rejected') {
+      return res.status(400).json(err(new Error('请选择接受或拒绝申请')));
+    }
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const client = await tencentPgPool.connect();
+    let commissionId = '';
+    let posterContact = '';
+    let applicantContact = '';
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query<{
+        application_status: string;
+        application_contact: string | null;
+        commission_id: string;
+        poster_id: string;
+        poster_contact: string | null;
+      }>(
+        `SELECT a.status AS application_status,
+                a.private_contact AS application_contact,
+                c.id AS commission_id,
+                c.poster_id,
+                c.private_contact AS poster_contact
+           FROM lc_commission_applications a
+           JOIN lc_commissions c ON c.id = a.commission_id
+          WHERE a.id = $1
+          FOR UPDATE OF a, c`,
+        [req.params.id],
+      );
+      const row = locked.rows[0];
+      if (!row) throw Object.assign(new Error('接单申请不存在'), { statusCode: 404 });
+      if (row.poster_id !== profile.id) throw Object.assign(new Error('只能处理发给自己委托的申请'), { statusCode: 403 });
+      if (row.application_status !== 'submitted') throw Object.assign(new Error('这条申请已经处理过'), { statusCode: 409 });
+      commissionId = row.commission_id;
+      posterContact = cleanText(row.poster_contact, 300);
+      applicantContact = cleanText(row.application_contact, 300);
+      if (decision === 'accepted' && !posterContact) {
+        posterContact = cleanText(req.body?.privateContact ?? req.body?.private_contact, 300);
+        if (!posterContact) throw Object.assign(new Error('接受前请留下你的联系方式'), { statusCode: 400 });
+        await client.query('UPDATE lc_commissions SET private_contact = $1, updated_at = NOW() WHERE id = $2 AND poster_id = $3', [posterContact, commissionId, profile.id]);
+      }
+      if (decision === 'accepted' && !applicantContact) throw Object.assign(new Error('申请人尚未留下联系方式，请对方补充后再接受'), { statusCode: 409 });
+      await client.query(
+        `UPDATE lc_commission_applications
+            SET status = $1,
+                decided_at = NOW(),
+                decided_by = $2,
+                contact_unlocked_at = CASE WHEN $1 = 'accepted' THEN NOW() ELSE NULL END,
+                updated_at = NOW()
+          WHERE id = $3 AND status = 'submitted'`,
+        [decision, profile.id, req.params.id],
+      );
+      await client.query('COMMIT');
+    } catch (decisionError) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw decisionError;
+    } finally {
+      client.release();
+    }
+    await logSecurityEvent(req, {
+      action: decision === 'accepted' ? 'commission_application_accepted' : 'commission_application_rejected',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: 'commission_application',
+      targetId: req.params.id,
+      metadata: { commission_id: commissionId },
+    });
+    res.json(ok({
+      id: req.params.id,
+      status: decision,
+      contacts: decision === 'accepted' ? { poster: posterContact, applicant: applicantContact } : null,
+    }));
+  } catch (e) {
+    const statusCode = e && typeof e === 'object' && 'statusCode' in e && Number.isInteger(Number((e as { statusCode?: unknown }).statusCode))
+      ? Number((e as { statusCode: number }).statusCode)
+      : 500;
+    res.status(statusCode).json(err(e));
+  }
 });
 
 app.delete('/api/lc/commissions/:id', authMiddleware, async (req, res) => {
@@ -8690,7 +8905,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       rankingEditRequests: rankingEditRequestsResult.error ? [] : (rankingEditRequestsResult.data || []),
       comments: comments || [],
       claims: claims || [],
-      commissions: commissions || [],
+      commissions: (commissions || []).map((item: Record<string, unknown>) => publicCommissionRow(item)),
       transactions: transactions || [],
       certifications: certifications || [],
       carpools: carpools || [],
@@ -8722,6 +8937,32 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       guides: guidesResult.error ? [] : (guidesResult.data || []),
       guideWithdrawals: withdrawalsResult.error ? [] : (withdrawalsResult.data || []),
     }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/admin/commission-applications', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit as string) || 200));
+    const { data: applications, error: applicationErr } = await supabase.from('lc_commission_applications')
+      .select('id, commission_id, applicant_id, applicant_name, applicant_is_realname, letter, status, decided_at, contact_unlocked_at, created_at, updated_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (applicationErr && isMissingRelation(applicationErr, 'lc_commission_applications')) return res.json(ok([]));
+    if (applicationErr) throw applicationErr;
+    const commissionIds = Array.from(new Set((applications || []).map(item => item.commission_id).filter(Boolean)));
+    const commissionResult = commissionIds.length > 0
+      ? await supabase.from('lc_commissions').select('id, poster_id, poster_name, title, city, needed_date, status').in('id', commissionIds)
+      : { data: [], error: null };
+    if (commissionResult.error) throw commissionResult.error;
+    const commissionMap = new Map((commissionResult.data || []).map(item => [item.id, item]));
+    await logSecurityEvent(req, {
+      action: 'admin_commission_applications_viewed',
+      actorId: getReq(req, 'creatorId'),
+      actorRole: getReq(req, 'role') || 'admin',
+      targetType: 'commission_application',
+      metadata: { returned_count: (applications || []).length },
+    });
+    res.json(ok((applications || []).map(item => ({ ...item, commission: commissionMap.get(item.commission_id) || null }))));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -10077,8 +10318,13 @@ async function resolveRankingSubjectDossier(input: {
     employer_store_id: null,
     workplace: workplace || null,
   };
-  if (input.subjectType === 'dm') employment = await resolveDmEmployment(source, workplace);
-  if (input.subjectType === 'store' && !workplace) throw new Error('请填写店家地址、商圈或常驻位置');
+  if (input.subjectType === 'dm') {
+    const requestedStatus = cleanText(source.employmentStatus ?? source.employment_status, 40);
+    const requestedEmployer = cleanText(source.employerStoreId ?? source.employer_store_id, 80);
+    employment = !workplace && !requestedEmployer
+      ? { employment_status: requestedStatus === 'freelance' ? 'freelance' : 'unknown', employer_store_id: null, workplace: null }
+      : await resolveDmEmployment(source, workplace);
+  }
   const moderationPrecheck = runLocalModerationPrecheck({
     scene: input.subjectType === 'dm' ? 'dm_dossier_submit_with_ranking' : 'store_dossier_submit_with_ranking',
     targetType: 'dm_dossier',
@@ -14459,6 +14705,71 @@ app.post('/api/lc/admin/rankings/:id/legacy-evidence/:index/adopt', authMiddlewa
     if (!committed && savedFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedFiles);
     res.status(500).json(err(e));
   }
+});
+
+app.put('/api/lc/admin/rankings/batch-approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const ids = Array.from(new Set((Array.isArray(req.body?.ids) ? req.body.ids : [])
+      .map((item: unknown) => cleanText(item, 80))
+      .filter(Boolean)))
+      .slice(0, 50);
+    if (ids.length === 0) return res.status(400).json(err(new Error('请选择要批量通过的帖子')));
+    const result = await supabase.from('lc_rankings').select('*').in('id', ids).eq('status', 'pending');
+    if (result.error) throw result.error;
+    const approvedIds: string[] = [];
+    const skipped: Array<{ id: string; reason: string }> = [];
+    for (const row of (result.data || []) as Record<string, unknown>[]) {
+      const rowId = cleanText(row.id, 80);
+      const precheck = objectPayload(row.moderation_precheck);
+      if (precheck.decision !== 'pass') {
+        skipped.push({ id: rowId, reason: '本地预审不是直接通过' });
+        continue;
+      }
+      if (row.dm_employment_status_suggestion) {
+        skipped.push({ id: rowId, reason: '包含DM任职关系修改' });
+        continue;
+      }
+      try {
+        if (['dm', 'store'].includes(cleanText(row.subject_type, 40))) {
+          if (!row.subject_dossier_id) throw new Error('尚未关联公开档案');
+          await findRankingDossier(row.subject_dossier_id, row.subject_type as 'dm' | 'store');
+        }
+        const nextType = cleanText(row.type, 20);
+        const now = new Date().toISOString();
+        const patch: Record<string, unknown> = {
+          status: 'approved',
+          reject_reason: null,
+          evidence_required: false,
+          revision_kind: null,
+          revision_requested_at: null,
+          boost_amount: nextType === 'red' ? Number(row.initial_amount || 0) : 0,
+          negative_boost_amount: 0,
+          agree_count: 0,
+          oppose_count: 0,
+          likes: nextType === 'red' ? Number(row.initial_amount || 0) : 0,
+          dislikes: 0,
+          joys: 0,
+          last_activity_at: now,
+        };
+        if (nextType === 'black') patch.expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const updateResult = await supabase.from('lc_rankings').update(patch).eq('id', rowId).eq('status', 'pending').select('*').single();
+        if (updateResult.error) throw updateResult.error;
+        await ensureInitialRankingVersion(updateResult.data as Record<string, unknown>, getReq(req, 'creatorId'));
+        const audit = await auditApprovedTarget('ranking', updateResult.data, 'ranking_batch_approved', getReq(req, 'creatorId'));
+        await runReferralSideEffect('stage2-after-ranking-approved', () => maybeAwardReferralStage2(updateResult.data?.poster_id, 'ranking_approved'));
+        await logSecurityEvent(req, {
+          action: 'admin_ranking_batch_approved',
+          targetType: 'ranking',
+          targetId: rowId,
+          metadata: { audit_entry_hash: audit?.entry_hash || null },
+        });
+        approvedIds.push(rowId);
+      } catch (approvalError) {
+        skipped.push({ id: rowId, reason: getErrorText(approvalError) || '批量通过失败' });
+      }
+    }
+    res.json(ok({ approved_ids: approvedIds, skipped }));
+  } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {

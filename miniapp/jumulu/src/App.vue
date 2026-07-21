@@ -1,10 +1,26 @@
 <script setup lang="ts">
-import { onLaunch } from '@dcloudio/uni-app'
+import { onLaunch, onShow } from '@dcloudio/uni-app'
 import { refreshCurrentUser } from './utils/auth'
+import { apiRequest, readAuth } from './utils/api'
+
+let checkingFollows = false
+async function ensureCityFollows() {
+  if (checkingFollows || !readAuth()?.token) return
+  const current = getCurrentPages().at(-1)?.route || ''
+  if (current === 'pages/follows/index') return
+  checkingFollows = true
+  try {
+    const data = await apiRequest<{ onboarding_required?: boolean }>('/lc/follows')
+    if (data.onboarding_required) uni.navigateTo({ url: '/pages/follows/index' })
+  } catch { /* 页面内会给出可重试反馈 */ }
+  finally { checkingFollows = false }
+}
 
 onLaunch(() => {
-  void refreshCurrentUser({ silent: true })
+  void refreshCurrentUser({ silent: true }).then(() => ensureCityFollows())
+  uni.$on('jumulu:auth-changed', () => setTimeout(() => void ensureCityFollows(), 250))
 })
+onShow(() => void ensureCityFollows())
 </script>
 
 <style>

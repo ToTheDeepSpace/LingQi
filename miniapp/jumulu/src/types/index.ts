@@ -154,6 +154,61 @@ export type Carpool = {
   is_expired?: boolean
 }
 
+export type CarpoolApplication = {
+  id: string
+  carpool_id: string
+  applicant_id?: string
+  applicant_name?: string
+  role_name?: string | null
+  message?: string
+  status: 'submitted' | 'accepted' | 'rejected'
+  created_at?: string
+  carpool?: Pick<Carpool, 'id' | 'title' | 'city' | 'event_date'> | null
+}
+
+export type Commission = {
+  id: string
+  poster_id?: string
+  poster_name?: string
+  title: string
+  content: string
+  script_name?: string | null
+  desired_role?: string | null
+  target_type?: string | null
+  needed_date?: string | null
+  city?: string | null
+  location?: string | null
+  budget?: string | null
+  contact_note?: string | null
+  has_private_contact?: boolean
+  status?: string
+  reject_reason?: string | null
+  is_expired?: boolean
+  created_at?: string
+}
+
+export type CommissionApplication = {
+  id: string
+  commission_id: string
+  applicant_id?: string
+  applicant_name?: string
+  applicant_is_realname?: boolean
+  letter?: string
+  status: 'submitted' | 'accepted' | 'rejected'
+  contacts?: { poster: string; applicant: string } | null
+  created_at?: string
+  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'has_private_contact'> | null
+}
+
+export type PublicProfile = {
+  id: string
+  display_name: string
+  avatar?: string | null
+  city?: string | null
+  bio?: string | null
+  tags?: string[]
+}
+
 export type ScriptRole = { target_id?: string; role_name: string; gender?: string; tags?: string[]; rating_avg?: number | null; rating_count?: number; role_kind?: string; role_source?: string }
 export type Script = { id: string; name: string; city?: string | null; player_roles?: ScriptRole[]; actor_roles?: ScriptRole[] }
 

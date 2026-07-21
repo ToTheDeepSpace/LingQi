@@ -40,6 +40,7 @@ const TARGET_LABEL: Record<string, string> = {
 
 type CommissionApplicationDraft = {
   letter: string;
+  privateContact: string;
 };
 
 function getAuth(): AuthData | null {
@@ -54,30 +55,44 @@ export default function Commissions() {
   const [myItems, setMyItems] = useState<Commission[]>([]);
   const [scripts, setScripts] = useState<ScriptCatalogItem[]>([]);
   const [receivedApplications, setReceivedApplications] = useState<CommissionApplication[]>([]);
-  const [sentApplications, setSentApplications] = useState<{ id: string; commission_id: string; status: string; created_at: string }[]>([]);
+  const [sentApplications, setSentApplications] = useState<CommissionApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [city, setCity] = useState('all');
+  const [city, setCity] = useState(() => {
+    try { return localStorage.getItem('lc:commissions:last-city') || 'all'; } catch { return 'all'; }
+  });
   const [targetType, setTargetType] = useState('all');
   const [scriptId, setScriptId] = useState('all');
   const [view, setView] = useState<'active' | 'expired'>('active');
   const [cityOpen, setCityOpen] = useState(false);
   const [applicationModal, setApplicationModal] = useState<Commission | null>(null);
   const [applicationLetter, setApplicationLetter] = useState('');
+  const [applicationContact, setApplicationContact] = useState('');
   const [applicationError, setApplicationError] = useState('');
   const [applicationDone, setApplicationDone] = useState(false);
   const [submittingApplication, setSubmittingApplication] = useState(false);
+  const [decisionBusy, setDecisionBusy] = useState('');
+  const [decisionContacts, setDecisionContacts] = useState<Record<string, string>>({});
+  const [decisionErrors, setDecisionErrors] = useState<Record<string, string>>({});
   const [reportTarget, setReportTarget] = useState<Commission | null>(null);
   const submitted = searchParams.get('submitted') === '1';
+  const selectCity = (value: string) => {
+    setCity(value);
+    try { localStorage.setItem('lc:commissions:last-city', value); } catch { /* optional */ }
+    setCityOpen(false);
+  };
   const applicationDraftKey = applicationModal ? `lc:draft:commission-application:${applicationModal.id}` : 'lc:draft:commission-application:none';
-  const applicationDraftValue = useMemo<CommissionApplicationDraft>(() => ({ letter: applicationLetter }), [applicationLetter]);
+  const applicationDraftValue = useMemo<CommissionApplicationDraft>(() => ({ letter: applicationLetter, privateContact: applicationContact }), [applicationContact, applicationLetter]);
   const applicationDraft = useDraftAutosave<CommissionApplicationDraft>({
     key: applicationDraftKey,
     version: 1,
     enabled: !!applicationModal && !applicationDone,
     value: applicationDraftValue,
-    shouldSave: data => !!data.letter.trim(),
-    onRestore: data => setApplicationLetter(data.letter || ''),
+    shouldSave: data => !!data.letter.trim() || !!data.privateContact.trim(),
+    onRestore: data => {
+      setApplicationLetter(data.letter || '');
+      setApplicationContact(data.privateContact || '');
+    },
   });
 
   useEffect(() => {
@@ -158,6 +173,16 @@ export default function Commissions() {
     return () => { alive = false; };
   }, []);
 
+  useEffect(() => {
+    const auth = getAuth();
+    if (!auth) return;
+    try { if (localStorage.getItem('lc:commissions:last-city') !== null) return; } catch { /* optional */ }
+    fetch(`${API}/lc/follows`, { headers: { Authorization: `Bearer ${auth.token}` } })
+      .then(response => response.json())
+      .then(payload => { if (payload.success && payload.data?.cities?.[0]) setCity(payload.data.cities[0]); })
+      .catch(() => undefined);
+  }, []);
+
   const privateItems = myItems.filter(item => item.status !== 'approved');
   const sentApplicationIds = useMemo(() => new Set(sentApplications.map(item => item.commission_id)), [sentApplications]);
   const activeItems = useMemo(() => items.filter(item => !item.is_expired), [items]);
@@ -173,6 +198,7 @@ export default function Commissions() {
     }
     setApplicationModal(item);
     setApplicationLetter('');
+    setApplicationContact('');
     setApplicationError('');
     setApplicationDone(false);
   };
@@ -189,6 +215,7 @@ export default function Commissions() {
   const closeApplicationModal = () => {
     setApplicationModal(null);
     setApplicationLetter('');
+    setApplicationContact('');
     setApplicationError('');
     setApplicationDone(false);
     setSubmittingApplication(false);
@@ -202,18 +229,38 @@ export default function Commissions() {
       setApplicationError('请先写一段申请信');
       return;
     }
+    if (!applicationContact.trim()) {
+      setApplicationError('请留下申请通过后用于联系的方式');
+      return;
+    }
     setSubmittingApplication(true);
     setApplicationError('');
     try {
       const r = await fetch(`${API}/lc/commissions/${applicationModal.id}/applications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-        body: JSON.stringify({ letter: applicationLetter.trim() }),
+        body: JSON.stringify({ letter: applicationLetter.trim(), privateContact: applicationContact.trim() }),
       });
       const d = await r.json();
       if (d.success) {
         applicationDraft.clearDraft();
-        setSentApplications(prev => [{ id: d.data.id, commission_id: applicationModal.id, status: 'submitted', created_at: new Date().toISOString() }, ...prev]);
+        setSentApplications(prev => [{
+          id: d.data.id,
+          commission_id: applicationModal.id,
+          applicant_id: auth.id,
+          applicant_name: auth.display_name,
+          applicant_is_realname: false,
+          letter: applicationLetter.trim(),
+          status: 'submitted',
+          created_at: new Date().toISOString(),
+          commission: {
+            id: applicationModal.id,
+            title: applicationModal.title,
+            city: applicationModal.city,
+            needed_date: applicationModal.needed_date,
+            has_private_contact: applicationModal.has_private_contact,
+          },
+        }, ...prev]);
         setApplicationDone(true);
       } else {
         setApplicationError(d.error || '提交失败');
@@ -222,6 +269,38 @@ export default function Commissions() {
       setApplicationError('网络错误，请重试');
     } finally {
       setSubmittingApplication(false);
+    }
+  };
+
+  const decideApplication = async (application: CommissionApplication, decision: 'accepted' | 'rejected') => {
+    const auth = getAuth();
+    if (!auth) return navigate('/login');
+    const contact = decisionContacts[application.id]?.trim() || '';
+    if (decision === 'accepted' && !application.commission?.has_private_contact && !contact) {
+      setDecisionErrors(current => ({ ...current, [application.id]: '接受前请留下你的联系方式' }));
+      return;
+    }
+    setDecisionBusy(application.id);
+    setDecisionErrors(current => ({ ...current, [application.id]: '' }));
+    try {
+      const response = await fetch(`${API}/lc/commissions/applications/${application.id}/decision`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, privateContact: contact || undefined }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '处理失败');
+      setReceivedApplications(current => current.map(item => item.id === application.id ? {
+        ...item,
+        status: decision,
+        decided_at: new Date().toISOString(),
+        contacts: payload.data?.contacts || null,
+        commission: item.commission ? { ...item.commission, has_private_contact: decision === 'accepted' ? true : item.commission.has_private_contact } : item.commission,
+      } : item));
+    } catch (decisionError) {
+      setDecisionErrors(current => ({ ...current, [application.id]: decisionError instanceof Error ? decisionError.message : '处理失败' }));
+    } finally {
+      setDecisionBusy('');
     }
   };
 
@@ -287,7 +366,7 @@ export default function Commissions() {
             <div style={{ marginBottom: 14 }}>
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 900, marginBottom: 6 }}>收到的接单申请</h2>
               <p style={{ color: MUTED, fontSize: '0.86rem', lineHeight: 1.7 }}>
-                这些是别人对你已发布委托需求写来的申请信，先在这里看，后面再接正式沟通流。
+                申请信直接送达，不经过内容审核。接受后双方立即互相显示各自留下的联系方式。
               </p>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
@@ -301,6 +380,47 @@ export default function Commissions() {
                     {app.applicant_is_realname ? '⭐ ' : ''}{app.applicant_name}
                   </h3>
                   <p style={{ color: MUTED, lineHeight: 1.7, fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{app.letter}</p>
+                  {app.status === 'submitted' && !app.commission?.has_private_contact && (
+                    <input
+                      value={decisionContacts[app.id] || ''}
+                      onChange={event => setDecisionContacts(current => ({ ...current, [app.id]: event.target.value }))}
+                      placeholder="接受后向对方显示的微信号、手机号或其他联系方式"
+                      style={{ ...inputStyle, marginTop: 12 }}
+                    />
+                  )}
+                  {app.contacts && (
+                    <ContactExchange contacts={app.contacts} ownSide="poster" ownLabel="我的联系方式" otherLabel="对方联系方式" />
+                  )}
+                  {decisionErrors[app.id] && <p style={{ margin: '9px 0 0', color: '#b42318', fontSize: 12 }}>{decisionErrors[app.id]}</p>}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    {app.status === 'submitted' ? (
+                      <>
+                        <button type="button" disabled={decisionBusy === app.id} onClick={() => decideApplication(app, 'accepted')} style={decisionButtonStyle('accepted')}>{decisionBusy === app.id ? '处理中...' : '接受申请'}</button>
+                        <button type="button" disabled={decisionBusy === app.id} onClick={() => decideApplication(app, 'rejected')} style={decisionButtonStyle('rejected')}>不合适</button>
+                      </>
+                    ) : <ApplicationStatus status={app.status} />}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {sentApplications.length > 0 && (
+          <section style={{ ...jumuluCardStyle, padding: 16 }}>
+            <div style={{ marginBottom: 14 }}>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 900, marginBottom: 6 }}>我的接单申请</h2>
+              <p style={{ color: MUTED, fontSize: '0.86rem', lineHeight: 1.7 }}>委托人接受后，这里会立即显示双方联系方式。</p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+              {sentApplications.map(app => (
+                <article key={app.id} style={{ borderRadius: 8, border: '1px solid rgba(31,41,55,0.1)', background: '#fff', padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                    <strong style={{ color: INK }}>{app.commission?.title || '委托需求'}</strong>
+                    <ApplicationStatus status={app.status} />
+                  </div>
+                  <p style={{ margin: '8px 0 0', color: MUTED, fontSize: 12 }}>{[app.commission?.city, app.commission?.needed_date].filter(Boolean).join(' · ') || '时间地点待商量'}</p>
+                  {app.contacts && <ContactExchange contacts={app.contacts} ownSide="applicant" ownLabel="我的联系方式" otherLabel="委托人联系方式" />}
                 </article>
               ))}
             </div>
@@ -337,10 +457,10 @@ export default function Commissions() {
             </button>
             {cityOpen && (
               <div style={{ position: 'absolute', right: 0, top: '115%', zIndex: 20, width: 280, maxHeight: 320, overflow: 'auto', padding: 8, borderRadius: 14, background: '#fffdf8', border: '1px solid rgba(217,168,87,0.28)', boxShadow: '0 16px 44px rgba(31,41,55,0.16)' }}>
-                <button onClick={() => { setCity('all'); setCityOpen(false); }} style={cityButton(city === 'all')}>全部城市</button>
+                <button onClick={() => selectCity('all')} style={cityButton(city === 'all')}>全部城市</button>
                 <div style={{ height: 1, background: 'rgba(217,168,87,0.18)', margin: '6px 0' }} />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                  {CITIES.map(c => <button key={c} onClick={() => { setCity(c); setCityOpen(false); }} style={cityButton(city === c)}>{c}</button>)}
+                  {CITIES.map(c => <button key={c} onClick={() => selectCity(c)} style={cityButton(city === c)}>{c}</button>)}
                 </div>
               </div>
             )}
@@ -405,7 +525,7 @@ export default function Commissions() {
                 <div style={{ fontSize: 42, marginBottom: 12 }}>✅</div>
                 <h3 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.25rem', marginBottom: 8 }}>接单申请已提交</h3>
                 <p style={{ color: MUTED, lineHeight: 1.8, marginBottom: 20 }}>
-                  你的申请信已经送到这条委托需求下面。当前版本先用于原型跑通，后面再补正式私信/通知。
+                  申请信已经直接送达委托人。对方接受后，双方联系方式会立即在“我的接单申请”中显示。
                 </p>
                 <button onClick={closeApplicationModal} className="btn-gold" style={{ padding: '10px 24px' }}>关闭</button>
               </div>
@@ -428,13 +548,21 @@ export default function Commissions() {
                   rows={6}
                   placeholder="例：我可以接这个角色，6月初在上海/杭州都方便。我的风格更偏沉浸陪伴，可以先沟通角色设定和边界..."
                   style={{ width: '100%', boxSizing: 'border-box', borderRadius: 12, border: '1px solid rgba(217,168,87,0.28)', background: '#fff', color: INK, padding: '12px 14px', resize: 'none', outline: 'none', lineHeight: 1.7 }} />
+                <input
+                  value={applicationContact}
+                  onChange={event => setApplicationContact(event.target.value)}
+                  maxLength={300}
+                  placeholder="对方接受后显示的微信号、手机号或其他联系方式"
+                  style={{ ...inputStyle, marginTop: 12 }}
+                />
+                <p style={{ margin: '7px 0 0', color: MUTED, fontSize: 12, lineHeight: 1.6 }}>申请阶段不会向委托人显示，只有被接受后双方才会互相看到。</p>
                 {applicationError && <p style={{ color: '#b91c1c', fontSize: '0.82rem', marginTop: 10 }}>{applicationError}</p>}
                 <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
                   <button onClick={closeApplicationModal}
                     style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.28)', background: 'transparent', color: MUTED, cursor: 'pointer', fontWeight: 700 }}>取消</button>
-                  <button onClick={submitApplication} disabled={!applicationLetter.trim() || submittingApplication}
+                  <button onClick={submitApplication} disabled={!applicationLetter.trim() || !applicationContact.trim() || submittingApplication}
                     className="btn-gold"
-                    style={{ flex: 2, padding: '11px', opacity: !applicationLetter.trim() || submittingApplication ? 0.55 : 1, cursor: !applicationLetter.trim() || submittingApplication ? 'not-allowed' : 'pointer' }}>
+                    style={{ flex: 2, padding: '11px', opacity: !applicationLetter.trim() || !applicationContact.trim() || submittingApplication ? 0.55 : 1, cursor: !applicationLetter.trim() || !applicationContact.trim() || submittingApplication ? 'not-allowed' : 'pointer' }}>
                     {submittingApplication ? '提交中...' : '提交申请信'}
                   </button>
                 </div>
@@ -556,6 +684,46 @@ function ViewButton({ active, onClick, children }: { active: boolean; onClick: (
 
 function StateText({ text, danger }: { text: string; danger?: boolean }) {
   return <div style={{ textAlign: 'center', padding: '90px 0', color: danger ? '#b91c1c' : 'rgba(71,85,105,0.68)' }}>{text}</div>;
+}
+
+function ApplicationStatus({ status }: { status: CommissionApplication['status'] }) {
+  const meta = status === 'accepted'
+    ? { label: '已接受', color: '#166534', background: '#f0fdf4', border: 'rgba(22,101,52,0.2)' }
+    : status === 'rejected'
+      ? { label: '不合适', color: '#b42318', background: '#fff6f5', border: 'rgba(180,35,24,0.18)' }
+      : { label: '等待处理', color: '#925f18', background: '#fff8e8', border: 'rgba(146,95,24,0.2)' };
+  return <span style={{ width: 'fit-content', padding: '4px 8px', borderRadius: 7, border: `1px solid ${meta.border}`, background: meta.background, color: meta.color, fontSize: 11, fontWeight: 900 }}>{meta.label}</span>;
+}
+
+function ContactExchange({ contacts, ownSide, ownLabel, otherLabel }: { contacts: { poster: string; applicant: string }; ownSide: 'poster' | 'applicant'; ownLabel: string; otherLabel: string }) {
+  const rows = ownSide === 'poster'
+    ? [{ label: ownLabel, value: contacts.poster }, { label: otherLabel, value: contacts.applicant }]
+    : [{ label: ownLabel, value: contacts.applicant }, { label: otherLabel, value: contacts.poster }];
+  return (
+    <div style={{ display: 'grid', gap: 7, marginTop: 12, padding: 10, borderRadius: 7, border: '1px solid rgba(22,101,52,0.18)', background: '#f0fdf4' }}>
+      {rows.map(row => (
+        <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <span style={{ color: '#475569', fontSize: 12 }}>{row.label}</span>
+          <button type="button" onClick={() => navigator.clipboard?.writeText(row.value)} style={{ border: 0, background: 'transparent', color: '#166534', cursor: 'pointer', fontWeight: 900, overflowWrap: 'anywhere', textAlign: 'right' }}>{row.value || '未填写'}</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function decisionButtonStyle(decision: 'accepted' | 'rejected'): React.CSSProperties {
+  const accepted = decision === 'accepted';
+  return {
+    flex: accepted ? 1.4 : 1,
+    minHeight: 38,
+    padding: '8px 11px',
+    borderRadius: 7,
+    border: accepted ? '1px solid rgba(22,101,52,0.22)' : '1px solid rgba(180,35,24,0.18)',
+    background: accepted ? '#f0fdf4' : '#fff6f5',
+    color: accepted ? '#166534' : '#b42318',
+    cursor: 'pointer',
+    fontWeight: 900,
+  };
 }
 
 function cityButton(active: boolean): React.CSSProperties {

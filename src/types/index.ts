@@ -164,6 +164,7 @@ export interface Commission {
   location: string | null;
   budget: string | null;
   contact_note: string | null;
+  has_private_contact?: boolean;
   ai_assist_context?: Record<string, unknown>;
   status: 'pending' | 'approved' | 'rejected' | 'closed';
   reject_reason: string | null;
@@ -179,8 +180,11 @@ export interface CommissionApplication {
   applicant_is_realname: boolean;
   letter: string;
   status: 'submitted' | 'accepted' | 'rejected';
+  decided_at?: string | null;
+  contact_unlocked_at?: string | null;
+  contacts?: { poster: string; applicant: string } | null;
   created_at: string;
-  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date'> | null;
+  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'has_private_contact'> | null;
 }
 
 export interface Carpool {

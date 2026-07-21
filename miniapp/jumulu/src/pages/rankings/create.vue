@@ -25,6 +25,7 @@ const createInitialName = ref('')
 const eventDate = ref('')
 const eventScriptId = ref('')
 const eventStoreId = ref('')
+const eventLocation = ref('')
 const content = ref('')
 const displayFiles = ref<RankingFile[]>([])
 const rulesAccepted = ref(false)
@@ -126,8 +127,7 @@ async function submit() {
     const name = isDossierSubject.value ? (selectedSubject.value?.dm_name || newSubject.value?.name || '') : subjectNameInput.value.trim()
     const city = selectedSubject.value?.city || newSubject.value?.city || subjectCity.value
     if (!name) throw new Error(isDossierSubject.value ? `请选择或新建${subjectType.value === 'dm' ? ' DM' : '店家'}档案` : '请填写对象名称')
-    if (!city) throw new Error('请选择所在城市')
-    if (content.value.trim().length < 12) throw new Error('请至少写 12 个字说明具体事件或体验')
+    if (!content.value.trim()) throw new Error('请填写具体事件或体验')
     if (!rulesAccepted.value) throw new Error('请先确认发布规则')
     submitting.value = true
     await checkMiniContent(`${name} ${city} ${selectedScript.value?.name || ''} ${selectedEventStore.value?.dm_name || ''} ${content.value}`, 'ranking_submit')
@@ -149,7 +149,7 @@ async function submit() {
         eventScriptId: selectedScript.value?.id || null,
         eventScriptName: selectedScript.value?.name || null,
         eventStoreDossierId: selectedEventStore.value?.id || null,
-        eventStoreName: selectedEventStore.value?.dm_name || null,
+        eventStoreName: selectedEventStore.value?.dm_name || eventLocation.value.trim() || null,
         content: content.value.trim(),
         initialAmount: 0,
         displayFiles: displayFiles.value,
@@ -200,8 +200,8 @@ onLoad(options => {
         <input v-model="subjectNameInput" class="input" maxlength="80" placeholder="填写公开称呼" />
       </template>
 
-      <text class="field-label">所在城市 *</text>
-      <CitySearchPicker :value="subjectCity || '请选择城市'" :allow-all="false" @change="subjectCity = $event" />
+      <text class="field-label">所在城市（选填）</text>
+      <CitySearchPicker :value="subjectCity || '补充城市'" :allow-all="false" @change="subjectCity = $event" />
 
       <text class="section-label">本次事件（选填）</text>
       <view class="two-columns">
@@ -210,9 +210,10 @@ onLoad(options => {
       </view>
       <text class="field-label">发生店家（选填）</text>
       <DossierSearchPicker kind="store" :items="stores" :value="eventStoreId" :allow-create="false" placeholder="搜索并选择店家" @select="eventStoreId = $event" />
+      <input v-if="!eventStoreId" v-model="eventLocation" class="input location-input" maxlength="100" placeholder="或填写其他场地（选填）" />
 
       <text class="field-label">具体内容 *</text>
-      <textarea v-model="content" class="textarea" maxlength="2400" placeholder="至少 12 个字，写清时间、对象、过程和真实体验。" />
+      <textarea v-model="content" class="textarea" maxlength="2400" placeholder="写下具体事件或真实体验；时间、地点可以之后再补。" />
 
       <view class="image-title"><text class="field-label">公开配图（选填，最多 6 张）</text><text>{{ displayFiles.length }}/6</text></view>
       <view v-if="displayFiles.length" class="image-grid">
@@ -250,6 +251,7 @@ onLoad(options => {
 .section-label { display: block; margin-top: 30rpx; padding-top: 22rpx; border-top: 1rpx solid #eadfce; color: #27364a; font-size: 27rpx; font-weight: 850; }
 .two-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; }
 .compact-label { margin-top: 14rpx; }
+.location-input { margin-top: 10rpx; }
 .image-title { display: flex; align-items: flex-end; justify-content: space-between; color: #7b8492; font-size: 22rpx; }
 .image-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10rpx; }
 .image-item { position: relative; aspect-ratio: 1; }

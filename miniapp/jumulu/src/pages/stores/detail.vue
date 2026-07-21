@@ -4,7 +4,7 @@ import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { DossierRating, RatingSummary, Ranking } from '../../types'
-import { apiRequest, encoded } from '../../utils/api'
+import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText, ratingText } from '../../utils/format'
 
 type StoreDetail = {
@@ -17,10 +17,17 @@ const id = ref('')
 const data = ref<StoreDetail | null>(null)
 const loading = ref(false)
 const error = ref('')
+const following = ref(false)
 async function load() {
   if (!id.value) return
   loading.value = true; error.value = ''
-  try { data.value = await apiRequest<StoreDetail>(`/lc/store-dossiers/${encoded(id.value)}`) }
+  try {
+    data.value = await apiRequest<StoreDetail>(`/lc/store-dossiers/${encoded(id.value)}`)
+    if (readAuth()?.token) {
+      const follows = await apiRequest<{ stores: Array<{ id: string }> }>('/lc/follows')
+      following.value = (follows.stores || []).some(item => item.id === id.value)
+    }
+  }
   catch (err) { error.value = err instanceof Error ? err.message : '店家档案加载失败' }
   finally { loading.value = false; uni.stopPullDownRefresh() }
 }
@@ -33,6 +40,14 @@ function createRanking() {
   uni.navigateTo({ url: `/pages/rankings/create?subjectType=store&subjectDossierId=${encoded(dossier.id)}&subjectName=${encoded(dossier.name)}&subjectCity=${encoded(dossier.city)}` })
 }
 function openProfile(profileId?: string | null) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
+async function toggleFollow() {
+  try {
+    await requireLogin()
+    const result = await apiRequest<{ following: boolean }>(`/lc/follows/stores/${encoded(id.value)}`, { method: 'PUT', data: { following: !following.value } })
+    following.value = result.following
+    uni.showToast({ title: following.value ? '已关注' : '已取消', icon: 'success' })
+  } catch (err) { if ((err as Error).message !== '请先登录') uni.showToast({ title: (err as Error).message, icon: 'none' }) }
+}
 onLoad(options => { id.value = String(options?.id || ''); void load() })
 onPullDownRefresh(load)
 onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧幕录档案`, path: `/pages/stores/detail?id=${encoded(id.value)}` }))
@@ -47,7 +62,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
         <image v-if="data.dossier.photo_url" class="hero__image" :src="data.dossier.photo_url" mode="aspectFill" @tap="previewPhoto" />
         <view v-else class="hero__avatar">{{ data.dossier.name.slice(0, 1) }}</view>
         <view class="hero__body">
-          <text class="hero__name">{{ data.dossier.name }}</text>
+          <view class="name-row"><text class="hero__name">{{ data.dossier.name }}</text><button class="follow-button" @tap="toggleFollow">{{ following ? '已关注' : '关注' }}</button></view>
           <text class="hero__meta">{{ data.dossier.city || '城市待补充' }}<template v-if="data.dossier.address"> · {{ data.dossier.address }}</template></text>
           <view class="score-row"><text class="score">{{ ratingText(data.summary.avg) }}</text><text class="score-meta">{{ data.summary.player_count }} 位玩家 · {{ data.summary.review_count }} 次到店</text></view>
           <view class="page-actions hero-actions">
@@ -84,6 +99,8 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
 .hero__avatar { display: flex; align-items: center; justify-content: center; color: #9a651e; font-family: serif; font-size: 96rpx; font-weight: 900; }
 .hero__body { padding: 22rpx; }
 .hero__name, .hero__meta { display: block; }
+.name-row { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; }
+.follow-button { width: auto; min-height: 56rpx; margin: 0; padding: 0 16rpx; border: 1rpx solid #d9a857; border-radius: 8rpx; background: #fffaf0; color: #925f18; font-size: 22rpx; font-weight: 800; line-height: 56rpx; }
 .hero__name { font-family: serif; font-size: 42rpx; font-weight: 900; }
 .hero__meta { margin-top: 8rpx; color: #64748b; font-size: 24rpx; line-height: 1.5; }
 .score-row { display: flex; align-items: baseline; gap: 12rpx; margin-top: 16rpx; }

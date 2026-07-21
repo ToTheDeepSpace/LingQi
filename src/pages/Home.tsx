@@ -1,6 +1,10 @@
 import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import type React from 'react';
 import BrandLogo from '../components/BrandLogo';
+import type { Creator } from '../types';
+import { generatedAvatarDataUrl } from '../lib/avatar';
+import { readStoredCreatorAuth } from '../lib/authSession';
 
 const classes = [
   { icon: '🎭', role: 'DM 评分', sub: 'DM RATINGS', desc: '带本节奏、演绎表现、控场能力、沟通边界和复盘反馈，都应该留下可追溯的口碑。', accent: '#a78bfa' },
@@ -63,6 +67,30 @@ const homeReputationGhostLink: React.CSSProperties = {
 };
 
 export default function Home() {
+  const [publicProfiles, setPublicProfiles] = useState<Creator[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const auth = readStoredCreatorAuth();
+        let cities: string[] = [];
+        if (auth?.token) {
+          const followResponse = await fetch('/api/lc/follows', { headers: { Authorization: `Bearer ${auth.token}` } });
+          const followPayload = await followResponse.json();
+          if (followPayload.success && Array.isArray(followPayload.data?.cities)) cities = followPayload.data.cities;
+        }
+        const params = new URLSearchParams({ page: '1', limit: '6' });
+        if (cities.length > 0) params.set('cities', cities.join(','));
+        const response = await fetch(`/api/lc/creators?${params.toString()}`);
+        const payload = await response.json();
+        if (alive && payload.success) setPublicProfiles(payload.data?.items || []);
+      } catch { /* 首页公开主页推荐是非阻塞内容 */ }
+    };
+    void load();
+    return () => { alive = false; };
+  }, []);
+
   return (
     <div style={{ backgroundColor: C, color: INK }}>
 
@@ -110,6 +138,31 @@ export default function Home() {
           </p>
         </div>
       </section>
+
+      {publicProfiles.length > 0 && (
+        <section style={{ background: '#fffdf8', padding: '2.5rem 1.25rem 4rem' }}>
+          <div style={{ maxWidth: 920, margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', gap: 16, marginBottom: 18 }}>
+              <div>
+                <p style={{ margin: '0 0 5px', color: '#925f18', fontSize: 11, fontWeight: 900 }}>公开主页</p>
+                <h2 style={{ margin: 0, color: INK, fontSize: '1.45rem', fontWeight: 900 }}>最近完善资料的人</h2>
+              </div>
+              <Link to="/explore" style={{ color: '#275389', fontSize: 13, fontWeight: 850, textDecoration: 'none' }}>查看全部</Link>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10 }}>
+              {publicProfiles.map(profile => (
+                <Link key={profile.id} to={`/explore/${encodeURIComponent(profile.id)}`} style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0, padding: 12, border: '1px solid rgba(31,41,55,0.09)', borderRadius: 8, background: '#fff', color: 'inherit', textDecoration: 'none' }}>
+                  <img src={profile.avatar || generatedAvatarDataUrl(profile.display_name, profile.id)} alt="" style={{ width: 46, height: 46, flex: '0 0 46px', borderRadius: 7, objectFit: 'cover', objectPosition: `${profile.avatar_focus_x ?? 50}% ${profile.avatar_focus_y ?? 25}%` }} />
+                  <span style={{ minWidth: 0 }}>
+                    <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: INK, fontSize: 14 }}>{profile.display_name}</strong>
+                    <small style={{ display: 'block', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: MUTED }}>{profile.city || '城市待补'}{profile.tags?.[0] ? ` · ${profile.tags[0]}` : ''}</small>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ───────────── 可信口碑怎么来 ───────────── */}
       <section style={{ backgroundColor: '#f8fbff', padding: '4rem 1.25rem 5rem' }}>

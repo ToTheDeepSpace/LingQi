@@ -51,6 +51,7 @@ onPullDownRefresh(refresh)
       <view class="menu surface">
         <view class="menu__item" @tap="go('/pages/mine/content')"><view><strong>我的内容</strong><text>发布、评价、评论、举报与审核状态</text></view><text>›</text></view>
         <view class="menu__item" @tap="go(`/pages/profile/detail?id=${auth.id}`)"><view><strong>公开主页</strong><text>查看别人眼中的个人资料</text></view><text>›</text></view>
+        <view class="menu__item" @tap="go('/pages/follows/index')"><view><strong>关注设置</strong><text>修改关注城市和店家</text></view><text>›</text></view>
         <view class="menu__item" @tap="go('/pages/mine/account')"><view><strong>账号设置</strong><text>手机号、登录状态与隐私说明</text></view><text>›</text></view>
       </view>
       <view v-if="auth.role === 'admin'" class="admin surface"><view><strong>平台管理后台</strong><text>审核、账号治理和证据处理继续在网站完成。</text></view><button class="secondary-button" @tap="copyAdmin">复制网站后台地址</button></view>

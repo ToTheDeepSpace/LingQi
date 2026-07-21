@@ -270,7 +270,9 @@ function eventTitle(content: string) {
 function eventSummary(content: string) {
   const normalized = content.replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
-  return normalized;
+  const firstBreak = normalized.search(/[。！？!?；;]/);
+  if (firstBreak < 0) return '';
+  return normalized.slice(firstBreak + 1).trim();
 }
 
 function eventKindCopy(type: Ranking['type']) {
@@ -640,15 +642,13 @@ export default function Rankings() {
     const current = getAuth();
     if (!current) return;
     let alive = true;
-    fetch(`${API}/lc/me`, { headers: { Authorization: `Bearer ${current.token}` } })
+    fetch(`${API}/lc/follows`, { headers: { Authorization: `Bearer ${current.token}` } })
       .then(r => r.json())
       .then(d => {
         if (!alive || !d.success) return;
-        const profileCities = Array.isArray(d.data?.available_cities)
-          ? d.data.available_cities.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        const nextCities = Array.isArray(d.data?.cities)
+          ? d.data.cities.map((item: unknown) => String(item || '').trim()).filter(Boolean)
           : [];
-        const fallbackCity = String(d.data?.city || '').trim();
-        const nextCities = profileCities.length > 0 ? profileCities : (fallbackCity ? [fallbackCity] : []);
         setPreferredCities(nextCities);
         if (!cityTouched && nextCities.length > 0) setCity('preferred');
       })
@@ -1309,7 +1309,7 @@ export default function Rankings() {
                     }} />
                   )}
                   <div style={{ marginBottom: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 9 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 8 }}>
                       <span style={{
                         padding: '2px 8px',
                         borderRadius: 999,
@@ -1320,30 +1320,34 @@ export default function Rankings() {
                         fontWeight: 950,
                         whiteSpace: 'nowrap',
                       }}>{kind.label}</span>
+                      <Link to={dossierUrl(item)} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'rgba(31,41,55,0.9)', fontSize: '0.82rem', fontWeight: 950, textDecoration: 'none' }}>{item.subject_name}</Link>
+                      {item.event_date && item.event_store_name && (
+                        <span style={{ padding: '2px 6px', borderRadius: 5, border: '1px solid rgba(39,83,137,0.16)', background: '#eef6ff', color: '#275389', fontSize: '0.62rem', fontWeight: 850 }}>时间地点已补充</span>
+                      )}
                       <span style={{ marginLeft: 'auto', color: 'rgba(71,85,105,0.48)', fontSize: '0.66rem', fontWeight: 800 }}>
                         {feedMode === 'latest' ? `动态 ${idx + 1}` : `热议 ${idx + 1}`}
                       </span>
                     </div>
+                    <h2 style={{ margin: 0, color: '#111827', fontSize: '1rem', lineHeight: 1.45, fontWeight: 900, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{renderContent(heading)}</h2>
                     {summary && (
-                      <div style={{ margin: 0 }}>
+                      <div style={{ margin: '5px 0 0' }}>
                         <p style={{
-                          fontSize: '0.98rem',
-                          color: 'rgba(17,24,39,0.94)',
-                          lineHeight: 1.55,
+                          fontSize: '0.82rem',
+                          color: 'rgba(71,85,105,0.76)',
+                          lineHeight: 1.5,
                           margin: '0',
-                          fontWeight: 760,
+                          fontWeight: 600,
                           display: '-webkit-box',
                           WebkitBoxOrient: 'vertical',
-                          WebkitLineClamp: 3,
+                          WebkitLineClamp: 2,
                           overflow: 'hidden',
                         }}>
                           {renderContent(summary)}
                         </p>
                       </div>
                     )}
-                    <div style={{ marginTop: 7, color: 'rgba(71,85,105,0.58)', fontSize: '0.7rem', fontWeight: 760 }}>
-                      <Link to={dossierUrl(item)} style={{ color: 'rgba(31,41,55,0.78)', fontWeight: 900, textDecoration: 'none' }}>{item.subject_name}</Link>
-                      {' · '}{SUBJECT_LABEL[item.subject_type] || item.subject_type}{item.subject_city ? ` · ${item.subject_city}` : ''}
+                    <div style={{ marginTop: 6, color: 'rgba(71,85,105,0.58)', fontSize: '0.68rem', fontWeight: 760 }}>
+                      {SUBJECT_LABEL[item.subject_type] || item.subject_type}{item.subject_city ? ` · ${item.subject_city}` : ''}
                     </div>
                     {!!item.display_files?.[0]?.url && (
                       <Link to={`/rankings/${encodeURIComponent(item.id)}`} style={rankingThumbLinkStyle} aria-label="查看正文配图">

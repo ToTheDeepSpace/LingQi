@@ -104,7 +104,7 @@ export default function CreatorProfile() {
     const auth = readStoredCreatorAuth();
     const authHeaders = auth?.token ? { Authorization: `Bearer ${auth.token}` } : undefined;
     Promise.all([
-      readJsonSafe(`${API}/lc/creators/${id}`),
+      readJsonSafe(`${API}/lc/creators/${id}`, { headers: authHeaders }),
       readJsonSafe(`${API}/lc/creators/${id}/availability`),
       readJsonSafe(`${API}/lc/creators/${id}/experiences`, { headers: authHeaders }),
       auth?.id === id ? readJsonSafe(`${API}/lc/scripts`) : Promise.resolve({ success: true, data: [] }),
