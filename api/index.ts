@@ -98,6 +98,7 @@ import {
   nextSessionVersion,
   sessionVersionOf,
 } from './authSessionPolicy.js';
+import { interpretWechatContentCheck, type WechatContentCheckPayload } from './wechatMiniContentSafety.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -417,6 +418,41 @@ function isWechatMiniLoginConfigured() {
   return Boolean(LINGQI_WECHAT_MINI_APP_ID && LINGQI_WECHAT_MINI_APP_SECRET);
 }
 
+let wechatMiniAccessToken = '';
+let wechatMiniAccessTokenExpiresAt = 0;
+
+async function getWechatMiniAccessToken() {
+  if (wechatMiniAccessToken && Date.now() < wechatMiniAccessTokenExpiresAt) return wechatMiniAccessToken;
+  if (!isWechatMiniLoginConfigured()) throw new Error('微信小程序服务尚未配置');
+  const tokenUrl = new URL('https://api.weixin.qq.com/cgi-bin/token');
+  tokenUrl.search = new URLSearchParams({
+    grant_type: 'client_credential',
+    appid: LINGQI_WECHAT_MINI_APP_ID,
+    secret: LINGQI_WECHAT_MINI_APP_SECRET,
+  }).toString();
+  const response = await fetch(tokenUrl);
+  const payload = await response.json() as { access_token?: string; expires_in?: number; errcode?: number; errmsg?: string };
+  if (!response.ok || !payload.access_token) throw new Error(payload.errmsg || '微信内容安全服务授权失败');
+  wechatMiniAccessToken = payload.access_token;
+  wechatMiniAccessTokenExpiresAt = Date.now() + Math.max(60, Number(payload.expires_in || 7200) - 300) * 1000;
+  return wechatMiniAccessToken;
+}
+
+async function checkWechatMiniText(content: string, openid: string) {
+  const token = await getWechatMiniAccessToken();
+  const response = await fetch(`https://api.weixin.qq.com/wxa/msg_sec_check?access_token=${encodeURIComponent(token)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ content, version: 2, scene: 2, openid }),
+  });
+  const payload = await response.json() as WechatContentCheckPayload;
+  if (payload.errcode === 40014 || payload.errcode === 42001) {
+    wechatMiniAccessToken = '';
+    wechatMiniAccessTokenExpiresAt = 0;
+  }
+  return interpretWechatContentCheck(payload);
+}
+
 // --- JWT 鉴权中间件 ---
 async function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
   const auth = req.headers.authorization;
@@ -637,12 +673,13 @@ type AuthedProfile = {
   referral_code?: string | null;
   community_role?: string | null;
   community_role_expires_at?: string | null;
+  wechat_mini_openid?: string | null;
 };
 
 async function getAuthedProfile(req: express.Request): Promise<AuthedProfile | null> {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, email, email_verified_at, gender, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at')
+    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, email, email_verified_at, gender, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, wechat_mini_openid')
     .eq('id', creatorId)
     .single();
   return data as AuthedProfile | null;
@@ -5405,6 +5442,90 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
       auth_provider: 'wechat_miniapp',
       has_password: Boolean(profile.password_hash),
     }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/miniapp/content-check', authMiddleware, async (req, res) => {
+  try {
+    if (req.header('X-LC-Client') !== 'wechat-miniapp') return res.status(403).json(err(new Error('该接口仅供微信小程序使用')));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if (!profile.wechat_mini_openid) return res.status(409).json(err(new Error('请先使用微信小程序重新登录')));
+    const content = cleanText(req.body?.content, 2400);
+    const scene = cleanText(req.body?.scene, 80) || 'ugc';
+    if (!content) return res.status(400).json(err(new Error('缺少待检查内容')));
+    const verdict = await checkWechatMiniText(content, profile.wechat_mini_openid);
+    if (!verdict.allowed) {
+      await logSecurityEvent(req, {
+        action: 'miniapp_content_check_blocked',
+        targetType: 'profile',
+        targetId: profile.id,
+        actorId: profile.id,
+        actorRole: profile.role || 'creator',
+        metadata: { scene, label: verdict.label, retryable: verdict.retryable },
+      });
+      return res.status(verdict.retryable ? 503 : 400).json(err(new Error(verdict.reason)));
+    }
+    res.json(ok({ checked: true }));
+  } catch (e) {
+    console.error('[miniapp-content-check]', e instanceof Error ? e.message : String(e));
+    res.status(503).json(err(new Error('微信内容安全服务暂时不可用，请稍后重试')));
+  }
+});
+
+app.get('/api/lc/miniapp/me/content', authMiddleware, async (req, res) => {
+  try {
+    await processDueDossierOwnerReviews();
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+
+    const [rankingsResult, carpoolsResult, dmRatingsResult, storeRatingsResult, roleRatingsResult, commentsResult, reportsResult, dossierEditsResult] = await Promise.all([
+      supabase.from('lc_rankings').select('*').eq('poster_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_carpools').select('*').eq('poster_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_dm_ratings').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_store_ratings').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_entity_ratings').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_comments').select('*').eq('author_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_reports').select('*').eq('reporter_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_public_reviews').select('*').eq('target_type', 'dossier_update').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
+    ]);
+    const results = [
+      [rankingsResult, 'lc_rankings'],
+      [carpoolsResult, 'lc_carpools'],
+      [dmRatingsResult, 'lc_dm_ratings'],
+      [storeRatingsResult, 'lc_store_ratings'],
+      [roleRatingsResult, 'lc_entity_ratings'],
+      [commentsResult, 'lc_comments'],
+      [reportsResult, 'lc_reports'],
+      [dossierEditsResult, 'lc_public_reviews'],
+    ] as const;
+    for (const [result, relation] of results) {
+      if (result.error && !isMissingRelation(result.error, relation)) throw result.error;
+    }
+    const rows = (result: typeof rankingsResult) => (result.error ? [] : (result.data || [])) as Record<string, unknown>[];
+    const base = (row: Record<string, unknown>) => ({
+      id: cleanText(row.id, 80),
+      content: cleanText(row.content, 2400),
+      status: cleanText(row.status, 40),
+      created_at: cleanText(row.created_at, 80),
+      reject_reason: cleanText(row.reject_reason, 500) || null,
+    });
+    const rankingLabels: Record<string, string> = { red: '红榜', black: '黑榜', white: '白榜' };
+    const rankings = rows(rankingsResult).map(row => ({ ...base(row), kind: 'ranking', title: `${rankingLabels[cleanText(row.type, 20)] || '榜单'} · ${cleanText(row.subject_name, 120) || '未命名对象'}` }));
+    const carpools = rows(carpoolsResult).map(row => ({ ...base(row), kind: 'carpool', title: `拼车 · ${cleanText(row.script_name, 120) || cleanText(row.title, 120) || '未命名活动'}` }));
+    const ratings = [
+      ...rows(dmRatingsResult).map(row => ({ ...base(row), kind: 'dm_rating', title: `DM 评价 · ${cleanText(row.script_name, 120) || '体验记录'}` })),
+      ...rows(storeRatingsResult).map(row => ({ ...base(row), kind: 'store_rating', title: `店家评价 · ${cleanText(row.script_name, 120) || '到店记录'}` })),
+      ...rows(roleRatingsResult).map(row => ({ ...base(row), kind: 'role_rating', title: `${cleanText(row.review_lane, 40) === 'deep_spoiler' ? '剧透点评' : '无剧透点评'} · ${cleanText((row.entity_metadata as Record<string, unknown> | null)?.role_name, 120) || '角色体验'}` })),
+    ].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    const comments = rows(commentsResult).map(row => ({ ...base(row), kind: 'comment', title: '榜单评论', ranking_id: cleanText(row.ranking_id, 80) }));
+    const reports = rows(reportsResult).map(row => ({ ...base(row), kind: 'report', title: `举报 · ${cleanText(row.target_title, 120) || '内容记录'}`, target_title: cleanText(row.target_title, 120) }));
+    const dossierEdits = rows(dossierEditsResult).map(row => {
+      const review = publicDossierEditReview(row);
+      const payload = objectPayload(row.payload);
+      return { ...review, kind: 'dossier_edit', title: `档案补充 · ${cleanText(payload.dossier_name, 120) || cleanText(payload.dm_name, 120) || '资料修改'}`, created_at: cleanText(row.created_at, 80) };
+    });
+    res.json(ok({ rankings, carpools, ratings, comments, reports, dossier_edits: dossierEdits }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

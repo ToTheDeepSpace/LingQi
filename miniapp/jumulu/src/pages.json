@@ -1,0 +1,42 @@
+{
+  "pages": [
+    { "path": "pages/index/index", "style": { "navigationBarTitleText": "剧幕录" } },
+    { "path": "pages/dm/index", "style": { "navigationBarTitleText": "查 DM", "enablePullDownRefresh": true } },
+    { "path": "pages/dm/detail", "style": { "navigationBarTitleText": "DM 档案", "enablePullDownRefresh": true } },
+    { "path": "pages/dm/rate", "style": { "navigationBarTitleText": "评价 DM" } },
+    { "path": "pages/stores/index", "style": { "navigationBarTitleText": "店家档案", "enablePullDownRefresh": true } },
+    { "path": "pages/stores/detail", "style": { "navigationBarTitleText": "店家详情", "enablePullDownRefresh": true } },
+    { "path": "pages/stores/rate", "style": { "navigationBarTitleText": "评价店家" } },
+    { "path": "pages/roles/index", "style": { "navigationBarTitleText": "角色点评", "enablePullDownRefresh": true } },
+    { "path": "pages/roles/detail", "style": { "navigationBarTitleText": "角色点评" } },
+    { "path": "pages/rankings/index", "style": { "navigationBarTitleText": "红黑榜", "enablePullDownRefresh": true } },
+    { "path": "pages/rankings/detail", "style": { "navigationBarTitleText": "口碑详情", "enablePullDownRefresh": true } },
+    { "path": "pages/carpools/index", "style": { "navigationBarTitleText": "拼车", "enablePullDownRefresh": true } },
+    { "path": "pages/mine/index", "style": { "navigationBarTitleText": "我的剧幕录", "enablePullDownRefresh": true } },
+    { "path": "pages/mine/content", "style": { "navigationBarTitleText": "我的内容", "enablePullDownRefresh": true } },
+    { "path": "pages/mine/account", "style": { "navigationBarTitleText": "账号设置" } },
+    { "path": "pages/profile/detail", "style": { "navigationBarTitleText": "用户主页" } },
+    { "path": "pages/report/index", "style": { "navigationBarTitleText": "举报内容" } }
+  ],
+  "tabBar": {
+    "color": "#64748b",
+    "selectedColor": "#9a651e",
+    "backgroundColor": "#fffdf8",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "首页" },
+      { "pagePath": "pages/dm/index", "text": "查 DM" },
+      { "pagePath": "pages/rankings/index", "text": "红黑榜" },
+      { "pagePath": "pages/carpools/index", "text": "拼车" },
+      { "pagePath": "pages/mine/index", "text": "我的" }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "剧幕录",
+    "navigationBarBackgroundColor": "#fffaf2",
+    "backgroundColor": "#fffdf8",
+    "backgroundTextStyle": "dark"
+  },
+  "easycom": { "autoscan": true }
+}
