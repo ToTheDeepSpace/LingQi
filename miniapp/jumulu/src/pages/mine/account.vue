@@ -46,20 +46,20 @@ onShow(() => { auth.value = readAuth() })
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="账号与安全" title="账号设置" description="小程序和网站使用同一个剧幕录账号。" />
+    <PageIntro eyebrow="账号与安全" title="账号设置" description="小程序和网站使用同一个剧幕录账号。" fallback="/pages/mine/index" />
     <view class="status surface">
       <view><text>微信身份</text><strong>已绑定</strong></view>
       <view><text>手机号</text><strong>{{ auth?.phone_verified_at ? auth.phone : '未验证' }}</strong></view>
       <view><text>发言状态</text><strong>{{ auth?.phone_verified_at || auth?.email_verified_at ? '可发言' : '仅浏览' }}</strong></view>
     </view>
-    <view v-if="!auth?.phone_verified_at" class="bind surface">
+    <view v-if="!auth?.phone_verified_at" class="bind form-surface">
       <text class="bind__title">绑定手机号</text>
       <text class="bind__description">手机号只用于登录、安全治理和防止批量账号，不在公开主页展示。</text>
       <text class="field-label">手机号</text>
       <view class="code-row"><input v-model="phone" class="input" type="number" maxlength="11" placeholder="中国大陆手机号" /><button class="secondary-button" :disabled="sending || countdown > 0" @tap="sendCode">{{ countdown > 0 ? `${countdown}s` : '发验证码' }}</button></view>
       <text class="field-label">验证码</text>
       <input v-model="code" class="input" type="number" maxlength="8" placeholder="短信验证码" />
-      <button class="primary-button submit" :loading="binding" :disabled="binding" @tap="bindPhone">确认绑定</button>
+      <view class="sticky-submit"><button class="primary-button submit" :loading="binding" :disabled="binding" @tap="bindPhone">确认绑定</button></view>
     </view>
     <view class="privacy surface">
       <text class="privacy__title">隐私与账号说明</text>
@@ -69,7 +69,8 @@ onShow(() => { auth.value = readAuth() })
 </template>
 
 <style scoped>
-.status, .bind, .privacy { margin-top: 14rpx; padding: 20rpx; }
+.status, .privacy { margin-top: 14rpx; padding: 20rpx; }
+.bind { margin-top: 14rpx; }
 .status { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8rpx; }
 .status view { padding: 12rpx; border: 1rpx solid #e4e7eb; border-radius: 8rpx; text-align: center; }
 .status text, .status strong { display: block; }
@@ -80,5 +81,5 @@ onShow(() => { auth.value = readAuth() })
 .bind__description, .privacy text { margin-top: 8rpx; color: #64748b; font-size: 23rpx; line-height: 1.6; }
 .code-row { display: grid; grid-template-columns: 1fr 220rpx; gap: 10rpx; }
 .code-row button { padding: 0 8rpx; }
-.submit { width: 100%; margin-top: 20rpx; }
+.submit { width: 100%; margin: 0; }
 </style>

@@ -24,13 +24,13 @@ button::after { border: 0; }
 
 .page {
   min-height: 100vh;
-  padding: 24rpx 24rpx calc(48rpx + env(safe-area-inset-bottom));
+  padding: 0 24rpx calc(48rpx + env(safe-area-inset-bottom));
 }
 
 .surface {
   background: #ffffff;
   border: 1rpx solid #eadfce;
-  border-radius: 14rpx;
+  border-radius: 10rpx;
 }
 
 .section-title {
@@ -114,6 +114,38 @@ button::after { border: 0; }
 }
 
 .action-row > button { flex: 1; min-width: 0; }
+
+.page-tools {
+  margin-bottom: 16rpx;
+  padding: 12rpx;
+  border: 1rpx solid #eadfce;
+  border-radius: 10rpx;
+  background: #ffffff;
+}
+
+.page-actions {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.page-actions button { width: 100%; margin: 0; }
+
+.form-surface {
+  margin-bottom: 20rpx;
+  padding: 0 4rpx 24rpx;
+}
+
+.sticky-submit {
+  position: sticky;
+  z-index: 80;
+  bottom: 0;
+  margin: 24rpx -24rpx calc(-48rpx - env(safe-area-inset-bottom));
+  padding: 16rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
+  border-top: 1rpx solid #eadfce;
+  background: rgba(255, 253, 248, 0.98);
+}
 
 .safe-bottom { padding-bottom: calc(24rpx + env(safe-area-inset-bottom)); }
 </style>

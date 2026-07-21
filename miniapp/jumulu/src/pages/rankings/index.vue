@@ -30,19 +30,23 @@ async function load() {
 function selectCity(value: string) { city.value = value || '全部城市'; uni.setStorageSync(CITY_KEY, city.value) }
 function selectType(value: 'all' | 'red' | 'black' | 'white') { type.value = value }
 function openRanking(id: string) { uni.navigateTo({ url: `/pages/rankings/detail?id=${encoded(id)}` }) }
-onShow(() => { if (!items.value.length) void load() })
+function createRanking() { uni.navigateTo({ url: '/pages/rankings/create' }) }
+onShow(() => { void load() })
 onPullDownRefresh(load)
 </script>
 
 <template>
   <view class="page">
     <PageIntro eyebrow="口碑事件" title="红黑榜" description="红榜记录好体验，黑榜记录风险，白榜收纳趣闻和中性故事。" />
-    <view class="type-tabs surface">
-      <text v-for="option in typeOptions" :key="option.v" class="type-tab" :class="{ active: type === option.v }" @tap="selectType(option.v)">{{ option.l }}</text>
-    </view>
-    <view class="filter surface">
-      <CitySearchPicker :value="city" @change="selectCity" />
-      <input v-model="query" class="input" placeholder="搜索对象、剧本或正文" />
+    <view class="page-tools">
+      <view class="type-tabs">
+        <text v-for="option in typeOptions" :key="option.v" class="type-tab" :class="{ active: type === option.v }" @tap="selectType(option.v)">{{ option.l }}</text>
+      </view>
+      <view class="filter">
+        <CitySearchPicker :value="city" @change="selectCity" />
+        <input v-model="query" class="input" placeholder="搜索对象、剧本或正文" />
+      </view>
+      <button class="primary-button publish" @tap="createRanking">发布红黑榜</button>
     </view>
     <view class="responsibility">互联网不是法外之地。发布者对事实、证据、隐私打码和言论后果负责。</view>
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visible.length" empty-text="当前筛选下没有口碑事件" @retry="load" />
@@ -51,9 +55,10 @@ onPullDownRefresh(load)
 </template>
 
 <style scoped>
-.type-tabs { display: flex; margin-top: 14rpx; padding: 8rpx; }
+.type-tabs { display: flex; margin: -4rpx -4rpx 10rpx; padding: 4rpx; }
 .type-tab { flex: 1; padding: 16rpx 8rpx; border-radius: 8rpx; color: #64748b; text-align: center; font-size: 25rpx; font-weight: 800; }
 .type-tab.active { background: #f3e4c9; color: #8b5919; }
-.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; margin: 12rpx 0; padding: 12rpx; }
+.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
+.publish { width: 100%; margin: 12rpx 0 0; }
 .responsibility { margin: 0 2rpx 14rpx; color: #7f1d1d; font-size: 22rpx; line-height: 1.5; }
 </style>

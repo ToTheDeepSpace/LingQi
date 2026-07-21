@@ -55,17 +55,19 @@ onPullDownRefresh(load)
 <template>
   <view class="page">
     <PageIntro eyebrow="剧本杀 DM 评分" title="查 DM，评体验" description="按姓名、城市、店家、标签或常开剧本查找 DM。" />
-    <view class="filter surface">
-      <CitySearchPicker :value="city" @change="selectCity" />
-      <input v-model="query" class="input" placeholder="搜索名称、标签或常开剧本" />
-    </view>
-    <view class="actions">
-      <button class="primary-button" @tap="rate">给 DM 评分</button>
-      <button class="secondary-button" @tap="create(query.trim())">新建 DM 档案</button>
+    <view class="page-tools">
+      <view class="filter">
+        <CitySearchPicker :value="city" @change="selectCity" />
+        <input v-model="query" class="input" placeholder="搜索名称、标签或常开剧本" />
+      </view>
+      <view class="page-actions">
+        <button class="primary-button" @tap="rate">给 DM 评分</button>
+        <button class="secondary-button" @tap="create(query.trim())">新建 DM 档案</button>
+      </view>
     </view>
     <text v-if="!loading && !error" class="result-count">{{ visibleItems.length }} 份公开档案</text>
     <StatePanel :loading="loading" :error="error" :empty="false" @retry="load" />
-    <view v-if="!loading && !error && !visibleItems.length" class="empty surface">
+    <view v-if="!loading && !error && !visibleItems.length" class="empty">
       <text>没有找到符合条件的 DM</text>
       <button class="secondary-button" @tap="create(query.trim())">新建{{ query.trim() ? `“${query.trim()}”` : '' }}档案</button>
     </view>
@@ -75,9 +77,7 @@ onPullDownRefresh(load)
 </template>
 
 <style scoped>
-.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; margin: 14rpx 0; padding: 12rpx; }
-.actions { display: grid; grid-template-columns: 1.15fr 1fr; gap: 12rpx; margin-bottom: 14rpx; }
-.actions button { width: 100%; margin: 0; }
+.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
 .result-count { display: block; margin: 4rpx 4rpx 14rpx; color: #7b8492; font-size: 22rpx; }
 .empty { margin-bottom: 14rpx; padding: 34rpx 22rpx; color: #7b8492; text-align: center; }
 .empty text { display: block; font-size: 25rpx; }

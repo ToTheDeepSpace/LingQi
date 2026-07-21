@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
+import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { RoleRating, Script } from '../../types'
 import { apiRequest, checkMiniContent, encoded, requireLogin } from '../../utils/api'
@@ -58,6 +59,7 @@ onShareAppMessage(() => ({ title: role.value ? `${role.value.role_name}《${role
 
 <template>
   <view class="page">
+    <MiniNavBar title="角色点评" fallback="/pages/roles/index" />
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !role" @retry="load" />
     <template v-if="role && payload">
       <view class="hero surface">

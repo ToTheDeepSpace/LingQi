@@ -2,13 +2,14 @@
 import { computed, ref } from 'vue'
 import type { Dossier } from '../types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   items: Dossier[]
   value?: string
   draftLabel?: string
   kind: 'dm' | 'store'
   placeholder?: string
-}>()
+  allowCreate?: boolean
+}>(), { allowCreate: true })
 
 const emit = defineEmits<{
   select: [id: string]
@@ -65,10 +66,10 @@ function create() { const name = query.value.trim(); close(); emit('create', nam
         </view>
         <view v-if="!results.length" class="dossier-empty">
           <text>没有找到“{{ query.trim() }}”</text>
-          <button class="dossier-create primary-button" @tap="create">新建这个{{ entityLabel }}</button>
+          <button v-if="allowCreate" class="dossier-create primary-button" @tap="create">新建这个{{ entityLabel }}</button>
         </view>
       </scroll-view>
-      <button v-if="results.length" class="dossier-create-link" @tap="create">＋ 新建{{ query.trim() ? `“${query.trim()}”` : '' }}{{ entityLabel }}档案</button>
+      <button v-if="allowCreate && results.length" class="dossier-create-link" @tap="create">＋ 新建{{ query.trim() ? `“${query.trim()}”` : '' }}{{ entityLabel }}档案</button>
     </view>
   </view>
 </template>

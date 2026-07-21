@@ -15,7 +15,7 @@ defineEmits<{ retry: [] }>()
 </template>
 
 <style scoped>
-.state { margin-top: 18rpx; padding: 46rpx 24rpx; text-align: center; }
+.state.surface { margin-top: 14rpx; padding: 38rpx 24rpx; border: 0; background: transparent; text-align: center; }
 .state__text { display: block; color: #64748b; line-height: 1.55; }
-.state__retry { width: 220rpx; margin: 20rpx auto 0; border: 1rpx solid #d9dde4; border-radius: 8rpx; background: #fff; color: #334155; font-size: 24rpx; }
+.state__retry { width: 220rpx; margin: 16rpx auto 0; border: 1rpx solid #d9dde4; border-radius: 8rpx; background: #fff; color: #334155; font-size: 24rpx; }
 </style>

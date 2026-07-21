@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import DossierCard from '../../components/DossierCard.vue'
+import MiniNavBar from '../../components/MiniNavBar.vue'
 import RankingCard from '../../components/RankingCard.vue'
 import type { Dossier, Ranking } from '../../types'
 import { apiRequest, encoded } from '../../utils/api'
@@ -30,7 +31,8 @@ function go(path: string, tab = false) {
 
 <template>
   <view class="page home">
-    <view class="brand surface">
+    <MiniNavBar title="剧幕录" :back="false" />
+    <view class="brand">
       <text class="brand__name">剧幕录</text>
       <text class="brand__line">幕前有演绎，幕后有记录。</text>
       <text class="brand__description">查 DM、看店家、记角色体验，也记录值得被看见的口碑事件。</text>
@@ -75,13 +77,13 @@ function go(path: string, tab = false) {
 </template>
 
 <style scoped>
-.brand { padding: 30rpx 26rpx; }
+.brand { padding: 30rpx 4rpx 24rpx; border-bottom: 1rpx solid #eee5d8; }
 .brand__name { display: block; color: #1f2937; font-family: serif; font-size: 52rpx; font-weight: 900; }
 .brand__line { display: block; margin-top: 8rpx; color: #9a651e; font-size: 27rpx; font-weight: 800; }
 .brand__description { display: block; margin-top: 12rpx; color: #64748b; font-size: 25rpx; line-height: 1.65; }
 .brand__actions { display: flex; gap: 12rpx; margin-top: 22rpx; }
 .brand__actions button { flex: 1; }
-.entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; margin-top: 14rpx; }
+.entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; margin-top: 18rpx; }
 .entry { min-height: 142rpx; padding: 20rpx; }
 .entry__title, .entry__meta { display: block; }
 .entry__title { color: #27364a; font-size: 28rpx; font-weight: 850; }

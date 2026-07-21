@@ -2,8 +2,8 @@
     "name" : "剧幕录",
     "appid" : "",
     "description" : "沉浸式娱乐卡司评分与口碑记录平台",
-    "versionName" : "1.0.3",
-    "versionCode" : "103",
+    "versionName" : "1.0.4",
+    "versionCode" : "104",
     "transformPx" : false,
     /* 5+App特有相关 */
     "app-plus" : {

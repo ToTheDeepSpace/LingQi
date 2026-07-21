@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
+import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import { apiRequest, encoded } from '../../utils/api'
 
@@ -24,6 +25,7 @@ onShareAppMessage(() => ({ title: `${profile.value?.display_name || '用户'}｜
 
 <template>
   <view class="page">
+    <MiniNavBar title="用户主页" fallback="/pages/index/index" />
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !profile" @retry="load" />
     <template v-if="profile">
       <view class="hero surface">

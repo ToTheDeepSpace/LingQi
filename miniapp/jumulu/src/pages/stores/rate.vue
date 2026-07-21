@@ -79,9 +79,9 @@ onLoad(options => { void load(String(options?.storeId || '')) })
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="到店体验" title="评价店家" description="记录环境、服务、组织和实际开本体验。" />
-    <view v-if="loading" class="surface loading">正在加载...</view>
-    <view v-else class="form surface">
+    <PageIntro eyebrow="到店体验" title="评价店家" description="记录环境、服务、组织和实际开本体验。" fallback="/pages/stores/index" />
+    <view v-if="loading" class="loading">正在加载...</view>
+    <view v-else class="form-surface">
       <text class="field-label">店家</text>
       <DossierSearchPicker kind="store" :items="stores" :value="storeId" :draft-label="newStore?.name" placeholder="搜索并选择店家" @select="selectStore" @create="create" />
       <text class="field-label">体验剧本</text>
@@ -94,17 +94,16 @@ onLoad(options => { void load(String(options?.storeId || '')) })
       <textarea v-model="content" class="textarea" maxlength="2400" placeholder="至少 12 个字，写清楚环境、服务或开本体验。" />
       <text class="field-label">标签（选填）</text>
       <input v-model="tags" class="input" placeholder="用逗号分隔，例如：环境干净、服务主动" />
-      <button class="primary-button submit" :loading="submitting" :disabled="submitting" @tap="submit">提交审核</button>
+      <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting" @tap="submit">提交审核</button></view>
     </view>
     <DossierCreateSheet :open="createOpen" entity-type="store" :initial-name="createInitialName" mode="draft" @close="createOpen = false" @created="acceptDraft" />
   </view>
 </template>
 
 <style scoped>
-.loading, .form { margin-top: 14rpx; padding: 22rpx; }
-.loading { color: #64748b; text-align: center; }
+.loading { padding: 38rpx 0; color: #64748b; text-align: center; }
 .stars { display: flex; justify-content: space-between; padding: 14rpx 22rpx; border: 1rpx solid #d9dde4; border-radius: 10rpx; }
 .stars text { color: #d5d9df; font-size: 54rpx; }
 .stars text.active { color: #c88b31; }
-.submit { width: 100%; margin-top: 22rpx; }
+.submit { width: 100%; margin: 0; }
 </style>

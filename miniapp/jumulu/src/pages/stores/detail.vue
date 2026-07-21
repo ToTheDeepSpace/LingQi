@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
+import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { DossierRating, RatingSummary, Ranking } from '../../types'
 import { apiRequest, encoded } from '../../utils/api'
@@ -26,6 +27,12 @@ async function load() {
 function previewPhoto() { if (data.value?.dossier.photo_url) uni.previewImage({ urls: [data.value.dossier.photo_url] }) }
 function openRate() { uni.navigateTo({ url: `/pages/stores/rate?storeId=${encoded(id.value)}` }) }
 function openRanking(rankingId: string) { uni.navigateTo({ url: `/pages/rankings/detail?id=${encoded(rankingId)}` }) }
+function createRanking() {
+  const dossier = data.value?.dossier
+  if (!dossier) return
+  uni.navigateTo({ url: `/pages/rankings/create?subjectType=store&subjectDossierId=${encoded(dossier.id)}&subjectName=${encoded(dossier.name)}&subjectCity=${encoded(dossier.city)}` })
+}
+function openProfile(profileId?: string | null) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 onLoad(options => { id.value = String(options?.id || ''); void load() })
 onPullDownRefresh(load)
 onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧幕录档案`, path: `/pages/stores/detail?id=${encoded(id.value)}` }))
@@ -33,6 +40,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
 
 <template>
   <view class="page">
+    <MiniNavBar title="店家详情" fallback="/pages/stores/index" />
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !data" @retry="load" />
     <template v-if="data">
       <view class="hero surface">
@@ -42,7 +50,10 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
           <text class="hero__name">{{ data.dossier.name }}</text>
           <text class="hero__meta">{{ data.dossier.city || '城市待补充' }}<template v-if="data.dossier.address"> · {{ data.dossier.address }}</template></text>
           <view class="score-row"><text class="score">{{ ratingText(data.summary.avg) }}</text><text class="score-meta">{{ data.summary.player_count }} 位玩家 · {{ data.summary.review_count }} 次到店</text></view>
-          <button class="primary-button rate" @tap="openRate">评价这家店</button>
+          <view class="page-actions hero-actions">
+            <button class="primary-button" @tap="openRate">评价这家店</button>
+            <button class="secondary-button" @tap="createRanking">发布红黑榜</button>
+          </view>
         </view>
       </view>
       <view v-if="data.dossier.note || data.dossier.tags?.length" class="section surface">
@@ -53,7 +64,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
       <text class="section-title">玩家到店评价</text>
       <view v-if="!data.ratings.length" class="surface empty">还没有公开的到店评价。</view>
       <view v-for="rating in data.ratings" :key="rating.id" class="review surface">
-        <view class="review__head"><text>{{ rating.profile_name || '用户' }}</text><strong>{{ rating.rating }} 星</strong></view>
+        <view class="review__head"><text :class="{ link: rating.profile_id }" @tap="openProfile(rating.profile_id)">{{ rating.profile_name || '用户' }}</text><strong>{{ rating.rating }} 星</strong></view>
         <text class="review__meta">《{{ rating.script_name }}》 · {{ dateText(rating.visited_on) }}</text>
         <text class="review__content">{{ rating.content }}</text>
         <view v-if="rating.tags?.length" class="chip-row"><text v-for="tag in rating.tags" :key="tag" class="chip">{{ tag }}</text></view>
@@ -78,7 +89,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
 .score-row { display: flex; align-items: baseline; gap: 12rpx; margin-top: 16rpx; }
 .score { color: #9a651e; font-size: 42rpx; font-weight: 900; }
 .score-meta { color: #7b8492; font-size: 22rpx; }
-.rate { width: 100%; margin-top: 16rpx; }
+.hero-actions { margin-top: 16rpx; }
 .section { margin-top: 14rpx; padding: 20rpx; }
 .section__title, .section__content { display: block; }
 .section__title { margin-bottom: 10rpx; font-size: 28rpx; font-weight: 850; }
@@ -86,6 +97,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
 .review, .event { margin-bottom: 14rpx; padding: 20rpx; }
 .review__head { display: flex; justify-content: space-between; font-weight: 850; }
 .review__head strong { color: #9a651e; }
+.link { color: #275389; }
 .review__meta, .review__content { display: block; margin-top: 10rpx; }
 .review__meta { color: #7b8492; font-size: 22rpx; }
 .review__content, .event__content { color: #374151; line-height: 1.65; white-space: pre-wrap; }

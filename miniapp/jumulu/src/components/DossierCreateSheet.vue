@@ -125,8 +125,8 @@ async function submit() {
         <template v-if="entityType === 'dm'">
           <text class="field-label">任职信息（选填）</text>
           <view class="employment-tabs">
-            <button :class="{ active: employmentStatus === 'unknown' }" @tap="employmentStatus = 'unknown'">暂不确定</button>
-            <button :class="{ active: employmentStatus === 'freelance' }" @tap="employmentStatus = 'freelance'; workplace = ''">自由 DM</button>
+            <button class="employment-button" :class="{ active: employmentStatus === 'unknown' }" @tap="employmentStatus = 'unknown'">暂不确定</button>
+            <button class="employment-button" :class="{ active: employmentStatus === 'freelance' }" @tap="employmentStatus = 'freelance'; workplace = ''">自由 DM</button>
           </view>
           <input v-if="employmentStatus === 'unknown'" v-model="workplace" class="input" maxlength="160" placeholder="可填写店名或工作地点，也可以留空" />
         </template>
@@ -146,8 +146,8 @@ async function submit() {
         <input v-model="tags" class="input" maxlength="180" placeholder="用逗号分隔" />
       </scroll-view>
       <view class="create-sheet__footer">
-        <button class="secondary-button" @tap="$emit('close')">取消</button>
-        <button class="primary-button" :loading="submitting" :disabled="submitting || uploading" @tap="submit">{{ mode === 'draft' ? '选用新档案' : '提交审核' }}</button>
+        <button class="secondary-button footer-button" @tap="$emit('close')">取消</button>
+        <button class="primary-button footer-button" :loading="submitting" :disabled="submitting || uploading" @tap="submit">{{ mode === 'draft' ? '选用新档案' : '提交审核' }}</button>
       </view>
     </view>
   </view>
@@ -164,13 +164,13 @@ async function submit() {
 .create-sheet__body { min-height: 0; flex: 1; padding: 0 24rpx 24rpx; }
 .create-note { display: block; margin-top: 18rpx; padding: 14rpx 16rpx; border-left: 5rpx solid #c88b31; background: #fff6e7; color: #72501f; font-size: 22rpx; line-height: 1.55; }
 .employment-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10rpx; margin-bottom: 10rpx; }
-.employment-tabs button { min-height: 66rpx; margin: 0; border: 1rpx solid #d9dde4; border-radius: 8rpx; background: #fff; color: #475569; font-size: 24rpx; line-height: 66rpx; }
-.employment-tabs button.active { border-color: #c88b31; background: #fff5df; color: #8b5919; font-weight: 850; }
+.employment-button { min-height: 66rpx; margin: 0; border: 1rpx solid #d9dde4; border-radius: 8rpx; background: #fff; color: #475569; font-size: 24rpx; line-height: 66rpx; }
+.employment-button.active { border-color: #c88b31; background: #fff5df; color: #8b5919; font-weight: 850; }
 .photo-row { display: flex; align-items: center; gap: 12rpx; }
 .photo-preview { width: 92rpx; height: 92rpx; flex: 0 0 auto; border-radius: 8rpx; background: #f2ece4; }
 .photo-button { min-height: 66rpx; margin: 0; line-height: 66rpx; }
 .photo-remove { width: 58rpx; height: 58rpx; margin: 0 0 0 auto; padding: 0; border: 1rpx solid #e3c8c4; border-radius: 8rpx; background: #fff; color: #a53232; font-size: 34rpx; line-height: 54rpx; }
 .compact-textarea { min-height: 150rpx; }
 .create-sheet__footer { display: grid; grid-template-columns: 1fr 1.4fr; gap: 12rpx; padding: 16rpx 24rpx calc(18rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #eadfce; background: #fffdf8; }
-.create-sheet__footer button { width: 100%; margin: 0; }
+.footer-button { width: 100%; margin: 0; }
 </style>

@@ -10,6 +10,7 @@
     { "path": "pages/roles/index", "style": { "navigationBarTitleText": "角色点评", "enablePullDownRefresh": true } },
     { "path": "pages/roles/detail", "style": { "navigationBarTitleText": "角色点评" } },
     { "path": "pages/rankings/index", "style": { "navigationBarTitleText": "红黑榜", "enablePullDownRefresh": true } },
+    { "path": "pages/rankings/create", "style": { "navigationBarTitleText": "发布红黑榜" } },
     { "path": "pages/rankings/detail", "style": { "navigationBarTitleText": "口碑详情", "enablePullDownRefresh": true } },
     { "path": "pages/carpools/index", "style": { "navigationBarTitleText": "拼车", "enablePullDownRefresh": true } },
     { "path": "pages/mine/index", "style": { "navigationBarTitleText": "我的剧幕录", "enablePullDownRefresh": true } },
@@ -32,6 +33,7 @@
     ]
   },
   "globalStyle": {
+    "navigationStyle": "custom",
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "剧幕录",
     "navigationBarBackgroundColor": "#fffaf2",

@@ -37,7 +37,7 @@ onPullDownRefresh(load)
 <template>
   <view class="page">
     <PageIntro eyebrow="同城拼车" title="找角色，找搭子" description="按日期、城市、剧本和角色寻找正在招募的车。" />
-    <view class="filter surface">
+    <view class="filter page-tools">
       <CitySearchPicker :value="city" @change="selectCity" />
       <input v-model="query" class="input" placeholder="搜索剧本或角色" />
     </view>
@@ -54,7 +54,7 @@ onPullDownRefresh(load)
 </template>
 
 <style scoped>
-.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; margin: 14rpx 0; padding: 12rpx; }
+.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
 .carpool { margin-bottom: 14rpx; padding: 20rpx; }
 .carpool__top { display: flex; justify-content: space-between; gap: 14rpx; }
 .carpool__title { color: #27364a; font-size: 30rpx; font-weight: 850; }

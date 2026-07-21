@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import { apiRequest, encoded, readAuth } from '../../utils/api'
 import { dateText, statusText } from '../../utils/format'
@@ -47,7 +48,8 @@ onPullDownRefresh(load)
 
 <template>
   <view class="page">
-    <view class="tabs surface">
+    <MiniNavBar title="我的内容" fallback="/pages/mine/index" />
+    <view class="tabs page-tools">
       <text :class="{ active: tab === 'posts' }" @tap="tab = 'posts'">发布</text>
       <text :class="{ active: tab === 'ratings' }" @tap="tab = 'ratings'">评价</text>
       <text :class="{ active: tab === 'comments' }" @tap="tab = 'comments'">评论</text>
@@ -62,7 +64,7 @@ onPullDownRefresh(load)
         <text v-if="item.reject_reason" class="reject">原因：{{ item.reject_reason }}</text>
         <button v-if="['ranking','carpool','comment','dossier_edit'].includes(item.kind) && !['withdrawn','closed','deleted_by_author'].includes(item.status || '')" class="secondary-button" @tap="action(item)">{{ item.kind === 'carpool' ? '关闭' : item.kind === 'comment' ? '删除' : '撤回' }}</button>
       </view>
-      <view v-if="visibleItems.length === 0" class="surface empty">这里还没有记录。</view>
+      <view v-if="visibleItems.length === 0" class="empty">这里还没有记录。</view>
     </template>
   </view>
 </template>

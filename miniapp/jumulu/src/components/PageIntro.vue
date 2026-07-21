@@ -1,24 +1,23 @@
 <script setup lang="ts">
-defineProps<{ eyebrow?: string; title: string; description?: string }>()
+import MiniNavBar from './MiniNavBar.vue'
+
+defineProps<{ eyebrow?: string; title: string; navTitle?: string; description?: string; fallback?: string }>()
 </script>
 
 <template>
+  <MiniNavBar :title="navTitle || title" :fallback="fallback" />
   <view class="intro">
     <text v-if="eyebrow" class="intro__eyebrow">{{ eyebrow }}</text>
-    <text class="intro__title">{{ title }}</text>
     <text v-if="description" class="intro__description">{{ description }}</text>
-    <slot />
+    <view v-if="$slots.default" class="intro__actions"><slot /></view>
   </view>
 </template>
 
 <style scoped>
 .intro {
-  padding: 24rpx;
-  border: 1rpx solid #eadfce;
-  border-radius: 14rpx;
-  background: #ffffff;
+  padding: 24rpx 4rpx 18rpx;
 }
 .intro__eyebrow { display: block; color: #9a651e; font-size: 22rpx; font-weight: 800; }
-.intro__title { display: block; margin-top: 6rpx; color: #1f2937; font-family: serif; font-size: 40rpx; line-height: 1.25; font-weight: 800; }
-.intro__description { display: block; margin-top: 10rpx; color: #64748b; font-size: 25rpx; line-height: 1.6; }
+.intro__description { display: block; margin-top: 6rpx; color: #64748b; font-size: 24rpx; line-height: 1.55; }
+.intro__actions { margin-top: 16rpx; }
 </style>

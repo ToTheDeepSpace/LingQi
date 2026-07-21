@@ -42,16 +42,18 @@ onPullDownRefresh(load)
 <template>
   <view class="page">
     <PageIntro eyebrow="城市店铺" title="店家档案" description="查环境、服务和玩家到店体验。" />
-    <view class="filter surface">
-      <CitySearchPicker :value="city" @change="selectCity" />
-      <input v-model="query" class="input" placeholder="搜索店名、城市或地址" />
-    </view>
-    <view class="actions">
-      <button class="primary-button" @tap="openRate">评价店家</button>
-      <button class="secondary-button" @tap="create(query.trim())">新建店家档案</button>
+    <view class="page-tools">
+      <view class="filter">
+        <CitySearchPicker :value="city" @change="selectCity" />
+        <input v-model="query" class="input" placeholder="搜索店名、城市或地址" />
+      </view>
+      <view class="page-actions">
+        <button class="primary-button" @tap="openRate">评价店家</button>
+        <button class="secondary-button" @tap="create(query.trim())">新建店家档案</button>
+      </view>
     </view>
     <StatePanel :loading="loading" :error="error" :empty="false" @retry="load" />
-    <view v-if="!loading && !error && !visible.length" class="empty surface">
+    <view v-if="!loading && !error && !visible.length" class="empty">
       <text>没有找到符合条件的店家</text>
       <button class="secondary-button" @tap="create(query.trim())">新建{{ query.trim() ? `“${query.trim()}”` : '' }}档案</button>
     </view>
@@ -61,9 +63,7 @@ onPullDownRefresh(load)
 </template>
 
 <style scoped>
-.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; margin-top: 14rpx; padding: 12rpx; }
-.actions { display: grid; grid-template-columns: 1.15fr 1fr; gap: 12rpx; margin: 12rpx 0 14rpx; }
-.actions button { width: 100%; margin: 0; }
+.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
 .empty { margin-bottom: 14rpx; padding: 34rpx 22rpx; color: #7b8492; text-align: center; }
 .empty text { display: block; font-size: 25rpx; }
 .empty button { width: 360rpx; margin: 20rpx auto 0; }

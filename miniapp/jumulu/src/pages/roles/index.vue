@@ -30,7 +30,7 @@ onPullDownRefresh(load)
 <template>
   <view class="page">
     <PageIntro eyebrow="剧本与角色" title="角色点评" description="无剧透栏记录体验，剧透栏讨论角色内核和深度感受。" />
-    <input v-model="query" class="input search" placeholder="搜索角色、剧本或类型" />
+    <view class="page-tools"><input v-model="query" class="input" placeholder="搜索角色、剧本或类型" /></view>
     <text v-if="!loading && !error" class="count">{{ visible.length }} 个角色</text>
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visible.length" empty-text="没有找到符合条件的角色" @retry="load" />
     <view v-for="role in visible" :key="role.target_id" class="role surface" @tap="openRole(role.target_id)">
@@ -41,7 +41,6 @@ onPullDownRefresh(load)
 </template>
 
 <style scoped>
-.search { margin-top: 14rpx; }
 .count { display: block; margin: 12rpx 4rpx; color: #7b8492; font-size: 22rpx; }
 .role { display: flex; justify-content: space-between; align-items: center; gap: 18rpx; margin-bottom: 12rpx; padding: 18rpx 20rpx; }
 .role__main { min-width: 0; }

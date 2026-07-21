@@ -33,7 +33,7 @@ onPullDownRefresh(refresh)
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="个人中心" :title="auth ? auth.display_name : '微信登录剧幕录'" :description="auth ? '管理自己的发布、评价、评论和审核进度。' : '首次登录需要填写公开昵称，登录后与网站使用同一个账号。'" />
+    <PageIntro eyebrow="个人中心" nav-title="我的剧幕录" :title="auth ? auth.display_name : '微信登录剧幕录'" :description="auth ? '管理自己的发布、评价、评论和审核进度。' : '首次登录需要填写公开昵称，登录后与网站使用同一个账号。'" />
     <view v-if="!auth" class="login surface">
       <text class="field-label">公开昵称</text>
       <input v-model="nickname" class="input" maxlength="40" placeholder="例如：泡泡" />

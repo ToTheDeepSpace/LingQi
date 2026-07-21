@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
+import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Ranking, RankingComment } from '../../types'
 import { apiRequest, checkMiniContent, encoded, requireLogin } from '../../utils/api'
@@ -65,6 +66,7 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
 
 <template>
   <view class="page">
+    <MiniNavBar title="口碑详情" fallback="/pages/rankings/index" />
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !item" @retry="load" />
     <template v-if="item">
       <view class="article surface" :class="`article--${item.type}`">

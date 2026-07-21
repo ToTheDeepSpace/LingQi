@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
+import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { DossierDetail } from '../../types'
 import { apiRequest, encoded } from '../../utils/api'
@@ -31,6 +32,12 @@ async function load() {
 function preview(index = selectedPhoto.value) { if (photos.value.length) uni.previewImage({ current: index, urls: photos.value.map(photo => photo.url) }) }
 function goRate() { uni.navigateTo({ url: `/pages/dm/rate?dmId=${encoded(id.value)}` }) }
 function goStore() { const storeId = data.value?.dossier.affiliation?.store_dossier_id; if (storeId) uni.navigateTo({ url: `/pages/stores/detail?id=${encoded(storeId)}` }) }
+function goRanking() {
+  const dossier = data.value?.dossier
+  if (!dossier) return
+  uni.navigateTo({ url: `/pages/rankings/create?subjectType=dm&subjectDossierId=${encoded(dossier.id)}&subjectName=${encoded(dossier.dm_name)}&subjectCity=${encoded(dossier.city)}` })
+}
+function openProfile(profileId?: string | null) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 
 onLoad(options => { id.value = String(options?.id || ''); void load() })
 onPullDownRefresh(load)
@@ -39,6 +46,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 
 <template>
   <view class="page detail-page">
+    <MiniNavBar title="DM 档案" fallback="/pages/dm/index" />
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !data" @retry="load" />
     <template v-if="data">
       <view class="hero surface">
@@ -56,7 +64,10 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
             <text class="score">{{ ratingText(data.summary.avg) }}</text>
             <text class="score-meta">{{ data.summary.player_count }} 位玩家 · {{ data.summary.review_count }} 次体验</text>
           </view>
-          <button class="primary-button rate-button" @tap="goRate">给 TA 评分</button>
+          <view class="page-actions hero-actions">
+            <button class="primary-button" @tap="goRate">给 TA 评分</button>
+            <button class="secondary-button" @tap="goRanking">发布红黑榜</button>
+          </view>
         </view>
       </view>
 
@@ -88,7 +99,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
       <text class="section-title">玩家体验</text>
       <view v-if="!data.ratings.length" class="surface empty-reviews">还没有公开评分。</view>
       <view v-for="rating in data.ratings" :key="rating.id" class="review surface">
-        <view class="review__head"><text class="review__author">{{ rating.profile_name || '用户' }}</text><text class="review__score">{{ rating.rating }} 星</text></view>
+        <view class="review__head"><text class="review__author" :class="{ link: rating.profile_id }" @tap="openProfile(rating.profile_id)">{{ rating.profile_name || '用户' }}</text><text class="review__score">{{ rating.rating }} 星</text></view>
         <text class="review__meta">《{{ rating.script_name }}》 · {{ rating.store_name }} · {{ dateText(rating.played_on) }}<template v-if="rating.replay_number"> · 第 {{ rating.replay_number }} 刷</template></text>
         <text class="review__content">{{ rating.content }}</text>
         <view v-if="rating.tags?.length" class="chip-row"><text v-for="tag in rating.tags" :key="tag" class="chip">{{ tag }}</text></view>
@@ -100,7 +111,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 
 <style scoped>
 .hero { overflow: hidden; }
-.hero__image, .hero__avatar { width: 100%; height: 620rpx; background: #f2ece4; }
+.hero__image, .hero__avatar { width: 100%; height: 500rpx; background: #f2ece4; }
 .hero__avatar { display: flex; align-items: center; justify-content: center; color: #9a651e; font-family: serif; font-size: 110rpx; font-weight: 900; }
 .thumbs { width: 100%; padding: 10rpx 14rpx; white-space: nowrap; }
 .thumb { width: 92rpx; height: 92rpx; margin-right: 10rpx; border: 4rpx solid transparent; border-radius: 8rpx; }
@@ -113,7 +124,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 .score-row { display: flex; align-items: baseline; gap: 12rpx; margin-top: 18rpx; }
 .score { color: #9a651e; font-size: 44rpx; font-weight: 900; }
 .score-meta { color: #7b8492; font-size: 22rpx; }
-.rate-button { width: 100%; margin-top: 18rpx; }
+.hero-actions { margin-top: 18rpx; }
 .section { margin-top: 14rpx; padding: 22rpx; }
 .section__title, .section__content { display: block; }
 .section__title { margin-bottom: 12rpx; color: #27364a; font-size: 28rpx; font-weight: 850; }
@@ -127,6 +138,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 .review { margin-bottom: 14rpx; padding: 20rpx; }
 .review__head { display: flex; justify-content: space-between; }
 .review__author { color: #27364a; font-weight: 850; }
+.review__author.link { color: #275389; }
 .review__score { color: #9a651e; font-weight: 900; }
 .review__meta, .review__content { display: block; margin-top: 10rpx; }
 .review__meta { color: #7b8492; font-size: 22rpx; }
