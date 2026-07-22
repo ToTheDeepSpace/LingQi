@@ -7,18 +7,18 @@ test('unclaimed dossiers never describe employment as a DM self declaration', ()
   assert.equal(dmAffiliationLabel({ claimStatus: 'unclaimed', employmentStatus: 'freelance' }), '暂无受雇店家资料');
 });
 
-test('community and owner affiliation sources use different public wording', () => {
+test('community and owner affiliation sources use current provenance wording', () => {
   assert.equal(dmAffiliationLabel({
     claimStatus: 'unclaimed',
     affiliation: { status: 'pending', store_name: '止行剧场', source: 'community_unverified' },
-  }), '社区补充：止行剧场（待核验）');
+  }), '社区提供：任职于 止行剧场');
   assert.equal(dmAffiliationLabel({
     claimStatus: 'approved',
     affiliation: { status: 'pending', store_name: '止行剧场', source: 'self_declared' },
-  }), '本人声明：止行剧场（待店家确认）');
+  }), 'DM本人提供：任职于 止行剧场');
 });
 
-test('confirmed and legacy relationships remain distinguishable', () => {
-  assert.equal(dmAffiliationLabel({ affiliation: { status: 'approved', store_name: '止行剧场' } }), '止行剧场已确认任职');
-  assert.equal(dmAffiliationLabel({ affiliation: { status: 'legacy_unverified', store_name: '止行剧场' } }), '历史资料：止行剧场（待核验）');
+test('confirmed and legacy relationships use their current public wording', () => {
+  assert.equal(dmAffiliationLabel({ affiliation: { status: 'approved', store_name: '止行剧场' } }), '止行剧场 已确认任职');
+  assert.equal(dmAffiliationLabel({ affiliation: { status: 'legacy_unverified', store_name: '止行剧场' } }), '社区提供：任职于 止行剧场');
 });
