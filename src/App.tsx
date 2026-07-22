@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import BrandLogo from './components/BrandLogo';
 import ErrorBoundary from './components/ErrorBoundary';
 import CityFollowGate from './components/CityFollowGate';
+import AccountStateBanner from './components/AccountStateBanner';
 import { pageLoaders, preloadRoute } from './lib/routePreload';
 import './App.css';
 
@@ -13,6 +14,7 @@ const Explore = lazy(pageLoaders.explore);
 const CreatorProfile = lazy(pageLoaders.creatorProfile);
 const Login = lazy(pageLoaders.login);
 const Dashboard = lazy(pageLoaders.dashboard);
+const AccountStatus = lazy(pageLoaders.accountStatus);
 const FollowSettings = lazy(pageLoaders.followSettings);
 const Admin = lazy(pageLoaders.admin);
 const CommunityModeration = lazy(pageLoaders.moderation);
@@ -67,6 +69,7 @@ function AppLayout() {
     <>
       <ScrollToTop />
       {showNavbar && <Navbar />}
+      <AccountStateBanner />
       <CityFollowGate />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
@@ -84,6 +87,7 @@ function AppLayout() {
           <Route path="/dashboard/certification" element={<Dashboard />} />
           <Route path="/dashboard/posts" element={<Dashboard />} />
           <Route path="/dashboard/referrals" element={<Dashboard />} />
+          <Route path="/account-status" element={<AccountStatus />} />
           <Route path="/follows" element={<FollowSettings />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/moderation" element={<CommunityModeration />} />

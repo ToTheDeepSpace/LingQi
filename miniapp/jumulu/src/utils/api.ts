@@ -2,6 +2,7 @@ import type { ApiEnvelope, AuthSession } from '../types'
 
 export const API_BASE = 'https://jumulu.jusichen.com/api'
 const AUTH_KEY = 'jumulu:miniapp:auth'
+let mergedAccountPromptOpen = false
 
 export function readAuth(): AuthSession | null {
   return uni.getStorageSync(AUTH_KEY) || null
@@ -39,9 +40,22 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     })
   })
   const body = response.data as ApiEnvelope<T>
-  if (response.statusCode === 401) {
+  if (response.statusCode === 401 || body?.code === 'ACCOUNT_MERGED') {
     writeAuth(null)
     uni.$emit('jumulu:auth-changed')
+  }
+  if (body?.code === 'ACCOUNT_MERGED' && !mergedAccountPromptOpen) {
+    mergedAccountPromptOpen = true
+    uni.showModal({
+      title: '账号已合并',
+      content: errorText(body.error, '微信临时账号已经合并，请重新登录原网站账号。'),
+      showCancel: false,
+      confirmText: '重新登录',
+      complete: () => {
+        mergedAccountPromptOpen = false
+        uni.switchTab({ url: '/pages/mine/index' })
+      },
+    })
   }
   if (response.statusCode < 200 || response.statusCode >= 300 || !body?.success) {
     throw new Error(errorText(body?.error, `请求失败 ${response.statusCode}`))
@@ -85,6 +99,10 @@ export async function uploadImageFile(filePath: string, scope: string) {
   let body: ApiEnvelope<{ url: string }>
   try { body = JSON.parse(response.data) as ApiEnvelope<{ url: string }> }
   catch { throw new Error('图片上传返回格式不正确') }
+  if (body.code === 'ACCOUNT_MERGED') {
+    writeAuth(null)
+    uni.$emit('jumulu:auth-changed')
+  }
   if (response.statusCode < 200 || response.statusCode >= 300 || !body.success || !body.data?.url) {
     throw new Error(errorText(body.error, `图片上传失败 ${response.statusCode}`))
   }

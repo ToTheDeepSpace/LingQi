@@ -102,8 +102,12 @@ type Profile = {
   is_visible: boolean;
   is_realname?: boolean;
   is_banned?: boolean;
+  is_merged?: boolean;
   ban_reason?: string | null;
   banned_at?: string | null;
+  merged_at?: string | null;
+  restriction_scope?: 'publish' | 'account' | null;
+  restriction_ends_at?: string | null;
   reject_reason?: string | null;
   role_type?: string;
   avatar?: string | null;
@@ -445,6 +449,27 @@ type SiteMessage = {
   updated_at?: string;
 };
 
+type AccountAppeal = {
+  id: string;
+  profile_id: string;
+  profile_name?: string | null;
+  restriction_id: string;
+  content: string;
+  evidence_urls?: string[];
+  status: 'pending' | 'needs_info' | 'approved' | 'rejected' | 'withdrawn';
+  admin_reply?: string | null;
+  created_at: string;
+  updated_at?: string;
+  restriction?: {
+    id: string;
+    scope: 'publish' | 'account';
+    reason: string;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    status: string;
+  } | null;
+};
+
 type PublicReview = {
   id: string;
   target_type: 'profile_update' | 'dossier_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert' | 'entity_rating_upsert' | 'rating_discussion_create';
@@ -632,7 +657,7 @@ type GuideWithdrawalReview = {
 };
 
 type RejectType = 'profile' | 'ranking' | 'rankingEdit' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'dmRating' | 'storeRating' | 'publicReview' | 'guide' | 'guideWithdrawal';
-type Tab = 'allPending' | 'siteData' | 'publishedDmDossiers' | 'publishedStoreDossiers' | 'pending' | 'accounts' | 'requests' | 'messages' | 'rankings' | 'rankingEdits' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'commissionApplications' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
+type Tab = 'allPending' | 'siteData' | 'publishedDmDossiers' | 'publishedStoreDossiers' | 'pending' | 'accounts' | 'requests' | 'messages' | 'accountAppeals' | 'rankings' | 'rankingEdits' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'commissionApplications' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
 type AdminGroup = 'all' | 'data' | 'dm' | 'store' | 'content' | 'finance' | 'appeals' | 'history' | 'accounts';
 
 function adminGroupForTab(tab: Tab): AdminGroup {
@@ -641,7 +666,7 @@ function adminGroupForTab(tab: Tab): AdminGroup {
   if (['storeDossiers', 'storeDossierEdits', 'storeCerts', 'storeRatings'].includes(tab)) return 'store';
   if (['rankings', 'rankingEdits', 'publicReviews', 'comments', 'commissions', 'commissionApplications', 'carpools', 'scriptContributions', 'guides'].includes(tab)) return 'content';
   if (['wallet', 'guideWithdrawals'].includes(tab)) return 'finance';
-  if (['reports', 'messages', 'claims', 'requests'].includes(tab)) return 'appeals';
+  if (['reports', 'messages', 'accountAppeals', 'claims', 'requests'].includes(tab)) return 'appeals';
   if (tab === 'reviewHistory') return 'history';
   if (['accounts', 'pending', 'realnameCerts', 'security'].includes(tab)) return 'accounts';
   return 'all';
@@ -983,6 +1008,7 @@ export default function Admin() {
   const [dossierOptions, setDossierOptions] = useState<DossierOption[]>([]);
   const [reports, setReports] = useState<ReportReview[]>([]);
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
+  const [accountAppeals, setAccountAppeals] = useState<AccountAppeal[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [publicReviews, setPublicReviews] = useState<PublicReview[]>([]);
   const [reviewHistory, setReviewHistory] = useState<PublicReview[]>([]);
@@ -1056,6 +1082,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
         setReports((d.data as { reports: ReportReview[] }).reports || []);
         setSiteMessages((d.data as { siteMessages: SiteMessage[] }).siteMessages || []);
+        setAccountAppeals((d.data as { accountAppeals: AccountAppeal[] }).accountAppeals || []);
         setSecurityEvents((d.data as { securityEvents: SecurityEvent[] }).securityEvents || []);
         setPublicReviews((d.data as { publicReviews: PublicReview[] }).publicReviews || []);
         setReviewHistory((d.data as { reviewHistory: PublicReview[] }).reviewHistory || []);
@@ -1111,17 +1138,67 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   const banProfile = async (id: string) => {
     const reason = window.prompt('限制账号原因（会记录到安全日志）', '违反平台规则，限制账号功能');
     if (reason === null) return;
-    await fetch(`${API}/lc/admin/profile/${id}/ban`, {
+    const scope = window.confirm('是否限制整个账号功能？\n\n确定：账号功能限制（不能正常浏览和操作）\n取消：仅限制发布（仍可浏览、登录和申诉）') ? 'account' : 'publish';
+    const endsAtInput = window.prompt('限制结束时间（可留空表示长期有效；示例 2026-08-01 18:00）', '');
+    if (endsAtInput === null) return;
+    const parsedEndsAt = endsAtInput.trim() ? new Date(endsAtInput.trim()) : null;
+    if (parsedEndsAt && !Number.isFinite(parsedEndsAt.getTime())) {
+      setError('限制结束时间格式不正确');
+      return;
+    }
+    const endsAt = parsedEndsAt?.toISOString() || null;
+    const response = await fetch(`${API}/lc/admin/profile/${id}/ban`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason, scope, endsAt }),
     });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || '限制账号失败');
+      return;
+    }
     void loadData();
     void loadAccounts(undefined, accountPage, accountSearch);
   };
 
   const unbanProfile = async (id: string) => {
-    await fetch(`${API}/lc/admin/profile/${id}/unban`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    const restoreProfile = window.confirm('解除限制后，是否同时恢复该用户的公开主页？\n\n确定：解除限制并恢复主页\n取消：只解除限制，主页保持当前状态');
+    const response = await fetch(`${API}/lc/admin/profile/${id}/unban`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restoreProfile, adminNote: restoreProfile ? '管理员解除限制并恢复公开主页' : '管理员解除限制，公开主页状态不变' }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || '解除限制失败');
+      return;
+    }
+    void loadData();
+    void loadAccounts(undefined, accountPage, accountSearch);
+  };
+
+  const reviewAccountAppeal = async (id: string, decision: 'approved' | 'rejected' | 'needs_info') => {
+    const defaults = decision === 'approved'
+      ? '申诉已核实，解除账号限制。'
+      : decision === 'needs_info'
+        ? '请补充能够说明情况的具体信息。'
+        : '已复核，当前限制继续生效。';
+    const adminReply = window.prompt('填写给用户看的处理说明', defaults);
+    if (adminReply === null || !adminReply.trim()) return;
+    const restoreProfile = decision === 'approved'
+      ? window.confirm('通过申诉并解除限制后，是否同时恢复用户公开主页？')
+      : false;
+    const response = await fetch(`${API}/lc/admin/account-appeals/${id}/review`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, adminReply: adminReply.trim(), restoreProfile }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || '账号申诉处理失败');
+      return;
+    }
+    setAccountAppeals(current => decision === 'needs_info' ? current.map(item => item.id === id ? { ...item, status: 'needs_info', admin_reply: adminReply.trim() } : item) : current.filter(item => item.id !== id));
     void loadData();
     void loadAccounts(undefined, accountPage, accountSearch);
   };
@@ -1697,6 +1774,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setRankingEditRequests([]);
     setReports([]);
     setSiteMessages([]);
+    setAccountAppeals([]);
     setSecurityEvents([]);
     setPublicReviews([]);
     setReviewHistory([]);
@@ -1861,6 +1939,15 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       createdAt: item.created_at,
       accent: '#0369a1',
     })),
+    ...accountAppeals.map(item => ({
+      id: `account-appeal-${item.id}`,
+      tab: 'accountAppeals' as const,
+      category: '账号申诉',
+      title: item.profile_name || '未知用户',
+      meta: `${item.restriction?.scope === 'account' ? '账号功能限制' : '发布限制'} · ${item.restriction?.reason || '原因待补'}`,
+      createdAt: item.created_at,
+      accent: '#b45309',
+    })),
     ...transactions.map(tx => ({
       id: `transaction-${tx.id}`,
       tab: 'wallet' as const,
@@ -1961,6 +2048,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     ],
     appeals: [
       { tab: 'reports', label: '举报', count: reports.length },
+      { tab: 'accountAppeals', label: '账号申诉', count: accountAppeals.length },
       { tab: 'messages', label: '建议 / 申诉', count: siteMessages.length },
       { tab: 'claims', label: '相关方申请', count: claims.length },
       { tab: 'requests', label: '联系申请', count: requests.length },
@@ -1979,7 +2067,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     { group: 'store', label: '店家审核', tab: 'storeDossiers', count: storeDossierItems.length + storeDossierEdits.length + storeRatings.length + certs.filter(item => item.type === 'shop').length },
     { group: 'content', label: '内容审核', tab: 'publicReviews', count: contentPublicReviews.length + rankings.length + comments.length + commissions.length + carpools.length + scriptContributions.length + guides.length },
     { group: 'finance', label: '交易审核', tab: 'wallet', count: transactions.length + guideWithdrawals.length },
-    { group: 'appeals', label: '举报申诉', tab: 'reports', count: reports.length + siteMessages.length + claims.length + requests.length },
+    { group: 'appeals', label: '举报申诉', tab: 'reports', count: reports.length + accountAppeals.length + siteMessages.length + claims.length + requests.length },
     { group: 'history', label: '审核历史', tab: 'reviewHistory' },
     { group: 'accounts', label: '账号与安全', tab: 'accounts', count: pendingProfiles.length + certs.filter(item => item.type === 'realname').length },
   ];
@@ -2210,24 +2298,28 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         <span style={{ fontWeight: 800, fontSize: '0.95rem' }}>{profileAccountSummary(p)}</span>
                         {p.is_realname && <span style={{ fontSize: '0.72rem', color: GOLD }}>⭐ 实名</span>}
                         {!p.is_visible && !p.reject_reason && <span style={{ fontSize: '0.72rem', color: '#925f18' }}>待审</span>}
-                        {p.reject_reason && <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>已驳回</span>}
-                        {p.is_banned && <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>已限制</span>}
+                        {p.reject_reason && !p.is_merged && <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>已驳回</span>}
+                        {p.is_merged
+                          ? <span style={{ fontSize: '0.72rem', color: '#475569' }}>已合并</span>
+                          : p.is_banned && <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>{p.restriction_scope === 'account' ? '账号受限' : '限制发布'}</span>}
                       </div>
                       <div style={{ fontSize: '0.78rem', color: MUTED }}>
                         昵称：{profileNickname(p)} · 注册于 {p.created_at?.slice(0, 10)}
                         {profileAuthProviderLabel(p.auth_provider) && ` · ${profileAuthProviderLabel(p.auth_provider)}`}
                         {p.banned_at ? ` · 限制于 ${p.banned_at.slice(0, 10)}` : ''}
+                        {p.restriction_ends_at ? ` · 至 ${p.restriction_ends_at.slice(0, 16).replace('T', ' ')}` : ''}
+                        {p.merged_at ? ` · 合并于 ${p.merged_at.slice(0, 10)}` : ''}
                       </div>
-                      {p.reject_reason && <Proof>驳回原因：{p.reject_reason}</Proof>}
-                      {p.ban_reason && <Proof>限制原因：{p.ban_reason}</Proof>}
+                      {p.reject_reason && !p.is_merged && <Proof>驳回原因：{p.reject_reason}</Proof>}
+                      {p.ban_reason && <Proof>{p.is_merged ? '账号状态' : '限制原因'}：{p.ban_reason}</Proof>}
                     </div>
                     <Actions>
                       <Link to={`/explore/${p.id}`} target="_blank" style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(217,168,87,0.30)', background: '#fff8e8', color: '#8a5a19', fontSize: '0.82rem', textDecoration: 'none', fontWeight: 700 }}>主页</Link>
                       <ActionButton onClick={() => toggleRealname(p.id, !p.is_realname)}>{p.is_realname ? '取消实名' : '设为实名'}</ActionButton>
                       <ActionButton onClick={() => setPrivateAccountView({ profile: p, reason: '', loading: false, error: '', details: null })}>查看完整账号</ActionButton>
-                      {p.is_banned
+                      {!p.is_merged && (p.is_banned
                         ? <ActionButton kind="ok" onClick={() => unbanProfile(p.id)}>解除限制</ActionButton>
-                        : <ActionButton kind="bad" onClick={() => banProfile(p.id)}>限制账号</ActionButton>}
+                        : <ActionButton kind="bad" onClick={() => banProfile(p.id)}>限制账号</ActionButton>)}
                       <ActionButton kind="bad" onClick={() => hideProfile(p.id)}>下线</ActionButton>
                     </Actions>
                   </Row>
@@ -2912,6 +3004,38 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                     </div>
                     <Actions vertical>
                       <ActionButton kind="ok" onClick={() => resolveSiteMessage(m.id)}>标记已处理</ActionButton>
+                    </Actions>
+                  </Row>
+                ))}
+              </ListEmpty>
+            )}
+
+            {tab === 'accountAppeals' && (
+              <ListEmpty empty={accountAppeals.length === 0} text="暂无待处理账号申诉">
+                {accountAppeals.map(item => (
+                  <Row key={item.id} accent="#b45309">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine
+                        title={item.profile_name || '未知用户'}
+                        pill={item.status === 'needs_info' ? '等待用户补充' : '账号申诉'}
+                      />
+                      <Meta>
+                        {item.restriction?.scope === 'account' ? '账号功能限制' : '发布限制'}
+                        {item.restriction?.starts_at ? ` · 开始于 ${item.restriction.starts_at.slice(0, 16).replace('T', ' ')}` : ''}
+                        {item.restriction?.ends_at ? ` · 至 ${item.restriction.ends_at.slice(0, 16).replace('T', ' ')}` : ' · 长期有效'}
+                        {item.created_at ? ` · 申诉于 ${item.created_at.slice(0, 16).replace('T', ' ')}` : ''}
+                      </Meta>
+                      {item.restriction?.reason && <Proof>限制原因：{item.restriction.reason}</Proof>}
+                      <ContentBox>{item.content}</ContentBox>
+                      {item.admin_reply && <Proof>上次回复：{item.admin_reply}</Proof>}
+                      {Array.isArray(item.evidence_urls) && item.evidence_urls.length > 0 && (
+                        <AdminAttachmentLinks files={item.evidence_urls.map((url, index) => ({ name: `申诉材料 ${index + 1}`, url }))} />
+                      )}
+                    </div>
+                    <Actions vertical>
+                      <ActionButton kind="ok" onClick={() => void reviewAccountAppeal(item.id, 'approved')}>通过并解除</ActionButton>
+                      <ActionButton onClick={() => void reviewAccountAppeal(item.id, 'needs_info')}>要求补充</ActionButton>
+                      <ActionButton kind="bad" onClick={() => void reviewAccountAppeal(item.id, 'rejected')}>维持限制</ActionButton>
                     </Actions>
                   </Row>
                 ))}

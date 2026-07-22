@@ -20,6 +20,7 @@
     { "path": "pages/mine/index", "style": { "navigationBarTitleText": "我的剧幕录", "enablePullDownRefresh": true } },
     { "path": "pages/mine/content", "style": { "navigationBarTitleText": "我的内容", "enablePullDownRefresh": true } },
     { "path": "pages/mine/account", "style": { "navigationBarTitleText": "账号设置" } },
+    { "path": "pages/mine/account-status", "style": { "navigationBarTitleText": "账号通知与申诉", "enablePullDownRefresh": true } },
     { "path": "pages/profile/detail", "style": { "navigationBarTitleText": "用户主页" } },
     { "path": "pages/report/index", "style": { "navigationBarTitleText": "举报内容" } }
   ],

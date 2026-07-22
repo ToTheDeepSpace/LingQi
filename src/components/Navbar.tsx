@@ -85,6 +85,7 @@ export default function Navbar() {
           + (data.certifications || []).length
           + (data.reports || []).length
           + (data.siteMessages || []).length
+          + (data.accountAppeals || []).length
           + (data.scriptContributions || []).length
           + (data.dmRatings || []).length
           + (data.storeRatings || []).length

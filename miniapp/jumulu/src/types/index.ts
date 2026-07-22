@@ -1,4 +1,4 @@
-export type ApiEnvelope<T> = { success: boolean; data: T; error?: string | { message?: string } }
+export type ApiEnvelope<T> = { success: boolean; data: T; error?: string | { message?: string }; code?: string; details?: Record<string, unknown> }
 
 export type AuthSession = {
   id: string
@@ -13,6 +13,28 @@ export type AuthSession = {
   role?: string
   auth_provider?: string
   account_merged?: boolean
+}
+
+export type AccountStatus = {
+  state: 'active' | 'restricted' | 'merged'
+  message?: string
+  reauthenticate?: boolean
+  unread_count?: number
+  restriction?: {
+    id?: string | null
+    scope: 'publish' | 'account'
+    reason: string
+    starts_at?: string | null
+    ends_at?: string | null
+  } | null
+  appeal?: {
+    id: string
+    content: string
+    evidence_urls?: string[]
+    status: 'pending' | 'needs_info' | 'approved' | 'rejected' | 'withdrawn'
+    admin_reply?: string | null
+    created_at: string
+  } | null
 }
 
 export type RatingSummary = {

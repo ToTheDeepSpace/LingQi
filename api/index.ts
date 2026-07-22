@@ -103,6 +103,14 @@ import {
   miniappAccountMergeErrorMessage,
   miniappAccountMergePreflight,
 } from './accountMergePolicy.js';
+import {
+  accountAccessDecision,
+  normalizeRestrictionScope,
+  restrictionBlocksLogin,
+  restrictionHasExpired,
+  type AccountRestrictionProfile,
+  type AccountRestrictionScope,
+} from './accountRestrictionPolicy.js';
 import { canApplyToCommission, commissionCityMatch } from './commissionTravel.js';
 
 function envValue(name: string) {
@@ -375,6 +383,10 @@ function err(e: unknown) {
   return { success: false, error: message };
 }
 
+function codedErr(e: unknown, code: string, details?: Record<string, unknown>) {
+  return { ...err(e), code, ...(details ? { details } : {}) };
+}
+
 function singleQueryValue(value: unknown): string {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : '';
   return typeof value === 'string' ? value : '';
@@ -458,58 +470,367 @@ async function checkWechatMiniText(content: string, openid: string) {
   return interpretWechatContentCheck(payload);
 }
 
-// --- JWT 鉴权中间件 ---
-async function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+type AccountStateProfile = Record<string, unknown> & AccountRestrictionProfile & {
+  id: string;
+  role?: string | null;
+  ban_reason?: string | null;
+  banned_at?: string | null;
+  merged_at?: string | null;
+  session_version?: number | null;
+};
+
+async function expireAccountRestriction(profile: AccountStateProfile): Promise<AccountStateProfile> {
+  if (!restrictionHasExpired(profile)) return profile;
+  const nowIso = new Date().toISOString();
+
+  if (!useTencentPg) {
+    const activeResult = await supabase.from('lc_account_restrictions')
+      .select('id')
+      .eq('profile_id', profile.id)
+      .eq('status', 'active')
+      .maybeSingle();
+    await supabase.from('lc_profiles').update({
+      is_banned: false,
+      ban_reason: null,
+      banned_at: null,
+      restriction_scope: null,
+      restriction_ends_at: null,
+    }).eq('id', profile.id);
+    if (activeResult.data?.id) {
+      await supabase.from('lc_account_restrictions').update({ status: 'expired', updated_at: nowIso }).eq('id', activeResult.data.id);
+      await supabase.from('lc_account_notifications').insert({
+        profile_id: profile.id,
+        type: 'restriction_expired',
+        title: '账号限制已到期',
+        content: '账号限制已自动解除，你可以继续使用相应功能。',
+        action_url: '/account-status',
+        related_type: 'account_restriction',
+        related_id: activeResult.data.id,
+      });
+    }
+    return { ...profile, is_banned: false, ban_reason: null, banned_at: null, restriction_scope: null, restriction_ends_at: null };
+  }
+
+  const client = await tencentPgPool.connect();
+  try {
+    await client.query('begin');
+    const activeResult = await client.query<{ id: string }>(
+      `select id
+       from lc_account_restrictions
+       where profile_id = $1 and status = 'active'
+       for update`,
+      [profile.id],
+    );
+    const updateResult = await client.query<AccountStateProfile>(
+      `update lc_profiles
+       set is_banned = false,
+           ban_reason = null,
+           banned_at = null,
+           restriction_scope = null,
+           restriction_ends_at = null,
+           updated_at = now()
+       where id = $1
+         and is_banned = true
+         and restriction_ends_at is not null
+         and restriction_ends_at <= now()
+       returning *`,
+      [profile.id],
+    );
+    const restrictionId = activeResult.rows[0]?.id;
+    if (updateResult.rowCount && restrictionId) {
+      await client.query(
+        `update lc_account_restrictions
+         set status = 'expired', updated_at = now()
+         where id = $1 and status = 'active'`,
+        [restrictionId],
+      );
+      await client.query(
+        `insert into lc_account_notifications
+           (profile_id, type, title, content, action_url, related_type, related_id)
+         values ($1, 'restriction_expired', '账号限制已到期',
+           '账号限制已自动解除，你可以继续使用相应功能。',
+           '/account-status', 'account_restriction', $2)`,
+        [profile.id, restrictionId],
+      );
+    }
+    await client.query('commit');
+    return updateResult.rows[0] || { ...profile, is_banned: false, ban_reason: null, banned_at: null, restriction_scope: null, restriction_ends_at: null };
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function loadAuthenticatedAccount(req: express.Request, res: express.Response): Promise<AccountStateProfile | null> {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) {
-    return res.status(401).json(err(new Error('请先登录')));
+    res.status(401).json(err(new Error('请先登录')));
+    return null;
   }
   let decoded: { creatorId: string; role?: string; sessionVersion?: number };
   try {
     decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId: string; role?: string; sessionVersion?: number };
   } catch {
-    return res.status(401).json(err(new Error('登录已过期，请重新登录')));
+    res.status(401).json(err(new Error('登录已过期，请重新登录')));
+    return null;
   }
 
   try {
     if (!decoded.creatorId || decoded.creatorId === 'admin') {
-      return res.status(401).json(err(new Error('旧管理员登录已停用，请使用管理员账号重新登录')));
+      res.status(401).json(err(new Error('旧管理员登录已停用，请使用管理员账号重新登录')));
+      return null;
     }
-    const { data: profile, error: profileErr } = await supabase.from('lc_profiles')
-      .select('id, role, is_banned, ban_reason, last_seen_at, session_version')
+    const { data: rawProfile, error: profileErr } = await supabase.from('lc_profiles')
+      .select('id, role, is_banned, ban_reason, banned_at, merged_into, merged_at, restriction_scope, restriction_ends_at, last_seen_at, session_version')
       .eq('id', decoded.creatorId)
       .maybeSingle();
     if (profileErr && !isMissingRelation(profileErr, 'is_banned')) throw profileErr;
-    if (!profile) return res.status(401).json(err(new Error('账号不存在，请重新登录')));
+    if (!rawProfile) {
+      res.status(401).json(err(new Error('账号不存在，请重新登录')));
+      return null;
+    }
+    const profile = await expireAccountRestriction(rawProfile as AccountStateProfile);
 
     const actualRole = profileAuthRole(profile);
     (req as Record<string, unknown>).creatorId = decoded.creatorId;
     (req as Record<string, unknown>).role = actualRole;
+    (req as Record<string, unknown>).accountProfile = profile;
 
-    if (profile.is_banned) {
-      await logSecurityEvent(req, {
-        action: 'auth_blocked_banned_user',
-        actorId: decoded.creatorId,
-        actorRole: actualRole,
-        targetType: 'profile',
-        targetId: decoded.creatorId,
-        metadata: { reason: profile.ban_reason || null },
-      });
-      return res.status(403).json(err(new Error('账号已被限制发布，请联系管理员申诉')));
+    if (!profile.merged_into && !authSessionMatches(decoded.sessionVersion, profile.session_version)) {
+      res.status(401).json(err(new Error('登录状态已失效，请重新登录')));
+      return null;
     }
-    if (!authSessionMatches(decoded.sessionVersion, profile.session_version)) {
-      return res.status(401).json(err(new Error('登录状态已失效，请重新登录')));
+    if (!profile.merged_into) {
+      const seenResult = await supabase.from('lc_profiles')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', decoded.creatorId);
+      if (seenResult.error && !isMissingRelation(seenResult.error, 'last_seen_at')) throw seenResult.error;
     }
-    const seenResult = await supabase.from('lc_profiles')
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq('id', decoded.creatorId);
-    if (seenResult.error && !isMissingRelation(seenResult.error, 'last_seen_at')) throw seenResult.error;
-    next();
+    return profile;
   } catch (profileErr) {
     console.error('[auth] profile status check failed', getErrorText(profileErr));
-    return res.status(500).json(err(new Error('账号状态检查失败，请稍后重试')));
+    res.status(500).json(err(new Error('账号状态检查失败，请稍后重试')));
+    return null;
   }
 }
+
+function publishRestrictionAllowsWrite(path: string) {
+  return path === '/api/lc/auth/bind-phone'
+    || path === '/api/lc/auth/set-password'
+    || path === '/api/lc/follows/cities'
+    || path.startsWith('/api/lc/follows/stores/');
+}
+
+// --- JWT 鉴权中间件 ---
+async function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const profile = await loadAuthenticatedAccount(req, res);
+  if (!profile) return;
+  const decision = accountAccessDecision(profile, req.method);
+  if (decision.state === 'merged') {
+    return res.status(409).json(codedErr(
+      new Error('这个微信临时账号已经合并到原网站账号，请重新登录'),
+      'ACCOUNT_MERGED',
+      { reauthenticate: true },
+    ));
+  }
+  if (!decision.allowed && !(decision.scope === 'publish' && publishRestrictionAllowsWrite(req.path))) {
+    await logSecurityEvent(req, {
+      action: 'auth_blocked_restricted_user',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: 'profile',
+      targetId: profile.id,
+      metadata: { reason: profile.ban_reason || null, scope: decision.scope || 'account' },
+    });
+    const message = decision.scope === 'publish'
+      ? '账号当前被限制发布，请到账号状态页查看原因或提交申诉'
+      : '账号功能当前受限，请到账号状态页查看原因或提交申诉';
+    return res.status(403).json(codedErr(new Error(message), 'ACCOUNT_RESTRICTED', {
+      scope: decision.scope || 'account',
+      action_url: '/account-status',
+    }));
+  }
+  next();
+}
+
+async function accountStateMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const profile = await loadAuthenticatedAccount(req, res);
+  if (!profile) return;
+  next();
+}
+
+function accountProfileFromRequest(req: express.Request) {
+  return (req as Record<string, unknown>).accountProfile as AccountStateProfile;
+}
+
+async function activeAccountRestriction(profileId: string) {
+  const { data, error } = await supabase.from('lc_account_restrictions')
+    .select('id, scope, reason, status, starts_at, ends_at, created_at, updated_at')
+    .eq('profile_id', profileId)
+    .eq('status', 'active')
+    .maybeSingle();
+  if (error) throw error;
+  return data as Record<string, unknown> | null;
+}
+
+function publicAccountRestriction(profile: AccountStateProfile, restriction: Record<string, unknown> | null) {
+  if (!profile.is_banned || profile.merged_into) return null;
+  return restriction || {
+    id: null,
+    scope: normalizeRestrictionScope(profile.restriction_scope),
+    reason: profile.ban_reason || '账号功能受限',
+    status: 'active',
+    starts_at: profile.banned_at || null,
+    ends_at: profile.restriction_ends_at || null,
+  };
+}
+
+function normalizeAccountEvidenceUrls(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value
+    .map(item => normalizeOptionalPublicUrl(item, 1200, true))
+    .filter(Boolean)))
+    .slice(0, 6);
+}
+
+app.get('/api/lc/account/status', accountStateMiddleware, async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const profile = accountProfileFromRequest(req);
+    if (profile.merged_into) {
+      return res.json(ok({
+        state: 'merged',
+        message: '这个微信临时账号已经合并到原网站账号，请重新登录。',
+        merged_at: profile.merged_at || null,
+        reauthenticate: true,
+        restriction: null,
+        appeal: null,
+        unread_count: 0,
+      }));
+    }
+
+    const [restriction, appealResult, unreadResult] = await Promise.all([
+      activeAccountRestriction(profile.id),
+      supabase.from('lc_account_appeals')
+        .select('id, restriction_id, content, evidence_urls, status, admin_reply, reviewed_at, created_at, updated_at')
+        .eq('profile_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(1),
+      supabase.from('lc_account_notifications')
+        .select('id')
+        .eq('profile_id', profile.id)
+        .is('read_at', null)
+        .limit(100),
+    ]);
+    if (appealResult.error) throw appealResult.error;
+    if (unreadResult.error) throw unreadResult.error;
+    res.json(ok({
+      state: profile.is_banned ? 'restricted' : 'active',
+      message: profile.is_banned ? '账号当前有生效中的功能限制。' : '账号状态正常。',
+      restriction: publicAccountRestriction(profile, restriction),
+      appeal: appealResult.data?.[0] || null,
+      unread_count: unreadResult.data?.length || 0,
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/account/notifications', accountStateMiddleware, async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const profile = accountProfileFromRequest(req);
+    if (profile.merged_into) return res.json(ok([]));
+    const { data, error } = await supabase.from('lc_account_notifications')
+      .select('id, type, title, content, action_url, related_type, related_id, read_at, created_at')
+      .eq('profile_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/account/notifications/:id/read', accountStateMiddleware, async (req, res) => {
+  try {
+    const profile = accountProfileFromRequest(req);
+    if (profile.merged_into) return res.status(409).json(codedErr(new Error('账号已合并，请重新登录'), 'ACCOUNT_MERGED'));
+    const { data, error } = await supabase.from('lc_account_notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .eq('profile_id', profile.id)
+      .select('id, read_at')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json(err(new Error('通知不存在')));
+    res.json(ok(data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/account/appeals', accountStateMiddleware, async (req, res) => {
+  try {
+    const profile = accountProfileFromRequest(req);
+    if (profile.merged_into) return res.status(409).json(codedErr(new Error('账号已合并，请重新登录'), 'ACCOUNT_MERGED'));
+    if (!profile.is_banned) return res.status(409).json(err(new Error('当前账号没有生效中的限制')));
+    const content = cleanText(req.body?.content, 2000);
+    if (content.length < 10) return res.status(400).json(err(new Error('请至少填写 10 个字的申诉说明')));
+    const restriction = await activeAccountRestriction(profile.id);
+    if (!restriction?.id) return res.status(409).json(err(new Error('当前限制记录尚未初始化，请联系管理员处理')));
+    const evidenceUrls = normalizeAccountEvidenceUrls(req.body?.evidenceUrls);
+    const existingOpenResult = await supabase.from('lc_account_appeals')
+      .select('id, status')
+      .eq('profile_id', profile.id)
+      .in('status', ['pending', 'needs_info'])
+      .maybeSingle();
+    if (existingOpenResult.error) throw existingOpenResult.error;
+    if (existingOpenResult.data?.status === 'pending') {
+      return res.status(409).json(err(new Error('已有申诉正在处理中，请勿重复提交')));
+    }
+    const appealMutation = existingOpenResult.data?.status === 'needs_info'
+      ? supabase.from('lc_account_appeals').update({
+          content,
+          evidence_urls: evidenceUrls,
+          status: 'pending',
+          reviewed_by: null,
+          reviewed_at: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', existingOpenResult.data.id)
+      : supabase.from('lc_account_appeals').insert({
+          restriction_id: restriction.id,
+          profile_id: profile.id,
+          content,
+          evidence_urls: evidenceUrls,
+          status: 'pending',
+        });
+    const { data, error } = await appealMutation
+      .select('id, restriction_id, content, evidence_urls, status, created_at, updated_at')
+      .single();
+    if (error) {
+      if (String((error as { code?: string }).code || '') === '23505') {
+        return res.status(409).json(err(new Error('已有申诉正在处理中，请勿重复提交')));
+      }
+      throw error;
+    }
+    await supabase.from('lc_account_notifications').insert({
+      profile_id: profile.id,
+      type: 'appeal_submitted',
+      title: '账号申诉已提交',
+      content: '管理员可以在后台查看你的说明。处理结果会通过站内通知同步。',
+      action_url: '/account-status',
+      related_type: 'account_appeal',
+      related_id: data.id,
+    });
+    await logSecurityEvent(req, {
+      action: 'account_appeal_submitted',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: 'account_appeal',
+      targetId: data.id,
+      metadata: { restriction_id: restriction.id, evidence_count: evidenceUrls.length },
+    });
+    res.status(201).json(ok(data));
+  } catch (e) { res.status(500).json(err(e)); }
+});
 
 async function getOptionalCreatorId(req: express.Request) {
   const auth = req.headers.authorization;
@@ -518,10 +839,12 @@ async function getOptionalCreatorId(req: express.Request) {
     const decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId?: string; sessionVersion?: number };
     if (!decoded.creatorId) return null;
     const { data: profile, error } = await supabase.from('lc_profiles')
-      .select('id, is_banned, session_version')
+      .select('id, is_banned, merged_into, restriction_scope, restriction_ends_at, session_version')
       .eq('id', decoded.creatorId)
       .maybeSingle();
-    if (error || !profile || profile.is_banned) return null;
+    if (error || !profile) return null;
+    const decision = accountAccessDecision(profile as AccountRestrictionProfile, 'GET');
+    if (!decision.allowed || decision.state === 'merged') return null;
     return authSessionMatches(decoded.sessionVersion, profile.session_version) ? decoded.creatorId : null;
   } catch {
     return null;
@@ -5007,7 +5330,7 @@ app.post('/api/lc/auth/reset-password', async (req, res) => {
       .maybeSingle();
     if (existingErr) throw existingErr;
     if (!existing) return res.status(404).json(err(new Error('该账号还没有注册，请先注册')));
-    if (existing.is_banned) {
+    if (restrictionBlocksLogin(existing)) {
       await logSecurityEvent(req, {
         action: 'auth_reset_password_blocked_banned_user',
         targetType: 'profile',
@@ -5078,7 +5401,7 @@ app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
       supabase.from('lc_profiles').select('*').eq('phone', phone).maybeSingle(),
     ]);
     if (!current) return res.status(404).json(err(new Error('当前账号不存在')));
-    if (current.is_banned) return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
+    if (restrictionBlocksLogin(current)) return res.status(403).json(err(new Error('账号功能当前受限，请联系管理员申诉')));
     if (existing && existing.id !== creatorId) {
       const preflightError = miniappAccountMergePreflight(current, existing);
       if (preflightError) return res.status(409).json(err(new Error(preflightError)));
@@ -5176,7 +5499,7 @@ app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
 
     const { data: current } = await supabase.from('lc_profiles').select('*').eq('id', creatorId).single();
     if (!current) return res.status(404).json(err(new Error('当前账号不存在')));
-    if (current.is_banned) return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
+    if (restrictionBlocksLogin(current)) return res.status(403).json(err(new Error('账号功能当前受限，请联系管理员申诉')));
     if (!current.phone_verified_at && !current.email_verified_at) {
       return res.status(400).json(err(new Error('请先完成手机号或邮箱验证，再设置网页登录密码')));
     }
@@ -5284,7 +5607,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
     else query = query.eq('wechat_openid', openid);
     let { data: profile } = await query.maybeSingle();
 
-    if (profile?.is_banned) {
+    if (profile && restrictionBlocksLogin(profile)) {
       await logSecurityEvent(req, {
         action: 'auth_wechat_login_blocked_banned_user',
         targetType: 'profile',
@@ -5413,7 +5736,7 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
     }
     if (profileErr) throw profileErr;
 
-    if (profile?.is_banned) {
+    if (profile && restrictionBlocksLogin(profile)) {
       await logSecurityEvent(req, {
         action: 'auth_miniapp_login_blocked_banned_user',
         targetType: 'profile',
@@ -5617,7 +5940,7 @@ app.post('/api/lc/auth', async (req, res) => {
         });
         return res.status(409).json(err(new Error('该账号已通过验证码或微信注册；如忘记密码，请用手机号或邮箱验证码重新验证并设置新密码')));
       }
-      if (existing.is_banned) {
+      if (restrictionBlocksLogin(existing)) {
         await logSecurityEvent(req, {
           action: 'auth_login_blocked_banned_user',
           targetType: 'profile',
@@ -8854,6 +9177,11 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
       .limit(100);
+    const accountAppealsResult = await supabase.from('lc_account_appeals')
+      .select('*')
+      .in('status', ['pending', 'needs_info'])
+      .order('created_at', { ascending: false })
+      .limit(200);
     if (dmDossiersResult.error && !isMissingRelation(dmDossiersResult.error, 'lc_dm_dossiers')) throw dmDossiersResult.error;
     if (rankingEditRequestsResult.error && !isMissingRelation(rankingEditRequestsResult.error, 'lc_ranking_edit_requests')) throw rankingEditRequestsResult.error;
     if (dmClaimsResult.error && !isMissingRelation(dmClaimsResult.error, 'lc_dm_dossier_claims')) throw dmClaimsResult.error;
@@ -8865,6 +9193,22 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     if (reviewHistoryResult.error && !isMissingRelation(reviewHistoryResult.error, 'lc_public_reviews')) throw reviewHistoryResult.error;
     if (guidesResult.error && !isMissingRelation(guidesResult.error, 'lc_guides')) throw guidesResult.error;
     if (withdrawalsResult.error && !isMissingRelation(withdrawalsResult.error, 'lc_creator_withdrawals')) throw withdrawalsResult.error;
+    if (accountAppealsResult.error && !isMissingRelation(accountAppealsResult.error, 'lc_account_appeals')) throw accountAppealsResult.error;
+    const accountAppeals = accountAppealsResult.error ? [] : (accountAppealsResult.data || []) as Record<string, unknown>[];
+    const appealProfileIds = Array.from(new Set(accountAppeals.map(item => cleanText(item.profile_id, 80)).filter(Boolean)));
+    const appealRestrictionIds = Array.from(new Set(accountAppeals.map(item => cleanText(item.restriction_id, 80)).filter(Boolean)));
+    const [appealProfilesResult, appealRestrictionsResult] = await Promise.all([
+      appealProfileIds.length > 0
+        ? supabase.from('lc_profiles').select('id, display_name').in('id', appealProfileIds)
+        : Promise.resolve({ data: [], error: null }),
+      appealRestrictionIds.length > 0
+        ? supabase.from('lc_account_restrictions').select('id, scope, reason, starts_at, ends_at, status').in('id', appealRestrictionIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (appealProfilesResult.error) throw appealProfilesResult.error;
+    if (appealRestrictionsResult.error) throw appealRestrictionsResult.error;
+    const appealProfileMap = new Map((appealProfilesResult.data || []).map(item => [String(item.id), item]));
+    const appealRestrictionMap = new Map((appealRestrictionsResult.data || []).map(item => [String(item.id), item]));
     const approvedDossiers = approvedDmDossiersResult.error ? [] : (approvedDmDossiersResult.data || []) as Record<string, unknown>[];
     const approvedDmDossiers = approvedDossiers.filter(dossier => dossier.entity_type === 'dm');
     const approvedStoreDossiers = approvedDossiers.filter(dossier => dossier.entity_type === 'store');
@@ -8931,6 +9275,11 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       carpools: carpools || [],
       reports: reports || [],
       siteMessages: siteMessages || [],
+      accountAppeals: accountAppeals.map(item => ({
+        ...item,
+        profile_name: appealProfileMap.get(String(item.profile_id))?.display_name || '未知用户',
+        restriction: appealRestrictionMap.get(String(item.restriction_id)) || null,
+      })),
       scriptContributions: scriptContributions || [],
       securityEvents: securityEvents || [],
       dmDossiers: pendingDmDossiers,
@@ -10090,41 +10439,269 @@ app.put('/api/lc/admin/site-messages/:id/resolve', authMiddleware, adminMiddlewa
 });
 
 app.put('/api/lc/admin/profile/:id/ban', authMiddleware, adminMiddleware, async (req, res) => {
+  const client = await tencentPgPool.connect();
   try {
-    const reason = cleanText(req.body?.reason || req.body?.rejectReason, 300) || '违反平台规则，限制账号功能';
-    const { error: updErr } = await supabase.from('lc_profiles').update({
-      is_banned: true,
-      ban_reason: reason,
-      banned_at: new Date().toISOString(),
-      is_visible: false,
-      reject_reason: reason,
-    }).eq('id', req.params.id);
-    if (updErr) throw updErr;
+    const reason = cleanText(req.body?.reason || req.body?.rejectReason, 600) || '违反平台规则，限制账号功能';
+    const scope: AccountRestrictionScope = req.body?.scope === 'account' ? 'account' : 'publish';
+    const rawEndsAt = cleanText(req.body?.endsAt, 80);
+    const endsAt = rawEndsAt ? new Date(rawEndsAt) : null;
+    if (endsAt && (!Number.isFinite(endsAt.getTime()) || endsAt.getTime() <= Date.now())) {
+      return res.status(400).json(err(new Error('限制结束时间必须晚于当前时间')));
+    }
+    const adminId = getReq(req, 'creatorId');
+    await client.query('begin');
+    const profileResult = await client.query<{
+      id: string;
+      is_visible: boolean;
+      is_banned: boolean;
+      merged_into: string | null;
+      restriction_scope: string | null;
+    }>('select id, is_visible, is_banned, merged_into, restriction_scope from lc_profiles where id = $1 for update', [req.params.id]);
+    const profile = profileResult.rows[0];
+    if (!profile) {
+      await client.query('rollback');
+      return res.status(404).json(err(new Error('账号不存在')));
+    }
+    if (profile.merged_into) {
+      await client.query('rollback');
+      return res.status(409).json(err(new Error('这是已合并的历史账号，不能设置或解除处罚')));
+    }
+    const activeResult = await client.query<{ id: string; profile_was_visible: boolean }>(
+      `select id, profile_was_visible
+       from lc_account_restrictions
+       where profile_id = $1 and status = 'active'
+       for update`,
+      [req.params.id],
+    );
+    const active = activeResult.rows[0];
+    const profileWasVisible = active?.profile_was_visible ?? profile.is_visible;
+    let restrictionId = active?.id || '';
+    if (active) {
+      await client.query(
+        `update lc_account_restrictions
+         set scope = $2, reason = $3, ends_at = $4, updated_at = now()
+         where id = $1`,
+        [active.id, scope, reason, endsAt?.toISOString() || null],
+      );
+    } else {
+      const inserted = await client.query<{ id: string }>(
+        `insert into lc_account_restrictions
+           (profile_id, scope, reason, ends_at, profile_was_visible, created_by)
+         values ($1, $2, $3, $4, $5, $6)
+         returning id`,
+        [req.params.id, scope, reason, endsAt?.toISOString() || null, profile.is_visible, adminId],
+      );
+      restrictionId = inserted.rows[0].id;
+    }
+    const nextVisible = scope === 'account'
+      ? false
+      : profile.restriction_scope === 'account'
+        ? profileWasVisible
+        : profile.is_visible;
+    await client.query(
+      `update lc_profiles
+       set is_banned = true,
+           ban_reason = $2,
+           banned_at = coalesce(banned_at, now()),
+           restriction_scope = $3,
+           restriction_ends_at = $4,
+           is_visible = $5,
+           updated_at = now()
+       where id = $1`,
+      [req.params.id, reason, scope, endsAt?.toISOString() || null, nextVisible],
+    );
+    const scopeLabel = scope === 'publish' ? '发布功能' : '账号功能';
+    const endLabel = endsAt ? `，至 ${endsAt.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : '，长期有效';
+    await client.query(
+      `insert into lc_account_notifications
+         (profile_id, type, title, content, action_url, related_type, related_id)
+       values ($1, $2, $3, $4, '/account-status', 'account_restriction', $5)`,
+      [
+        req.params.id,
+        active ? 'restriction_changed' : 'restriction_started',
+        active ? '账号限制已调整' : '账号功能受到限制',
+        `${scopeLabel}已被限制${endLabel}。原因：${reason}`,
+        restrictionId,
+      ],
+    );
+    await client.query('commit');
     await logSecurityEvent(req, {
-      action: 'admin_profile_banned',
+      action: active ? 'admin_profile_restriction_changed' : 'admin_profile_banned',
       targetType: 'profile',
       targetId: req.params.id,
-      metadata: { reason },
+      metadata: { reason, scope, ends_at: endsAt?.toISOString() || null, restriction_id: restrictionId },
     });
-    res.json(ok({ id: req.params.id, is_banned: true }));
-  } catch (e) { res.status(500).json(err(e)); }
+    res.json(ok({ id: req.params.id, is_banned: true, restriction_scope: scope, restriction_ends_at: endsAt?.toISOString() || null }));
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    res.status(500).json(err(e));
+  } finally { client.release(); }
 });
 
 app.put('/api/lc/admin/profile/:id/unban', authMiddleware, adminMiddleware, async (req, res) => {
+  const client = await tencentPgPool.connect();
   try {
-    const { error: updErr } = await supabase.from('lc_profiles').update({
-      is_banned: false,
-      ban_reason: null,
-      banned_at: null,
-    }).eq('id', req.params.id);
-    if (updErr) throw updErr;
+    const restoreProfile = req.body?.restoreProfile === true;
+    const adminNote = cleanText(req.body?.adminNote, 600) || '管理员解除账号限制';
+    const adminId = getReq(req, 'creatorId');
+    await client.query('begin');
+    const profileResult = await client.query<{ id: string; is_visible: boolean; merged_into: string | null; ban_reason: string | null; reject_reason: string | null }>(
+      'select id, is_visible, merged_into, ban_reason, reject_reason from lc_profiles where id = $1 for update',
+      [req.params.id],
+    );
+    const profile = profileResult.rows[0];
+    if (!profile) {
+      await client.query('rollback');
+      return res.status(404).json(err(new Error('账号不存在')));
+    }
+    if (profile.merged_into) {
+      await client.query('rollback');
+      return res.status(409).json(err(new Error('这是已合并的历史账号，不能解除处罚')));
+    }
+    const activeResult = await client.query<{ id: string; profile_was_visible: boolean }>(
+      `select id, profile_was_visible
+       from lc_account_restrictions
+       where profile_id = $1 and status = 'active'
+       for update`,
+      [req.params.id],
+    );
+    const active = activeResult.rows[0];
+    const nextVisible = restoreProfile ? (active?.profile_was_visible ?? true) : profile.is_visible;
+    if (active) {
+      await client.query(
+        `update lc_account_restrictions
+         set status = 'lifted', lifted_by = $2, lifted_at = now(), admin_note = $3,
+             restore_profile_on_lift = $4, updated_at = now()
+         where id = $1`,
+        [active.id, adminId, adminNote, restoreProfile],
+      );
+    }
+    await client.query(
+      `update lc_profiles
+       set is_banned = false,
+           ban_reason = null,
+           banned_at = null,
+           restriction_scope = null,
+           restriction_ends_at = null,
+           is_visible = $2,
+           reject_reason = case when $3 and reject_reason = ban_reason then null else reject_reason end,
+           updated_at = now()
+       where id = $1`,
+      [req.params.id, nextVisible, restoreProfile],
+    );
+    await client.query(
+      `insert into lc_account_notifications
+         (profile_id, type, title, content, action_url, related_type, related_id)
+       values ($1, 'restriction_lifted', '账号限制已解除', $2, '/account-status', 'account_restriction', $3)`,
+      [req.params.id, adminNote, active?.id || null],
+    );
+    await client.query('commit');
     await logSecurityEvent(req, {
       action: 'admin_profile_unbanned',
       targetType: 'profile',
       targetId: req.params.id,
+      metadata: { restore_profile: restoreProfile, restriction_id: active?.id || null },
     });
-    res.json(ok({ id: req.params.id, is_banned: false }));
-  } catch (e) { res.status(500).json(err(e)); }
+    res.json(ok({ id: req.params.id, is_banned: false, is_visible: nextVisible }));
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    res.status(500).json(err(e));
+  } finally { client.release(); }
+});
+
+app.put('/api/lc/admin/account-appeals/:id/review', authMiddleware, adminMiddleware, async (req, res) => {
+  const client = await tencentPgPool.connect();
+  try {
+    const decision = cleanText(req.body?.decision, 40);
+    if (!['approved', 'rejected', 'needs_info'].includes(decision)) {
+      return res.status(400).json(err(new Error('请选择通过、维持限制或要求补充说明')));
+    }
+    const adminReply = cleanText(req.body?.adminReply, 1200);
+    if (adminReply.length < 2) return res.status(400).json(err(new Error('请填写处理说明')));
+    const restoreProfile = req.body?.restoreProfile === true;
+    const adminId = getReq(req, 'creatorId');
+    await client.query('begin');
+    const appealResult = await client.query<{
+      id: string;
+      profile_id: string;
+      restriction_id: string;
+      status: string;
+    }>('select id, profile_id, restriction_id, status from lc_account_appeals where id = $1 for update', [req.params.id]);
+    const appeal = appealResult.rows[0];
+    if (!appeal) {
+      await client.query('rollback');
+      return res.status(404).json(err(new Error('申诉不存在')));
+    }
+    if (!['pending', 'needs_info'].includes(appeal.status)) {
+      await client.query('rollback');
+      return res.status(409).json(err(new Error('这条申诉已经处理')));
+    }
+    await client.query(
+      `update lc_account_appeals
+       set status = $2, admin_reply = $3, reviewed_by = $4,
+           reviewed_at = case when $2 = 'needs_info' then null else now() end,
+           updated_at = now()
+       where id = $1`,
+      [appeal.id, decision, adminReply, adminId],
+    );
+
+    if (decision === 'approved') {
+      const restrictionResult = await client.query<{ id: string; status: string; profile_was_visible: boolean }>(
+        'select id, status, profile_was_visible from lc_account_restrictions where id = $1 for update',
+        [appeal.restriction_id],
+      );
+      const restriction = restrictionResult.rows[0];
+      if (restriction?.status === 'active') {
+        await client.query(
+          `update lc_account_restrictions
+           set status = 'lifted', lifted_by = $2, lifted_at = now(), admin_note = $3,
+               restore_profile_on_lift = $4, updated_at = now()
+           where id = $1`,
+          [restriction.id, adminId, adminReply, restoreProfile],
+        );
+        await client.query(
+          `update lc_profiles
+           set is_banned = false,
+               ban_reason = null,
+               banned_at = null,
+               restriction_scope = null,
+               restriction_ends_at = null,
+               is_visible = case when $2 then $3 else is_visible end,
+               updated_at = now()
+           where id = $1`,
+          [appeal.profile_id, restoreProfile, restriction.profile_was_visible],
+        );
+      }
+    }
+
+    const notificationType = decision === 'approved'
+      ? 'appeal_approved'
+      : decision === 'needs_info'
+        ? 'appeal_needs_info'
+        : 'appeal_rejected';
+    const notificationTitle = decision === 'approved'
+      ? '账号申诉已通过'
+      : decision === 'needs_info'
+        ? '账号申诉需要补充说明'
+        : '账号申诉处理完成';
+    await client.query(
+      `insert into lc_account_notifications
+         (profile_id, type, title, content, action_url, related_type, related_id)
+       values ($1, $2, $3, $4, '/account-status', 'account_appeal', $5)`,
+      [appeal.profile_id, notificationType, notificationTitle, adminReply, appeal.id],
+    );
+    await client.query('commit');
+    await logSecurityEvent(req, {
+      action: 'admin_account_appeal_reviewed',
+      targetType: 'account_appeal',
+      targetId: appeal.id,
+      metadata: { decision, restore_profile: restoreProfile, restriction_id: appeal.restriction_id },
+    });
+    res.json(ok({ id: appeal.id, status: decision, admin_reply: adminReply }));
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    res.status(500).json(err(e));
+  } finally { client.release(); }
 });
 
 app.put('/api/lc/contact-requests/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {

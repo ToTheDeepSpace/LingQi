@@ -2152,6 +2152,9 @@ export default function Dashboard() {
                       <p style={{ color: MUTED, fontSize: 13, fontWeight: 650 }}>登录账号是手机号或邮箱；昵称只用于公开展示。</p>
                     </div>
                     <div className="account-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      <Link to="/account-status" style={{ ...secondaryActionStyle, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
+                        账号状态与申诉
+                      </Link>
                       <button type="button" onClick={() => setShowAccountBindForm(v => !v)} style={secondaryActionStyle}>
                         {showAccountBindForm ? '收起' : phoneVerified ? '更换手机号' : '绑定手机号'}
                       </button>
