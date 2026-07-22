@@ -180,6 +180,7 @@ export type Commission = {
   location?: string | null
   budget?: string | null
   contact_note?: string | null
+  accept_expedition?: boolean
   has_private_contact?: boolean
   status?: string
   reject_reason?: string | null
@@ -197,7 +198,7 @@ export type CommissionApplication = {
   status: 'submitted' | 'accepted' | 'rejected'
   contacts?: { poster: string; applicant: string } | null
   created_at?: string
-  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'has_private_contact'> | null
+  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'has_private_contact' | 'accept_expedition'> | null
 }
 
 export type PublicProfile = {
@@ -207,6 +208,9 @@ export type PublicProfile = {
   city?: string | null
   bio?: string | null
   tags?: string[]
+  available_cities?: string[]
+  travel_status?: string | null
+  commission_match?: 'local' | 'expedition' | null
 }
 
 export type ScriptRole = { target_id?: string; role_name: string; gender?: string; tags?: string[]; rating_avg?: number | null; rating_count?: number; role_kind?: string; role_source?: string }

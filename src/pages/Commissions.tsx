@@ -179,7 +179,12 @@ export default function Commissions() {
     try { if (localStorage.getItem('lc:commissions:last-city') !== null) return; } catch { /* optional */ }
     fetch(`${API}/lc/follows`, { headers: { Authorization: `Bearer ${auth.token}` } })
       .then(response => response.json())
-      .then(payload => { if (payload.success && payload.data?.cities?.[0]) setCity(payload.data.cities[0]); })
+      .then(payload => {
+        const followedCity = payload.success ? payload.data?.cities?.[0] : '';
+        if (!followedCity) return;
+        setCity(followedCity);
+        try { localStorage.setItem('lc:commissions:last-city', followedCity); } catch { /* optional */ }
+      })
       .catch(() => undefined);
   }, []);
 
@@ -259,6 +264,7 @@ export default function Commissions() {
             city: applicationModal.city,
             needed_date: applicationModal.needed_date,
             has_private_contact: applicationModal.has_private_contact,
+            accept_expedition: applicationModal.accept_expedition,
           },
         }, ...prev]);
         setApplicationDone(true);
@@ -330,11 +336,11 @@ export default function Commissions() {
       <JumuluCompactHeader
         eyebrow="委托需求墙"
         title="写下想见的角色"
-        description="明确日期、城市和角色，或者只留下一段愿望，等待合适的服务者回应。"
+        description="默认查看本地委托；发布人可以接受已声明可远征到执行城市的异地委托师。"
         aside={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <Link to="/commissions/new" style={jumuluPrimaryLinkStyle}>发布委托需求</Link>
-            <Link to="/explore" style={jumuluSecondaryLinkStyle}>找服务者</Link>
+            <Link to={city === 'all' ? '/explore' : `/explore?city=${encodeURIComponent(city)}`} style={jumuluSecondaryLinkStyle}>找本地与可远征委托师</Link>
           </div>
         }
       />
@@ -595,6 +601,7 @@ function CommissionCard({ item, showStatus, onDelete, onApply, onReport, applied
         {item.script_name && <Pill>{item.script_name}</Pill>}
         {item.needed_date && <Pill>{item.needed_date}</Pill>}
         {item.city && <Pill>{item.city}</Pill>}
+        {item.accept_expedition && <Pill>接受远征</Pill>}
         {item.target_type && <Pill>{TARGET_LABEL[item.target_type] || item.target_type}</Pill>}
       </div>
       <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.15rem', fontWeight: 900, marginBottom: 10, color: INK }}>{item.title}</h2>

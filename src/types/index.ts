@@ -35,6 +35,7 @@ export interface Creator {
   has_pending_dm_cert?: boolean;
   role_preferences?: ProfileRolePreference[];
   services?: Service[];
+  commission_match?: 'local' | 'expedition' | null;
 }
 
 export interface ProfileRolePreference {
@@ -164,6 +165,7 @@ export interface Commission {
   location: string | null;
   budget: string | null;
   contact_note: string | null;
+  accept_expedition?: boolean;
   has_private_contact?: boolean;
   ai_assist_context?: Record<string, unknown>;
   status: 'pending' | 'approved' | 'rejected' | 'closed';
@@ -184,7 +186,7 @@ export interface CommissionApplication {
   contact_unlocked_at?: string | null;
   contacts?: { poster: string; applicant: string } | null;
   created_at: string;
-  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'has_private_contact'> | null;
+  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'has_private_contact' | 'accept_expedition'> | null;
 }
 
 export interface Carpool {

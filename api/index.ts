@@ -103,6 +103,7 @@ import {
   miniappAccountMergeErrorMessage,
   miniappAccountMergePreflight,
 } from './accountMergePolicy.js';
+import { canApplyToCommission, commissionCityMatch } from './commissionTravel.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -669,6 +670,8 @@ type AuthedProfile = {
   email?: string | null;
   email_verified_at?: string | null;
   gender?: string | null;
+  city?: string | null;
+  available_cities?: string[] | null;
   role?: string | null;
   role_type?: string | null;
   identity_roles?: string[] | null;
@@ -683,7 +686,7 @@ type AuthedProfile = {
 async function getAuthedProfile(req: express.Request): Promise<AuthedProfile | null> {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, email, email_verified_at, gender, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, wechat_mini_openid')
+    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, email, email_verified_at, gender, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, wechat_mini_openid')
     .eq('id', creatorId)
     .single();
   return data as AuthedProfile | null;
@@ -5890,6 +5893,7 @@ app.get('/api/lc/creators', async (req, res) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
     const city = cleanText(req.query.city, 60);
     const followedCities = normalizeActivityCities(req.query.cities).filter(item => DOSSIER_CITY_VALUES.has(item));
+    const serviceOnly = req.query.serviceOnly === 'true';
 
     const { data: serviceRows, error: serviceErr } = await supabase
       .from('lc_services')
@@ -5926,6 +5930,7 @@ app.get('/api/lc/creators', async (req, res) => {
       .limit(500);
 
     const visibleProfiles = (data || []).filter((profile: Record<string, unknown>) => {
+      if (serviceOnly && !servicesByCreator.has(String(profile.id))) return false;
       const requestedCities = city ? [city] : followedCities;
       if (requestedCities.length === 0) return true;
       const availableCities = Array.isArray(profile.available_cities) ? profile.available_cities : [];
@@ -5947,11 +5952,14 @@ app.get('/api/lc/creators', async (req, res) => {
     res.json(ok({
       items: pagedItems.map(profile => {
         const serviceRoles = identityRolesFromServices(serviceTypesByCreator.get(String(profile.id)) || []);
-        return sanitizeProfile({
+        const safeProfile = sanitizeProfile({
           ...profile,
           identity_roles: mergeIdentityRoles(profile.identity_roles, serviceRoles),
           services: servicesByCreator.get(String(profile.id)) || [],
         });
+        const requestedCity = city || (followedCities.length === 1 ? followedCities[0] : '');
+        if (requestedCity) safeProfile.commission_match = commissionCityMatch(profile, requestedCity);
+        return safeProfile;
       }),
       total,
       page,
@@ -6646,11 +6654,14 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
       city, location, budget, contactNote, aiAssistContext,
     } = req.body;
     const privateContact = cleanText(req.body?.privateContact ?? req.body?.private_contact, 300);
+    const commissionCity = cleanText(city, 40);
+    const acceptExpedition = req.body?.acceptExpedition === true || req.body?.accept_expedition === true;
     const scriptIdInput = cleanText(req.body.scriptId, 80);
     let scriptName = cleanText(req.body.scriptName, 100);
     let scriptId: string | null = null;
     if (!title || !content) return res.status(400).json(err(new Error('请填写标题和需求内容')));
     if (!privateContact) return res.status(400).json(err(new Error('请留下接受申请后用于联系的方式')));
+    if (!commissionCity || !DOSSIER_CITY_VALUES.has(commissionCity)) return res.status(400).json(err(new Error('请选择委托执行城市')));
 
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -6659,7 +6670,7 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'commission_submit',
       targetType: 'commission',
-      texts: { title, content, desiredRole, targetType, city, location, budget, contactNote, scriptName },
+      texts: { title, content, desiredRole, targetType, city: commissionCity, location, budget, contactNote, scriptName },
       files: req.body?.files,
       allowContact: true,
     });
@@ -6682,7 +6693,8 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
       desired_role: desiredRole || null,
       target_type: targetType || null,
       needed_date: neededDate || null,
-      city: city || null,
+      city: commissionCity,
+      accept_expedition: acceptExpedition,
       location: location || null,
       budget: budget || null,
       contact_note: contactNote || null,
@@ -6696,7 +6708,7 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
       action: 'commission_submitted',
       targetType: 'commission',
       targetId: data?.id,
-      metadata: { city: city || null, target_type: targetType || null, script_id: scriptId, script_name: scriptName || null, moderation: moderationPrecheck },
+      metadata: { city: commissionCity, accept_expedition: acceptExpedition, target_type: targetType || null, script_id: scriptId, script_name: scriptName || null, moderation: moderationPrecheck },
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -8123,7 +8135,7 @@ app.get('/api/lc/commissions/applications/received', authMiddleware, async (req,
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
 
     const { data: commissions, error: cErr } = await supabase.from('lc_commissions')
-      .select('id, title, city, needed_date, private_contact')
+      .select('id, title, city, needed_date, accept_expedition, private_contact')
       .eq('poster_id', profile.id);
     if (cErr) throw cErr;
     const ids = (commissions || []).map(item => item.id);
@@ -8164,7 +8176,7 @@ app.get('/api/lc/commissions/applications/sent', authMiddleware, async (req, res
     if (qErr) throw qErr;
     const commissionIds = Array.from(new Set((data || []).map(item => item.commission_id).filter(Boolean)));
     const commissionResult = commissionIds.length > 0
-      ? await supabase.from('lc_commissions').select('id, title, city, needed_date, private_contact').in('id', commissionIds)
+      ? await supabase.from('lc_commissions').select('id, title, city, needed_date, accept_expedition, private_contact').in('id', commissionIds)
       : { data: [], error: null };
     if (commissionResult.error) throw commissionResult.error;
     const commissionMap = new Map((commissionResult.data || []).map(item => [item.id, item]));
@@ -8199,13 +8211,21 @@ app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
 
     const { data: commission } = await supabase.from('lc_commissions')
-      .select('id, poster_id, status, needed_date')
+      .select('id, poster_id, status, needed_date, city, accept_expedition')
       .eq('id', req.params.id)
       .single();
     if (!commission) return res.status(404).json(err(new Error('委托需求不存在')));
     if (commission.status !== 'approved') return res.status(400).json(err(new Error('只能申请已上墙的委托需求')));
     if (isCommissionExpired(commission as Record<string, unknown>)) return res.status(400).json(err(new Error('这条委托已过期，不能继续接单')));
     if (commission.poster_id === profile.id) return res.status(400).json(err(new Error('不能接自己的委托需求')));
+    const commissionTravel = { city: commission.city, accept_expedition: commission.accept_expedition === true };
+    const cityMatch = commissionCityMatch(profile, commission.city);
+    if (!canApplyToCommission(profile, commissionTravel)) {
+      const message = commission.accept_expedition
+        ? `这条委托只接受${commission.city}本地，或已在主页声明可服务${commission.city}的委托师`
+        : `发布人暂不接受异地远征，仅限常驻${commission.city}的委托师申请`;
+      return res.status(400).json(err(new Error(message)));
+    }
 
     const { data, error: insErr } = await supabase.from('lc_commission_applications').insert({
       commission_id: req.params.id,
@@ -8226,7 +8246,7 @@ app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res
       actorRole: profileAuthRole(profile),
       targetType: 'commission_application',
       targetId: String(data?.id || ''),
-      metadata: { commission_id: req.params.id },
+      metadata: { commission_id: req.params.id, city_match: cityMatch },
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }

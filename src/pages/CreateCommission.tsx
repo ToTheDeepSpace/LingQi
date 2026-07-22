@@ -52,6 +52,7 @@ type CommissionDraft = {
   budget: string;
   contactNote: string;
   privateContact: string;
+  acceptExpedition: boolean;
 };
 
 function shouldSaveCommissionDraft(data: CommissionDraft) {
@@ -66,7 +67,7 @@ function shouldSaveCommissionDraft(data: CommissionDraft) {
     data.budget,
     data.contactNote,
     data.privateContact,
-  ].some(item => item.trim()) || data.targetType !== 'creator';
+  ].some(item => item.trim()) || data.targetType !== 'creator' || data.acceptExpedition;
 }
 
 export default function CreateCommission() {
@@ -85,6 +86,7 @@ export default function CreateCommission() {
   const [budget, setBudget] = useState('');
   const [contactNote, setContactNote] = useState('');
   const [privateContact, setPrivateContact] = useState('');
+  const [acceptExpedition, setAcceptExpedition] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -101,7 +103,8 @@ export default function CreateCommission() {
     budget,
     contactNote,
     privateContact,
-  }), [budget, city, contactNote, content, desiredRole, location, neededDate, privateContact, scriptId, scriptName, targetType, title]);
+    acceptExpedition,
+  }), [acceptExpedition, budget, city, contactNote, content, desiredRole, location, neededDate, privateContact, scriptId, scriptName, targetType, title]);
 
   const commissionDraft = useDraftAutosave<CommissionDraft>({
     key: 'lc:draft:commission:new',
@@ -122,6 +125,7 @@ export default function CreateCommission() {
       setBudget(data.budget || '');
       setContactNote(data.contactNote || '');
       setPrivateContact(data.privateContact || '');
+      setAcceptExpedition(Boolean(data.acceptExpedition));
     },
   });
 
@@ -139,6 +143,16 @@ export default function CreateCommission() {
     void loadScripts();
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    if (!auth || city) return;
+    fetch(`${API}/lc/follows`, { headers: { Authorization: `Bearer ${auth.token}` } })
+      .then(response => response.json())
+      .then(payload => {
+        if (payload.success && payload.data?.cities?.[0]) setCity(payload.data.cities[0]);
+      })
+      .catch(() => undefined);
+  }, [auth, city]);
 
   if (!auth) {
     return (
@@ -161,6 +175,10 @@ export default function CreateCommission() {
       setError('请留下接受申请后用于联系的方式');
       return;
     }
+    if (!city) {
+      setError('请选择委托执行城市');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -179,7 +197,7 @@ export default function CreateCommission() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
         body: JSON.stringify({
-          title, content, scriptId: scriptId || null, scriptName: scriptName.trim() || null, desiredRole, targetType, neededDate, city, location, budget, contactNote, privateContact: privateContact.trim(), aiAssistContext,
+          title, content, scriptId: scriptId || null, scriptName: scriptName.trim() || null, desiredRole, targetType, neededDate, city, location, budget, contactNote, privateContact: privateContact.trim(), acceptExpedition, aiAssistContext,
         }),
       });
       const d = await r.json();
@@ -277,9 +295,9 @@ export default function CreateCommission() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
               <div>
-                <label style={labelStyle}>城市（可选）</label>
+                <label style={labelStyle}>委托执行城市 *</label>
                 <select value={city} onChange={e => setCity(e.target.value)} style={inputStyle}>
-                  <option value="">暂不指定</option>
+                  <option value="">请选择城市</option>
                   {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
@@ -288,6 +306,14 @@ export default function CreateCommission() {
                 <input value={location} onChange={e => setLocation(e.target.value)} placeholder="如：朝阳区 / 某展会 / 可商量" style={inputStyle} />
               </div>
             </div>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(217,168,87,0.24)', background: '#fff', cursor: 'pointer' }}>
+              <input type="checkbox" checked={acceptExpedition} onChange={event => setAcceptExpedition(event.target.checked)} style={{ marginTop: 3 }} />
+              <span>
+                <strong style={{ display: 'block', color: INK, fontSize: 14 }}>接受异地委托师远征</strong>
+                <span style={{ display: 'block', marginTop: 4, color: MUTED, fontSize: 12, lineHeight: 1.6 }}>勾选后，常驻外地但已声明可服务{city || '该城市'}的委托师也可以申请。</span>
+              </span>
+            </label>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
               <div>

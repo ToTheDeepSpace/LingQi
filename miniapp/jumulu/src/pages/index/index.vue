@@ -56,6 +56,10 @@ function go(path: string, tab = false) {
         <text class="entry__title">角色点评</text>
         <text class="entry__meta">无剧透体验与剧透深评</text>
       </view>
+      <view class="entry entry--wide surface" @tap="go('/pages/commissions/index')">
+        <text class="entry__title">委托</text>
+        <text class="entry__meta">看本地需求，也找可远征到本地的委托师</text>
+      </view>
     </view>
 
     <view class="section-head">
@@ -94,6 +98,7 @@ function go(path: string, tab = false) {
 .brand__description { display: block; margin-top: 12rpx; color: #64748b; font-size: 25rpx; line-height: 1.65; }
 .entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; margin-top: 18rpx; }
 .entry { min-height: 142rpx; padding: 20rpx; }
+.entry--wide { grid-column: 1 / -1; min-height: 116rpx; }
 .entry__title, .entry__meta { display: block; }
 .entry__title { color: #27364a; font-size: 28rpx; font-weight: 850; }
 .entry__meta { margin-top: 8rpx; color: #748093; font-size: 22rpx; line-height: 1.45; }

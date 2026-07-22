@@ -1,10 +1,10 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { Creator, PaginatedResponse } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { generatedAvatarDataUrl } from '../lib/avatar';
-import { creatorEntryPath } from '../lib/authSession';
+import { creatorEntryPath, readStoredCreatorAuth } from '../lib/authSession';
 import { primaryDisplayIdentityRole } from '../lib/serviceCategories';
 import { formatTravelStatus } from '../lib/travelStatus';
 import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
@@ -49,12 +49,17 @@ const cityScrollStyle: React.CSSProperties = {
 };
 
 export default function Explore() {
+  const [searchParams] = useSearchParams();
   const entryPath = creatorEntryPath();
   const [creators, setCreators] = useState<Creator[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('all');
-  const [city, setCity] = useState('all');
+  const [city, setCity] = useState(() => {
+    const fromUrl = searchParams.get('city');
+    if (fromUrl && CITIES.includes(fromUrl)) return fromUrl;
+    try { return localStorage.getItem('lc:explore:last-city') || 'all'; } catch { return 'all'; }
+  });
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [cityOpen, setCityOpen] = useState(false);
@@ -98,10 +103,26 @@ export default function Explore() {
 
   const setCityAndReset = (c: string) => {
     setCity(c);
+    try { localStorage.setItem('lc:explore:last-city', c); } catch { /* optional */ }
     setPage(1);
     setCityOpen(false);
     setCityQuery('');
   };
+
+  useEffect(() => {
+    const auth = readStoredCreatorAuth();
+    if (!auth?.token || city !== 'all' || searchParams.get('city')) return;
+    try { if (localStorage.getItem('lc:explore:last-city') !== null) return; } catch { /* optional */ }
+    fetch(`${API}/lc/follows`, { headers: { Authorization: `Bearer ${auth.token}` } })
+      .then(response => response.json())
+      .then(payload => {
+        const followedCity = payload.success ? payload.data?.cities?.[0] : '';
+        if (!followedCity) return;
+        setCity(followedCity);
+        try { localStorage.setItem('lc:explore:last-city', followedCity); } catch { /* optional */ }
+      })
+      .catch(() => undefined);
+  }, [city, searchParams]);
 
   const hasIdentity = (creator: Creator, key: string) => {
     const identityRoles = Array.isArray(creator.identity_roles) ? creator.identity_roles : [];
@@ -120,7 +141,7 @@ export default function Explore() {
       <JumuluCompactHeader
         eyebrow="主页发现"
         title="看看同城的人"
-        description="按身份和城市查看已经审核公开的用户主页；发布了服务的人会同时展示报价与档期。"
+        description="默认按关注城市查看常驻本地和已声明可远征到本地的人；发布了服务的人会同时展示报价与档期。"
         aside={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <Link to="/commissions" style={jumuluSecondaryLinkStyle}>查看委托</Link>
@@ -401,6 +422,8 @@ function CreatorCard({ creator }: { creator: Creator }) {
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {creator.commission_match === 'local' && <Tag>本地常驻</Tag>}
+        {creator.commission_match === 'expedition' && <Tag>可远征到本地</Tag>}
         {travelStatus && <Tag>{travelStatus}</Tag>}
         {availableCities.slice(0, 2).map(c => <Tag key={c}>{c}</Tag>)}
         {creator.contact_unlock_enabled && <Tag>可联系</Tag>}
