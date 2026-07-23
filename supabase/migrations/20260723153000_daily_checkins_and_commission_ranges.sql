@@ -135,20 +135,32 @@ begin
         where id = tx.id;
     end loop;
 
-    -- Preserve legacy balances that do not have a complete transaction trail.
-    update public.lc_profiles
-      set paid_balance = paid_balance + (balance - paid_balance - bonus_balance)
-      where balance <> paid_balance + bonus_balance;
+  end if;
 
-    if exists (
-      select 1
-      from public.lc_profiles
-      where paid_balance < 0
-         or bonus_balance < 0
-         or balance <> paid_balance + bonus_balance
-    ) then
-      raise exception '钱包拆分校验失败，迁移已回滚';
-    end if;
+  -- Early miniapp accounts received 30 initial coins before a transaction row
+  -- was written. Preserve the total and classify that exact untracked amount
+  -- as bonus credit; preserve any other positive legacy delta as paid credit.
+  update public.lc_profiles p
+    set bonus_balance = p.bonus_balance + (p.balance - p.paid_balance - p.bonus_balance)
+    where p.balance - p.paid_balance - p.bonus_balance = 30
+      and not exists (
+        select 1
+        from public.lc_transactions t
+        where t.profile_id = p.id
+      );
+
+  update public.lc_profiles
+    set paid_balance = paid_balance + (balance - paid_balance - bonus_balance)
+    where balance - paid_balance - bonus_balance > 0;
+
+  if exists (
+    select 1
+    from public.lc_profiles
+    where paid_balance < 0
+       or bonus_balance < 0
+       or balance <> paid_balance + bonus_balance
+  ) then
+    raise exception '钱包拆分校验失败，迁移已回滚';
   end if;
 end $$;
 
