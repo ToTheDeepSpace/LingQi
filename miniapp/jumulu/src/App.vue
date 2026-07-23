@@ -4,6 +4,7 @@ import { refreshCurrentUser } from './utils/auth'
 import { apiRequest, readAuth } from './utils/api'
 
 let checkingFollows = false
+let checkingNotifications = false
 async function ensureCityFollows() {
   if (checkingFollows || !readAuth()?.token) return
   const current = getCurrentPages().at(-1)?.route || ''
@@ -16,11 +17,35 @@ async function ensureCityFollows() {
   finally { checkingFollows = false }
 }
 
+async function refreshNotificationCount() {
+  if (checkingNotifications) return
+  if (!readAuth()?.token) {
+    uni.setStorageSync('jumulu:notifications:unread', 0)
+    uni.$emit('jumulu:notification-count', 0)
+    return
+  }
+  checkingNotifications = true
+  try {
+    const data = await apiRequest<{ unread_count?: number }>('/lc/account/status')
+    const count = Math.max(0, Number(data.unread_count || 0))
+    uni.setStorageSync('jumulu:notifications:unread', count)
+    uni.$emit('jumulu:notification-count', count)
+  } catch { /* 页面内会给出可重试反馈 */ }
+  finally { checkingNotifications = false }
+}
+
 onLaunch(() => {
-  void refreshCurrentUser({ silent: true }).then(() => ensureCityFollows())
-  uni.$on('jumulu:auth-changed', () => setTimeout(() => void ensureCityFollows(), 250))
+  void refreshCurrentUser({ silent: true }).then(() => Promise.all([ensureCityFollows(), refreshNotificationCount()]))
+  uni.$on('jumulu:auth-changed', () => setTimeout(() => {
+    void ensureCityFollows()
+    void refreshNotificationCount()
+  }, 250))
+  uni.$on('jumulu:refresh-notifications', () => void refreshNotificationCount())
 })
-onShow(() => void ensureCityFollows())
+onShow(() => {
+  void ensureCityFollows()
+  void refreshNotificationCount()
+})
 </script>
 
 <style>

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { onMounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -16,13 +15,24 @@ const emit = defineEmits<{ back: [] }>()
 const statusBarHeight = ref(20)
 const barHeight = ref(44)
 const rightReserve = ref(96)
+const unreadCount = ref(Math.max(0, Number(uni.getStorageSync('jumulu:notifications:unread') || 0)))
+const showMessageEntry = ref(true)
 const tabPages = new Set(['/pages/index/index', '/pages/rankings/index', '/pages/commissions/index', '/pages/carpools/index', '/pages/mine/index'])
 const navStyle = computed(() => `padding-top:${statusBarHeight.value}px`)
 const innerStyle = computed(() => `height:${barHeight.value}px;padding-right:${rightReserve.value}px`)
-const titleStyle = computed(() => `right:${rightReserve.value}px;left:${rightReserve.value}px`)
-const brandStyle = computed(() => `right:${rightReserve.value}px`)
+const actionRightStyle = computed(() => `right:${rightReserve.value}px`)
+const contentReserve = computed(() => rightReserve.value + (showMessageEntry.value ? 42 : 0))
+const titleStyle = computed(() => `right:${contentReserve.value}px;left:${contentReserve.value}px`)
+const brandStyle = computed(() => `right:${contentReserve.value}px`)
+
+function updateUnread(value: unknown) {
+  unreadCount.value = Math.max(0, Number(value || 0))
+}
 
 onMounted(() => {
+  const pages = getCurrentPages()
+  const currentRoute = pages[pages.length - 1]?.route || ''
+  showMessageEntry.value = currentRoute !== 'pages/mine/account-status'
   const windowInfo = uni.getWindowInfo()
   statusBarHeight.value = Number(windowInfo.statusBarHeight || 20)
   try {
@@ -33,7 +43,14 @@ onMounted(() => {
       rightReserve.value = Math.max(88, Number(windowInfo.windowWidth || 375) - capsule.left + 8)
     }
   } catch { /* use stable fallback dimensions */ }
+  uni.$on('jumulu:notification-count', updateUnread)
 })
+
+onUnmounted(() => uni.$off('jumulu:notification-count', updateUnread))
+
+function openNotifications() {
+  uni.navigateTo({ url: '/pages/mine/account-status' })
+}
 
 function goBack() {
   if (props.inlineBack) {
@@ -61,6 +78,9 @@ function goBack() {
         <text v-if="subtitle" class="mini-nav__brand-subtitle">{{ subtitle }}</text>
       </view>
       <text v-else class="mini-nav__title" :style="titleStyle">{{ title }}</text>
+      <button v-if="showMessageEntry" class="mini-nav__message" :style="actionRightStyle" aria-label="消息通知" @tap="openNotifications">
+        <text>消息</text><text v-if="unreadCount > 0" class="mini-nav__dot" />
+      </button>
     </view>
   </view>
 </template>
@@ -76,4 +96,6 @@ function goBack() {
 .mini-nav__brand { position: absolute; left: 24rpx; display: flex; align-items: baseline; min-width: 0; gap: 12rpx; overflow: hidden; }
 .mini-nav__brand-name { flex: 0 0 auto; color: #172033; font-family: serif; font-size: 38rpx; font-weight: 900; line-height: 1; }
 .mini-nav__brand-subtitle { min-width: 0; overflow: hidden; color: #596579; font-size: 21rpx; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.mini-nav__message { position: absolute; top: 50%; width: 38px; height: 32px; margin: 0; padding: 0; transform: translateY(-50%); border: 0; background: transparent; color: #475569; font-size: 21rpx; font-weight: 800; line-height: 32px; text-align: center; }
+.mini-nav__dot { position: absolute; top: 4px; right: 1px; width: 7px; height: 7px; border: 1px solid #fffdf8; border-radius: 50%; background: #c43d3d; }
 </style>

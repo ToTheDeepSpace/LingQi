@@ -328,6 +328,19 @@ type CommissionApplicationAudit = {
   } | null;
 };
 
+type ProviderInquiryAudit = {
+  id: string;
+  provider_id: string;
+  provider_name: string;
+  requester_id: string;
+  requester_name: string;
+  message: string;
+  status: 'submitted' | 'accepted' | 'rejected';
+  decided_at?: string | null;
+  contact_unlocked_at?: string | null;
+  created_at: string;
+};
+
 type CarpoolReview = {
   id: string;
   poster_name: string;
@@ -472,7 +485,7 @@ type AccountAppeal = {
 
 type PublicReview = {
   id: string;
-  target_type: 'profile_update' | 'dossier_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert' | 'entity_rating_upsert' | 'rating_discussion_create';
+  target_type: 'profile_update' | 'dossier_update' | 'provider_listing_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert' | 'entity_rating_upsert' | 'rating_discussion_create';
   profile_id?: string | null;
   profile_name?: string | null;
   title?: string | null;
@@ -693,6 +706,7 @@ function certificationTypeLabel(type: string) {
 function publicReviewTypeLabel(type: string) {
   if (type === 'profile_update') return '主页资料';
   if (type === 'dossier_update') return '档案修改';
+  if (type === 'provider_listing_update') return '委托师委托条';
   if (type === 'service_create') return '服务上线';
   if (type === 'portfolio_create') return '作品图片';
   if (type === 'availability_create') return '公开档期';
@@ -850,12 +864,14 @@ function summarizePublicReviewPayload(
   const fallbackLabels: Record<string, string> = {
     tag: '标签', target_type: '对象类型', rating: '评分', score: '评分', content: '提交内容', comment: '点评内容',
     spoiler_level: '剧透程度', items: '提交档期', image_url: '上传图片', role_name: '角色', script_name: '剧本',
+    poster_url: '委托条主图', headline: '一句话介绍', description: '补充说明', height_cm: '身高',
+    weight_kg: '体重', role_types: '擅长角色类型',
   };
   const hiddenKeys = new Set(['social_snapshots', 'before_snapshot', 'changed_fields']);
   return Object.entries(payload)
     .filter(([key, value]) => !hiddenKeys.has(key) && value !== undefined && value !== null && value !== '')
     .slice(0, 12)
-    .map(([key, value]) => `${fallbackLabels[key] || '提交资料'}：${['image_url', 'photo_url', 'avatar'].includes(key) ? '已上传图片（见下方缩略图）' : Array.isArray(value) ? `${value.length} 项` : typeof value === 'object' ? '已提交结构化资料' : String(value).slice(0, 160)}`);
+    .map(([key, value]) => `${fallbackLabels[key] || '提交资料'}：${['image_url', 'photo_url', 'avatar', 'poster_url'].includes(key) ? '已上传图片（见下方缩略图）' : Array.isArray(value) ? value.map(String).join('、').slice(0, 160) : typeof value === 'object' ? '已提交结构化资料' : String(value).slice(0, 160)}`);
 }
 
 function publicReviewProofFiles(item: PublicReview): ProofFile[] {
@@ -879,6 +895,7 @@ function publicReviewProofFiles(item: PublicReview): ProofFile[] {
     }
   }
   push(payload.image_url, '待审作品图片');
+  push(payload.poster_url, '待审委托条主图');
   if (Array.isArray(payload.items)) {
     payload.items.forEach((raw, index) => {
       if (!raw || typeof raw !== 'object') return;
@@ -998,6 +1015,7 @@ export default function Admin() {
   const [claims, setClaims] = useState<ClaimReview[]>([]);
   const [commissions, setCommissions] = useState<CommissionReview[]>([]);
   const [commissionApplications, setCommissionApplications] = useState<CommissionApplicationAudit[]>([]);
+  const [providerInquiries, setProviderInquiries] = useState<ProviderInquiryAudit[]>([]);
   const [rankingBatchLoading, setRankingBatchLoading] = useState(false);
   const [carpools, setCarpools] = useState<CarpoolReview[]>([]);
   const [scriptContributions, setScriptContributions] = useState<ScriptContributionReview[]>([]);
@@ -1088,9 +1106,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setReviewHistory((d.data as { reviewHistory: PublicReview[] }).reviewHistory || []);
         setGuides((d.data as { guides: GuideReview[] }).guides || []);
         setGuideWithdrawals((d.data as { guideWithdrawals: GuideWithdrawalReview[] }).guideWithdrawals || []);
-        const applicationResponse = await fetch(`${API}/lc/admin/commission-applications`, { headers: { Authorization: `Bearer ${t}` } });
-        const applicationPayload = await applicationResponse.json();
+        const [applicationResponse, providerInquiryResponse] = await Promise.all([
+          fetch(`${API}/lc/admin/commission-applications`, { headers: { Authorization: `Bearer ${t}` } }),
+          fetch(`${API}/lc/admin/provider-inquiries`, { headers: { Authorization: `Bearer ${t}` } }),
+        ]);
+        const [applicationPayload, providerInquiryPayload] = await Promise.all([
+          applicationResponse.json(),
+          providerInquiryResponse.json(),
+        ]);
         if (applicationResponse.ok && applicationPayload.success) setCommissionApplications(applicationPayload.data || []);
+        if (providerInquiryResponse.ok && providerInquiryPayload.success) setProviderInquiries(providerInquiryPayload.data || []);
       } else {
         const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '加载失败');
         setError(errMsg);
@@ -2037,7 +2062,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       { tab: 'rankingEdits', label: '口碑修改 / 恢复', count: rankingEditRequests.length },
       { tab: 'comments', label: '评论', count: comments.length },
       { tab: 'commissions', label: '委托', count: commissions.length },
-      { tab: 'commissionApplications', label: '委托私信', count: commissionApplications.length },
+      { tab: 'commissionApplications', label: '委托私信', count: commissionApplications.length + providerInquiries.length },
       { tab: 'carpools', label: '拼车', count: carpools.length },
       { tab: 'scriptContributions', label: '剧本库', count: scriptContributions.length },
       { tab: 'guides', label: '攻略', count: guides.length },
@@ -2650,7 +2675,20 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
 
             {tab === 'commissionApplications' && (
-              <ListEmpty empty={commissionApplications.length === 0} text="暂无委托接单私信">
+              <ListEmpty empty={commissionApplications.length === 0 && providerInquiries.length === 0} text="暂无委托私信">
+                {providerInquiries.map(item => (
+                  <Row key={`provider-${item.id}`} accent={item.status === 'accepted' ? '#16a34a' : item.status === 'rejected' ? '#94a3b8' : '#275389'}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <TitleLine title={`${item.requester_name} → ${item.provider_name}`} pill={item.status === 'accepted' ? '已同意联系' : item.status === 'rejected' ? '已拒绝' : '待委托师处理'} />
+                      <Meta>
+                        委托条咨询
+                        {item.created_at ? ` · ${item.created_at.slice(0, 10)}` : ''}
+                      </Meta>
+                      <ContentBox>{item.message}</ContentBox>
+                      <Meta>管理员可查看申请内容和处理状态；双方联系方式不在后台列表接口返回。</Meta>
+                    </div>
+                  </Row>
+                ))}
                 {commissionApplications.map(item => (
                   <Row key={item.id} accent={item.status === 'accepted' ? '#16a34a' : item.status === 'rejected' ? '#94a3b8' : '#d9a857'}>
                     <div style={{ minWidth: 0, flex: 1 }}>

@@ -4,19 +4,22 @@ import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
-import type { Commission, CommissionApplication, PublicProfile } from '../../types'
+import type { Commission, CommissionApplication, ProviderInquiry, ProviderListing } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText } from '../../utils/format'
 
-type PageView = 'discover' | 'mine'
+type PageView = 'demands' | 'providers' | 'mine'
 type DiscoverScope = 'local' | 'expedition'
 
 const CITY_KEY = 'jumulu:commissions:last-city'
-const view = ref<PageView>('discover')
+const VIEW_KEY = 'jumulu:commissions:open-view'
+const view = ref<PageView>('demands')
 const commissions = ref<Commission[]>([])
-const creators = ref<PublicProfile[]>([])
+const providerListings = ref<ProviderListing[]>([])
 const received = ref<CommissionApplication[]>([])
 const sent = ref<CommissionApplication[]>([])
+const providerReceived = ref<ProviderInquiry[]>([])
+const providerSent = ref<ProviderInquiry[]>([])
 const loading = ref(false)
 const error = ref('')
 const query = ref('')
@@ -28,6 +31,10 @@ const applyTarget = ref<Commission | null>(null)
 const applyLetter = ref('')
 const applyContact = ref('')
 const applyBusy = ref(false)
+const inquiryTarget = ref<ProviderListing | null>(null)
+const inquiryMessage = ref('')
+const inquiryContact = ref('')
+const inquiryBusy = ref(false)
 const authId = computed(() => readAuth()?.id || '')
 
 const visibleItems = computed(() => commissions.value.filter(item =>
@@ -40,6 +47,16 @@ const visibleItems = computed(() => commissions.value.filter(item =>
     .toLocaleLowerCase('zh-CN')
     .includes(query.value.trim().toLocaleLowerCase('zh-CN'))),
 ))
+const visibleProviders = computed(() => {
+  const needle = query.value.trim().toLocaleLowerCase('zh-CN')
+  if (!needle) return providerListings.value
+  return providerListings.value.filter(item => [
+    item.profile?.display_name,
+    item.headline,
+    item.description,
+    ...(item.role_types || []),
+  ].join(' ').toLocaleLowerCase('zh-CN').includes(needle))
+})
 
 async function load() {
   loading.value = true
@@ -53,24 +70,29 @@ async function load() {
       }
     }
     const cityQuery = city.value === '全部城市' ? '' : `?city=${encoded(city.value)}`
-    const [items, people] = await Promise.all([
+    const listingQuery = city.value === '全部城市' ? '' : `?city=${encoded(city.value)}`
+    const [items, listings] = await Promise.all([
       apiRequest<Commission[]>(`/lc/commissions${cityQuery}`),
-      city.value === '全部城市'
-        ? Promise.resolve({ items: [] as PublicProfile[] })
-        : apiRequest<{ items: PublicProfile[] }>(`/lc/creators?city=${encoded(city.value)}&serviceOnly=true&limit=8`),
+      apiRequest<ProviderListing[]>(`/lc/provider-listings${listingQuery}`),
     ])
     commissions.value = items
-    creators.value = people.items || []
+    providerListings.value = listings
     if (readAuth()?.token) {
-      const [receivedItems, sentItems] = await Promise.all([
+      const [receivedItems, sentItems, receivedProviderItems, sentProviderItems] = await Promise.all([
         apiRequest<CommissionApplication[]>('/lc/commissions/applications/received'),
         apiRequest<CommissionApplication[]>('/lc/commissions/applications/sent'),
+        apiRequest<ProviderInquiry[]>('/lc/provider-inquiries/received'),
+        apiRequest<ProviderInquiry[]>('/lc/provider-inquiries/sent'),
       ])
       received.value = receivedItems
       sent.value = sentItems
+      providerReceived.value = receivedProviderItems
+      providerSent.value = sentProviderItems
     } else {
       received.value = []
       sent.value = []
+      providerReceived.value = []
+      providerSent.value = []
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载失败'
@@ -91,6 +113,7 @@ function setStartDate(value: string) {
 }
 function openProfile(id?: string) { if (id) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(id)}` }) }
 function create() { void requireLogin().then(() => uni.navigateTo({ url: '/pages/commissions/create' })).catch(() => undefined) }
+function editProviderListing() { void requireLogin().then(() => uni.navigateTo({ url: '/pages/commissions/provider-edit' })).catch(() => undefined) }
 function openApply(item: Commission) {
   void requireLogin().then(() => {
     if (item.poster_id === authId.value) return
@@ -136,40 +159,105 @@ function showContacts(contacts: { poster: string; applicant: string }) {
   uni.showModal({ title: '双方联系方式', content: text, confirmText: '复制全部', success: result => { if (result.confirm) uni.setClipboardData({ data: text }) } })
 }
 
-onShow(() => void load())
+function openInquiry(item: ProviderListing) {
+  void requireLogin().then(() => {
+    if (item.profile_id === authId.value) return editProviderListing()
+    inquiryTarget.value = item
+    inquiryMessage.value = ''
+    inquiryContact.value = ''
+  }).catch(() => undefined)
+}
+
+function closeInquiry() {
+  if (!inquiryBusy.value) inquiryTarget.value = null
+}
+
+async function submitInquiry() {
+  if (!inquiryTarget.value || !inquiryMessage.value.trim() || !inquiryContact.value.trim()) {
+    return uni.showToast({ title: '请填写咨询内容和联系方式', icon: 'none' })
+  }
+  inquiryBusy.value = true
+  try {
+    await apiRequest(`/lc/provider-listings/${encoded(inquiryTarget.value.profile_id)}/inquiries`, {
+      method: 'POST',
+      data: { message: inquiryMessage.value.trim(), privateContact: inquiryContact.value.trim() },
+    })
+    uni.showToast({ title: '联系申请已发送', icon: 'success' })
+    inquiryTarget.value = null
+    await load()
+  } catch (reason) {
+    uni.showToast({ title: (reason as Error).message, icon: 'none' })
+  } finally {
+    inquiryBusy.value = false
+  }
+}
+
+function showProviderContacts(contacts: { requester: string; provider: string }) {
+  const text = `咨询人：${contacts.requester || '未填写'}\n委托师：${contacts.provider || '未填写'}`
+  uni.showModal({ title: '双方联系方式', content: text, confirmText: '复制全部', success: result => { if (result.confirm) uni.setClipboardData({ data: text }) } })
+}
+
+async function decideProviderInquiry(item: ProviderInquiry, decision: 'accepted' | 'rejected', privateContact = '') {
+  try {
+    const result = await apiRequest<ProviderInquiry>(`/lc/provider-inquiries/${encoded(item.id)}/decision`, {
+      method: 'PUT',
+      data: { decision, privateContact: privateContact || undefined },
+    })
+    if (decision === 'accepted' && result.contacts) showProviderContacts(result.contacts)
+    uni.$emit('jumulu:refresh-notifications')
+    await load()
+  } catch (reason) {
+    uni.showToast({ title: (reason as Error).message, icon: 'none' })
+  }
+}
+
+function acceptProviderInquiry(item: ProviderInquiry) {
+  uni.showModal({
+    title: '同意并交换联系方式',
+    content: '填写你的微信号、手机号或其他联系方式。提交后双方立即可见。',
+    editable: true,
+    placeholderText: '你的联系方式',
+    confirmText: '同意',
+    success: result => {
+      if (!result.confirm) return
+      const contact = String(result.content || '').trim()
+      if (!contact) return uni.showToast({ title: '请填写联系方式', icon: 'none' })
+      void decideProviderInquiry(item, 'accepted', contact)
+    },
+  })
+}
+
+onShow(() => {
+  const requestedView = String(uni.getStorageSync(VIEW_KEY) || '')
+  if (requestedView === 'mine' || requestedView === 'providers' || requestedView === 'demands') {
+    view.value = requestedView
+    uni.removeStorageSync(VIEW_KEY)
+  }
+  void load()
+})
 onPullDownRefresh(load)
 </script>
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="委托需求" nav-title="委托" title="委托" description="默认查看本地需求，也能找到愿意远征到本地的委托师。" fallback="/pages/index/index">
-      <button class="primary-button intro-action" @tap="create">发布委托</button>
+    <PageIntro eyebrow="委托撮合" nav-title="委托" title="委托" description="发需求或找委托师；双方同意后自行联系，当前不经过平台收款。" fallback="/pages/index/index">
+      <view class="intro-actions">
+        <button class="primary-button" @tap="create">发布需求</button>
+        <button class="secondary-button" @tap="editProviderListing">我的委托条</button>
+      </view>
     </PageIntro>
     <view class="view-tabs">
-      <button :class="{ active: view === 'discover' }" @tap="view = 'discover'">找委托</button>
-      <button :class="{ active: view === 'mine' }" @tap="view = 'mine'">申请与处理</button>
+      <button :class="{ active: view === 'demands' }" @tap="view = 'demands'">委托需求</button>
+      <button :class="{ active: view === 'providers' }" @tap="view = 'providers'">找委托师</button>
+      <button :class="{ active: view === 'mine' }" @tap="view = 'mine'">消息处理</button>
     </view>
 
-    <template v-if="view === 'discover'">
+    <template v-if="view === 'demands'">
       <view class="filter page-tools">
         <view class="filter__row"><view class="filter__city"><CitySearchPicker :value="city" @change="selectCity" /></view><picker mode="date" :value="dateStart" @change="setStartDate($event.detail.value)"><view class="picker-field">{{ dateStart || '开始日期' }}</view></picker><picker mode="date" :value="dateEnd" :start="dateStart || undefined" @change="dateEnd = $event.detail.value"><view class="picker-field">{{ dateEnd || '结束日期' }}</view></picker></view>
         <view class="filter__search"><input v-model="query" class="input" placeholder="搜索剧本或角色" /><text v-if="dateStart || dateEnd" @tap="dateStart = ''; dateEnd = ''">清除日期</text></view>
       </view>
       <view class="scope-tabs"><view :class="{ active: discoverScope === 'local' }" @tap="discoverScope = 'local'">本地需求</view><view :class="{ active: discoverScope === 'expedition' }" @tap="discoverScope = 'expedition'">接受远征</view></view>
-
-      <template v-if="city !== '全部城市' && creators.length">
-        <view class="section-head"><text class="section-title">可接{{ city }}委托的人</text><text class="section-note">本地与可远征</text></view>
-        <scroll-view class="people" scroll-x :show-scrollbar="false">
-          <view class="people__track">
-            <view v-for="person in creators" :key="person.id" class="person surface" @tap="openProfile(person.id)">
-              <image v-if="person.avatar" class="person__avatar" :src="person.avatar" mode="aspectFill" />
-              <view v-else class="person__avatar person__placeholder">{{ person.display_name.slice(0, 1) }}</view>
-              <text class="person__name">{{ person.display_name }}</text>
-              <text class="person__match">{{ person.commission_match === 'local' ? '本地常驻' : `可远征到${city}` }}</text>
-            </view>
-          </view>
-        </scroll-view>
-      </template>
 
       <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visibleItems.length" empty-text="当前城市暂时没有公开委托" @retry="load" />
       <view class="listing-list">
@@ -184,10 +272,64 @@ onPullDownRefresh(load)
       </view>
     </template>
 
+    <template v-else-if="view === 'providers'">
+      <view class="provider-tools page-tools">
+        <CitySearchPicker :value="city" @change="selectCity" />
+        <input v-model="query" class="input" placeholder="搜索姓名、角色类型或简介" />
+      </view>
+      <StatePanel
+        :loading="loading"
+        :error="error"
+        :empty="!loading && !error && !visibleProviders.length"
+        empty-text="当前范围暂时没有公开委托条"
+        @retry="load"
+      />
+      <view class="provider-list">
+        <view
+          v-for="item in visibleProviders"
+          :key="item.profile_id"
+          class="provider-row"
+          @tap="openProfile(item.profile_id)"
+        >
+          <image class="provider-row__poster" :src="item.poster_url" mode="aspectFill" />
+          <view class="provider-row__body">
+            <view class="provider-row__head">
+              <text class="provider-row__name">{{ item.profile?.display_name || '委托师' }}</text>
+              <text v-if="item.profile?.city" class="provider-row__city">{{ item.profile.city }}</text>
+            </view>
+            <text v-if="item.headline" class="provider-row__headline">{{ item.headline }}</text>
+            <text class="provider-row__meta">{{ [item.height_cm ? `${item.height_cm}cm` : '', item.weight_kg ? `${item.weight_kg}kg` : '', item.profile?.commission_match === 'expedition' && city !== '全部城市' ? `可远征到${city}` : ''].filter(Boolean).join(' · ') || '资料待补充' }}</text>
+            <view v-if="item.role_types?.length" class="provider-row__roles"><text v-for="role in item.role_types.slice(0, 3)" :key="role">{{ role }}</text></view>
+            <button class="inquiry-button" @tap.stop="openInquiry(item)">{{ item.profile_id === authId ? '编辑委托条' : '联系 TA' }}</button>
+          </view>
+        </view>
+      </view>
+    </template>
+
     <template v-else>
       <StatePanel v-if="!readAuth()?.token" :empty="true" empty-text="登录后查看自己发出的申请和收到的申请" />
       <template v-else>
+        <text class="section-title">委托条收到的咨询</text>
+        <text v-if="providerReceived.length === 0" class="empty-line">暂无咨询</text>
+        <view v-for="item in providerReceived" :key="item.id" class="inbox surface">
+          <text class="inbox__title">{{ item.requester_name }}</text>
+          <text class="inbox__body">{{ item.message }}</text>
+          <view v-if="item.status === 'submitted'" class="action-row"><button class="secondary-button" @tap="decideProviderInquiry(item, 'rejected')">拒绝</button><button class="primary-button" @tap="acceptProviderInquiry(item)">同意并交换联系</button></view>
+          <button v-else-if="item.status === 'accepted' && item.contacts" class="secondary-button full-button" @tap="showProviderContacts(item.contacts)">查看双方联系方式</button>
+          <text v-else class="status">已拒绝</text>
+        </view>
+
+        <text class="section-title">我发出的委托咨询</text>
+        <text v-if="providerSent.length === 0" class="empty-line">暂无咨询</text>
+        <view v-for="item in providerSent" :key="item.id" class="inbox surface" @tap="openProfile(item.provider_id)">
+          <text class="inbox__title">{{ item.provider?.display_name || '委托师' }}</text>
+          <text class="inbox__body">{{ item.message }}</text>
+          <text class="status">{{ item.status === 'submitted' ? '等待对方处理' : item.status === 'accepted' ? '已同意' : '已拒绝' }}</text>
+          <button v-if="item.status === 'accepted' && item.contacts" class="secondary-button full-button" @tap.stop="showProviderContacts(item.contacts)">查看双方联系方式</button>
+        </view>
+
         <text class="section-title">收到的承接申请</text>
+        <text v-if="received.length === 0" class="empty-line">暂无申请</text>
         <view v-for="item in received" :key="item.id" class="inbox surface">
           <text class="inbox__title">{{ item.commission?.title || '委托申请' }} · {{ item.applicant_name }}</text>
           <text class="inbox__body">{{ item.letter }}</text>
@@ -196,6 +338,7 @@ onPullDownRefresh(load)
           <text v-else class="status">已拒绝</text>
         </view>
         <text class="section-title">我发出的申请</text>
+        <text v-if="sent.length === 0" class="empty-line">暂无申请</text>
         <view v-for="item in sent" :key="item.id" class="inbox surface">
           <text class="inbox__title">{{ item.commission?.title || '委托申请' }}</text>
           <text class="status">{{ item.status === 'submitted' ? '等待委托人处理' : item.status === 'accepted' ? '已同意' : '已拒绝' }}</text>
@@ -211,12 +354,21 @@ onPullDownRefresh(load)
       <text class="privacy">提交后管理员可查看申请内容，但看不到这里填写的联系方式；委托人同意后双方立即可见。</text>
       <view class="action-row"><button class="secondary-button" @tap="closeApply">取消</button><button class="primary-button" :loading="applyBusy" @tap="submitApply">发送申请</button></view>
     </view></view>
+
+    <view v-if="inquiryTarget" class="sheet-mask" @tap="closeInquiry"><view class="sheet" @tap.stop>
+      <text class="sheet__title">联系 {{ inquiryTarget.profile?.display_name || '委托师' }}</text>
+      <text class="field-label">想咨询什么 *</text><textarea v-model="inquiryMessage" class="textarea" maxlength="1200" placeholder="说明时间、城市、角色方向或其他需求" />
+      <text class="field-label">同意后交换的联系方式 *</text><input v-model="inquiryContact" class="input" maxlength="300" placeholder="微信号、手机号或其他联系方式" />
+      <text class="privacy">申请内容会留档供管理员抽查；联系方式只在对方同意后向双方显示。</text>
+      <view class="action-row"><button class="secondary-button" @tap="closeInquiry">取消</button><button class="primary-button" :loading="inquiryBusy" @tap="submitInquiry">发送申请</button></view>
+    </view></view>
   </view>
 </template>
 
 <style scoped>
-.intro-action { width: 100%; }
-.view-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8rpx; margin: 0 0 14rpx; }
+.intro-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10rpx; }
+.intro-actions button { width: 100%; min-height: 66rpx; margin: 0; font-size: 23rpx; line-height: 66rpx; }
+.view-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8rpx; margin: 0 0 14rpx; }
 .view-tabs button { min-height: 64rpx; margin: 0; border: 0; border-radius: 8rpx; background: #f4f5f7; color: #64748b; font-size: 24rpx; line-height: 64rpx; }
 .view-tabs button.active { background: #fff1d5; color: #8b5919; font-weight: 850; }
 .filter { display: grid; gap: 10rpx; }
@@ -228,16 +380,20 @@ onPullDownRefresh(load)
 .scope-tabs { display: grid; grid-template-columns: 1fr 1fr; margin: 10rpx 0 20rpx; border: 1rpx solid #e4dac9; border-radius: 8rpx; }
 .scope-tabs view { min-height: 68rpx; color: #64748b; font-size: 23rpx; font-weight: 750; line-height: 68rpx; text-align: center; }
 .scope-tabs view.active { background: #fff6e4; color: #8b5919; }
-.section-head { display: flex; align-items: center; justify-content: space-between; margin-top: 22rpx; }
-.section-note { color: #64748b; font-size: 22rpx; }
-.people { width: calc(100% + 24rpx); margin: 12rpx -24rpx 18rpx 0; }
-.people__track { display: flex; gap: 12rpx; padding-right: 24rpx; }
-.person { width: 178rpx; flex: 0 0 178rpx; padding: 14rpx; }
-.person__avatar { width: 68rpx; height: 68rpx; border-radius: 50%; background: #f2ece4; }
-.person__placeholder { display: flex; align-items: center; justify-content: center; color: #9a651e; font-weight: 900; }
-.person__name, .person__match { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.person__name { margin-top: 10rpx; color: #27364a; font-size: 24rpx; font-weight: 850; }
-.person__match { margin-top: 4rpx; color: #9a651e; font-size: 20rpx; }
+.provider-tools { display: grid; grid-template-columns: 220rpx 1fr; gap: 10rpx; }
+.provider-list { border-top: 1rpx solid #eceff2; }
+.provider-row { display: grid; grid-template-columns: 190rpx 1fr; gap: 18rpx; padding: 22rpx 4rpx; border-bottom: 1rpx solid #eceff2; }
+.provider-row__poster { width: 190rpx; height: 250rpx; border-radius: 8rpx; background: #f2ece4; }
+.provider-row__body { min-width: 0; }
+.provider-row__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12rpx; }
+.provider-row__name { overflow: hidden; color: #27364a; font-size: 29rpx; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+.provider-row__city { flex: 0 0 auto; color: #64748b; font-size: 21rpx; }
+.provider-row__headline, .provider-row__meta { display: block; margin-top: 8rpx; }
+.provider-row__headline { color: #475569; font-size: 24rpx; line-height: 1.5; }
+.provider-row__meta { color: #64748b; font-size: 21rpx; }
+.provider-row__roles { display: flex; flex-wrap: wrap; gap: 7rpx; margin-top: 10rpx; }
+.provider-row__roles text { padding: 5rpx 9rpx; border-radius: 6rpx; background: #eef4fb; color: #275389; font-size: 19rpx; }
+.inquiry-button { width: auto; min-height: 54rpx; margin: 12rpx 0 0; padding: 0 18rpx; border: 1rpx solid #cda25e; border-radius: 7rpx; background: #fff; color: #8b5919; font-size: 21rpx; font-weight: 850; line-height: 54rpx; }
 .listing-list { border-top: 1rpx solid #eceff2; }
 .listing { position: relative; padding: 22rpx 4rpx; border-bottom: 1rpx solid #eceff2; }
 .inbox { margin-bottom: 14rpx; padding: 20rpx; }
@@ -259,8 +415,10 @@ onPullDownRefresh(load)
 .sheet { width: 100%; padding: 28rpx 24rpx calc(30rpx + env(safe-area-inset-bottom)); border-radius: 14rpx 14rpx 0 0; background: #fffdf8; }
 .sheet__title { display: block; color: #1f2937; font-size: 31rpx; font-weight: 900; }
 .privacy { display: block; margin: 12rpx 0; color: #64748b; font-size: 22rpx; line-height: 1.55; }
+.empty-line { display: block; margin: -6rpx 0 18rpx; color: #98a2b3; font-size: 22rpx; }
 @media (max-width: 360px) {
   .filter__row { grid-template-columns: 1fr 1fr; }
   .filter__city { grid-column: 1 / -1; }
+  .provider-tools { grid-template-columns: 1fr; }
 }
 </style>

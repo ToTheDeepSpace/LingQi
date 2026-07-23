@@ -36,6 +36,7 @@ export interface Creator {
   role_preferences?: ProfileRolePreference[];
   services?: Service[];
   commission_match?: 'local' | 'expedition' | null;
+  provider_listing?: ProviderListing | null;
 }
 
 export interface ProfileRolePreference {
@@ -188,6 +189,33 @@ export interface CommissionApplication {
   contacts?: { poster: string; applicant: string } | null;
   created_at: string;
   commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'needed_end_date' | 'has_private_contact' | 'accept_expedition'> | null;
+}
+
+export interface ProviderListing {
+  profile_id: string;
+  poster_url: string;
+  headline?: string | null;
+  description?: string | null;
+  height_cm?: number | null;
+  weight_kg?: number | null;
+  role_types: string[];
+  is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  profile?: Pick<Creator, 'id' | 'display_name' | 'avatar' | 'city' | 'available_cities'> | null;
+}
+
+export interface ProviderInquiry {
+  id: string;
+  provider_id: string;
+  requester_id: string;
+  requester_name: string;
+  message: string;
+  status: 'submitted' | 'accepted' | 'rejected';
+  contacts?: { requester: string; provider: string } | null;
+  provider?: Pick<Creator, 'id' | 'display_name' | 'avatar' | 'city'> | null;
+  created_at?: string | null;
+  decided_at?: string | null;
 }
 
 export interface Carpool {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { AuthData, Commission, CommissionApplication, ScriptCatalogItem } from '../types';
+import type { AuthData, Commission, CommissionApplication, ProviderInquiry, ScriptCatalogItem } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { readStoredCreatorAuth } from '../lib/authSession';
@@ -62,6 +62,8 @@ export default function Commissions() {
   const [scripts, setScripts] = useState<ScriptCatalogItem[]>([]);
   const [receivedApplications, setReceivedApplications] = useState<CommissionApplication[]>([]);
   const [sentApplications, setSentApplications] = useState<CommissionApplication[]>([]);
+  const [providerReceived, setProviderReceived] = useState<ProviderInquiry[]>([]);
+  const [providerSent, setProviderSent] = useState<ProviderInquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [city, setCity] = useState(() => {
@@ -80,6 +82,8 @@ export default function Commissions() {
   const [decisionBusy, setDecisionBusy] = useState('');
   const [decisionContacts, setDecisionContacts] = useState<Record<string, string>>({});
   const [decisionErrors, setDecisionErrors] = useState<Record<string, string>>({});
+  const [providerDecisionContacts, setProviderDecisionContacts] = useState<Record<string, string>>({});
+  const [providerDecisionErrors, setProviderDecisionErrors] = useState<Record<string, string>>({});
   const [reportTarget, setReportTarget] = useState<Commission | null>(null);
   const submitted = searchParams.get('submitted') === '1';
   const selectCity = (value: string) => {
@@ -156,22 +160,32 @@ export default function Commissions() {
     const loadMine = async () => {
       try {
         const headers = { Authorization: `Bearer ${auth.token}` };
-        const [mineRes, receivedRes, sentRes] = await Promise.all([
+        const [mineRes, receivedRes, sentRes, providerReceivedRes, providerSentRes] = await Promise.all([
           fetch(`${API}/lc/commissions/mine`, { headers }),
           fetch(`${API}/lc/commissions/applications/received`, { headers }),
           fetch(`${API}/lc/commissions/applications/sent`, { headers }),
+          fetch(`${API}/lc/provider-inquiries/received`, { headers }),
+          fetch(`${API}/lc/provider-inquiries/sent`, { headers }),
         ]);
-        const mine = await mineRes.json();
-        const received = await receivedRes.json();
-        const sent = await sentRes.json();
+        const [mine, received, sent, nextProviderReceived, nextProviderSent] = await Promise.all([
+          mineRes.json(),
+          receivedRes.json(),
+          sentRes.json(),
+          providerReceivedRes.json(),
+          providerSentRes.json(),
+        ]);
         if (alive && mine.success) setMyItems(mine.data || []);
         if (alive && received.success) setReceivedApplications(received.data || []);
         if (alive && sent.success) setSentApplications(sent.data || []);
+        if (alive && nextProviderReceived.success) setProviderReceived(nextProviderReceived.data || []);
+        if (alive && nextProviderSent.success) setProviderSent(nextProviderSent.data || []);
       } catch {
         if (alive) {
           setMyItems([]);
           setReceivedApplications([]);
           setSentApplications([]);
+          setProviderReceived([]);
+          setProviderSent([]);
         }
       }
     };
@@ -316,6 +330,37 @@ export default function Commissions() {
     }
   };
 
+  const decideProviderInquiry = async (inquiry: ProviderInquiry, decision: 'accepted' | 'rejected') => {
+    const auth = getAuth();
+    if (!auth) return navigate('/login');
+    const contact = providerDecisionContacts[inquiry.id]?.trim() || '';
+    if (decision === 'accepted' && !contact) {
+      setProviderDecisionErrors(current => ({ ...current, [inquiry.id]: '同意前请留下你的联系方式' }));
+      return;
+    }
+    setDecisionBusy(inquiry.id);
+    setProviderDecisionErrors(current => ({ ...current, [inquiry.id]: '' }));
+    try {
+      const response = await fetch(`${API}/lc/provider-inquiries/${encodeURIComponent(inquiry.id)}/decision`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, privateContact: contact || undefined }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '处理失败');
+      setProviderReceived(current => current.map(item => item.id === inquiry.id ? {
+        ...item,
+        status: decision,
+        decided_at: new Date().toISOString(),
+        contacts: payload.data?.contacts || null,
+      } : item));
+    } catch (decisionError) {
+      setProviderDecisionErrors(current => ({ ...current, [inquiry.id]: decisionError instanceof Error ? decisionError.message : '处理失败' }));
+    } finally {
+      setDecisionBusy('');
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('确定要删除这条委托需求吗？')) return;
     const auth = getAuth();
@@ -369,6 +414,63 @@ export default function Commissions() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
               {privateItems.map(item => <CommissionCard key={item.id} item={item} showStatus onDelete={() => handleDelete(item.id)} />)}
+            </div>
+          </section>
+        )}
+
+        {providerReceived.length > 0 && (
+          <section style={{ ...jumuluCardStyle, padding: 16, borderColor: 'rgba(39,83,137,0.16)', background: '#f8fbff' }}>
+            <div style={{ marginBottom: 14 }}>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 900, marginBottom: 6 }}>委托条收到的咨询</h2>
+              <p style={{ color: MUTED, fontSize: '0.86rem', lineHeight: 1.7 }}>同意后双方立即互相显示各自留下的联系方式。</p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+              {providerReceived.map(inquiry => (
+                <article key={inquiry.id} style={{ borderRadius: 8, border: '1px solid rgba(39,83,137,0.14)', background: '#fff', padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                    <ProfileNameLink profileId={inquiry.requester_id} name={inquiry.requester_name} />
+                    <ApplicationStatus status={inquiry.status} />
+                  </div>
+                  <p style={{ margin: '9px 0 0', color: MUTED, lineHeight: 1.7, fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{inquiry.message}</p>
+                  {inquiry.status === 'submitted' && (
+                    <input
+                      value={providerDecisionContacts[inquiry.id] || ''}
+                      onChange={event => setProviderDecisionContacts(current => ({ ...current, [inquiry.id]: event.target.value }))}
+                      placeholder="同意后向对方显示的微信号、手机号或其他联系方式"
+                      style={{ ...inputStyle, marginTop: 12 }}
+                    />
+                  )}
+                  {inquiry.contacts && <ProviderContactExchange contacts={inquiry.contacts} ownSide="provider" />}
+                  {providerDecisionErrors[inquiry.id] && <p style={{ margin: '9px 0 0', color: '#b42318', fontSize: 12 }}>{providerDecisionErrors[inquiry.id]}</p>}
+                  {inquiry.status === 'submitted' && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                      <button type="button" disabled={decisionBusy === inquiry.id} onClick={() => void decideProviderInquiry(inquiry, 'accepted')} style={decisionButtonStyle('accepted')}>同意联系</button>
+                      <button type="button" disabled={decisionBusy === inquiry.id} onClick={() => void decideProviderInquiry(inquiry, 'rejected')} style={decisionButtonStyle('rejected')}>暂不合适</button>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {providerSent.length > 0 && (
+          <section style={{ ...jumuluCardStyle, padding: 16 }}>
+            <div style={{ marginBottom: 14 }}>
+              <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.2rem', fontWeight: 900, marginBottom: 6 }}>我发出的委托咨询</h2>
+              <p style={{ color: MUTED, fontSize: '0.86rem', lineHeight: 1.7 }}>委托师同意后，这里会立即显示双方联系方式。</p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+              {providerSent.map(inquiry => (
+                <article key={inquiry.id} style={{ borderRadius: 8, border: '1px solid rgba(31,41,55,0.1)', background: '#fff', padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                    <ProfileNameLink profileId={inquiry.provider_id} name={inquiry.provider?.display_name || '委托师'} />
+                    <ApplicationStatus status={inquiry.status} />
+                  </div>
+                  <p style={{ margin: '9px 0 0', color: MUTED, lineHeight: 1.7, fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{inquiry.message}</p>
+                  {inquiry.contacts && <ProviderContactExchange contacts={inquiry.contacts} ownSide="requester" />}
+                </article>
+              ))}
             </div>
           </section>
         )}
@@ -712,6 +814,22 @@ function ContactExchange({ contacts, ownSide, ownLabel, otherLabel }: { contacts
   const rows = ownSide === 'poster'
     ? [{ label: ownLabel, value: contacts.poster }, { label: otherLabel, value: contacts.applicant }]
     : [{ label: ownLabel, value: contacts.applicant }, { label: otherLabel, value: contacts.poster }];
+  return (
+    <div style={{ display: 'grid', gap: 7, marginTop: 12, padding: 10, borderRadius: 7, border: '1px solid rgba(22,101,52,0.18)', background: '#f0fdf4' }}>
+      {rows.map(row => (
+        <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <span style={{ color: '#475569', fontSize: 12 }}>{row.label}</span>
+          <button type="button" onClick={() => navigator.clipboard?.writeText(row.value)} style={{ border: 0, background: 'transparent', color: '#166534', cursor: 'pointer', fontWeight: 900, overflowWrap: 'anywhere', textAlign: 'right' }}>{row.value || '未填写'}</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProviderContactExchange({ contacts, ownSide }: { contacts: { requester: string; provider: string }; ownSide: 'requester' | 'provider' }) {
+  const rows = ownSide === 'provider'
+    ? [{ label: '我的联系方式', value: contacts.provider }, { label: '咨询人联系方式', value: contacts.requester }]
+    : [{ label: '我的联系方式', value: contacts.requester }, { label: '委托师联系方式', value: contacts.provider }];
   return (
     <div style={{ display: 'grid', gap: 7, marginTop: 12, padding: 10, borderRadius: 7, border: '1px solid rgba(22,101,52,0.18)', background: '#f0fdf4' }}>
       {rows.map(row => (

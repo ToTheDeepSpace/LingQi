@@ -77,7 +77,6 @@ export default function CreatorProfile() {
   const [contactShown, setContactShown] = useState(false);
   const [formWechat, setFormWechat]     = useState('');
   const [formMsg, setFormMsg]           = useState('');
-  const [paymentProof, setPaymentProof] = useState('');
   const [contactSent, setContactSent]   = useState(false);
   const [contactSubmitting, setContactSubmitting] = useState(false);
   const [contactError, setContactError] = useState('');
@@ -173,28 +172,30 @@ export default function CreatorProfile() {
       return;
     }
     if (!formWechat.trim()) {
-      setContactError('请填写方便对方联系你的微信号');
+      setContactError('请填写同意后用于联系的微信号、手机号或其他方式');
+      return;
+    }
+    if (!formMsg.trim()) {
+      setContactError('请填写想咨询的内容');
       return;
     }
     setContactSubmitting(true);
     setContactError('');
     try {
-      const response = await fetch(`${API}/lc/contact-request`, {
+      const response = await fetch(`${API}/lc/provider-listings/${encodeURIComponent(id || '')}/inquiries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
         body: JSON.stringify({
-          creatorId: id,
-          requesterWechat: formWechat.trim(),
-          message: formMsg,
-          paymentProof,
+          privateContact: formWechat.trim(),
+          message: formMsg.trim(),
         }),
       });
       const payload = await response.json();
-      if (!response.ok || !payload.success) throw new Error(payload.error || '预约意向提交失败');
+      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '联系申请提交失败');
       contactDraft.clearDraft();
       setContactSent(true);
     } catch (error) {
-      setContactError(error instanceof Error ? error.message : '预约意向提交失败');
+      setContactError(error instanceof Error ? error.message : '联系申请提交失败');
     } finally {
       setContactSubmitting(false);
     }
@@ -341,7 +342,6 @@ export default function CreatorProfile() {
               <div className="creator-profile-badges" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {creator.is_realname && <Badge>⭐ 实名</Badge>}
                 {creator.travel_status && <Badge>{formatTravelStatus(creator.travel_status, creator.city)}</Badge>}
-                {creator.contact_unlock_enabled && <Badge>预约意向金 ¥{creator.contact_intent_amount || 0}</Badge>}
                 <button
                   onClick={openReport}
                   style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(254,242,242,0.86)', border: '1px solid rgba(185,28,28,0.18)', color: 'rgba(185,28,28,0.78)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
@@ -409,30 +409,25 @@ export default function CreatorProfile() {
             )}
 
             {/* 联系卡 */}
-            {(services.length > 0 || rolePreferences.length > 0) && <div className="creator-profile-card" style={card}>
-              <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: INK }}>发起委托</h3>
-              {creator.contact_unlock_enabled && (
-                <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 12 }}>
-                  对方开启了预约意向金，金额 ¥{creator.contact_intent_amount || 0}。用于确认真实委托意向，申请仍需人工处理。
-                </p>
-              )}
+            {creator.provider_listing && <div className="creator-profile-card" style={card}>
+              <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: INK }}>联系委托师</h3>
+              <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 12 }}>
+                发送私密申请；对方同意后双方立即看到各自留下的联系方式。
+              </p>
               {contactShown ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <DraftAutosaveNotice
                     savedAt={contactDraft.savedAt}
                     restoredAt={contactDraft.restoredAt}
                     error={contactDraft.error}
-                    note="未提交的预约意向会自动保存到当前浏览器；支付凭证/备注不会保存。"
+                    note="未提交的联系申请会自动保存到当前浏览器。"
                   />
                   <p style={{ margin: 0, fontSize: '0.76rem', color: 'rgba(71,85,105,0.62)' }}>
                     将以当前登录账号的公开昵称提交。
                   </p>
-                  <input value={formWechat} onChange={e => setFormWechat(e.target.value)} placeholder="你的微信号" style={inputStyle} />
-                  <textarea value={formMsg} onChange={e => setFormMsg(e.target.value)} placeholder="想预约什么？（可选）" rows={3}
+                  <input value={formWechat} onChange={e => setFormWechat(e.target.value)} placeholder="微信号、手机号或其他联系方式" style={inputStyle} />
+                  <textarea value={formMsg} onChange={e => setFormMsg(e.target.value)} placeholder="说明时间、城市、角色方向或其他需求" rows={3}
                     style={{ ...inputStyle, resize: 'none' }} />
-                  {creator.contact_unlock_enabled && (
-                    <input value={paymentProof} onChange={e => setPaymentProof(e.target.value)} placeholder="预约意向金支付备注（可选，不要粘贴图片）" style={inputStyle} />
-                  )}
                   <button onClick={submitContact} disabled={contactSent || contactSubmitting}
                     style={{
                       padding: '10px', borderRadius: 10, border: 'none', cursor: contactSent || contactSubmitting ? 'default' : 'pointer',
@@ -440,12 +435,12 @@ export default function CreatorProfile() {
                       color: contactSent || contactSubmitting ? 'rgba(71,85,105,0.6)' : INK,
                       fontWeight: 600, fontSize: '0.875rem',
                     }}>
-                    {contactSent ? '已发送 ✓ 等待回复' : contactSubmitting ? '提交中...' : '提交预约意向'}
+                    {contactSent ? '已发送，等待回复' : contactSubmitting ? '提交中...' : '发送联系申请'}
                   </button>
                   {contactError && <p style={{ margin: 0, color: '#b91c1c', fontSize: '0.76rem', textAlign: 'center' }}>{contactError}</p>}
                   {!contactSent && (
                     <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.56)', textAlign: 'center' }}>
-                      通过后再进入联系方式沟通，不引导公开暴露微信。
+                      联系方式不会公开，对方同意后仅双方可见。
                     </p>
                   )}
                 </div>
@@ -456,7 +451,7 @@ export default function CreatorProfile() {
                     background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
                     color: INK, fontWeight: 600, fontSize: '0.875rem',
                   }}>
-                  申请预约
+                  联系 TA
                 </button>
               )}
             </div>}
@@ -464,6 +459,45 @@ export default function CreatorProfile() {
 
           {/* ── 右侧内容 ── */}
           <div className="creator-profile-main" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+            {creator.provider_listing && (
+              <div className="creator-profile-card creator-provider-listing" style={{ ...card, display: 'grid', gridTemplateColumns: 'minmax(220px, 0.8fr) minmax(260px, 1.2fr)', gap: 16 }}>
+                <a href={creator.provider_listing.poster_url} target="_blank" rel="noreferrer" style={{ display: 'block', minHeight: 220 }}>
+                  <img
+                    src={creator.provider_listing.poster_url}
+                    alt={`${creator.display_name}的委托条`}
+                    style={{ width: '100%', height: '100%', maxHeight: 380, objectFit: 'cover', borderRadius: 6, background: '#f2ece4' }}
+                  />
+                </a>
+                <div style={{ minWidth: 0, alignSelf: 'center' }}>
+                  <p style={{ margin: 0, color: '#925f18', fontWeight: 850, fontSize: 12 }}>委托条</p>
+                  <h2 style={{ margin: '7px 0 0', color: INK, fontFamily: 'var(--font-serif)', fontSize: '1.35rem' }}>
+                    {creator.provider_listing.headline || `${creator.display_name}的委托资料`}
+                  </h2>
+                  <p style={{ margin: '9px 0 0', color: MUTED, fontSize: 13 }}>
+                    {[
+                      creator.provider_listing.height_cm ? `${creator.provider_listing.height_cm}cm` : '',
+                      creator.provider_listing.weight_kg ? `${creator.provider_listing.weight_kg}kg` : '',
+                    ].filter(Boolean).join(' · ') || '身高体重未填写'}
+                  </p>
+                  {creator.provider_listing.role_types.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+                      {creator.provider_listing.role_types.map(role => <Badge key={role}>{role}</Badge>)}
+                    </div>
+                  )}
+                  {creator.provider_listing.description && (
+                    <p style={{ margin: '12px 0 0', color: MUTED, fontSize: 13, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+                      {creator.provider_listing.description}
+                    </p>
+                  )}
+                  {!isOwnProfile && (
+                    <button type="button" onClick={openContactForm} style={{ marginTop: 16, padding: '10px 18px', borderRadius: 7, border: 0, background: '#b9781f', color: '#fff', fontWeight: 850, cursor: 'pointer' }}>
+                      联系 TA
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {(experiences.length > 0 || isOwnProfile) && (
               <div className="creator-profile-card" style={card}>
@@ -655,7 +689,7 @@ export default function CreatorProfile() {
               </div>
             )}
 
-            {experiences.length === 0 && !isOwnProfile && rolePreferences.length === 0 && services.length === 0 && availDates.length === 0 && busySlots.length === 0 && portfolio.length === 0 && (
+            {experiences.length === 0 && !isOwnProfile && !creator.provider_listing && rolePreferences.length === 0 && services.length === 0 && availDates.length === 0 && busySlots.length === 0 && portfolio.length === 0 && (
               <div className="creator-profile-card creator-empty-card" style={{ ...card, textAlign: 'center', padding: '60px 24px' }}>
                 <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }}>🌙</div>
                 <p style={{ color: 'rgba(71,85,105,0.58)', fontSize: '0.9rem' }}>创作者还没有发布内容</p>
@@ -747,6 +781,9 @@ export default function CreatorProfile() {
           }
           .creator-profile-card h3 {
             margin-bottom: 10px !important;
+          }
+          .creator-provider-listing {
+            grid-template-columns: 1fr !important;
           }
           .creator-role-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;

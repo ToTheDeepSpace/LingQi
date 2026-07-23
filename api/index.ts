@@ -112,6 +112,11 @@ import {
   type AccountRestrictionScope,
 } from './accountRestrictionPolicy.js';
 import { canApplyToCommission, commissionCityMatch } from './commissionTravel.js';
+import {
+  normalizeProviderListingDraft,
+  providerInquiryPayload,
+  publicProviderListing,
+} from './providerMarketplace.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -2297,6 +2302,7 @@ function storeRatingIpHash(req: express.Request) {
 type PublicReviewTargetType =
   | 'profile_update'
   | 'dossier_update'
+  | 'provider_listing_update'
   | 'service_create'
   | 'portfolio_create'
   | 'availability_create'
@@ -3106,6 +3112,20 @@ async function applyPublicReview(review: PublicReviewRecord, reviewerId: string 
   }
   if (review.target_type === 'dossier_update') {
     await applyDossierUpdateReview(review, payload, reviewerId);
+    return;
+  }
+  if (review.target_type === 'provider_listing_update') {
+    const draft = normalizeProviderListingDraft(payload);
+    const profileId = cleanText(payload.profile_id || review.profile_id, 80);
+    if (!profileId) throw new Error('审核记录缺少委托师账号');
+    const { error: upsertErr } = await supabase.from('lc_provider_listings').upsert({
+      profile_id: profileId,
+      ...draft,
+      is_active: payload.is_active !== false,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'profile_id' });
+    if (upsertErr) throw upsertErr;
+    await addProfileIdentityRoles(profileId, ['creator']);
     return;
   }
   if (review.target_type === 'service_create') {
@@ -6220,6 +6240,367 @@ app.put('/api/lc/admin/profile/:id/realname', authMiddleware, adminMiddleware, a
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+// ==================== 委托师委托条与私密联系 ====================
+
+function publicProviderProfile(profile: Record<string, unknown>) {
+  return sanitizeProfile(profile);
+}
+
+async function notifyProfile(input: {
+  profileId: string;
+  type: string;
+  title: string;
+  content: string;
+  relatedType: string;
+  relatedId?: string | null;
+  actionUrl?: string;
+}) {
+  const { error: notificationErr } = await supabase.from('lc_account_notifications').insert({
+    profile_id: input.profileId,
+    type: input.type,
+    title: input.title,
+    content: input.content,
+    action_url: input.actionUrl || '/commissions?view=mine',
+    related_type: input.relatedType,
+    related_id: input.relatedId || null,
+  });
+  if (notificationErr && !isMissingRelation(notificationErr, 'lc_account_notifications')) {
+    console.error('[provider-notification] failed to create notification', notificationErr);
+  }
+}
+
+app.get('/api/lc/provider-listings', async (req, res) => {
+  try {
+    const city = cleanText(req.query.city, 60);
+    const query = cleanText(req.query.query, 120).toLocaleLowerCase('zh-CN');
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 30));
+    const listingResult = await supabase.from('lc_provider_listings')
+      .select('*')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(300);
+    if (listingResult.error && isMissingRelation(listingResult.error, 'lc_provider_listings')) return res.json(ok([]));
+    if (listingResult.error) throw listingResult.error;
+    const profileIds = (listingResult.data || []).map(item => item.profile_id).filter(Boolean);
+    if (profileIds.length === 0) return res.json(ok([]));
+    const profileResult = await supabase.from('lc_profiles').select('*').in('id', profileIds).eq('is_visible', true);
+    if (profileResult.error) throw profileResult.error;
+    const profileMap = new Map((profileResult.data || []).map(profile => [String(profile.id), profile as Record<string, unknown>]));
+    const items = (listingResult.data || []).flatMap(row => {
+      const profile = profileMap.get(String(row.profile_id));
+      if (!profile) return [];
+      const availableCities = publicStringArray(profile.available_cities);
+      if (city && city !== '全部城市' && profile.city !== city && !availableCities.includes(city)) return [];
+      const listing = publicProviderListing(row as Record<string, unknown>);
+      if (query) {
+        const haystack = [
+          profile.display_name,
+          profile.city,
+          profile.bio,
+          listing.headline,
+          listing.description,
+          ...listing.role_types,
+        ].map(value => cleanText(value, 1200)).join(' ').toLocaleLowerCase('zh-CN');
+        if (!haystack.includes(query)) return [];
+      }
+      const safeProfile = publicProviderProfile(profile);
+      if (city && city !== '全部城市') safeProfile.commission_match = commissionCityMatch(profile, city);
+      return [{ ...listing, profile: safeProfile }];
+    }).slice(0, limit);
+    res.json(ok(items));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const [listingResult, reviewResult] = await Promise.all([
+      supabase.from('lc_provider_listings').select('*').eq('profile_id', profile.id).maybeSingle(),
+      supabase.from('lc_public_reviews')
+        .select('id, status, summary, created_at, reviewed_at, review_note')
+        .eq('target_type', 'provider_listing_update')
+        .eq('profile_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (listingResult.error && isMissingRelation(listingResult.error, 'lc_provider_listings')) {
+      return res.status(503).json(err(new Error('委托条数据表尚未初始化')));
+    }
+    if (listingResult.error) throw listingResult.error;
+    if (reviewResult.error && !isMissingRelation(reviewResult.error, 'lc_public_reviews')) throw reviewResult.error;
+    res.json(ok({
+      listing: listingResult.data ? publicProviderListing(listingResult.data as Record<string, unknown>) : null,
+      latest_review: reviewResult.error ? null : reviewResult.data,
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const draft = normalizeProviderListingDraft(req.body);
+    const posterUrl = normalizeOptionalPublicUrl(draft.poster_url, 1200, true);
+    if (!posterUrl) return res.status(400).json(err(new Error('委托条主图地址不正确，请重新上传')));
+    draft.poster_url = posterUrl;
+
+    const pendingResult = await supabase.from('lc_public_reviews')
+      .select('id')
+      .eq('target_type', 'provider_listing_update')
+      .eq('profile_id', profile.id)
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (pendingResult.error && !isMissingRelation(pendingResult.error, 'lc_public_reviews')) throw pendingResult.error;
+    if (pendingResult.data) return res.status(409).json(err(new Error('你已有一版委托条正在审核，请等待处理后再修改')));
+
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'provider_listing_submit',
+      targetType: 'provider_listing',
+      texts: {
+        headline: draft.headline,
+        description: draft.description,
+        role_types: draft.role_types.join(' '),
+      },
+      files: [{ url: draft.poster_url, type: 'image/*' }],
+    });
+    const review = await createPublicReview({
+      targetType: 'provider_listing_update',
+      profile,
+      title: '委托师委托条',
+      summary: '委托条主图、身高体重与擅长角色类型',
+      payload: { profile_id: profile.id, ...draft, is_active: true },
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'provider_listing_submitted_for_review',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: 'public_review',
+      targetId: review?.id,
+      metadata: { review_type: 'provider_listing_update', moderation: moderationPrecheck.decision },
+    });
+    res.status(201).json(ok({ review_id: review?.id, status: 'pending' }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/provider-listings/mine/active', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const active = req.body?.active !== false;
+    const { data, error: updateErr } = await supabase.from('lc_provider_listings')
+      .update({ is_active: active, updated_at: new Date().toISOString() })
+      .eq('profile_id', profile.id)
+      .select('*')
+      .maybeSingle();
+    if (updateErr && isMissingRelation(updateErr, 'lc_provider_listings')) return res.status(503).json(err(new Error('委托条数据表尚未初始化')));
+    if (updateErr) throw updateErr;
+    if (!data) return res.status(404).json(err(new Error('你还没有审核通过的委托条')));
+    await logSecurityEvent(req, {
+      action: active ? 'provider_listing_published' : 'provider_listing_hidden',
+      actorId: profile.id,
+      targetType: 'provider_listing',
+      targetId: profile.id,
+    });
+    res.json(ok(publicProviderListing(data as Record<string, unknown>)));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/provider-listings/:id/inquiries', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const speakBlock = getSpeakBlockReason(profile);
+    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    if (profile.id === req.params.id) return res.status(400).json(err(new Error('不能向自己发起联系申请')));
+    const message = cleanText(req.body?.message, 1200);
+    const privateContact = cleanText(req.body?.privateContact ?? req.body?.private_contact, 300);
+    if (!message) return res.status(400).json(err(new Error('请填写想咨询的内容')));
+    if (!privateContact) return res.status(400).json(err(new Error('请留下同意后用于联系的方式')));
+    const listingResult = await supabase.from('lc_provider_listings')
+      .select('profile_id, is_active')
+      .eq('profile_id', req.params.id)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (listingResult.error && isMissingRelation(listingResult.error, 'lc_provider_listings')) return res.status(503).json(err(new Error('委托条数据表尚未初始化')));
+    if (listingResult.error) throw listingResult.error;
+    if (!listingResult.data) return res.status(404).json(err(new Error('这位委托师当前没有公开委托条')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'provider_inquiry_send',
+      targetType: 'provider_inquiry',
+      texts: { message, private_contact: privateContact },
+      allowContact: true,
+    });
+    if (moderationPrecheck.decision === 'block') {
+      return res.status(400).json(err(new Error('申请内容包含不适合发送的信息，请修改后再试')));
+    }
+    const { data, error: insertErr } = await supabase.from('lc_provider_inquiries').insert({
+      provider_id: req.params.id,
+      requester_id: profile.id,
+      requester_name: cleanText(profile.display_name, 120) || '用户',
+      message,
+      requester_private_contact: privateContact,
+    }).select('*').single();
+    if (insertErr) {
+      if (insertErr.code === '23505') return res.status(409).json(err(new Error('你已有一条等待对方处理的联系申请')));
+      if (isMissingRelation(insertErr, 'lc_provider_inquiries')) return res.status(503).json(err(new Error('委托联系数据表尚未初始化')));
+      throw insertErr;
+    }
+    await notifyProfile({
+      profileId: req.params.id,
+      type: 'provider_inquiry_received',
+      title: '收到新的委托咨询',
+      content: `${cleanText(profile.display_name, 120) || '一位用户'}向你的委托条发起了联系申请。`,
+      relatedType: 'provider_inquiry',
+      relatedId: data?.id,
+    });
+    await logSecurityEvent(req, {
+      action: 'provider_inquiry_submitted',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: 'provider_inquiry',
+      targetId: data?.id,
+      metadata: { provider_id: req.params.id, moderation: moderationPrecheck.decision },
+    });
+    res.status(201).json(ok(providerInquiryPayload(data as Record<string, unknown>)));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/provider-inquiries/received', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const result = await supabase.from('lc_provider_inquiries')
+      .select('*')
+      .eq('provider_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (result.error && isMissingRelation(result.error, 'lc_provider_inquiries')) return res.json(ok([]));
+    if (result.error) throw result.error;
+    res.json(ok((result.data || []).map(row => providerInquiryPayload(row as Record<string, unknown>, {
+      requester: row.requester_private_contact,
+      provider: row.provider_private_contact,
+    }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/provider-inquiries/sent', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const result = await supabase.from('lc_provider_inquiries')
+      .select('*')
+      .eq('requester_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (result.error && isMissingRelation(result.error, 'lc_provider_inquiries')) return res.json(ok([]));
+    if (result.error) throw result.error;
+    const providerIds = Array.from(new Set((result.data || []).map(row => row.provider_id).filter(Boolean)));
+    const providerResult = providerIds.length > 0
+      ? await supabase.from('lc_profiles').select('id, display_name, avatar, city').in('id', providerIds)
+      : { data: [], error: null };
+    if (providerResult.error) throw providerResult.error;
+    const providerMap = new Map((providerResult.data || []).map(item => [String(item.id), item]));
+    res.json(ok((result.data || []).map(row => ({
+      ...providerInquiryPayload(row as Record<string, unknown>, {
+        requester: row.requester_private_contact,
+        provider: row.provider_private_contact,
+      }),
+      provider: providerMap.get(String(row.provider_id)) || null,
+    }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/provider-inquiries/:id/decision', authMiddleware, async (req, res) => {
+  const client = await tencentPgPool.connect();
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const decision = cleanText(req.body?.decision, 20);
+    if (decision !== 'accepted' && decision !== 'rejected') {
+      return res.status(400).json(err(new Error('请选择同意或拒绝')));
+    }
+    const providerContact = decision === 'accepted'
+      ? cleanText(req.body?.privateContact ?? req.body?.private_contact, 300)
+      : '';
+    if (decision === 'accepted' && !providerContact) {
+      return res.status(400).json(err(new Error('同意前请留下你的联系方式')));
+    }
+    await client.query('begin');
+    const locked = await client.query<{
+      id: string;
+      provider_id: string;
+      requester_id: string;
+      requester_name: string;
+      message: string;
+      requester_private_contact: string;
+      provider_private_contact: string | null;
+      status: string;
+      created_at: string;
+    }>(
+      `select *
+         from lc_provider_inquiries
+        where id = $1
+        for update`,
+      [req.params.id],
+    );
+    const row = locked.rows[0];
+    if (!row) throw Object.assign(new Error('联系申请不存在'), { statusCode: 404 });
+    if (row.provider_id !== profile.id) throw Object.assign(new Error('只能处理发给自己的联系申请'), { statusCode: 403 });
+    if (row.status !== 'submitted') throw Object.assign(new Error('这条申请已经处理过'), { statusCode: 409 });
+    const updated = await client.query<Record<string, unknown>>(
+      `update lc_provider_inquiries
+          set status = $2,
+              provider_private_contact = case when $2 = 'accepted' then $3 else null end,
+              decided_at = now(),
+              contact_unlocked_at = case when $2 = 'accepted' then now() else null end,
+              updated_at = now()
+        where id = $1
+        returning *`,
+      [req.params.id, decision, providerContact || null],
+    );
+    await client.query(
+      `insert into lc_account_notifications
+         (profile_id, type, title, content, action_url, related_type, related_id)
+       values ($1, $2, $3, $4, '/commissions?view=mine', 'provider_inquiry', $5)`,
+      [
+        row.requester_id,
+        decision === 'accepted' ? 'provider_inquiry_accepted' : 'provider_inquiry_rejected',
+        decision === 'accepted' ? '委托师已同意联系' : '委托师暂未接受联系',
+        decision === 'accepted'
+          ? '双方联系方式已经解锁，可以在“委托-申请与处理”中查看。'
+          : '对方暂未接受这次联系申请，你可以继续浏览其他委托师。',
+        req.params.id,
+      ],
+    );
+    await client.query('commit');
+    const responseRow = updated.rows[0];
+    await logSecurityEvent(req, {
+      action: decision === 'accepted' ? 'provider_inquiry_accepted' : 'provider_inquiry_rejected',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: 'provider_inquiry',
+      targetId: req.params.id,
+    });
+    res.json(ok(providerInquiryPayload(responseRow, {
+      requester: responseRow.requester_private_contact,
+      provider: responseRow.provider_private_contact,
+    })));
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    const statusCode = e && typeof e === 'object' && 'statusCode' in e
+      ? Number((e as { statusCode?: unknown }).statusCode) || 500
+      : 500;
+    res.status(statusCode).json(err(e));
+  } finally {
+    client.release();
+  }
+});
+
 // ==================== 创作者列表（分页） ====================
 
 app.get('/api/lc/creators', async (req, res) => {
@@ -6256,6 +6637,19 @@ app.get('/api/lc/creators', async (req, res) => {
       });
       servicesByCreator.set(creatorId, creatorServices);
     }
+    const providerListingResult = await supabase.from('lc_provider_listings')
+      .select('*')
+      .eq('is_active', true);
+    if (providerListingResult.error && !isMissingRelation(providerListingResult.error, 'lc_provider_listings')) {
+      throw providerListingResult.error;
+    }
+    const providerListingsByCreator = new Map<string, ReturnType<typeof publicProviderListing>>();
+    if (!providerListingResult.error) {
+      for (const row of (providerListingResult.data || []) as Array<Record<string, unknown>>) {
+        const creatorId = cleanText(row.profile_id, 80);
+        if (creatorId) providerListingsByCreator.set(creatorId, publicProviderListing(row));
+      }
+    }
 
     const { data } = await supabase
       .from('lc_profiles')
@@ -6265,7 +6659,7 @@ app.get('/api/lc/creators', async (req, res) => {
       .limit(500);
 
     const visibleProfiles = (data || []).filter((profile: Record<string, unknown>) => {
-      if (serviceOnly && !servicesByCreator.has(String(profile.id))) return false;
+      if (serviceOnly && !servicesByCreator.has(String(profile.id)) && !providerListingsByCreator.has(String(profile.id))) return false;
       const requestedCities = city ? [city] : followedCities;
       if (requestedCities.length === 0) return true;
       const availableCities = Array.isArray(profile.available_cities) ? profile.available_cities : [];
@@ -6275,7 +6669,8 @@ app.get('/api/lc/creators', async (req, res) => {
         (cleanText(profile.avatar, 1000) ? 4 : 0)
         + (cleanText(profile.bio, 1000) ? 3 : 0)
         + (publicStringArray(profile.tags).length > 0 ? 2 : 0)
-        + ((servicesByCreator.get(String(profile.id)) || []).length > 0 ? 3 : 0);
+        + ((servicesByCreator.get(String(profile.id)) || []).length > 0 ? 3 : 0)
+        + (providerListingsByCreator.has(String(profile.id)) ? 4 : 0);
       const scoreDiff = score(right) - score(left);
       if (scoreDiff !== 0) return scoreDiff;
       return cleanText(right.created_at, 80).localeCompare(cleanText(left.created_at, 80));
@@ -6292,6 +6687,7 @@ app.get('/api/lc/creators', async (req, res) => {
           identity_roles: mergeIdentityRoles(profile.identity_roles, serviceRoles),
           services: servicesByCreator.get(String(profile.id)) || [],
         });
+        safeProfile.provider_listing = providerListingsByCreator.get(String(profile.id)) || null;
         const requestedCity = city || (followedCities.length === 1 ? followedCities[0] : '');
         if (requestedCity) safeProfile.commission_match = commissionCityMatch(profile, requestedCity);
         return safeProfile;
@@ -6313,13 +6709,15 @@ app.get('/api/lc/creators/:id', async (req, res) => {
     if (!profile.is_visible && viewerId !== profile.id) return res.status(404).json(err(new Error('该主页暂未公开')));
     const profilePayload = sanitizeProfile(profile);
 
-    const [{ data: services }, { data: portfolio }, { data: pendingCerts }, { data: pendingDmClaims }, rolePreferences] = await Promise.all([
+    const [{ data: services }, { data: portfolio }, { data: pendingCerts }, { data: pendingDmClaims }, rolePreferences, providerListingResult] = await Promise.all([
       supabase.from('lc_services').select('*').eq('creator_id', req.params.id).eq('is_active', true),
       supabase.from('lc_portfolio').select('*').eq('creator_id', req.params.id).order('created_at', { ascending: false }),
       supabase.from('lc_certifications').select('type, status').eq('profile_id', req.params.id).eq('status', 'pending'),
       supabase.from('lc_dm_dossier_claims').select('id').eq('claimant_id', req.params.id).eq('entity_type', 'dm').eq('status', 'pending').limit(1),
       loadProfileRolePreferences(req.params.id),
+      supabase.from('lc_provider_listings').select('*').eq('profile_id', req.params.id).eq('is_active', true).maybeSingle(),
     ]);
+    if (providerListingResult.error && !isMissingRelation(providerListingResult.error, 'lc_provider_listings')) throw providerListingResult.error;
 
     const hasPendingShopCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'shop');
     const hasPendingDmCert = (pendingCerts || []).some((c: { type: string }) => c.type === 'dm') || (pendingDmClaims || []).length > 0;
@@ -6331,6 +6729,9 @@ app.get('/api/lc/creators/:id', async (req, res) => {
       services: services || [],
       portfolio: portfolio || [],
       role_preferences: rolePreferences || [],
+      provider_listing: providerListingResult.error || !providerListingResult.data
+        ? null
+        : publicProviderListing(providerListingResult.data as Record<string, unknown>),
       has_pending_shop_cert: hasPendingShopCert,
       has_pending_dm_cert: hasPendingDmCert,
     }));
@@ -8601,6 +9002,14 @@ app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res
       targetId: String(data?.id || ''),
       metadata: { commission_id: req.params.id, city_match: cityMatch },
     });
+    await notifyProfile({
+      profileId: commission.poster_id,
+      type: 'commission_application_received',
+      title: '收到新的接单申请',
+      content: `${cleanText(profile.display_name, 120) || '一位委托师'}申请承接你的委托。`,
+      relatedType: 'commission_application',
+      relatedId: data?.id,
+    });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -8622,12 +9031,14 @@ app.put('/api/lc/commissions/applications/:id/decision', authMiddleware, async (
       const locked = await client.query<{
         application_status: string;
         application_contact: string | null;
+        applicant_id: string;
         commission_id: string;
         poster_id: string;
         poster_contact: string | null;
       }>(
         `SELECT a.status AS application_status,
                 a.private_contact AS application_contact,
+                a.applicant_id,
                 c.id AS commission_id,
                 c.poster_id,
                 c.private_contact AS poster_contact
@@ -8659,6 +9070,20 @@ app.put('/api/lc/commissions/applications/:id/decision', authMiddleware, async (
                 updated_at = NOW()
           WHERE id = $3 AND status = 'submitted'`,
         [decision, profile.id, req.params.id],
+      );
+      await client.query(
+        `insert into lc_account_notifications
+           (profile_id, type, title, content, action_url, related_type, related_id)
+         values ($1, $2, $3, $4, '/commissions?view=mine', 'commission_application', $5)`,
+        [
+          row.applicant_id,
+          decision === 'accepted' ? 'commission_application_accepted' : 'commission_application_rejected',
+          decision === 'accepted' ? '委托申请已通过' : '委托申请暂未通过',
+          decision === 'accepted'
+            ? '双方联系方式已经解锁，可以在“委托-申请与处理”中查看。'
+            : '委托人暂未接受这次申请。',
+          req.params.id,
+        ],
       );
       await client.query('COMMIT');
     } catch (decisionError) {
@@ -9362,6 +9787,38 @@ app.get('/api/lc/admin/commission-applications', authMiddleware, adminMiddleware
       metadata: { returned_count: (applications || []).length },
     });
     res.json(ok((applications || []).map(item => ({ ...item, commission: commissionMap.get(item.commission_id) || null }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/admin/provider-inquiries', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit as string) || 200));
+    const inquiryResult = await supabase.from('lc_provider_inquiries')
+      .select('id, provider_id, requester_id, requester_name, message, status, decided_at, contact_unlocked_at, created_at, updated_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (inquiryResult.error && isMissingRelation(inquiryResult.error, 'lc_provider_inquiries')) return res.json(ok([]));
+    if (inquiryResult.error) throw inquiryResult.error;
+    const profileIds = Array.from(new Set((inquiryResult.data || [])
+      .flatMap(item => [item.provider_id, item.requester_id])
+      .filter(Boolean)));
+    const profileResult = profileIds.length > 0
+      ? await supabase.from('lc_profiles').select('id, display_name').in('id', profileIds)
+      : { data: [], error: null };
+    if (profileResult.error) throw profileResult.error;
+    const profileMap = new Map((profileResult.data || []).map(item => [String(item.id), cleanText(item.display_name, 120) || '用户']));
+    await logSecurityEvent(req, {
+      action: 'admin_provider_inquiries_viewed',
+      actorId: getReq(req, 'creatorId'),
+      actorRole: getReq(req, 'role') || 'admin',
+      targetType: 'provider_inquiry',
+      metadata: { returned_count: (inquiryResult.data || []).length, private_contacts_returned: false },
+    });
+    res.json(ok((inquiryResult.data || []).map(item => ({
+      ...item,
+      provider_name: profileMap.get(String(item.provider_id)) || '委托师',
+      requester_name: profileMap.get(String(item.requester_id)) || cleanText(item.requester_name, 120) || '用户',
+    }))));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

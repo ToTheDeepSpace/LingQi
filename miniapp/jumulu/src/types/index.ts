@@ -225,6 +225,33 @@ export type CommissionApplication = {
   commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'needed_end_date' | 'has_private_contact' | 'accept_expedition'> | null
 }
 
+export type ProviderListing = {
+  profile_id: string
+  poster_url: string
+  headline?: string | null
+  description?: string | null
+  height_cm?: number | null
+  weight_kg?: number | null
+  role_types: string[]
+  is_active: boolean
+  created_at?: string | null
+  updated_at?: string | null
+  profile?: PublicProfile | null
+}
+
+export type ProviderInquiry = {
+  id: string
+  provider_id: string
+  requester_id: string
+  requester_name: string
+  message: string
+  status: 'submitted' | 'accepted' | 'rejected'
+  contacts?: { requester: string; provider: string } | null
+  provider?: Pick<PublicProfile, 'id' | 'display_name' | 'avatar' | 'city'> | null
+  created_at?: string | null
+  decided_at?: string | null
+}
+
 export type PublicProfile = {
   id: string
   display_name: string
@@ -235,6 +262,7 @@ export type PublicProfile = {
   available_cities?: string[]
   travel_status?: string | null
   commission_match?: 'local' | 'expedition' | null
+  provider_listing?: ProviderListing | null
 }
 
 export type ScriptRole = { target_id?: string; role_name: string; gender?: string; tags?: string[]; rating_avg?: number | null; rating_count?: number; role_kind?: string; role_source?: string }

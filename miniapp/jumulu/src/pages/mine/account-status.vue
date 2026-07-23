@@ -11,6 +11,7 @@ type Notice = {
   content: string
   read_at?: string | null
   created_at: string
+  action_url?: string | null
 }
 
 const status = ref<AccountStatus | null>(null)
@@ -50,6 +51,9 @@ async function load() {
     ])
     status.value = nextStatus
     notices.value = nextNotices
+    const unread = nextNotices.filter(item => !item.read_at).length
+    uni.setStorageSync('jumulu:notifications:unread', unread)
+    uni.$emit('jumulu:notification-count', unread)
     if (nextStatus.appeal?.status === 'needs_info') {
       content.value = nextStatus.appeal.content || ''
       evidenceText.value = (nextStatus.appeal.evidence_urls || []).join('\n')
@@ -80,11 +84,19 @@ async function submitAppeal() {
 }
 
 async function markRead(item: Notice) {
-  if (item.read_at) return
-  try {
-    await apiRequest(`/lc/account/notifications/${encodeURIComponent(item.id)}/read`, { method: 'PUT' })
-    item.read_at = new Date().toISOString()
-  } catch { /* 下次进入时仍会显示未读 */ }
+  if (!item.read_at) {
+    try {
+      await apiRequest(`/lc/account/notifications/${encodeURIComponent(item.id)}/read`, { method: 'PUT' })
+      item.read_at = new Date().toISOString()
+      const unread = notices.value.filter(notice => !notice.read_at).length
+      uni.setStorageSync('jumulu:notifications:unread', unread)
+      uni.$emit('jumulu:notification-count', unread)
+    } catch { /* 下次进入时仍会显示未读 */ }
+  }
+  if (item.action_url?.startsWith('/commissions')) {
+    uni.setStorageSync('jumulu:commissions:open-view', 'mine')
+    uni.switchTab({ url: '/pages/commissions/index' })
+  }
 }
 
 onShow(() => void load())
@@ -93,7 +105,7 @@ onPullDownRefresh(load)
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="账号治理" nav-title="账号通知与申诉" title="账号状态" description="限制原因、申诉进度和管理员回复都在这里留痕。" />
+    <PageIntro eyebrow="站内消息" nav-title="消息通知" title="消息通知" description="委托申请、处理结果、账号状态和管理员回复都在这里留痕。" />
     <view v-if="loading" class="surface state-card"><text class="muted">正在读取账号状态...</text></view>
     <view v-if="error" class="surface error-card"><text>{{ error }}</text></view>
 
@@ -126,8 +138,8 @@ onPullDownRefresh(load)
     </view>
 
     <view class="surface notices">
-      <text class="section-title compact">账号通知</text>
-      <text v-if="notices.length === 0" class="muted empty">暂无账号治理通知。</text>
+      <text class="section-title compact">全部通知</text>
+      <text v-if="notices.length === 0" class="muted empty">暂无站内通知。</text>
       <view v-for="item in notices" :key="item.id" class="notice" @tap="markRead(item)">
         <view class="notice-title"><strong>{{ item.title }}</strong><text v-if="!item.read_at">未读</text></view>
         <text class="notice-content">{{ item.content }}</text>

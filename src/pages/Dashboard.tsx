@@ -13,7 +13,7 @@ import { SERVICE_CATEGORY_OPTIONS, normalizeServiceCategory, serviceCategoryLabe
 import { RESIDENT_TRAVEL_STATUS, formatTravelStatus, normalizeTravelStatus } from '../lib/travelStatus';
 import { extractSharedUrl } from '../lib/socialLinks';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
-import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePreference, ScriptCatalogItem, Certification } from '../types';
+import type { Creator, Service, Portfolio, AuthData, Availability, ProfileRolePreference, ScriptCatalogItem, Certification, ProviderListing } from '../types';
 
 const API  = '/api';
 const C    = '#fffdf8';
@@ -282,6 +282,25 @@ type ServiceSetupDraft = {
   pending: ServiceDraft[];
 };
 
+type ProviderListingDraft = {
+  posterUrl: string;
+  headline: string;
+  description: string;
+  heightCm: string;
+  weightKg: string;
+  roleTypes: string;
+};
+
+type ProviderListingDashboardData = {
+  listing: ProviderListing | null;
+  latest_review?: {
+    id: string;
+    status: 'pending' | 'approved' | 'rejected';
+    review_note?: string | null;
+    created_at?: string | null;
+  } | null;
+};
+
 type AvailabilityImportDraft = {
   city: string;
   location: string;
@@ -320,6 +339,17 @@ function dateKeyAfterDays(days: number) {
 
 function blankServiceDraft(): ServiceDraft {
   return { service_type: '', price: '', duration: '', description: '' };
+}
+
+function providerListingToDraft(listing?: ProviderListing | null): ProviderListingDraft {
+  return {
+    posterUrl: listing?.poster_url || '',
+    headline: listing?.headline || '',
+    description: listing?.description || '',
+    heightCm: listing?.height_cm ? String(listing.height_cm) : '',
+    weightKg: listing?.weight_kg ? String(listing.weight_kg) : '',
+    roleTypes: (listing?.role_types || []).join('、'),
+  };
 }
 
 function sanitizeIntegerInput(value: string, maxLength = 6) {
@@ -588,6 +618,10 @@ export default function Dashboard() {
   const [newSvc, setNewSvc] = useState<ServiceDraft>(() => blankServiceDraft());
   const [pendingServices, setPendingServices] = useState<ServiceDraft[]>([]);
   const [submittingServices, setSubmittingServices] = useState(false);
+  const [providerListingData, setProviderListingData] = useState<ProviderListingDashboardData>({ listing: null, latest_review: null });
+  const [providerListingDraft, setProviderListingDraft] = useState<ProviderListingDraft>(() => providerListingToDraft());
+  const [submittingProviderListing, setSubmittingProviderListing] = useState(false);
+  const [togglingProviderListing, setTogglingProviderListing] = useState(false);
   const [availDates, setAvailDates] = useState<string[]>([]);
   const [availItems, setAvailItems] = useState<Availability[]>([]);
   const [selectedAvailDates, setSelectedAvailDates] = useState<string[]>([]);
@@ -652,7 +686,8 @@ export default function Dashboard() {
       fetch(`${API}/lc/commissions/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/carpools/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/scripts`).then(r => r.json()),
-    ]).then(([profileData, availData, rankingsData, commissionsData, carpoolsData, scriptsData]) => {
+      fetch(`${API}/lc/provider-listings/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
+    ]).then(([profileData, availData, rankingsData, commissionsData, carpoolsData, scriptsData, providerListingDataResult]) => {
       if (profileData.success && profileData.data) {
         const { services: svc, portfolio: port, ...profile } = profileData.data;
         setCreator(profile);
@@ -660,7 +695,7 @@ export default function Dashboard() {
         setPortfolio(port || []);
         setRolePreferences(rolePreferencesFromProfile(profile));
         setForm(profileToForm(profile));
-        setOffersServices(hasServiceSetup(profileToForm(profile), svc || [], rolePreferencesFromProfile(profile)));
+        setOffersServices(hasServiceSetup(profileToForm(profile), svc || [], rolePreferencesFromProfile(profile)) || Boolean(profile.provider_listing));
       } else { setError(profileData.error || '加载失败'); }
       if (availData.success) {
         applyAvailability(availData.data || []);
@@ -669,6 +704,12 @@ export default function Dashboard() {
       if (commissionsData.success) setMyCommissions(commissionsData.data || []);
       if (carpoolsData.success) setMyCarpools(carpoolsData.data || []);
       if (scriptsData.success) setScripts(scriptsData.data || []);
+      if (providerListingDataResult.success) {
+        const nextData = (providerListingDataResult.data || { listing: null, latest_review: null }) as ProviderListingDashboardData;
+        setProviderListingData(nextData);
+        setProviderListingDraft(providerListingToDraft(nextData.listing));
+        if (nextData.listing) setOffersServices(true);
+      }
     }).catch(() => setError('网络错误')).finally(() => setLoading(false));
   }, [navigate]);
 
@@ -971,6 +1012,63 @@ export default function Dashboard() {
     setForm(prev => ({ ...prev, avatar: url, avatar_focus_x: 50, avatar_focus_y: 25 }));
     setMsg('图片已上传，请调整展示位置后点击保存资料');
     setTimeout(() => setMsg(''), 3200);
+  };
+
+  const submitProviderListing = async () => {
+    if (!providerListingDraft.posterUrl) {
+      setError('请先上传一张委托条主图');
+      return;
+    }
+    setSubmittingProviderListing(true);
+    setError('');
+    setMsg('');
+    try {
+      const response = await fetch(`${API}/lc/provider-listings/mine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          posterUrl: providerListingDraft.posterUrl,
+          headline: providerListingDraft.headline.trim(),
+          description: providerListingDraft.description.trim(),
+          heightCm: providerListingDraft.heightCm || null,
+          weightKg: providerListingDraft.weightKg || null,
+          roleTypes: providerListingDraft.roleTypes.split(/[，,、\n]/).map(item => item.trim()).filter(Boolean).slice(0, 12),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(typeof data.error === 'string' ? data.error : data.error?.message || '委托条提交失败');
+      setProviderListingData(current => ({
+        ...current,
+        latest_review: { id: data.data.review_id, status: 'pending', created_at: new Date().toISOString() },
+      }));
+      setMsg('委托条已提交人工审核；现有公开版本会继续展示。');
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : '委托条提交失败');
+    } finally {
+      setSubmittingProviderListing(false);
+    }
+  };
+
+  const toggleProviderListing = async () => {
+    const listing = providerListingData.listing;
+    if (!listing) return;
+    setTogglingProviderListing(true);
+    setError('');
+    try {
+      const response = await fetch(`${API}/lc/provider-listings/mine/active`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ active: !listing.is_active }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(typeof data.error === 'string' ? data.error : data.error?.message || '状态更新失败');
+      setProviderListingData(current => ({ ...current, listing: data.data }));
+      setMsg(data.data.is_active ? '委托条已重新展示' : '委托条已下架');
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : '状态更新失败');
+    } finally {
+      setTogglingProviderListing(false);
+    }
   };
 
   const normalizeSocialField = (field: 'douyin' | 'xiaohongshu', raw: string) => {
@@ -2256,6 +2354,91 @@ export default function Dashboard() {
                   </p>
                 </div>
 
+                <div className="dashboard-panel" style={card}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+                    <div>
+                      <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>委托师委托条</h2>
+                      <p style={{ color: MUTED, fontSize: 13, lineHeight: 1.6 }}>一张主图加必要资料，审核通过后进入委托师列表。</p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {providerListingData.latest_review?.status === 'pending' && <span style={{ color: '#925f18', fontSize: 12, fontWeight: 850 }}>新版本审核中</span>}
+                      {providerListingData.listing && (
+                        <button type="button" onClick={() => void toggleProviderListing()} disabled={togglingProviderListing} style={secondaryActionStyle}>
+                          {togglingProviderListing ? '处理中...' : providerListingData.listing.is_active ? '下架委托条' : '重新展示'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {providerListingData.latest_review?.status === 'rejected' && (
+                    <p style={{ margin: '0 0 12px', padding: '9px 11px', borderRadius: 7, background: '#fff1f0', color: '#a53232', fontSize: 12 }}>
+                      上次提交未通过：{providerListingData.latest_review.review_note || '请调整公开内容后重新提交'}
+                    </p>
+                  )}
+                  <div className="provider-listing-editor" style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 0.72fr) minmax(320px, 1.28fr)', gap: 16 }}>
+                    <div>
+                      <div style={{ width: '100%', aspectRatio: '16 / 9', overflow: 'hidden', borderRadius: 7, border: '1px solid rgba(31,41,55,0.1)', background: '#f5f2ec' }}>
+                        {providerListingDraft.posterUrl
+                          ? <img src={providerListingDraft.posterUrl} alt="委托条预览" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <div style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', color: MUTED, fontSize: 13 }}>尚未上传主图</div>}
+                      </div>
+                      <ImageUpload
+                        token={token}
+                        scope="commission-provider"
+                        label={providerListingDraft.posterUrl ? '更换主图' : '上传主图'}
+                        variant="compact"
+                        hidePreview
+                        onUploaded={url => setProviderListingDraft(current => ({ ...current, posterUrl: url }))}
+                        style={{ marginTop: 10 }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <input
+                        value={providerListingDraft.headline}
+                        onChange={event => setProviderListingDraft(current => ({ ...current, headline: event.target.value }))}
+                        placeholder="一句话介绍"
+                        maxLength={80}
+                        style={{ ...inputStyle, gridColumn: '1 / -1' }}
+                      />
+                      <input
+                        value={providerListingDraft.heightCm}
+                        onChange={event => setProviderListingDraft(current => ({ ...current, heightCm: sanitizeIntegerInput(event.target.value, 3) }))}
+                        placeholder="身高 100-250cm"
+                        inputMode="numeric"
+                        style={inputStyle}
+                      />
+                      <input
+                        value={providerListingDraft.weightKg}
+                        onChange={event => setProviderListingDraft(current => ({ ...current, weightKg: sanitizeIntegerInput(event.target.value, 3) }))}
+                        placeholder="体重 30-300kg"
+                        inputMode="numeric"
+                        style={inputStyle}
+                      />
+                      <input
+                        value={providerListingDraft.roleTypes}
+                        onChange={event => setProviderListingDraft(current => ({ ...current, roleTypes: event.target.value }))}
+                        placeholder="擅长角色类型，用逗号分隔"
+                        maxLength={240}
+                        style={{ ...inputStyle, gridColumn: '1 / -1' }}
+                      />
+                      <textarea
+                        value={providerListingDraft.description}
+                        onChange={event => setProviderListingDraft(current => ({ ...current, description: event.target.value }))}
+                        placeholder="档期、可服务城市和其他公开说明"
+                        maxLength={1200}
+                        style={{ ...inputStyle, gridColumn: '1 / -1', minHeight: 82, resize: 'vertical' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void submitProviderListing()}
+                        disabled={submittingProviderListing || providerListingData.latest_review?.status === 'pending'}
+                        style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '10px 18px', borderRadius: 7, border: 0, background: '#b9781f', color: '#fff', fontWeight: 850, cursor: 'pointer' }}
+                      >
+                        {providerListingData.latest_review?.status === 'pending' ? '等待审核' : submittingProviderListing ? '提交中...' : '提交委托条审核'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 {roleBasedServiceSelected && (
                 <div className="dashboard-panel role-panel" style={{ ...card }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
@@ -3512,6 +3695,9 @@ export default function Dashboard() {
           .service-add-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
             gap: 10px !important;
+          }
+          .provider-listing-editor {
+            grid-template-columns: 1fr !important;
           }
           .service-settings-grid > div:nth-child(2),
           .service-add-grid > select:first-child {
