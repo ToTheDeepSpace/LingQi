@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import DailyCheckinView from '../../components/DailyCheckinView.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import type { AccountStatus, AuthSession } from '../../types'
 import { apiRequest, readAuth } from '../../utils/api'
@@ -11,6 +12,8 @@ const nickname = ref('')
 const loading = ref(false)
 const error = ref('')
 const accountStatus = ref<AccountStatus | null>(null)
+const showCheckin = ref(false)
+const checkinView = ref<InstanceType<typeof DailyCheckinView> | null>(null)
 
 async function refresh() {
   loading.value = true; error.value = ''
@@ -34,14 +37,26 @@ async function login() {
 }
 function signOut() { logout(); auth.value = null }
 function go(url: string) { uni.navigateTo({ url }) }
+function openCheckin() { showCheckin.value = true }
 function copyAdmin() { uni.setClipboardData({ data: 'https://jumulu.jusichen.com/admin', success: () => uni.showToast({ title: '后台地址已复制', icon: 'success' }) }) }
 
+async function pullRefresh() {
+  if (showCheckin.value) {
+    await checkinView.value?.load()
+    uni.stopPullDownRefresh()
+    return
+  }
+  await refresh()
+}
+
 onShow(() => { auth.value = readAuth(); if (auth.value?.token) void refresh() })
-onPullDownRefresh(refresh)
+onPullDownRefresh(pullRefresh)
 </script>
 
 <template>
   <view class="page">
+    <DailyCheckinView v-if="auth && showCheckin" ref="checkinView" @back="showCheckin = false" />
+    <template v-else>
     <PageIntro eyebrow="个人中心" nav-title="我的剧幕录" :title="auth ? auth.display_name : '微信登录剧幕录'" :description="auth ? '管理自己的发布、评价、评论和审核进度。' : '首次登录需要填写公开昵称，登录后与网站使用同一个账号。'" />
     <view v-if="!auth" class="login surface">
       <text class="field-label">公开昵称</text>
@@ -55,6 +70,10 @@ onPullDownRefresh(refresh)
         <image v-if="auth.avatar" class="avatar" :src="auth.avatar" mode="aspectFill" />
         <view v-else class="avatar placeholder">{{ auth.display_name.slice(0, 1) }}</view>
         <view class="account__main"><text class="account__name">{{ auth.display_name }}</text><text class="account__meta">{{ auth.city || '城市未设置' }} · {{ auth.phone_verified_at || auth.email_verified_at ? '账号已验证' : '仅浏览' }}</text></view>
+      </view>
+      <view class="checkin-entry" @tap="openCheckin">
+        <view><strong>每日签到</strong><text>领取助力金币，给喜欢的角色和 DM 打榜</text></view>
+        <view class="checkin-entry__action"><text>签到</text><image src="/static/icons/ui-chevron-right.png" mode="aspectFit" /></view>
       </view>
       <view v-if="accountStatus?.state === 'restricted'" class="restriction surface" @tap="go('/pages/mine/account-status')">
         <view>
@@ -74,6 +93,7 @@ onPullDownRefresh(refresh)
       <view v-if="auth.role === 'admin'" class="admin surface"><view><strong>平台管理后台</strong><text>审核、账号治理和证据处理继续在网站完成。</text></view><button class="secondary-button" @tap="copyAdmin">复制网站后台地址</button></view>
       <button class="secondary-button logout" @tap="signOut">退出登录</button>
     </template>
+    </template>
   </view>
 </template>
 
@@ -84,6 +104,13 @@ onPullDownRefresh(refresh)
 .error { color: #b42318; }
 .login-button { width: 100%; margin-top: 18rpx; }
 .account { display: flex; align-items: center; gap: 16rpx; }
+.checkin-entry { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; margin-top: 14rpx; padding: 20rpx 4rpx; border-top: 1rpx solid #e7e1d8; border-bottom: 1rpx solid #e7e1d8; }
+.checkin-entry strong, .checkin-entry > view > text { display: block; }
+.checkin-entry strong { color: #27364a; font-size: 28rpx; }
+.checkin-entry > view > text { margin-top: 6rpx; color: #748093; font-size: 21rpx; }
+.checkin-entry__action { display: flex; align-items: center; gap: 5rpx; color: #9a651e; font-size: 23rpx; font-weight: 800; }
+.checkin-entry__action text { margin: 0; color: #9a651e; }
+.checkin-entry__action image { width: 24rpx; height: 24rpx; }
 .avatar { width: 94rpx; height: 94rpx; flex: 0 0 94rpx; border-radius: 50%; background: #f2ece4; }
 .avatar.placeholder { display: flex; align-items: center; justify-content: center; color: #9a651e; font-family: serif; font-size: 38rpx; font-weight: 900; }
 .account__name, .account__meta { display: block; }

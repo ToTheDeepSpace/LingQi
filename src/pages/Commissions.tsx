@@ -48,6 +48,12 @@ function getAuth(): AuthData | null {
   return data?.token ? data as AuthData : null;
 }
 
+function commissionDateText(item?: Pick<Commission, 'needed_date' | 'needed_end_date'> | null) {
+  if (!item?.needed_date) return '';
+  if (!item.needed_end_date || item.needed_end_date === item.needed_date) return item.needed_date;
+  return `${item.needed_date} 至 ${item.needed_end_date}`;
+}
+
 export default function Commissions() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -425,7 +431,7 @@ export default function Commissions() {
                     <strong style={{ color: INK }}>{app.commission?.title || '委托需求'}</strong>
                     <ApplicationStatus status={app.status} />
                   </div>
-                  <p style={{ margin: '8px 0 0', color: MUTED, fontSize: 12 }}>{[app.commission?.city, app.commission?.needed_date].filter(Boolean).join(' · ') || '时间地点待商量'}</p>
+                  <p style={{ margin: '8px 0 0', color: MUTED, fontSize: 12 }}>{[app.commission?.city, commissionDateText(app.commission)].filter(Boolean).join(' · ') || '时间地点待商量'}</p>
                   {app.contacts && <ContactExchange contacts={app.contacts} ownSide="applicant" ownLabel="我的联系方式" otherLabel="委托人联系方式" />}
                 </article>
               ))}
@@ -599,7 +605,7 @@ function CommissionCard({ item, showStatus, onDelete, onApply, onReport, applied
         {showStatus && <StatusPill status={item.status} />}
         {expired && <ExpiredPill />}
         {item.script_name && <Pill>{item.script_name}</Pill>}
-        {item.needed_date && <Pill>{item.needed_date}</Pill>}
+        {item.needed_date && <Pill>{commissionDateText(item)}</Pill>}
         {item.city && <Pill>{item.city}</Pill>}
         {item.accept_expedition && <Pill>接受远征</Pill>}
         {item.target_type && <Pill>{TARGET_LABEL[item.target_type] || item.target_type}</Pill>}

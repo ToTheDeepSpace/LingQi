@@ -77,6 +77,7 @@ export type Dossier = {
   mbti?: string | null
   zodiac?: string | null
   dm_started_month?: string | null
+  created_at?: string | null
   rating_summary?: RatingSummary
 }
 
@@ -198,6 +199,7 @@ export type Commission = {
   desired_role?: string | null
   target_type?: string | null
   needed_date?: string | null
+  needed_end_date?: string | null
   city?: string | null
   location?: string | null
   budget?: string | null
@@ -220,7 +222,7 @@ export type CommissionApplication = {
   status: 'submitted' | 'accepted' | 'rejected'
   contacts?: { poster: string; applicant: string } | null
   created_at?: string
-  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'has_private_contact' | 'accept_expedition'> | null
+  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'needed_end_date' | 'has_private_contact' | 'accept_expedition'> | null
 }
 
 export type PublicProfile = {
@@ -236,7 +238,57 @@ export type PublicProfile = {
 }
 
 export type ScriptRole = { target_id?: string; role_name: string; gender?: string; tags?: string[]; rating_avg?: number | null; rating_count?: number; role_kind?: string; role_source?: string }
-export type Script = { id: string; name: string; city?: string | null; player_roles?: ScriptRole[]; actor_roles?: ScriptRole[] }
+export type Script = {
+  id: string
+  name: string
+  city?: string | null
+  duration_minutes?: number | null
+  min_duration_hours?: number | null
+  max_duration_hours?: number | null
+  rating_avg?: number | null
+  rating_count?: number
+  player_roles?: ScriptRole[]
+  actor_roles?: ScriptRole[]
+}
+
+export type DailyCheckin = {
+  id: string
+  checkin_date: string
+  streak: number
+  daily_reward: number
+  streak_bonus: number
+  reward: number
+  created_at?: string
+}
+
+export type DailyCheckinTransaction = {
+  id: string
+  amount: number
+  description: string
+  metadata?: Record<string, unknown>
+  created_at?: string
+}
+
+export type DailyCheckinState = {
+  today: string
+  checked_in: boolean
+  current_streak: number
+  balance: number
+  bonus_balance: number
+  checkins: DailyCheckin[]
+  transactions: DailyCheckinTransaction[]
+  claim?: {
+    checkin_id: string
+    checkin_date: string
+    streak: number
+    daily_reward: number
+    streak_bonus: number
+    reward: number
+    balance: number
+    bonus_balance: number
+    applied: boolean
+  } | null
+}
 
 export type RoleRating = {
   id: string

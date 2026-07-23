@@ -47,6 +47,7 @@ type CommissionDraft = {
   desiredRole: string;
   targetType: string;
   neededDate: string;
+  neededEndDate: string;
   city: string;
   location: string;
   budget: string;
@@ -62,6 +63,7 @@ function shouldSaveCommissionDraft(data: CommissionDraft) {
     data.scriptName,
     data.desiredRole,
     data.neededDate,
+    data.neededEndDate,
     data.city,
     data.location,
     data.budget,
@@ -81,6 +83,7 @@ export default function CreateCommission() {
   const [desiredRole, setDesiredRole] = useState('');
   const [targetType, setTargetType] = useState('creator');
   const [neededDate, setNeededDate] = useState('');
+  const [neededEndDate, setNeededEndDate] = useState('');
   const [city, setCity] = useState('');
   const [location, setLocation] = useState('');
   const [budget, setBudget] = useState('');
@@ -98,13 +101,14 @@ export default function CreateCommission() {
     desiredRole,
     targetType,
     neededDate,
+    neededEndDate,
     city,
     location,
     budget,
     contactNote,
     privateContact,
     acceptExpedition,
-  }), [acceptExpedition, budget, city, contactNote, content, desiredRole, location, neededDate, privateContact, scriptId, scriptName, targetType, title]);
+  }), [acceptExpedition, budget, city, contactNote, content, desiredRole, location, neededDate, neededEndDate, privateContact, scriptId, scriptName, targetType, title]);
 
   const commissionDraft = useDraftAutosave<CommissionDraft>({
     key: 'lc:draft:commission:new',
@@ -120,6 +124,7 @@ export default function CreateCommission() {
       setDesiredRole(data.desiredRole || '');
       setTargetType(data.targetType || 'creator');
       setNeededDate(data.neededDate || '');
+      setNeededEndDate(data.neededEndDate || '');
       setCity(data.city || '');
       setLocation(data.location || '');
       setBudget(data.budget || '');
@@ -188,6 +193,7 @@ export default function CreateCommission() {
         fields_present: {
           script: !!(scriptId || scriptName.trim()),
           neededDate: !!neededDate,
+          neededEndDate: !!neededEndDate,
           city: !!city,
           desiredRole: !!desiredRole,
           budget: !!budget,
@@ -197,7 +203,7 @@ export default function CreateCommission() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
         body: JSON.stringify({
-          title, content, scriptId: scriptId || null, scriptName: scriptName.trim() || null, desiredRole, targetType, neededDate, city, location, budget, contactNote, privateContact: privateContact.trim(), acceptExpedition, aiAssistContext,
+          title, content, scriptId: scriptId || null, scriptName: scriptName.trim() || null, desiredRole, targetType, neededDate, neededEndDate, city, location, budget, contactNote, privateContact: privateContact.trim(), acceptExpedition, aiAssistContext,
         }),
       });
       const d = await r.json();
@@ -288,8 +294,16 @@ export default function CreateCommission() {
                 <input value={desiredRole} onChange={e => setDesiredRole(e.target.value)} placeholder="角色名 / 类型" style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>日期（可选）</label>
-                <input type="date" value={neededDate} onChange={e => setNeededDate(e.target.value)} style={inputStyle} />
+                <label style={labelStyle}>开始日期（可选）</label>
+                <input type="date" value={neededDate} onChange={e => {
+                  const value = e.target.value;
+                  setNeededDate(value);
+                  if (neededEndDate && neededEndDate < value) setNeededEndDate(value);
+                }} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>结束日期（可选）</label>
+                <input type="date" value={neededEndDate} min={neededDate || undefined} onChange={e => setNeededEndDate(e.target.value)} style={inputStyle} />
               </div>
             </div>
 

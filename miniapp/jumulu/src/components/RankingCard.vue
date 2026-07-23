@@ -19,7 +19,7 @@ function eventSummary(content: string) {
 </script>
 
 <template>
-  <view class="ranking surface" :class="`ranking--${item.type}`" @tap="$emit('open', item)">
+  <view class="ranking" :class="`ranking--${item.type}`" @tap="$emit('open', item)">
     <view class="ranking__top">
       <view class="ranking__identity"><text class="ranking__type">{{ RANKING_TYPE_TEXT[item.type] }}</text><text class="ranking__subject">{{ item.subject_name }}</text></view>
       <text class="ranking__city">{{ item.subject_city || '城市待补充' }}</text>
@@ -37,7 +37,7 @@ function eventSummary(content: string) {
 </template>
 
 <style scoped>
-.ranking { position: relative; margin-bottom: 12rpx; padding: 17rpx 18rpx 15rpx 22rpx; overflow: hidden; }
+.ranking { position: relative; padding: 20rpx 4rpx 18rpx 18rpx; border-bottom: 1rpx solid #eceff2; overflow: hidden; }
 .ranking::before { position: absolute; inset: 0 auto 0 0; width: 6rpx; background: #b9781f; content: ''; }
 .ranking--black::before { background: #26303f; }
 .ranking--white::before { background: #b7bec8; }

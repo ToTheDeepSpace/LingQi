@@ -9,6 +9,7 @@ import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText } from '../../utils/format'
 
 type PageView = 'discover' | 'mine'
+type DiscoverScope = 'local' | 'expedition'
 
 const CITY_KEY = 'jumulu:commissions:last-city'
 const view = ref<PageView>('discover')
@@ -19,6 +20,9 @@ const sent = ref<CommissionApplication[]>([])
 const loading = ref(false)
 const error = ref('')
 const query = ref('')
+const dateStart = ref('')
+const dateEnd = ref('')
+const discoverScope = ref<DiscoverScope>('local')
 const city = ref(String(uni.getStorageSync(CITY_KEY) || '全部城市'))
 const applyTarget = ref<Commission | null>(null)
 const applyLetter = ref('')
@@ -28,6 +32,9 @@ const authId = computed(() => readAuth()?.id || '')
 
 const visibleItems = computed(() => commissions.value.filter(item =>
   !item.is_expired
+  && (discoverScope.value === 'local' || item.accept_expedition)
+  && (!dateStart.value || Boolean(item.needed_date) && String(item.needed_end_date || item.needed_date) >= dateStart.value)
+  && (!dateEnd.value || Boolean(item.needed_date) && String(item.needed_date) <= dateEnd.value)
   && (!query.value.trim() || [item.title, item.content, item.script_name, item.desired_role]
     .join(' ')
     .toLocaleLowerCase('zh-CN')
@@ -77,6 +84,10 @@ function selectCity(value: string) {
   city.value = value || '全部城市'
   uni.setStorageSync(CITY_KEY, city.value)
   void load()
+}
+function setStartDate(value: string) {
+  dateStart.value = value
+  if (dateEnd.value && dateEnd.value < value) dateEnd.value = value
 }
 function openProfile(id?: string) { if (id) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(id)}` }) }
 function create() { void requireLogin().then(() => uni.navigateTo({ url: '/pages/commissions/create' })).catch(() => undefined) }
@@ -141,9 +152,10 @@ onPullDownRefresh(load)
 
     <template v-if="view === 'discover'">
       <view class="filter page-tools">
-        <CitySearchPicker :value="city" @change="selectCity" />
-        <input v-model="query" class="input" placeholder="搜索委托或角色" />
+        <view class="filter__row"><CitySearchPicker :value="city" @change="selectCity" /><picker mode="date" :value="dateStart" @change="setStartDate($event.detail.value)"><view class="picker-field">{{ dateStart || '开始日期' }}</view></picker><picker mode="date" :value="dateEnd" :start="dateStart || undefined" @change="dateEnd = $event.detail.value"><view class="picker-field">{{ dateEnd || '结束日期' }}</view></picker></view>
+        <view class="filter__search"><input v-model="query" class="input" placeholder="搜索剧本或角色" /><text v-if="dateStart || dateEnd" @tap="dateStart = ''; dateEnd = ''">清除日期</text></view>
       </view>
+      <view class="scope-tabs"><view :class="{ active: discoverScope === 'local' }" @tap="discoverScope = 'local'">本地需求</view><view :class="{ active: discoverScope === 'expedition' }" @tap="discoverScope = 'expedition'">接受远征</view></view>
 
       <template v-if="city !== '全部城市' && creators.length">
         <view class="section-head"><text class="section-title">可接{{ city }}委托的人</text><text class="section-note">本地与可远征</text></view>
@@ -160,13 +172,15 @@ onPullDownRefresh(load)
       </template>
 
       <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visibleItems.length" empty-text="当前城市暂时没有公开委托" @retry="load" />
-      <view v-for="item in visibleItems" :key="item.id" class="listing surface">
-        <view class="listing__top"><text class="listing__title">{{ item.title }}</text><text v-if="item.needed_date" class="listing__date">{{ dateText(item.needed_date) }}</text></view>
+      <view class="listing-list">
+      <view v-for="item in visibleItems" :key="item.id" class="listing">
+        <view class="listing__top"><text class="listing__title">{{ item.title }}</text><image src="/static/icons/ui-chevron-right.png" mode="aspectFit" /></view>
         <view class="chips"><text v-if="item.city" class="chip">{{ item.city }}</text><text v-if="item.accept_expedition" class="chip expedition">接受远征</text></view>
-        <text class="listing__meta">{{ [item.script_name, item.desired_role, item.budget].filter(Boolean).join(' · ') || '需求细节见正文' }}</text>
+        <text class="listing__meta">{{ [item.needed_date ? `${dateText(item.needed_date)}${item.needed_end_date && item.needed_end_date !== item.needed_date ? ` 至 ${dateText(item.needed_end_date)}` : ''}` : '', item.script_name, item.desired_role, item.budget].filter(Boolean).join(' · ') || '需求细节见正文' }}</text>
         <text v-if="item.poster_name" class="poster" @tap="openProfile(item.poster_id)">委托人 {{ item.poster_name }}</text>
         <text class="listing__content clamp">{{ item.content }}</text>
-        <button v-if="item.poster_id !== authId" class="primary-button full-button" @tap="openApply(item)">申请承接</button>
+        <button v-if="item.poster_id !== authId" class="apply-button" @tap="openApply(item)">申请承接</button>
+      </view>
       </view>
     </template>
 
@@ -205,7 +219,14 @@ onPullDownRefresh(load)
 .view-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8rpx; margin: 0 0 14rpx; }
 .view-tabs button { min-height: 64rpx; margin: 0; border: 0; border-radius: 8rpx; background: #f4f5f7; color: #64748b; font-size: 24rpx; line-height: 64rpx; }
 .view-tabs button.active { background: #fff1d5; color: #8b5919; font-weight: 850; }
-.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
+.filter { display: grid; gap: 10rpx; }
+.filter__row { display: grid; grid-template-columns: 190rpx 1fr 1fr; gap: 10rpx; }
+.filter__search { position: relative; }
+.filter__search .input { padding-right: 130rpx; }
+.filter__search text { position: absolute; right: 16rpx; top: 0; height: 76rpx; color: #9a651e; font-size: 20rpx; line-height: 76rpx; }
+.scope-tabs { display: grid; grid-template-columns: 1fr 1fr; margin: 10rpx 0 20rpx; border: 1rpx solid #e4dac9; border-radius: 8rpx; }
+.scope-tabs view { min-height: 68rpx; color: #64748b; font-size: 23rpx; font-weight: 750; line-height: 68rpx; text-align: center; }
+.scope-tabs view.active { background: #fff6e4; color: #8b5919; }
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-top: 22rpx; }
 .section-note { color: #64748b; font-size: 22rpx; }
 .people { width: calc(100% + 24rpx); margin: 12rpx -24rpx 18rpx 0; }
@@ -216,10 +237,12 @@ onPullDownRefresh(load)
 .person__name, .person__match { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .person__name { margin-top: 10rpx; color: #27364a; font-size: 24rpx; font-weight: 850; }
 .person__match { margin-top: 4rpx; color: #9a651e; font-size: 20rpx; }
-.listing, .inbox { margin-bottom: 14rpx; padding: 20rpx; }
+.listing-list { border-top: 1rpx solid #eceff2; }
+.listing { position: relative; padding: 22rpx 4rpx; border-bottom: 1rpx solid #eceff2; }
+.inbox { margin-bottom: 14rpx; padding: 20rpx; }
 .listing__top { display: flex; justify-content: space-between; gap: 14rpx; }
+.listing__top image { width: 24rpx; height: 24rpx; flex: 0 0 24rpx; margin-top: 6rpx; }
 .listing__title, .inbox__title { color: #27364a; font-size: 29rpx; font-weight: 850; }
-.listing__date { flex: 0 0 auto; color: #9a651e; font-size: 23rpx; }
 .chips { display: flex; gap: 8rpx; margin-top: 10rpx; }
 .chip { padding: 5rpx 10rpx; border-radius: 8rpx; background: #f4f5f7; color: #64748b; font-size: 21rpx; }
 .chip.expedition { background: #fff1d5; color: #8b5919; }
@@ -230,8 +253,13 @@ onPullDownRefresh(load)
 .clamp { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .action-row { margin-top: 16rpx; }
 .full-button { width: 100%; margin-top: 16rpx; }
+.apply-button { min-height: 58rpx; margin: 14rpx 0 0; padding: 0 20rpx; border: 1rpx solid #cda25e; border-radius: 7rpx; background: #fff; color: #8b5919; font-size: 22rpx; font-weight: 800; line-height: 58rpx; }
 .sheet-mask { position: fixed; z-index: 1000; inset: 0; display: flex; align-items: flex-end; background: rgba(31,41,55,.55); }
 .sheet { width: 100%; padding: 28rpx 24rpx calc(30rpx + env(safe-area-inset-bottom)); border-radius: 14rpx 14rpx 0 0; background: #fffdf8; }
 .sheet__title { display: block; color: #1f2937; font-size: 31rpx; font-weight: 900; }
 .privacy { display: block; margin: 12rpx 0; color: #64748b; font-size: 22rpx; line-height: 1.55; }
+@media (max-width: 360px) {
+  .filter__row { grid-template-columns: 1fr 1fr; }
+  .filter__row > :first-child { grid-column: 1 / -1; }
+}
 </style>

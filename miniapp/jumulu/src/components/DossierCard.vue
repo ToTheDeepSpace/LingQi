@@ -13,7 +13,7 @@ const subtitle = computed(() => [props.item.city, props.item.affiliation?.store_
 </script>
 
 <template>
-  <view class="card surface" @tap="$emit('open', item)">
+  <view class="card" @tap="$emit('open', item)">
     <image v-if="item.photo_url" class="card__image" :src="item.photo_url" mode="aspectFill" :style="{ objectPosition: focus }" />
     <view v-else class="card__avatar">{{ item.dm_name.slice(0, 1) }}</view>
     <view class="card__body">
@@ -32,8 +32,8 @@ const subtitle = computed(() => [props.item.city, props.item.affiliation?.store_
 </template>
 
 <style scoped>
-.card { display: flex; gap: 18rpx; margin-bottom: 14rpx; padding: 18rpx; }
-.card__image, .card__avatar { width: 142rpx; height: 166rpx; flex: 0 0 142rpx; border-radius: 10rpx; background: #f2ece4; }
+.card { display: flex; gap: 18rpx; min-height: 156rpx; padding: 18rpx 4rpx; border-bottom: 1rpx solid #eceff2; }
+.card__image, .card__avatar { width: 124rpx; height: 142rpx; flex: 0 0 124rpx; border-radius: 8rpx; background: #f2ece4; }
 .card__avatar { display: flex; align-items: center; justify-content: center; color: #9a651e; font-family: serif; font-size: 52rpx; font-weight: 800; }
 .card__body { flex: 1; min-width: 0; }
 .card__top { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; }
@@ -41,7 +41,7 @@ const subtitle = computed(() => [props.item.city, props.item.affiliation?.store_
 .card__score { color: #9a651e; font-size: 29rpx; font-weight: 900; }
 .card__meta, .card__summary, .card__count { display: block; }
 .card__meta { margin-top: 6rpx; overflow: hidden; color: #64748b; font-size: 23rpx; text-overflow: ellipsis; white-space: nowrap; }
-.card__summary { margin-top: 10rpx; color: #475569; font-size: 24rpx; line-height: 1.5; }
-.card__tags { margin-top: 10rpx; }
-.card__count { margin-top: 10rpx; color: #94a3b8; font-size: 21rpx; }
+.card__summary { display: -webkit-box; overflow: hidden; margin-top: 8rpx; color: #475569; font-size: 22rpx; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.card__tags { margin-top: 8rpx; }
+.card__count { margin-top: 8rpx; color: #94a3b8; font-size: 20rpx; }
 </style>

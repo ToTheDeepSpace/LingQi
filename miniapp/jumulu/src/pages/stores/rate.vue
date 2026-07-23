@@ -4,6 +4,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
 import DossierSearchPicker from '../../components/DossierSearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
+import ScriptSearchPicker from '../../components/ScriptSearchPicker.vue'
 import type { Dossier, NewDossierDraft, Script } from '../../types'
 import { apiRequest, checkMiniContent, requireLogin } from '../../utils/api'
 import { currentDate } from '../../utils/format'
@@ -31,11 +32,10 @@ async function load(initialStoreId = '') {
     const [storeItems, scriptItems] = await Promise.all([apiRequest<Dossier[]>('/lc/dm-dossiers?entityType=store'), apiRequest<Script[]>('/lc/scripts')])
     stores.value = storeItems; scripts.value = scriptItems
     storeId.value = initialStoreId && storeItems.some(item => item.id === initialStoreId) ? initialStoreId : ''
-    scriptId.value = scriptItems[0]?.id || ''
+    scriptId.value = ''
   } catch (err) { uni.showToast({ title: (err as Error).message, icon: 'none' }) }
   finally { loading.value = false }
 }
-function pickValue<T extends { id: string }>(event: { detail: { value: string } }, list: T[]) { return list[Number(event.detail.value)]?.id || '' }
 function selectStore(id: string) { storeId.value = id; newStore.value = null }
 function create(initialName = '') { createInitialName.value = initialName; createOpen.value = true }
 function acceptDraft(draft: NewDossierDraft) { newStore.value = draft; storeId.value = '' }
@@ -85,7 +85,7 @@ onLoad(options => { void load(String(options?.storeId || '')) })
       <text class="field-label">店家</text>
       <DossierSearchPicker kind="store" :items="stores" :value="storeId" :draft-label="newStore?.name" placeholder="搜索并选择店家" @select="selectStore" @create="create" />
       <text class="field-label">体验剧本</text>
-      <picker :range="scripts" range-key="name" :value="Math.max(0, scripts.findIndex(item => item.id === scriptId))" @change="scriptId = pickValue($event, scripts)"><view class="picker-field">{{ selectedScript?.name || '请选择' }}</view></picker>
+      <ScriptSearchPicker :items="scripts" :value="scriptId" placeholder="搜索并选择体验剧本" @select="scriptId = $event" />
       <text class="field-label">到店日期</text>
       <picker mode="date" :value="visitedOn" :end="currentDate()" @change="visitedOn = $event.detail.value"><view class="picker-field">{{ visitedOn }}</view></picker>
       <text class="field-label">综合评分</text>

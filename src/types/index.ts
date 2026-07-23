@@ -161,6 +161,7 @@ export interface Commission {
   desired_role: string | null;
   target_type: string | null;
   needed_date: string | null;
+  needed_end_date?: string | null;
   city: string | null;
   location: string | null;
   budget: string | null;
@@ -186,7 +187,7 @@ export interface CommissionApplication {
   contact_unlocked_at?: string | null;
   contacts?: { poster: string; applicant: string } | null;
   created_at: string;
-  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'has_private_contact' | 'accept_expedition'> | null;
+  commission?: Pick<Commission, 'id' | 'title' | 'city' | 'needed_date' | 'needed_end_date' | 'has_private_contact' | 'accept_expedition'> | null;
 }
 
 export interface Carpool {

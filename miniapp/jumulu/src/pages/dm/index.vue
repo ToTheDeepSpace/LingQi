@@ -82,4 +82,5 @@ onPullDownRefresh(load)
 .empty { margin-bottom: 14rpx; padding: 34rpx 22rpx; color: #7b8492; text-align: center; }
 .empty text { display: block; font-size: 25rpx; }
 .empty button { width: 360rpx; margin: 20rpx auto 0; }
+@media (max-width: 360px) { .filter { grid-template-columns: 1fr; } }
 </style>

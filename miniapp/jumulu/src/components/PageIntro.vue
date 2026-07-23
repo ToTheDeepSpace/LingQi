@@ -15,9 +15,10 @@ defineProps<{ eyebrow?: string; title: string; navTitle?: string; description?: 
 
 <style scoped>
 .intro {
-  padding: 24rpx 4rpx 18rpx;
+  padding: 18rpx 4rpx 16rpx;
+  border-bottom: 1rpx solid #ece7df;
 }
 .intro__eyebrow { display: block; color: #9a651e; font-size: 22rpx; font-weight: 800; }
-.intro__description { display: block; margin-top: 6rpx; color: #64748b; font-size: 24rpx; line-height: 1.55; }
-.intro__actions { margin-top: 16rpx; }
+.intro__description { display: block; margin-top: 5rpx; color: #64748b; font-size: 23rpx; line-height: 1.5; }
+.intro__actions { margin-top: 14rpx; }
 </style>

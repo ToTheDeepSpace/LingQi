@@ -1050,6 +1050,18 @@ type WalletCreditResult = {
   applied: boolean;
 };
 
+type DailyCheckinClaimResult = {
+  checkin_id: string;
+  checkin_date: string;
+  streak: number;
+  daily_reward: number;
+  streak_bonus: number;
+  reward: number;
+  balance: number;
+  bonus_balance: number;
+  applied: boolean;
+};
+
 type WalletSpendResult = {
   transaction_id: string;
   balance: number;
@@ -3264,7 +3276,7 @@ function isPastDate(dateValue: unknown, timeValue?: unknown) {
 }
 
 function isCommissionExpired(row: Record<string, unknown>) {
-  return isPastDate(row.needed_date);
+  return isPastDate(row.needed_end_date || row.needed_date);
 }
 
 function isCarpoolExpired(row: Record<string, unknown>) {
@@ -6973,7 +6985,7 @@ app.get('/api/lc/commissions/mine', authMiddleware, async (req, res) => {
 app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
   try {
     const {
-      title, content, desiredRole, targetType, neededDate,
+      title, content, desiredRole, targetType, neededDate, neededEndDate,
       city, location, budget, contactNote, aiAssistContext,
     } = req.body;
     const privateContact = cleanText(req.body?.privateContact ?? req.body?.private_contact, 300);
@@ -6985,6 +6997,14 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
     if (!title || !content) return res.status(400).json(err(new Error('请填写标题和需求内容')));
     if (!privateContact) return res.status(400).json(err(new Error('请留下接受申请后用于联系的方式')));
     if (!commissionCity || !DOSSIER_CITY_VALUES.has(commissionCity)) return res.status(400).json(err(new Error('请选择委托执行城市')));
+    const commissionNeededDate = neededDate ? dateText(neededDate) : '';
+    const commissionNeededEndDate = neededEndDate ? dateText(neededEndDate) : '';
+    if (neededDate && !commissionNeededDate) return res.status(400).json(err(new Error('委托开始日期格式不正确')));
+    if (neededEndDate && !commissionNeededEndDate) return res.status(400).json(err(new Error('委托结束日期格式不正确')));
+    if (commissionNeededEndDate && !commissionNeededDate) return res.status(400).json(err(new Error('请先选择委托开始日期')));
+    if (commissionNeededDate && commissionNeededEndDate && commissionNeededEndDate < commissionNeededDate) {
+      return res.status(400).json(err(new Error('委托结束日期不能早于开始日期')));
+    }
 
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -7015,7 +7035,8 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
       script_name: scriptName || null,
       desired_role: desiredRole || null,
       target_type: targetType || null,
-      needed_date: neededDate || null,
+      needed_date: commissionNeededDate || null,
+      needed_end_date: commissionNeededEndDate || null,
       city: commissionCity,
       accept_expedition: acceptExpedition,
       location: location || null,
@@ -7031,7 +7052,16 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
       action: 'commission_submitted',
       targetType: 'commission',
       targetId: data?.id,
-      metadata: { city: commissionCity, accept_expedition: acceptExpedition, target_type: targetType || null, script_id: scriptId, script_name: scriptName || null, moderation: moderationPrecheck },
+      metadata: {
+        city: commissionCity,
+        needed_date: commissionNeededDate || null,
+        needed_end_date: commissionNeededEndDate || null,
+        accept_expedition: acceptExpedition,
+        target_type: targetType || null,
+        script_id: scriptId,
+        script_name: scriptName || null,
+        moderation: moderationPrecheck,
+      },
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
@@ -7993,7 +8023,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       };
     } else if (targetType === 'commission') {
       const { data: item, error: qErr } = await supabase.from('lc_commissions')
-        .select('id, title, poster_name, city, needed_date, target_type, content, status')
+        .select('id, title, poster_name, city, needed_date, needed_end_date, target_type, content, status')
         .eq('id', targetId)
         .single();
       if (qErr && isMissingRelation(qErr, 'lc_commissions')) return res.status(503).json(err(new Error('委托需求表尚未初始化')));
@@ -8458,7 +8488,7 @@ app.get('/api/lc/commissions/applications/received', authMiddleware, async (req,
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
 
     const { data: commissions, error: cErr } = await supabase.from('lc_commissions')
-      .select('id, title, city, needed_date, accept_expedition, private_contact')
+      .select('id, title, city, needed_date, needed_end_date, accept_expedition, private_contact')
       .eq('poster_id', profile.id);
     if (cErr) throw cErr;
     const ids = (commissions || []).map(item => item.id);
@@ -8499,7 +8529,7 @@ app.get('/api/lc/commissions/applications/sent', authMiddleware, async (req, res
     if (qErr) throw qErr;
     const commissionIds = Array.from(new Set((data || []).map(item => item.commission_id).filter(Boolean)));
     const commissionResult = commissionIds.length > 0
-      ? await supabase.from('lc_commissions').select('id, title, city, needed_date, accept_expedition, private_contact').in('id', commissionIds)
+      ? await supabase.from('lc_commissions').select('id, title, city, needed_date, needed_end_date, accept_expedition, private_contact').in('id', commissionIds)
       : { data: [], error: null };
     if (commissionResult.error) throw commissionResult.error;
     const commissionMap = new Map((commissionResult.data || []).map(item => [item.id, item]));
@@ -8534,7 +8564,7 @@ app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
 
     const { data: commission } = await supabase.from('lc_commissions')
-      .select('id, poster_id, status, needed_date, city, accept_expedition')
+      .select('id, poster_id, status, needed_date, needed_end_date, city, accept_expedition')
       .eq('id', req.params.id)
       .single();
     if (!commission) return res.status(404).json(err(new Error('委托需求不存在')));
@@ -9320,7 +9350,7 @@ app.get('/api/lc/admin/commission-applications', authMiddleware, adminMiddleware
     if (applicationErr) throw applicationErr;
     const commissionIds = Array.from(new Set((applications || []).map(item => item.commission_id).filter(Boolean)));
     const commissionResult = commissionIds.length > 0
-      ? await supabase.from('lc_commissions').select('id, poster_id, poster_name, title, city, needed_date, status').in('id', commissionIds)
+      ? await supabase.from('lc_commissions').select('id, poster_id, poster_name, title, city, needed_date, needed_end_date, status').in('id', commissionIds)
       : { data: [], error: null };
     if (commissionResult.error) throw commissionResult.error;
     const commissionMap = new Map((commissionResult.data || []).map(item => [item.id, item]));
@@ -16012,6 +16042,83 @@ app.put('/api/lc/admin/transactions/:id/reject', authMiddleware, adminMiddleware
 });
 
 // ── 钱包 ──
+
+async function loadDailyCheckinState(profileId: string) {
+  const today = getChinaNow().date;
+  const yesterdayDate = new Date(`${today}T00:00:00.000Z`);
+  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
+  const yesterday = yesterdayDate.toISOString().slice(0, 10);
+  const [checkinResult, profileResult, transactionResult] = await Promise.all([
+    supabase.from('lc_daily_checkins')
+      .select('id, checkin_date, streak, daily_reward, streak_bonus, reward, created_at')
+      .eq('profile_id', profileId)
+      .order('checkin_date', { ascending: false })
+      .limit(31),
+    supabase.from('lc_profiles')
+      .select('balance, bonus_balance')
+      .eq('id', profileId)
+      .single(),
+    supabase.from('lc_transactions')
+      .select('id, amount, description, metadata, created_at')
+      .eq('profile_id', profileId)
+      .eq('ref_type', 'daily_checkin')
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(30),
+  ]);
+  if (checkinResult.error) throw checkinResult.error;
+  if (profileResult.error) throw profileResult.error;
+  if (transactionResult.error) throw transactionResult.error;
+  const checkins = (checkinResult.data || []) as Array<Record<string, unknown>>;
+  const latest = checkins[0];
+  const latestDate = dateText(latest?.checkin_date);
+  return {
+    today,
+    checked_in: latestDate === today,
+    current_streak: latestDate === today || latestDate === yesterday ? Number(latest?.streak || 0) : 0,
+    balance: Number(profileResult.data?.balance || 0),
+    bonus_balance: Number(profileResult.data?.bonus_balance || 0),
+    checkins,
+    transactions: transactionResult.data || [],
+  };
+}
+
+app.get('/api/lc/daily-checkin', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    res.json(ok(await loadDailyCheckinState(profile.id)));
+  } catch (e) {
+    if (isMissingRelation(e, 'lc_daily_checkins')) return res.status(503).json(err(new Error('每日签到尚未初始化')));
+    res.status(500).json(err(e));
+  }
+});
+
+app.post('/api/lc/daily-checkin', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const { data, error: claimError } = await supabase.rpc('lc_claim_daily_checkin', {
+      p_profile_id: profile.id,
+    });
+    if (claimError) throw claimError;
+    const claim = firstRpcRow(data as DailyCheckinClaimResult | DailyCheckinClaimResult[] | null);
+    await logSecurityEvent(req, {
+      action: claim?.applied ? 'daily_checkin_claimed' : 'daily_checkin_duplicate',
+      targetType: 'daily_checkin',
+      targetId: claim?.checkin_id || null,
+      metadata: {
+        checkin_date: claim?.checkin_date || getChinaNow().date,
+        streak: claim?.streak || 0,
+        reward: claim?.reward || 0,
+      },
+    });
+    res.json(ok({ claim, ...(await loadDailyCheckinState(profile.id)) }));
+  } catch (e) {
+    if (isMissingRelation(e, 'lc_daily_checkins')) return res.status(503).json(err(new Error('每日签到尚未初始化')));
+    res.status(500).json(err(e));
+  }
+});
 
 app.get('/api/lc/wallet', authMiddleware, async (req, res) => {
   try {

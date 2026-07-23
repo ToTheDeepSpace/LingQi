@@ -1,6 +1,10 @@
 import type { ApiEnvelope, AuthSession } from '../types'
 
-export const API_BASE = 'https://jumulu.jusichen.com/api'
+let runtimeApiBase = 'https://jumulu.jusichen.com/api'
+// #ifdef H5
+if (import.meta.env.DEV) runtimeApiBase = '/api'
+// #endif
+export const API_BASE = runtimeApiBase
 const AUTH_KEY = 'jumulu:miniapp:auth'
 let mergedAccountPromptOpen = false
 
