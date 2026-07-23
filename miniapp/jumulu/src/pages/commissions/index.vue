@@ -152,7 +152,7 @@ onPullDownRefresh(load)
 
     <template v-if="view === 'discover'">
       <view class="filter page-tools">
-        <view class="filter__row"><CitySearchPicker :value="city" @change="selectCity" /><picker mode="date" :value="dateStart" @change="setStartDate($event.detail.value)"><view class="picker-field">{{ dateStart || '开始日期' }}</view></picker><picker mode="date" :value="dateEnd" :start="dateStart || undefined" @change="dateEnd = $event.detail.value"><view class="picker-field">{{ dateEnd || '结束日期' }}</view></picker></view>
+        <view class="filter__row"><view class="filter__city"><CitySearchPicker :value="city" @change="selectCity" /></view><picker mode="date" :value="dateStart" @change="setStartDate($event.detail.value)"><view class="picker-field">{{ dateStart || '开始日期' }}</view></picker><picker mode="date" :value="dateEnd" :start="dateStart || undefined" @change="dateEnd = $event.detail.value"><view class="picker-field">{{ dateEnd || '结束日期' }}</view></picker></view>
         <view class="filter__search"><input v-model="query" class="input" placeholder="搜索剧本或角色" /><text v-if="dateStart || dateEnd" @tap="dateStart = ''; dateEnd = ''">清除日期</text></view>
       </view>
       <view class="scope-tabs"><view :class="{ active: discoverScope === 'local' }" @tap="discoverScope = 'local'">本地需求</view><view :class="{ active: discoverScope === 'expedition' }" @tap="discoverScope = 'expedition'">接受远征</view></view>
@@ -221,6 +221,7 @@ onPullDownRefresh(load)
 .view-tabs button.active { background: #fff1d5; color: #8b5919; font-weight: 850; }
 .filter { display: grid; gap: 10rpx; }
 .filter__row { display: grid; grid-template-columns: 190rpx 1fr 1fr; gap: 10rpx; }
+.filter__city { min-width: 0; }
 .filter__search { position: relative; }
 .filter__search .input { padding-right: 130rpx; }
 .filter__search text { position: absolute; right: 16rpx; top: 0; height: 76rpx; color: #9a651e; font-size: 20rpx; line-height: 76rpx; }
@@ -260,6 +261,6 @@ onPullDownRefresh(load)
 .privacy { display: block; margin: 12rpx 0; color: #64748b; font-size: 22rpx; line-height: 1.55; }
 @media (max-width: 360px) {
   .filter__row { grid-template-columns: 1fr 1fr; }
-  .filter__row > :first-child { grid-column: 1 / -1; }
+  .filter__city { grid-column: 1 / -1; }
 }
 </style>
