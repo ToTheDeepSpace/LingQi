@@ -167,7 +167,6 @@ returns table(
   applied boolean
 )
 language plpgsql
-security definer
 set search_path = public
 as $$
 declare
