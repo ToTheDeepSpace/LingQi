@@ -119,6 +119,14 @@ import {
   type AccountRestrictionProfile,
   type AccountRestrictionScope,
 } from './accountRestrictionPolicy.js';
+import {
+  firstPublicImage,
+  normalizeSubmissionState,
+  sortAccountSubmissions,
+  summarizeAccountSubmissions,
+  type AccountSubmissionGroup,
+  type AccountSubmissionItem,
+} from './accountSubmissions.js';
 import { canApplyToCommission, commissionCityMatch } from './commissionTravel.js';
 import {
   normalizeProviderListingDraft,
@@ -774,6 +782,20 @@ app.get('/api/lc/account/notifications', accountStateMiddleware, async (req, res
       .limit(100);
     if (error) throw error;
     res.json(ok(data || []));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/account/notifications/read-all', accountStateMiddleware, async (req, res) => {
+  try {
+    const profile = accountProfileFromRequest(req);
+    if (profile.merged_into) return res.status(409).json(codedErr(new Error('账号已合并，请重新登录'), 'ACCOUNT_MERGED'));
+    const readAt = new Date().toISOString();
+    const { error } = await supabase.from('lc_account_notifications')
+      .update({ read_at: readAt })
+      .eq('profile_id', profile.id)
+      .is('read_at', null);
+    if (error) throw error;
+    res.json(ok({ read_at: readAt }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -6418,27 +6440,44 @@ app.get('/api/lc/service-payments/mine', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.get('/api/lc/miniapp/me/content', authMiddleware, async (req, res) => {
+app.get('/api/lc/account/submissions', accountStateMiddleware, async (req, res) => {
   try {
     await processDueDossierOwnerReviews();
-    const profile = await getAuthedProfile(req);
-    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const profile = accountProfileFromRequest(req);
+    if (profile.merged_into) return res.json(ok({ items: [], summary: summarizeAccountSubmissions([]) }));
 
-    const [rankingsResult, carpoolsResult, commissionsResult, dmRatingsResult, storeRatingsResult, roleRatingsResult, commentsResult, reportsResult, dossierEditsResult, providerReviewsResult, providerPurchaseResult, providerListingResult] = await Promise.all([
+    const [
+      rankingsResult,
+      carpoolsResult,
+      commissionsResult,
+      dmRatingsResult,
+      storeRatingsResult,
+      commentsResult,
+      reportsResult,
+      publicReviewsResult,
+      scriptContributionsResult,
+      guidesResult,
+      siteMessagesResult,
+      certificationsResult,
+      dossierClaimsResult,
+      dossiersResult,
+      providerPurchaseResult,
+      providerListingResult,
+    ] = await Promise.all([
       supabase.from('lc_rankings').select('*').eq('poster_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_carpools').select('*').eq('poster_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_commissions').select('*').eq('poster_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_dm_ratings').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_store_ratings').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
-      supabase.from('lc_entity_ratings').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_comments').select('*').eq('author_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_reports').select('*').eq('reporter_id', profile.id).order('created_at', { ascending: false }).limit(100),
-      supabase.from('lc_public_reviews').select('*').eq('target_type', 'dossier_update').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
-      supabase.from('lc_public_reviews').select('id, status, summary, review_note, created_at, updated_at')
-        .eq('target_type', 'provider_listing_update')
-        .eq('profile_id', profile.id)
-        .order('created_at', { ascending: false })
-        .limit(100),
+      supabase.from('lc_public_reviews').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(200),
+      supabase.from('lc_script_contributions').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_guides').select('*').eq('author_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_site_messages').select('*').eq('sender_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_certifications').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_dm_dossier_claims').select('*').eq('claimant_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_dm_dossiers').select('*').eq('submitted_by', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_service_purchases').select('id, status, paid_at, created_at')
         .eq('profile_id', profile.id)
         .eq('product_type', 'provider_listing')
@@ -6446,94 +6485,363 @@ app.get('/api/lc/miniapp/me/content', authMiddleware, async (req, res) => {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
-      supabase.from('lc_provider_listings').select('profile_id, is_active, created_at, updated_at')
+      supabase.from('lc_provider_listings').select('profile_id, is_active, poster_url, headline, created_at, updated_at')
         .eq('profile_id', profile.id)
         .maybeSingle(),
     ]);
+
     const results = [
       [rankingsResult, 'lc_rankings'],
       [carpoolsResult, 'lc_carpools'],
       [commissionsResult, 'lc_commissions'],
       [dmRatingsResult, 'lc_dm_ratings'],
       [storeRatingsResult, 'lc_store_ratings'],
-      [roleRatingsResult, 'lc_entity_ratings'],
       [commentsResult, 'lc_comments'],
       [reportsResult, 'lc_reports'],
-      [dossierEditsResult, 'lc_public_reviews'],
-      [providerReviewsResult, 'lc_public_reviews'],
+      [publicReviewsResult, 'lc_public_reviews'],
+      [scriptContributionsResult, 'lc_script_contributions'],
+      [guidesResult, 'lc_guides'],
+      [siteMessagesResult, 'lc_site_messages'],
+      [certificationsResult, 'lc_certifications'],
+      [dossierClaimsResult, 'lc_dm_dossier_claims'],
+      [dossiersResult, 'lc_dm_dossiers'],
       [providerPurchaseResult, 'lc_service_purchases'],
       [providerListingResult, 'lc_provider_listings'],
     ] as const;
     for (const [result, relation] of results) {
       if (result.error && !isMissingRelation(result.error, relation)) throw result.error;
     }
-    const rows = (result: typeof rankingsResult) => (result.error ? [] : (result.data || [])) as Record<string, unknown>[];
-    const base = (row: Record<string, unknown>) => ({
-      id: cleanText(row.id, 80),
-      content: cleanText(row.content, 2400),
-      status: cleanText(row.status, 40),
-      created_at: cleanText(row.created_at, 80),
-      reject_reason: cleanText(row.reject_reason || row.review_note, 500) || null,
-    });
-    const rankingLabels: Record<string, string> = { red: '红榜', black: '黑榜', white: '白榜' };
-    const rankings = rows(rankingsResult).map(row => ({ ...base(row), kind: 'ranking', title: `${rankingLabels[cleanText(row.type, 20)] || '榜单'} · ${cleanText(row.subject_name, 120) || '未命名对象'}` }));
-    const carpools = rows(carpoolsResult).map(row => ({ ...base(row), kind: 'carpool', title: `拼车 · ${cleanText(row.script_name, 120) || cleanText(row.title, 120) || '未命名活动'}` }));
-    const commissions = rows(commissionsResult).map(row => ({ ...base(row), kind: 'commission', title: `委托需求 · ${cleanText(row.title, 120) || '未命名委托'}` }));
-    const ratings = [
-      ...rows(dmRatingsResult).map(row => ({ ...base(row), kind: 'dm_rating', title: `DM 评价 · ${cleanText(row.script_name, 120) || '体验记录'}` })),
-      ...rows(storeRatingsResult).map(row => ({ ...base(row), kind: 'store_rating', title: `店家评价 · ${cleanText(row.script_name, 120) || '到店记录'}` })),
-      ...rows(roleRatingsResult).map(row => ({ ...base(row), kind: 'role_rating', title: `${cleanText(row.review_lane, 40) === 'deep_spoiler' ? '剧透点评' : '无剧透点评'} · ${cleanText((row.entity_metadata as Record<string, unknown> | null)?.role_name, 120) || '角色体验'}` })),
-    ].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-    const comments = rows(commentsResult).map(row => ({ ...base(row), kind: 'comment', title: '榜单评论', ranking_id: cleanText(row.ranking_id, 80) }));
-    const reports = rows(reportsResult).map(row => ({ ...base(row), kind: 'report', title: `举报 · ${cleanText(row.target_title, 120) || '内容记录'}`, target_title: cleanText(row.target_title, 120) }));
-    const dossierEdits = rows(dossierEditsResult).map(row => {
-      const review = publicDossierEditReview(row);
+
+    const rows = (result: { data: unknown; error: unknown }) => (
+      result.error || !Array.isArray(result.data) ? [] : result.data
+    ) as Record<string, unknown>[];
+    const text = (value: unknown, max = 500) => cleanText(value, max);
+    const dossierIds = new Set<string>();
+    const addDossierId = (value: unknown) => {
+      const id = text(value, 80);
+      if (id) dossierIds.add(id);
+    };
+    for (const row of rows(dmRatingsResult)) addDossierId(row.dm_dossier_id);
+    for (const row of rows(storeRatingsResult)) addDossierId(row.store_dossier_id);
+    for (const row of rows(dossierClaimsResult)) addDossierId(row.dossier_id);
+    for (const row of rows(publicReviewsResult)) {
       const payload = objectPayload(row.payload);
+      addDossierId(payload.dossier_id);
+    }
+
+    let relatedDossiers: Record<string, unknown>[] = [];
+    if (dossierIds.size > 0) {
+      const result = await supabase.from('lc_dm_dossiers')
+        .select('id, entity_type, dm_name, city, photo_url, photo_files, status')
+        .in('id', Array.from(dossierIds));
+      if (result.error && !isMissingRelation(result.error, 'lc_dm_dossiers')) throw result.error;
+      relatedDossiers = result.error ? [] : (result.data || []) as Record<string, unknown>[];
+    }
+    const dossierById = new Map<string, Record<string, unknown>>();
+    for (const row of [...rows(dossiersResult), ...relatedDossiers]) {
+      const id = text(row.id, 80);
+      if (id) dossierById.set(id, row);
+    }
+
+    const submission = (
+      row: Record<string, unknown>,
+      input: {
+        kind: string;
+        group: AccountSubmissionGroup;
+        typeLabel: string;
+        title: string;
+        content?: string;
+        status?: string;
+        rejectReason?: string | null;
+        thumbnailUrl?: string | null;
+        actionUrl?: string | null;
+        relatedType?: string | null;
+        relatedId?: string | null;
+        metadata?: Record<string, string | number | boolean | null>;
+      },
+    ): AccountSubmissionItem => {
+      const status = input.status || text(row.status, 40) || 'pending';
       return {
-        ...review,
-        kind: 'dossier_edit',
-        title: `档案补充 · ${cleanText(payload.dossier_name, 120) || cleanText(payload.dm_name, 120) || '资料修改'}`,
-        status: cleanText(row.status, 40),
-        reject_reason: cleanText(row.review_note, 500) || null,
-        created_at: cleanText(row.created_at, 80),
+        id: text(row.id, 80),
+        kind: input.kind,
+        group: input.group,
+        type_label: input.typeLabel,
+        title: input.title,
+        content: input.content ?? text(row.content || row.summary || row.note || row.description, 2400),
+        status,
+        state: normalizeSubmissionState(status),
+        created_at: text(row.created_at, 80),
+        updated_at: text(row.updated_at, 80) || null,
+        reject_reason: input.rejectReason ?? (text(row.reject_reason || row.review_note || row.admin_note, 500) || null),
+        thumbnail_url: input.thumbnailUrl ?? firstPublicImage(row.display_files, row.photo_files, row.files, row.photo_url, row.main_image_url),
+        action_url: input.actionUrl || null,
+        related_type: input.relatedType || null,
+        related_id: input.relatedId || null,
+        metadata: input.metadata || {},
       };
-    });
-    const providerListings = rows(providerReviewsResult).map(row => ({
-      ...base(row),
-      kind: 'provider_listing',
-      title: '委托条 · 上架与修改',
-      content: cleanText(row.summary, 500),
-    }));
-    if (providerListings.length === 0 && !providerListingResult.data && providerPurchaseResult.data?.status === 'paid') {
-      providerListings.push({
-        id: cleanText(providerPurchaseResult.data.id, 80),
+    };
+
+    const items: AccountSubmissionItem[] = [];
+    const rankingLabels: Record<string, string> = { red: '红榜', black: '黑榜', white: '白榜' };
+    for (const row of rows(rankingsResult)) {
+      const label = rankingLabels[text(row.type, 20)] || '榜单';
+      items.push(submission(row, {
+        kind: 'ranking',
+        group: 'publication',
+        typeLabel: label,
+        title: `${label} · ${text(row.subject_name, 120) || '未命名对象'}`,
+        actionUrl: `/rankings/${text(row.id, 80)}`,
+        relatedType: 'ranking',
+        relatedId: text(row.id, 80),
+      }));
+    }
+    for (const row of rows(carpoolsResult)) {
+      items.push(submission(row, {
+        kind: 'carpool',
+        group: 'publication',
+        typeLabel: '拼车',
+        title: `拼车 · ${text(row.script_name || row.title, 120) || '未命名活动'}`,
+        actionUrl: '/carpools',
+        relatedType: 'carpool',
+        relatedId: text(row.id, 80),
+      }));
+    }
+    for (const row of rows(commissionsResult)) {
+      items.push(submission(row, {
+        kind: 'commission',
+        group: 'publication',
+        typeLabel: '委托需求',
+        title: `委托需求 · ${text(row.title, 120) || '未命名委托'}`,
+        actionUrl: '/commissions?view=mine',
+        relatedType: 'commission',
+        relatedId: text(row.id, 80),
+      }));
+    }
+    for (const row of rows(dmRatingsResult)) {
+      const dossierId = text(row.dm_dossier_id, 80);
+      const dossier = dossierById.get(dossierId) || {};
+      const dmName = text(dossier.dm_name, 120) || 'DM';
+      const scriptName = text(row.script_name, 120) || '体验记录';
+      items.push(submission(row, {
+        kind: 'dm_rating',
+        group: 'rating',
+        typeLabel: 'DM评分',
+        title: `DM评分 · ${dmName} · 《${scriptName}》`,
+        thumbnailUrl: firstPublicImage(dossier.photo_files, dossier.photo_url),
+        actionUrl: dossierId ? `/dm/${dossierId}` : '/dm',
+        relatedType: 'dm_dossier',
+        relatedId: dossierId || null,
+        metadata: { dossier_id: dossierId || null },
+      }));
+    }
+    for (const row of rows(storeRatingsResult)) {
+      const dossierId = text(row.store_dossier_id, 80);
+      const dossier = dossierById.get(dossierId) || {};
+      const storeName = text(dossier.dm_name, 120) || '店家';
+      const scriptName = text(row.script_name, 120) || '到店记录';
+      items.push(submission(row, {
+        kind: 'store_rating',
+        group: 'rating',
+        typeLabel: '店家评分',
+        title: `店家评分 · ${storeName} · 《${scriptName}》`,
+        thumbnailUrl: firstPublicImage(dossier.photo_files, dossier.photo_url),
+        actionUrl: dossierId ? `/stores/${dossierId}` : '/stores',
+        relatedType: 'store_dossier',
+        relatedId: dossierId || null,
+        metadata: { dossier_id: dossierId || null },
+      }));
+    }
+    for (const row of rows(commentsResult)) {
+      const rankingId = text(row.ranking_id, 80);
+      items.push(submission(row, {
+        kind: 'comment',
+        group: 'interaction',
+        typeLabel: '评论',
+        title: '红黑榜评论',
+        actionUrl: rankingId ? `/rankings/${rankingId}` : '/rankings',
+        relatedType: 'ranking',
+        relatedId: rankingId || null,
+        metadata: { ranking_id: rankingId || null },
+      }));
+    }
+    for (const row of rows(reportsResult)) {
+      items.push(submission(row, {
+        kind: 'report',
+        group: 'governance',
+        typeLabel: '举报',
+        title: `举报 · ${text(row.target_title, 120) || '内容记录'}`,
+        content: text(row.reason || row.content, 2400),
+        actionUrl: '/contact',
+        relatedType: text(row.target_type, 80) || 'report',
+        relatedId: text(row.target_id, 80) || null,
+      }));
+    }
+    for (const row of rows(scriptContributionsResult)) {
+      items.push(submission(row, {
+        kind: 'script_contribution',
+        group: 'publication',
+        typeLabel: '剧本共建',
+        title: `剧本共建 · 《${text(row.script_name, 120) || '未命名剧本'}》`,
+        content: text(row.note, 2400),
+        actionUrl: '/scripts',
+        relatedType: 'script',
+        relatedId: text(row.script_id, 80) || null,
+        metadata: { script_id: text(row.script_id, 80) || null },
+      }));
+    }
+    for (const row of rows(guidesResult)) {
+      items.push(submission(row, {
+        kind: 'guide',
+        group: 'publication',
+        typeLabel: '攻略',
+        title: `攻略 · ${text(row.title, 160) || '未命名攻略'}`,
+        content: text(row.summary || row.content, 2400),
+        actionUrl: '/guides',
+        relatedType: 'guide',
+        relatedId: text(row.id, 80),
+      }));
+    }
+    for (const row of rows(siteMessagesResult)) {
+      items.push(submission(row, {
+        kind: 'feedback',
+        group: 'governance',
+        typeLabel: '建议反馈',
+        title: `建议反馈 · ${text(row.subject, 160) || '未命名反馈'}`,
+        actionUrl: '/contact',
+        relatedType: 'site_message',
+        relatedId: text(row.id, 80),
+      }));
+    }
+    for (const row of rows(certificationsResult)) {
+      const label = text(row.type, 30) === 'shop' ? '店家认证' : text(row.type, 30) === 'realname' ? '实名验证' : 'DM认证';
+      items.push(submission(row, {
+        kind: 'certification',
+        group: 'profile',
+        typeLabel: label,
+        title: label,
+        actionUrl: '/dashboard/certification',
+        relatedType: 'certification',
+        relatedId: text(row.id, 80),
+      }));
+    }
+    for (const row of rows(dossierClaimsResult)) {
+      const dossierId = text(row.dossier_id, 80);
+      const dossier = dossierById.get(dossierId) || {};
+      const isStore = text(row.entity_type, 30) === 'store';
+      items.push(submission(row, {
+        kind: 'dossier_claim',
+        group: 'profile',
+        typeLabel: isStore ? '店家认领' : 'DM认领',
+        title: `${isStore ? '店家认领' : 'DM认领'} · ${text(dossier.dm_name, 120) || '未命名档案'}`,
+        content: text(row.claim_note, 2400),
+        thumbnailUrl: firstPublicImage(dossier.photo_files, dossier.photo_url),
+        actionUrl: dossierId ? `/${isStore ? 'stores' : 'dm'}/${dossierId}` : `/${isStore ? 'stores' : 'dm'}`,
+        relatedType: isStore ? 'store_dossier' : 'dm_dossier',
+        relatedId: dossierId || null,
+        metadata: { dossier_id: dossierId || null, entity_type: isStore ? 'store' : 'dm' },
+      }));
+    }
+    for (const row of rows(dossiersResult)) {
+      const isStore = text(row.entity_type, 30) === 'store';
+      const dossierId = text(row.id, 80);
+      items.push(submission(row, {
+        kind: isStore ? 'store_dossier' : 'dm_dossier',
+        group: 'publication',
+        typeLabel: isStore ? '店家建档' : 'DM建档',
+        title: `${isStore ? '店家建档' : 'DM建档'} · ${text(row.dm_name, 120) || '未命名档案'}`,
+        content: text(row.note, 2400),
+        actionUrl: `/${isStore ? 'stores' : 'dm'}/${dossierId}`,
+        relatedType: isStore ? 'store_dossier' : 'dm_dossier',
+        relatedId: dossierId,
+        metadata: { dossier_id: dossierId, entity_type: isStore ? 'store' : 'dm' },
+      }));
+    }
+
+    const publicReviewLabels: Record<string, {
+      kind: string;
+      group: AccountSubmissionGroup;
+      typeLabel: string;
+      actionUrl: string;
+    }> = {
+      profile_update: { kind: 'profile_update', group: 'profile', typeLabel: '主页资料', actionUrl: '/dashboard/profile' },
+      dossier_update: { kind: 'dossier_edit', group: 'profile', typeLabel: '档案修改', actionUrl: '/dm' },
+      provider_listing_update: { kind: 'provider_listing', group: 'publication', typeLabel: '委托条', actionUrl: '/dashboard/services' },
+      service_create: { kind: 'service_create', group: 'profile', typeLabel: '服务资料', actionUrl: '/dashboard/services' },
+      portfolio_create: { kind: 'portfolio_create', group: 'profile', typeLabel: '作品资料', actionUrl: '/dashboard/services/works' },
+      availability_create: { kind: 'availability_create', group: 'profile', typeLabel: '可约时间', actionUrl: '/dashboard/services/availability' },
+      tag_create: { kind: 'tag_create', group: 'profile', typeLabel: '标签共建', actionUrl: '/dashboard/profile' },
+      script_rating_upsert: { kind: 'script_rating', group: 'rating', typeLabel: '剧本评分', actionUrl: '/scripts' },
+      entity_rating_upsert: { kind: 'role_rating', group: 'rating', typeLabel: '角色点评', actionUrl: '/scripts' },
+      rating_discussion_create: { kind: 'rating_discussion', group: 'interaction', typeLabel: '评分讨论', actionUrl: '/scripts' },
+    };
+    for (const row of rows(publicReviewsResult)) {
+      const targetType = text(row.target_type, 80);
+      const definition = publicReviewLabels[targetType];
+      if (!definition) continue;
+      const payload = objectPayload(row.payload);
+      const dossierId = text(payload.dossier_id, 80);
+      const dossier = dossierById.get(dossierId) || {};
+      const entityMetadata = objectPayload(payload.entity_metadata);
+      const targetId = text(payload.target_id, 120);
+      const roleName = text(entityMetadata.role_name, 120);
+      const scriptName = text(entityMetadata.script_name || payload.script_name, 120);
+      const isStore = text(payload.entity_type, 30) === 'store' || text(dossier.entity_type, 30) === 'store';
+      let actionUrl = definition.actionUrl;
+      if (targetType === 'dossier_update' && dossierId) actionUrl = `/${isStore ? 'stores' : 'dm'}/${dossierId}`;
+      if (targetType === 'entity_rating_upsert' && targetId) actionUrl = `/scripts/roles/${targetId}`;
+      const title = targetType === 'dossier_update'
+        ? `档案修改 · ${text(payload.dossier_name || dossier.dm_name, 120) || '资料修改'}`
+        : targetType === 'entity_rating_upsert'
+          ? `角色点评 · ${scriptName ? `《${scriptName}》` : ''}${roleName || text(payload.target_title, 120) || '角色'}`
+          : text(row.title, 180) || definition.typeLabel;
+      items.push(submission(row, {
+        kind: definition.kind,
+        group: definition.group,
+        typeLabel: definition.typeLabel,
+        title,
+        content: text(row.summary || payload.content || payload.edit_reason, 2400),
+        thumbnailUrl: firstPublicImage(payload.photo_files, payload.display_files, payload.files, payload.photo_url, dossier.photo_files, dossier.photo_url),
+        actionUrl,
+        relatedType: targetType,
+        relatedId: dossierId || targetId || text(payload.script_id, 120) || text(row.id, 80),
+        metadata: {
+          dossier_id: dossierId || null,
+          entity_type: isStore ? 'store' : 'dm',
+          target_id: targetId || null,
+          script_id: text(entityMetadata.script_id || payload.script_id, 120) || null,
+        },
+      }));
+    }
+
+    const providerReviews = items.filter(item => item.kind === 'provider_listing');
+    const providerPurchase = providerPurchaseResult.data && typeof providerPurchaseResult.data === 'object'
+      ? providerPurchaseResult.data as Record<string, unknown>
+      : null;
+    if (providerReviews.length === 0 && !providerListingResult.data && text(providerPurchase?.status, 30) === 'paid') {
+      const paidAt = text(providerPurchase?.paid_at || providerPurchase?.created_at, 80);
+      items.push({
+        id: text(providerPurchase?.id, 80),
         kind: 'provider_listing',
+        group: 'publication',
+        type_label: '委托条',
         title: '委托条 · 已付费待补交',
         content: '付款资格已经保留，请补齐主图、资料和业务联系方式后提交审核。',
         status: 'needs_submission',
-        created_at: cleanText(providerPurchaseResult.data.paid_at || providerPurchaseResult.data.created_at, 80),
+        state: 'action',
+        created_at: paidAt,
+        updated_at: null,
         reject_reason: null,
+        thumbnail_url: null,
+        action_url: '/dashboard/services',
+        related_type: 'provider_listing',
+        related_id: text(profile.id, 80),
+        metadata: {},
       });
     }
-    const publicationItems = [...rankings, ...carpools, ...commissions, ...dossierEdits, ...providerListings];
-    const summary = {
-      total: publicationItems.length,
-      pending: publicationItems.filter(item => item.status === 'pending' || item.status === 'pending_owner').length,
-      approved: publicationItems.filter(item => item.status === 'approved').length,
-      rejected: publicationItems.filter(item => item.status === 'rejected').length,
-      needs_submission: publicationItems.filter(item => item.status === 'needs_submission').length,
-    };
-    res.json(ok({
-      rankings,
-      carpools,
-      commissions,
-      provider_listings: providerListings,
-      ratings,
-      comments,
-      reports,
-      dossier_edits: dossierEdits,
-      summary,
-    }));
+
+    const sortedItems = sortAccountSubmissions(items);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(ok({ items: sortedItems, summary: summarizeAccountSubmissions(sortedItems) }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

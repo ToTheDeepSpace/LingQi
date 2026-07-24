@@ -860,7 +860,7 @@ function locationLabelFor(pathname: string) {
   if (pathname.startsWith('/certification')) return '身份认证';
   if (pathname.startsWith('/shop/dashboard')) return '店家后台';
   if (pathname.startsWith('/admin')) return '管理后台';
-  if (pathname.startsWith('/account-status')) return '消息通知';
+  if (pathname.startsWith('/account-status')) return '消息中心';
   if (pathname.startsWith('/login')) return '登录注册';
   if (pathname.startsWith('/contact')) return '建议反馈';
   if (pathname.startsWith('/rules')) return '审核规则';

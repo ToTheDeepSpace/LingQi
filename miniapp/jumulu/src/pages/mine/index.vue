@@ -11,8 +11,8 @@ type PublicationSummary = {
   total: number
   pending: number
   approved: number
-  rejected: number
-  needs_submission: number
+  action_required: number
+  closed: number
 }
 
 const auth = ref<AuthSession | null>(readAuth())
@@ -20,7 +20,7 @@ const nickname = ref('')
 const loading = ref(false)
 const error = ref('')
 const accountStatus = ref<AccountStatus | null>(null)
-const publicationSummary = ref<PublicationSummary>({ total: 0, pending: 0, approved: 0, rejected: 0, needs_submission: 0 })
+const publicationSummary = ref<PublicationSummary>({ total: 0, pending: 0, approved: 0, action_required: 0, closed: 0 })
 const showCheckin = ref(false)
 const checkinView = ref<InstanceType<typeof DailyCheckinView> | null>(null)
 
@@ -29,10 +29,10 @@ async function refresh() {
   try {
     const [nextAccountStatus, content] = await Promise.all([
       apiRequest<AccountStatus>('/lc/account/status'),
-      apiRequest<{ summary?: PublicationSummary }>('/lc/miniapp/me/content'),
+      apiRequest<{ summary?: PublicationSummary }>('/lc/account/submissions'),
     ])
     accountStatus.value = nextAccountStatus
-    publicationSummary.value = content.summary || { total: 0, pending: 0, approved: 0, rejected: 0, needs_submission: 0 }
+    publicationSummary.value = content.summary || { total: 0, pending: 0, approved: 0, action_required: 0, closed: 0 }
     if (accountStatus.value.state === 'merged') {
       logout(); auth.value = null
       uni.showModal({ title: '账号已合并', content: accountStatus.value.message || '请重新登录原网站账号。', showCancel: false })
@@ -58,7 +58,7 @@ function unreadLabel() {
   return count > 99 ? '99+' : String(count)
 }
 function pendingPublicationCount() {
-  return publicationSummary.value.pending + publicationSummary.value.rejected + publicationSummary.value.needs_submission
+  return publicationSummary.value.pending + publicationSummary.value.action_required
 }
 
 async function pullRefresh() {
@@ -100,15 +100,10 @@ onPullDownRefresh(pullRefresh)
           </view>
           <view class="quick-entry__copy">
             <strong>消息中心</strong>
-            <text>{{ Number(accountStatus?.unread_count || 0) > 0 ? `${unreadLabel()} 条未读消息` : '申请、审核和账号通知' }}</text>
-          </view>
-          <image class="quick-entry__chevron" src="/static/icons/ui-chevron-right.png" mode="aspectFit" />
-        </view>
-        <view class="quick-entry" @tap="go('/pages/mine/content')">
-          <view class="quick-entry__icon publication-icon"><text>审</text></view>
-          <view class="quick-entry__copy">
-            <strong>我的发布与审核</strong>
-            <text>{{ pendingPublicationCount() > 0 ? `${pendingPublicationCount()} 项待处理` : `${publicationSummary.total} 条发布记录` }}</text>
+            <text v-if="Number(accountStatus?.unread_count || 0) > 0 && pendingPublicationCount() > 0">{{ unreadLabel() }} 条未读 · {{ pendingPublicationCount() }} 项待处理</text>
+            <text v-else-if="Number(accountStatus?.unread_count || 0) > 0">{{ unreadLabel() }} 条未读消息</text>
+            <text v-else-if="pendingPublicationCount() > 0">{{ pendingPublicationCount() }} 项提交待处理</text>
+            <text v-else>通知、审核结果和全部提交</text>
           </view>
           <image class="quick-entry__chevron" src="/static/icons/ui-chevron-right.png" mode="aspectFit" />
         </view>
@@ -149,7 +144,6 @@ onPullDownRefresh(pullRefresh)
 .quick-entry { display: flex; min-height: 104rpx; align-items: center; gap: 16rpx; padding: 18rpx 20rpx; background: #fff; }
 .quick-entry__icon { position: relative; display: flex; width: 62rpx; height: 62rpx; flex: 0 0 62rpx; align-items: center; justify-content: center; border-radius: 12rpx; background: #edf3fb; }
 .quick-entry__icon image { width: 36rpx; height: 36rpx; }
-.quick-entry__icon.publication-icon { background: #fff3dc; color: #8b5919; font-size: 26rpx; font-weight: 900; }
 .quick-entry__badge { position: absolute; top: -9rpx; right: -11rpx; min-width: 30rpx; height: 30rpx; padding: 0 7rpx; border: 3rpx solid #fff; border-radius: 15rpx; background: #c83939; color: #fff; font-size: 18rpx; font-weight: 850; line-height: 27rpx; text-align: center; }
 .quick-entry__copy { min-width: 0; flex: 1; }
 .quick-entry__copy strong, .quick-entry__copy text { display: block; }

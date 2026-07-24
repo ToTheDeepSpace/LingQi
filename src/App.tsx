@@ -63,6 +63,7 @@ function AppLayout() {
   const { pathname } = useLocation();
   const isDashboardRoute = pathname === '/dashboard' || pathname.startsWith('/dashboard/');
   const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new' && pathname !== '/guides/new';
+  const showAccountBanner = pathname !== '/account-status';
   const showFooter = pathname !== '/login' && !isDashboardRoute;
   const showFeedback = pathname !== '/contact';
 
@@ -70,7 +71,7 @@ function AppLayout() {
     <>
       <ScrollToTop />
       {showNavbar && <Navbar />}
-      <AccountStateBanner />
+      {showAccountBanner && <AccountStateBanner />}
       <CityFollowGate />
       <Suspense fallback={<RouteFallback />}>
         <Routes>

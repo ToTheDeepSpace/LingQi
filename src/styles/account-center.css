@@ -1,0 +1,559 @@
+.account-center-loading,
+.account-center-error,
+.account-center-empty,
+.account-center-account-detail {
+  border: 1px solid #e9e3da;
+  border-radius: 8px;
+  background: #fff;
+  padding: 16px 18px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.account-center-error {
+  border-color: #efc9c5;
+  background: #fff6f5;
+  color: #a53232;
+}
+
+.account-center-empty h2,
+.account-center-empty p {
+  margin: 0;
+}
+
+.account-center-empty h2 {
+  color: #1f2937;
+  font-size: 17px;
+}
+
+.account-center-empty p + .account-center-primary-link {
+  margin-top: 14px;
+}
+
+.account-center-primary-link {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  border-radius: 7px;
+  background: #2d568f;
+  color: #fff;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.account-center-link-button {
+  border: 0;
+  background: transparent;
+  color: #2d568f;
+  padding: 5px 0;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.account-center-status-strip {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #dfe7df;
+  border-radius: 8px;
+  background: #f7fbf8;
+  padding: 10px 14px;
+  color: #64706a;
+  font-size: 13px;
+}
+
+.account-center-status-strip.is-restricted {
+  border-color: #ead3ae;
+  background: #fff9ef;
+  color: #7b6240;
+}
+
+.account-center-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #3f8b5e;
+}
+
+.is-restricted .account-center-status-dot {
+  background: #b9781f;
+}
+
+.account-center-status-strip strong {
+  color: #227346;
+  font-weight: 900;
+}
+
+.account-center-status-strip.is-restricted strong {
+  color: #8b5919;
+}
+
+.account-center-status-strip button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: #2d568f;
+  padding: 4px 0;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.account-center-account-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.account-center-restriction-copy {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.account-center-restriction-copy div {
+  display: grid;
+  gap: 4px;
+}
+
+.account-center-restriction-copy span {
+  color: #8a93a0;
+  font-size: 11px;
+}
+
+.account-center-restriction-copy strong {
+  overflow-wrap: anywhere;
+  color: #1f2937;
+  font-size: 13px;
+}
+
+.account-center-reply {
+  border-left: 3px solid #2d568f;
+  background: #edf3fb;
+  padding: 10px 12px;
+  color: #275389;
+}
+
+.account-center-appeal {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(240px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.account-center-appeal label {
+  display: grid;
+  gap: 6px;
+  color: #1f2937;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.account-center-appeal textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid #dfe3e8;
+  border-radius: 7px;
+  background: #fff;
+  padding: 9px 11px;
+  color: #1f2937;
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.account-center-appeal button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 7px;
+  background: #2d568f;
+  color: #fff;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.account-center-appeal button:disabled {
+  background: #e5e7eb;
+  color: #94a3b8;
+}
+
+.account-center-pending {
+  margin: 0;
+  color: #64748b;
+}
+
+.account-center-workspace {
+  overflow: hidden;
+  border: 1px solid #e9e3da;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 30px rgba(31, 41, 55, 0.05);
+}
+
+.account-center-tabs {
+  display: flex;
+  min-height: 56px;
+  align-items: stretch;
+  gap: 28px;
+  border-bottom: 1px solid #e9e3da;
+  padding: 0 22px;
+}
+
+.account-center-tabs button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: #6f7887;
+  padding: 0 2px;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.account-center-tabs button.is-active {
+  color: #1f2937;
+}
+
+.account-center-tabs button.is-active::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 3px;
+  background: #a66b1f;
+  content: "";
+}
+
+.account-center-tabs button span {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #eef0f3;
+  padding: 0 6px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.account-center-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #ece7df;
+  background: #fcfbf8;
+  padding: 12px 18px;
+}
+
+.account-center-filter-tabs {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.account-center-filter-tabs button {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #6f7887;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.account-center-filter-tabs button.is-active {
+  border-color: #d7dde6;
+  background: #fff;
+  color: #2d568f;
+}
+
+.account-center-type-filter {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  color: #7b8492;
+  font-size: 12px;
+}
+
+.account-center-type-filter select {
+  min-height: 32px;
+  border: 1px solid #dfe3e8;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  padding: 0 28px 0 10px;
+  font-size: 12px;
+}
+
+.account-center-list {
+  display: grid;
+}
+
+.account-center-list-empty {
+  padding: 46px 20px;
+  color: #8a93a0;
+  font-size: 13px;
+  text-align: center;
+}
+
+.account-center-notice {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #eee9e2;
+  background: #fff;
+  padding: 16px 20px;
+  color: #1f2937;
+  text-align: left;
+}
+
+.account-center-notice:last-child {
+  border-bottom: 0;
+}
+
+.account-center-notice.is-unread {
+  background: #fbfcfe;
+}
+
+.account-center-notice-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.account-center-notice.is-unread .account-center-notice-dot {
+  background: #b9781f;
+}
+
+.account-center-notice-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.account-center-notice-copy strong {
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.account-center-notice-copy span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.account-center-notice time,
+.account-center-submission-meta time {
+  color: #98a2b3;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.account-center-submission {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 116px;
+  align-items: center;
+  gap: 16px;
+  min-height: 108px;
+  border-bottom: 1px solid #eee9e2;
+  padding: 15px 18px;
+}
+
+.account-center-submission:last-child {
+  border-bottom: 0;
+}
+
+.account-center-thumbnail {
+  width: 70px;
+  height: 70px;
+  overflow: hidden;
+  border: 1px solid #ece7df;
+  border-radius: 7px;
+  background: #f6f3ed;
+}
+
+.account-center-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-center-submission-copy {
+  min-width: 0;
+}
+
+.account-center-submission-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-center-submission-meta > span {
+  color: #a66b1f;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.account-center-submission-copy h2 {
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-center-submission-copy p {
+  display: -webkit-box;
+  margin: 6px 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.account-center-reject {
+  margin-top: 7px;
+  color: #b64238;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.account-center-submission-action {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.account-center-state {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  border-radius: 5px;
+  background: #eef0f3;
+  color: #667085;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.account-center-state.is-pending {
+  background: #fff4df;
+  color: #8b5919;
+}
+
+.account-center-state.is-approved {
+  background: #edf8f1;
+  color: #227346;
+}
+
+.account-center-state.is-action {
+  background: #fff0ee;
+  color: #b64238;
+}
+
+.account-center-submission-action a {
+  color: #2d568f;
+  font-size: 12px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+@media (max-width: 720px) {
+  .account-center-status-strip {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .account-center-status-strip > span:nth-of-type(2) {
+    width: calc(100% - 22px);
+  }
+
+  .account-center-status-strip button {
+    margin-left: 18px;
+  }
+
+  .account-center-restriction-copy {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .account-center-appeal {
+    grid-template-columns: 1fr;
+  }
+
+  .account-center-appeal button {
+    justify-self: stretch;
+  }
+
+  .account-center-tabs {
+    min-height: 52px;
+    padding: 0 16px;
+  }
+
+  .account-center-filters {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .account-center-type-filter {
+    justify-content: space-between;
+  }
+
+  .account-center-type-filter select {
+    flex: 1;
+  }
+
+  .account-center-notice {
+    grid-template-columns: 8px minmax(0, 1fr);
+    padding: 15px 14px;
+  }
+
+  .account-center-notice time {
+    grid-column: 2;
+  }
+
+  .account-center-submission {
+    grid-template-columns: 58px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .account-center-thumbnail {
+    width: 58px;
+    height: 58px;
+  }
+
+  .account-center-submission-action {
+    grid-column: 2;
+    grid-template-columns: auto 1fr;
+    justify-items: start;
+    align-items: center;
+  }
+
+  .account-center-submission-action a {
+    justify-self: end;
+  }
+}
