@@ -397,6 +397,26 @@ type TransactionReview = {
   lc_profiles?: { display_name?: string };
 };
 
+type ServicePurchaseAudit = {
+  id: string;
+  profile_id: string;
+  profile_name?: string | null;
+  product_type: 'dossier_claim' | 'provider_listing' | 'provider_contact';
+  target_id: string;
+  target_name?: string | null;
+  target_entity_type?: 'dm' | 'store' | null;
+  amount_fen: number;
+  currency: string;
+  status: 'unpaid' | 'paid' | 'refunded';
+  paid_at?: string | null;
+  refunded_at?: string | null;
+  refund_reason?: string | null;
+  submission_status: 'not_submitted' | 'pending' | 'approved' | 'rejected' | 'access_granted';
+  submission_id?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+};
+
 type CertReview = {
   id: string;
   profile_id: string;
@@ -676,7 +696,7 @@ type GuideWithdrawalReview = {
 };
 
 type RejectType = 'profile' | 'ranking' | 'rankingEdit' | 'comment' | 'claim' | 'commission' | 'carpool' | 'transaction' | 'cert' | 'dmDossier' | 'dmRating' | 'storeRating' | 'publicReview' | 'guide' | 'guideWithdrawal';
-type Tab = 'allPending' | 'siteData' | 'publishedDmDossiers' | 'publishedStoreDossiers' | 'pending' | 'accounts' | 'requests' | 'messages' | 'accountAppeals' | 'rankings' | 'rankingEdits' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'commissionApplications' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
+type Tab = 'allPending' | 'siteData' | 'publishedDmDossiers' | 'publishedStoreDossiers' | 'pending' | 'accounts' | 'requests' | 'messages' | 'accountAppeals' | 'rankings' | 'rankingEdits' | 'publishedRankings' | 'publicReviews' | 'dmDossierEdits' | 'storeDossierEdits' | 'guides' | 'guideWithdrawals' | 'comments' | 'claims' | 'commissions' | 'commissionApplications' | 'carpools' | 'scriptContributions' | 'dmDossiers' | 'storeDossiers' | 'dmRatings' | 'storeRatings' | 'dmWithdrawals' | 'reports' | 'wallet' | 'servicePurchases' | 'dmCerts' | 'storeCerts' | 'realnameCerts' | 'security' | 'reviewHistory';
 type AdminGroup = 'all' | 'data' | 'dm' | 'store' | 'content' | 'finance' | 'appeals' | 'history' | 'accounts';
 
 function adminGroupForTab(tab: Tab): AdminGroup {
@@ -684,7 +704,7 @@ function adminGroupForTab(tab: Tab): AdminGroup {
   if (['dmDossiers', 'dmDossierEdits', 'dmCerts', 'dmRatings', 'dmWithdrawals'].includes(tab)) return 'dm';
   if (['storeDossiers', 'storeDossierEdits', 'storeCerts', 'storeRatings'].includes(tab)) return 'store';
   if (['rankings', 'rankingEdits', 'publicReviews', 'comments', 'commissions', 'commissionApplications', 'carpools', 'scriptContributions', 'guides'].includes(tab)) return 'content';
-  if (['wallet', 'guideWithdrawals'].includes(tab)) return 'finance';
+  if (['wallet', 'servicePurchases', 'guideWithdrawals'].includes(tab)) return 'finance';
   if (['reports', 'messages', 'accountAppeals', 'claims', 'requests'].includes(tab)) return 'appeals';
   if (tab === 'reviewHistory') return 'history';
   if (['accounts', 'pending', 'realnameCerts', 'security'].includes(tab)) return 'accounts';
@@ -735,6 +755,27 @@ function siteMessageCategoryLabel(category?: string | null) {
   if (category === 'cooperation') return '合作共建';
   if (category === 'suggestion') return '功能建议';
   return '其他反馈';
+}
+
+function serviceProductLabel(productType: ServicePurchaseAudit['product_type']) {
+  if (productType === 'dossier_claim') return '本人认领';
+  if (productType === 'provider_listing') return '委托条上架';
+  if (productType === 'provider_contact') return '联系方式解锁';
+  return '付费服务';
+}
+
+function servicePurchaseStatusLabel(status: ServicePurchaseAudit['status']) {
+  if (status === 'paid') return '已支付';
+  if (status === 'refunded') return '已退款';
+  return '待支付';
+}
+
+function serviceSubmissionStatusLabel(status: ServicePurchaseAudit['submission_status']) {
+  if (status === 'pending') return '资料待审';
+  if (status === 'approved') return '已审核通过';
+  if (status === 'rejected') return '资料被驳回';
+  if (status === 'access_granted') return '已永久解锁';
+  return '尚未提交资料';
 }
 
 function rankingTypeLabel(type: string) {
@@ -1043,6 +1084,7 @@ export default function Admin() {
   const [guides, setGuides] = useState<GuideReview[]>([]);
   const [guideWithdrawals, setGuideWithdrawals] = useState<GuideWithdrawalReview[]>([]);
   const [transactions, setTransactions] = useState<TransactionReview[]>([]);
+  const [servicePurchases, setServicePurchases] = useState<ServicePurchaseAudit[]>([]);
   const [certs, setCerts] = useState<CertReview[]>([]);
 const [loading, setLoading] = useState(false);
 const [transactionLoading, setTransactionLoading] = useState(false);
@@ -1116,6 +1158,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setReviewHistory((d.data as { reviewHistory: PublicReview[] }).reviewHistory || []);
         setGuides((d.data as { guides: GuideReview[] }).guides || []);
         setGuideWithdrawals((d.data as { guideWithdrawals: GuideWithdrawalReview[] }).guideWithdrawals || []);
+        setServicePurchases((d.data as { servicePurchases: ServicePurchaseAudit[] }).servicePurchases || []);
         const [applicationResponse, providerInquiryResponse] = await Promise.all([
           fetch(`${API}/lc/admin/commission-applications`, { headers: { Authorization: `Bearer ${t}` } }),
           fetch(`${API}/lc/admin/provider-inquiries`, { headers: { Authorization: `Bearer ${t}` } }),
@@ -1822,13 +1865,29 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setGuides([]);
     setGuideWithdrawals([]);
     setTransactions([]);
+    setServicePurchases([]);
     setCerts([]);
   };
 
   const pendingProfiles = profiles.filter(p => !p.is_visible && !p.reject_reason);
   const accountProfiles = managedProfiles;
   const accountTotalPages = Math.max(1, Math.ceil(profilesTotal / 50));
+  const paidAwaitingSubmission = servicePurchases.filter(item =>
+    item.status === 'paid'
+    && item.submission_status === 'not_submitted'
+    && item.product_type !== 'provider_contact'
+  );
   const pendingReviewItems: PendingReviewItem[] = [
+    ...paidAwaitingSubmission.map(item => ({
+      id: `service-purchase-${item.id}`,
+      tab: 'servicePurchases' as const,
+      category: '已付费待补交',
+      title: serviceProductLabel(item.product_type),
+      meta: `用户：${item.profile_name || item.profile_id} · 对象：${item.target_name || item.target_id} · 已支付 ¥${(item.amount_fen / 100).toFixed(2)}`,
+      createdAt: item.paid_at || item.created_at,
+      accent: '#b45309',
+      tags: ['款项已确认', '无需重复收费', '等待用户补交'],
+    })),
     ...pendingProfiles.map(p => ({
       id: `profile-${p.id}`,
       tab: 'pending' as const,
@@ -2085,6 +2144,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     ],
     finance: [
       { tab: 'wallet', label: '充值', count: transactions.length },
+      { tab: 'servicePurchases', label: '付费服务', count: servicePurchases.length },
       { tab: 'guideWithdrawals', label: '提现', count: guideWithdrawals.length },
     ],
     appeals: [
@@ -2107,7 +2167,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     { group: 'dm', label: 'DM审核', tab: 'dmDossiers', count: dmDossierItems.length + dmDossierEdits.length + dmRatings.length + dmIdentityWithdrawals.length + certs.filter(item => item.type === 'dm').length },
     { group: 'store', label: '店家审核', tab: 'storeDossiers', count: storeDossierItems.length + storeDossierEdits.length + storeRatings.length + certs.filter(item => item.type === 'shop').length },
     { group: 'content', label: '内容审核', tab: 'publicReviews', count: contentPublicReviews.length + rankings.length + comments.length + commissions.length + carpools.length + scriptContributions.length + guides.length },
-    { group: 'finance', label: '交易审核', tab: 'wallet', count: transactions.length + guideWithdrawals.length },
+    { group: 'finance', label: '交易审核', tab: 'servicePurchases', count: transactions.length + guideWithdrawals.length + paidAwaitingSubmission.length },
     { group: 'appeals', label: '举报申诉', tab: 'reports', count: reports.length + accountAppeals.length + siteMessages.length + claims.length + requests.length },
     { group: 'history', label: '审核历史', tab: 'reviewHistory' },
     { group: 'accounts', label: '账号与安全', tab: 'accounts', count: pendingProfiles.length + certs.filter(item => item.type === 'realname').length },
@@ -2429,6 +2489,41 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                 ))}
               </ListEmpty>
               </>
+            )}
+
+            {tab === 'servicePurchases' && (
+              <ListEmpty empty={servicePurchases.length === 0} text="暂无付费服务记录">
+                {servicePurchases.map(item => {
+                  const awaitingSubmission = item.status === 'paid'
+                    && item.submission_status === 'not_submitted'
+                    && item.product_type !== 'provider_contact';
+                  return (
+                    <Row key={item.id} accent={awaitingSubmission ? '#b45309' : item.status === 'paid' ? '#15803d' : '#64748b'}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <TitleLine
+                          title={`${serviceProductLabel(item.product_type)} · ${item.target_name || '未知对象'}`}
+                          pill={servicePurchaseStatusLabel(item.status)}
+                        />
+                        <Meta>
+                          用户：{item.profile_name || item.profile_id}
+                          {` · ¥${(item.amount_fen / 100).toFixed(2)}`}
+                          {item.paid_at ? ` · 支付于 ${item.paid_at.slice(0, 16).replace('T', ' ')}` : ` · 创建于 ${item.created_at.slice(0, 16).replace('T', ' ')}`}
+                        </Meta>
+                        <Proof>
+                          业务状态：{serviceSubmissionStatusLabel(item.submission_status)}
+                          {item.submission_id ? ` · 关联审核 ${item.submission_id}` : ''}
+                        </Proof>
+                        {awaitingSubmission && (
+                          <ReviewNotice tone="gold">
+                            款项已经确认，但用户尚未完成资料提交。付款资格会永久保留，请让用户回到原页面补交，不要重复收费。
+                          </ReviewNotice>
+                        )}
+                        {item.status === 'refunded' && item.refund_reason && <ContentBox>退款说明：{item.refund_reason}</ContentBox>}
+                      </div>
+                    </Row>
+                  );
+                })}
+              </ListEmpty>
             )}
 
             {tab === 'rankings' && (

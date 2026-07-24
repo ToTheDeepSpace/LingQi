@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
@@ -18,6 +18,24 @@ type ListingState = {
   contact_available?: boolean
   initial_fee_paid?: boolean
   initial_fee_yuan?: string
+  profile_defaults?: {
+    headline?: string | null
+    description?: string | null
+    height_cm?: number | null
+    weight_kg?: number | null
+    role_types?: string[]
+  } | null
+}
+
+type ProviderFormDraft = {
+  posterUrl: string
+  headline: string
+  description: string
+  heightCm: string
+  weightKg: string
+  roleTypesText: string
+  businessContact: string
+  contactAvailable: boolean
 }
 
 const state = ref<ListingState | null>(null)
@@ -34,15 +52,62 @@ const uploading = ref(false)
 const submitting = ref(false)
 const toggling = ref(false)
 const error = ref('')
+const initialized = ref(false)
+const dirty = ref(false)
+const restoring = ref(false)
 const pending = computed(() => state.value?.latest_review?.status === 'pending')
 
-function fill(listing: ProviderListing | null) {
-  posterUrl.value = listing?.poster_url || ''
-  headline.value = listing?.headline || ''
-  description.value = listing?.description || ''
-  heightCm.value = listing?.height_cm ? String(listing.height_cm) : ''
-  weightKg.value = listing?.weight_kg ? String(listing.weight_kg) : ''
-  roleTypesText.value = (listing?.role_types || []).join('、')
+function draftKey() {
+  return `jumulu:provider-listing-draft:${readAuth()?.id || 'guest'}`
+}
+
+function currentDraft(): ProviderFormDraft {
+  return {
+    posterUrl: posterUrl.value,
+    headline: headline.value,
+    description: description.value,
+    heightCm: heightCm.value,
+    weightKg: weightKg.value,
+    roleTypesText: roleTypesText.value,
+    businessContact: businessContact.value,
+    contactAvailable: contactAvailable.value,
+  }
+}
+
+function applyDraft(draft: Partial<ProviderFormDraft>) {
+  restoring.value = true
+  posterUrl.value = draft.posterUrl || ''
+  headline.value = draft.headline || ''
+  description.value = draft.description || ''
+  heightCm.value = draft.heightCm || ''
+  weightKg.value = draft.weightKg || ''
+  roleTypesText.value = draft.roleTypesText || ''
+  businessContact.value = draft.businessContact || ''
+  contactAvailable.value = draft.contactAvailable !== false
+  restoring.value = false
+}
+
+function fill(listing: ProviderListing | null, defaults?: ListingState['profile_defaults']) {
+  applyDraft({
+    posterUrl: listing?.poster_url || '',
+    headline: listing?.headline || defaults?.headline || '',
+    description: listing?.description || defaults?.description || '',
+    heightCm: listing?.height_cm ? String(listing.height_cm) : defaults?.height_cm ? String(defaults.height_cm) : '',
+    weightKg: listing?.weight_kg ? String(listing.weight_kg) : defaults?.weight_kg ? String(defaults.weight_kg) : '',
+    roleTypesText: (listing?.role_types || defaults?.role_types || []).join('、'),
+    businessContact: businessContact.value,
+    contactAvailable: contactAvailable.value,
+  })
+}
+
+function savedDraft() {
+  const value = uni.getStorageSync(draftKey())
+  return value && typeof value === 'object' ? value as ProviderFormDraft : null
+}
+
+function clearDraft() {
+  uni.removeStorageSync(draftKey())
+  dirty.value = false
 }
 
 async function load() {
@@ -50,16 +115,40 @@ async function load() {
   error.value = ''
   try {
     await requireLogin()
-    state.value = await apiRequest<ListingState>('/lc/provider-listings/mine')
-    fill(state.value.listing)
-    businessContact.value = state.value.business_contact || ''
-    contactAvailable.value = state.value.contact_available !== false
+    const nextState = await apiRequest<ListingState>('/lc/provider-listings/mine')
+    state.value = nextState
+    if (!initialized.value) {
+      const localDraft = savedDraft()
+      if (localDraft && nextState.latest_review?.status !== 'pending') {
+        applyDraft(localDraft)
+        dirty.value = true
+      } else {
+        businessContact.value = nextState.business_contact || ''
+        contactAvailable.value = nextState.contact_available !== false
+        fill(nextState.listing, nextState.profile_defaults)
+      }
+      initialized.value = true
+    } else if (!dirty.value && !submitting.value) {
+      businessContact.value = nextState.business_contact || ''
+      contactAvailable.value = nextState.contact_available !== false
+      fill(nextState.listing, nextState.profile_defaults)
+    }
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '委托条加载失败'
   } finally {
     loading.value = false
   }
 }
+
+watch(
+  [posterUrl, headline, description, heightCm, weightKg, roleTypesText, businessContact, contactAvailable],
+  () => {
+    if (!initialized.value || restoring.value) return
+    dirty.value = true
+    uni.setStorageSync(draftKey(), currentDraft())
+  },
+  { flush: 'sync' },
+)
 
 async function choosePoster() {
   if (uploading.value) return
@@ -84,10 +173,6 @@ async function choosePoster() {
   }
 }
 
-function roleTypes() {
-  return roleTypesText.value.split(/[，,、\n]/).map(item => item.trim()).filter(Boolean).slice(0, 12)
-}
-
 async function submit() {
   if (!posterUrl.value || submitting.value || pending.value) {
     if (!posterUrl.value) uni.showToast({ title: '请先上传委托条主图', icon: 'none' })
@@ -96,7 +181,8 @@ async function submit() {
   submitting.value = true
   error.value = ''
   try {
-    if (!businessContact.value.trim()) throw new Error('请填写用于付费解锁的业务联系方式')
+    const draft = currentDraft()
+    if (!draft.businessContact.trim()) throw new Error('请填写用于付费解锁的业务联系方式')
     if (!state.value?.listing && !state.value?.initial_fee_paid) {
       const auth = readAuth()
       if (!auth?.id) throw new Error('请先登录')
@@ -106,16 +192,17 @@ async function submit() {
     await apiRequest('/lc/provider-listings/mine', {
       method: 'POST',
       data: {
-        posterUrl: posterUrl.value,
-        headline: headline.value.trim(),
-        description: description.value.trim(),
-        heightCm: heightCm.value || null,
-        weightKg: weightKg.value || null,
-        roleTypes: roleTypes(),
-        businessContact: businessContact.value.trim(),
-        contactAvailable: contactAvailable.value,
+        posterUrl: draft.posterUrl,
+        headline: draft.headline.trim(),
+        description: draft.description.trim(),
+        heightCm: draft.heightCm || null,
+        weightKg: draft.weightKg || null,
+        roleTypes: draft.roleTypesText.split(/[，,、\n]/).map(item => item.trim()).filter(Boolean).slice(0, 12),
+        businessContact: draft.businessContact.trim(),
+        contactAvailable: draft.contactAvailable,
       },
     })
+    clearDraft()
     uni.showModal({
       title: '已提交审核',
       content: '现有已通过版本会继续展示；首次发布则在审核通过后公开。',

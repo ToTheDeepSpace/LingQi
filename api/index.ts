@@ -1013,6 +1013,7 @@ type AuthedProfile = {
   is_banned?: boolean | null;
   ban_reason?: string | null;
   avatar?: string | null;
+  bio?: string | null;
   phone?: string | null;
   phone_verified_at?: string | null;
   email?: string | null;
@@ -1034,7 +1035,7 @@ type AuthedProfile = {
 async function getAuthedProfile(req: express.Request): Promise<AuthedProfile | null> {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, phone, phone_verified_at, email, email_verified_at, gender, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, wechat_mini_openid')
+    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, bio, phone, phone_verified_at, email, email_verified_at, gender, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, wechat_mini_openid')
     .eq('id', creatorId)
     .single();
   return data as AuthedProfile | null;
@@ -6842,7 +6843,7 @@ app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    const [listingResult, reviewResult, contactResult, purchase] = await Promise.all([
+    const [listingResult, reviewResult, contactResult, purchase, dossierDefaultsResult, servicesResult] = await Promise.all([
       supabase.from('lc_provider_listings').select('*').eq('profile_id', profile.id).maybeSingle(),
       supabase.from('lc_public_reviews')
         .select('id, status, summary, created_at, reviewed_at, review_note')
@@ -6856,6 +6857,20 @@ app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
         .eq('profile_id', profile.id)
         .maybeSingle(),
       findServicePurchase(profile.id, 'provider_listing', profile.id),
+      supabase.from('lc_dm_dossiers')
+        .select('photo_url, height_cm, weight_kg, bio')
+        .eq('claimed_by', profile.id)
+        .eq('claim_status', 'approved')
+        .eq('entity_type', 'dm')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from('lc_services')
+        .select('service_type, description')
+        .eq('creator_id', profile.id)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(12),
     ]);
     if (listingResult.error && isMissingRelation(listingResult.error, 'lc_provider_listings')) {
       return res.status(503).json(err(new Error('委托条数据表尚未初始化')));
@@ -6863,7 +6878,11 @@ app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
     if (listingResult.error) throw listingResult.error;
     if (reviewResult.error && !isMissingRelation(reviewResult.error, 'lc_public_reviews')) throw reviewResult.error;
     if (contactResult.error && !isMissingRelation(contactResult.error, 'lc_provider_contacts')) throw contactResult.error;
+    if (dossierDefaultsResult.error && !isMissingRelation(dossierDefaultsResult.error, 'lc_dm_dossiers')) throw dossierDefaultsResult.error;
+    if (servicesResult.error && !isMissingRelation(servicesResult.error, 'lc_services')) throw servicesResult.error;
     const feePaid = Boolean(listingResult.data || (purchase && servicePurchaseGrantsAccess(purchase.status)));
+    const dossierDefaults = dossierDefaultsResult.error ? null : dossierDefaultsResult.data;
+    const serviceRows = servicesResult.error ? [] : servicesResult.data || [];
     res.json(ok({
       listing: listingResult.data ? publicProviderListing(listingResult.data as Record<string, unknown>) : null,
       latest_review: reviewResult.error ? null : reviewResult.data,
@@ -6871,6 +6890,13 @@ app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
       contact_available: contactResult.error ? false : contactResult.data?.is_available !== false,
       initial_fee_paid: feePaid,
       initial_fee_yuan: SERVICE_FEE_YUAN,
+      profile_defaults: {
+        headline: cleanText(dossierDefaults?.bio || profile.bio, 80) || null,
+        description: null,
+        height_cm: dossierDefaults?.height_cm ?? null,
+        weight_kg: dossierDefaults?.weight_kg ?? null,
+        role_types: Array.from(new Set(serviceRows.map(item => cleanText(item.service_type, 30)).filter(Boolean))).slice(0, 12),
+      },
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -6881,7 +6907,12 @@ app.post('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
-    const draft = normalizeProviderListingDraft(req.body);
+    let draft;
+    try {
+      draft = normalizeProviderListingDraft(req.body);
+    } catch (validationError) {
+      return res.status(400).json(err(validationError));
+    }
     const posterUrl = normalizeOptionalPublicUrl(draft.poster_url, 1200, true);
     if (!posterUrl) return res.status(400).json(err(new Error('委托条主图地址不正确，请重新上传')));
     draft.poster_url = posterUrl;
@@ -10550,6 +10581,10 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       .in('status', ['pending', 'needs_info'])
       .order('created_at', { ascending: false })
       .limit(200);
+    const servicePurchasesResult = await supabase.from('lc_service_purchases')
+      .select('id, profile_id, product_type, target_id, amount_fen, currency, status, paid_at, refunded_at, refund_reason, created_at, updated_at')
+      .order('created_at', { ascending: false })
+      .limit(200);
     if (dmDossiersResult.error && !isMissingRelation(dmDossiersResult.error, 'lc_dm_dossiers')) throw dmDossiersResult.error;
     if (rankingEditRequestsResult.error && !isMissingRelation(rankingEditRequestsResult.error, 'lc_ranking_edit_requests')) throw rankingEditRequestsResult.error;
     if (dmClaimsResult.error && !isMissingRelation(dmClaimsResult.error, 'lc_dm_dossier_claims')) throw dmClaimsResult.error;
@@ -10562,6 +10597,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     if (guidesResult.error && !isMissingRelation(guidesResult.error, 'lc_guides')) throw guidesResult.error;
     if (withdrawalsResult.error && !isMissingRelation(withdrawalsResult.error, 'lc_creator_withdrawals')) throw withdrawalsResult.error;
     if (accountAppealsResult.error && !isMissingRelation(accountAppealsResult.error, 'lc_account_appeals')) throw accountAppealsResult.error;
+    if (servicePurchasesResult.error && !isMissingRelation(servicePurchasesResult.error, 'lc_service_purchases')) throw servicePurchasesResult.error;
     const accountAppeals = accountAppealsResult.error ? [] : (accountAppealsResult.data || []) as Record<string, unknown>[];
     const appealProfileIds = Array.from(new Set(accountAppeals.map(item => cleanText(item.profile_id, 80)).filter(Boolean)));
     const appealRestrictionIds = Array.from(new Set(accountAppeals.map(item => cleanText(item.restriction_id, 80)).filter(Boolean)));
@@ -10577,6 +10613,94 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     if (appealRestrictionsResult.error) throw appealRestrictionsResult.error;
     const appealProfileMap = new Map((appealProfilesResult.data || []).map(item => [String(item.id), item]));
     const appealRestrictionMap = new Map((appealRestrictionsResult.data || []).map(item => [String(item.id), item]));
+    const servicePurchaseRows = servicePurchasesResult.error
+      ? []
+      : (servicePurchasesResult.data || []) as Record<string, unknown>[];
+    const servicePurchaseIds = servicePurchaseRows.map(item => cleanText(item.id, 80)).filter(Boolean);
+    const serviceProfileIds = Array.from(new Set(servicePurchaseRows.flatMap(item => {
+      const ids = [cleanText(item.profile_id, 80)];
+      if (item.product_type === 'provider_listing' || item.product_type === 'provider_contact') {
+        ids.push(cleanText(item.target_id, 80));
+      }
+      return ids.filter(Boolean);
+    })));
+    const serviceDossierIds = Array.from(new Set(servicePurchaseRows
+      .filter(item => item.product_type === 'dossier_claim')
+      .map(item => cleanText(item.target_id, 80))
+      .filter(Boolean)));
+    const [serviceProfilesResult, serviceDossiersResult, serviceClaimsResult, providerListingsResult] = await Promise.all([
+      serviceProfileIds.length > 0
+        ? supabase.from('lc_profiles').select('id, display_name').in('id', serviceProfileIds)
+        : Promise.resolve({ data: [], error: null }),
+      serviceDossierIds.length > 0
+        ? supabase.from('lc_dm_dossiers').select('id, dm_name, entity_type').in('id', serviceDossierIds)
+        : Promise.resolve({ data: [], error: null }),
+      servicePurchaseIds.length > 0
+        ? supabase.from('lc_dm_dossier_claims')
+          .select('id, payment_purchase_id, status, created_at, reviewed_at')
+          .in('payment_purchase_id', servicePurchaseIds)
+          .order('created_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      servicePurchaseIds.length > 0
+        ? supabase.from('lc_provider_listings')
+          .select('profile_id, initial_purchase_id, updated_at')
+          .in('initial_purchase_id', servicePurchaseIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (serviceProfilesResult.error) throw serviceProfilesResult.error;
+    if (serviceDossiersResult.error && !isMissingRelation(serviceDossiersResult.error, 'lc_dm_dossiers')) throw serviceDossiersResult.error;
+    if (serviceClaimsResult.error && !isMissingRelation(serviceClaimsResult.error, 'lc_dm_dossier_claims')) throw serviceClaimsResult.error;
+    if (providerListingsResult.error && !isMissingRelation(providerListingsResult.error, 'lc_provider_listings')) throw providerListingsResult.error;
+    const serviceProfileMap = new Map((serviceProfilesResult.data || []).map(item => [String(item.id), item]));
+    const serviceDossierMap = new Map((serviceDossiersResult.data || []).map(item => [String(item.id), item]));
+    const serviceClaimMap = new Map((serviceClaimsResult.data || []).map(item => [String(item.payment_purchase_id), item]));
+    const providerListingMap = new Map((providerListingsResult.data || []).map(item => [String(item.initial_purchase_id), item]));
+    const providerReviewMap = new Map<string, Record<string, unknown>>();
+    [
+      ...(publicReviewsResult.error ? [] : (publicReviewsResult.data || [])),
+      ...(reviewHistoryResult.error ? [] : (reviewHistoryResult.data || [])),
+    ].forEach(rawReview => {
+      const review = rawReview as Record<string, unknown>;
+      if (review.target_type !== 'provider_listing_update') return;
+      const purchaseId = cleanText(objectPayload(review.payload).initial_purchase_id, 80);
+      if (!purchaseId) return;
+      const current = providerReviewMap.get(purchaseId);
+      if (!current || String(review.created_at || '') > String(current.created_at || '')) {
+        providerReviewMap.set(purchaseId, review);
+      }
+    });
+    const servicePurchases = servicePurchaseRows.map(purchase => {
+      const purchaseId = cleanText(purchase.id, 80);
+      const productType = cleanText(purchase.product_type, 40);
+      const claim = serviceClaimMap.get(purchaseId);
+      const providerReview = providerReviewMap.get(purchaseId);
+      const providerListing = providerListingMap.get(purchaseId);
+      let submissionStatus = 'not_submitted';
+      let submissionId: string | null = null;
+      if (productType === 'provider_contact' && purchase.status === 'paid') {
+        submissionStatus = 'access_granted';
+      } else if (productType === 'dossier_claim' && claim) {
+        submissionStatus = cleanText(claim.status, 40) || 'not_submitted';
+        submissionId = cleanText(claim.id, 80) || null;
+      } else if (productType === 'provider_listing' && providerReview) {
+        submissionStatus = cleanText(providerReview.status, 40) || 'not_submitted';
+        submissionId = cleanText(providerReview.id, 80) || null;
+      } else if (productType === 'provider_listing' && providerListing) {
+        submissionStatus = 'approved';
+      }
+      const targetProfile = serviceProfileMap.get(cleanText(purchase.target_id, 80));
+      const targetDossier = serviceDossierMap.get(cleanText(purchase.target_id, 80));
+      return {
+        ...purchase,
+        profile_name: serviceProfileMap.get(cleanText(purchase.profile_id, 80))?.display_name || '未知用户',
+        target_name: productType === 'dossier_claim'
+          ? targetDossier?.dm_name || '未知档案'
+          : targetProfile?.display_name || '未知用户',
+        target_entity_type: targetDossier?.entity_type || null,
+        submission_status: submissionStatus,
+        submission_id: submissionId,
+      };
+    });
     const approvedDossiers = approvedDmDossiersResult.error ? [] : (approvedDmDossiersResult.data || []) as Record<string, unknown>[];
     const approvedDmDossiers = approvedDossiers.filter(dossier => dossier.entity_type === 'dm');
     const approvedStoreDossiers = approvedDossiers.filter(dossier => dossier.entity_type === 'store');
@@ -10679,6 +10803,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
         };
       }),
       reviewHistory: reviewHistoryResult.error ? [] : (reviewHistoryResult.data || []),
+      servicePurchases,
       guides: guidesResult.error ? [] : (guidesResult.data || []),
       guideWithdrawals: withdrawalsResult.error ? [] : (withdrawalsResult.data || []),
     }));
