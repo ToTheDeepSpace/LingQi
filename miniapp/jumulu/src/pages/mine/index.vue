@@ -7,18 +7,32 @@ import type { AccountStatus, AuthSession } from '../../types'
 import { apiRequest, readAuth } from '../../utils/api'
 import { loginWithWechat, logout, refreshCurrentUser } from '../../utils/auth'
 
+type PublicationSummary = {
+  total: number
+  pending: number
+  approved: number
+  rejected: number
+  needs_submission: number
+}
+
 const auth = ref<AuthSession | null>(readAuth())
 const nickname = ref('')
 const loading = ref(false)
 const error = ref('')
 const accountStatus = ref<AccountStatus | null>(null)
+const publicationSummary = ref<PublicationSummary>({ total: 0, pending: 0, approved: 0, rejected: 0, needs_submission: 0 })
 const showCheckin = ref(false)
 const checkinView = ref<InstanceType<typeof DailyCheckinView> | null>(null)
 
 async function refresh() {
   loading.value = true; error.value = ''
   try {
-    accountStatus.value = await apiRequest<AccountStatus>('/lc/account/status')
+    const [nextAccountStatus, content] = await Promise.all([
+      apiRequest<AccountStatus>('/lc/account/status'),
+      apiRequest<{ summary?: PublicationSummary }>('/lc/miniapp/me/content'),
+    ])
+    accountStatus.value = nextAccountStatus
+    publicationSummary.value = content.summary || { total: 0, pending: 0, approved: 0, rejected: 0, needs_submission: 0 }
     if (accountStatus.value.state === 'merged') {
       logout(); auth.value = null
       uni.showModal({ title: '账号已合并', content: accountStatus.value.message || '请重新登录原网站账号。', showCancel: false })
@@ -39,6 +53,13 @@ function signOut() { logout(); auth.value = null }
 function go(url: string) { uni.navigateTo({ url }) }
 function openCheckin() { showCheckin.value = true }
 function copyAdmin() { uni.setClipboardData({ data: 'https://jumulu.jusichen.com/admin', success: () => uni.showToast({ title: '后台地址已复制', icon: 'success' }) }) }
+function unreadLabel() {
+  const count = Math.max(0, Number(accountStatus.value?.unread_count || 0))
+  return count > 99 ? '99+' : String(count)
+}
+function pendingPublicationCount() {
+  return publicationSummary.value.pending + publicationSummary.value.rejected + publicationSummary.value.needs_submission
+}
 
 async function pullRefresh() {
   if (showCheckin.value) {
@@ -57,7 +78,7 @@ onPullDownRefresh(pullRefresh)
   <view class="page">
     <DailyCheckinView v-if="auth && showCheckin" ref="checkinView" @back="showCheckin = false" />
     <template v-else>
-    <PageIntro eyebrow="个人中心" nav-title="我的剧幕录" :title="auth ? auth.display_name : '微信登录剧幕录'" :description="auth ? '管理自己的发布、评价、评论和审核进度。' : '首次登录需要填写公开昵称，登录后与网站使用同一个账号。'" />
+    <PageIntro nav-title="我的" :title="auth ? auth.display_name : '微信登录剧幕录'" />
     <view v-if="!auth" class="login surface">
       <text class="field-label">公开昵称</text>
       <input v-model="nickname" class="input" maxlength="40" placeholder="例如：泡泡" />
@@ -70,6 +91,27 @@ onPullDownRefresh(pullRefresh)
         <image v-if="auth.avatar" class="avatar" :src="auth.avatar" mode="aspectFill" />
         <view v-else class="avatar placeholder">{{ auth.display_name.slice(0, 1) }}</view>
         <view class="account__main"><text class="account__name">{{ auth.display_name }}</text><text class="account__meta">{{ auth.city || '城市未设置' }} · {{ auth.phone_verified_at || auth.email_verified_at ? '账号已验证' : '仅浏览' }}</text></view>
+      </view>
+      <view class="quick-grid">
+        <view class="quick-entry" @tap="go('/pages/mine/account-status')">
+          <view class="quick-entry__icon">
+            <image src="/static/icons/message-star.png" mode="aspectFit" />
+            <text v-if="Number(accountStatus?.unread_count || 0) > 0" class="quick-entry__badge">{{ unreadLabel() }}</text>
+          </view>
+          <view class="quick-entry__copy">
+            <strong>消息中心</strong>
+            <text>{{ Number(accountStatus?.unread_count || 0) > 0 ? `${unreadLabel()} 条未读消息` : '申请、审核和账号通知' }}</text>
+          </view>
+          <image class="quick-entry__chevron" src="/static/icons/ui-chevron-right.png" mode="aspectFit" />
+        </view>
+        <view class="quick-entry" @tap="go('/pages/mine/content')">
+          <view class="quick-entry__icon publication-icon"><text>审</text></view>
+          <view class="quick-entry__copy">
+            <strong>我的发布与审核</strong>
+            <text>{{ pendingPublicationCount() > 0 ? `${pendingPublicationCount()} 项待处理` : `${publicationSummary.total} 条发布记录` }}</text>
+          </view>
+          <image class="quick-entry__chevron" src="/static/icons/ui-chevron-right.png" mode="aspectFit" />
+        </view>
       </view>
       <view class="checkin-entry" @tap="openCheckin">
         <view><strong>每日签到</strong><text>领取助力金币，给喜欢的角色和 DM 打榜</text></view>
@@ -84,11 +126,9 @@ onPullDownRefresh(pullRefresh)
       </view>
       <view v-if="!auth.phone_verified_at && !auth.email_verified_at" class="verify surface" @tap="go('/pages/mine/account')"><view><strong>完成手机号验证</strong><text>验证后才可评价、评论、投票和举报</text></view><text>›</text></view>
       <view class="menu surface">
-        <view class="menu__item" @tap="go('/pages/mine/content')"><view><strong>我的内容</strong><text>发布、评价、评论、举报与审核状态</text></view><text>›</text></view>
         <view class="menu__item" @tap="go(`/pages/profile/detail?id=${auth.id}`)"><view><strong>公开主页</strong><text>查看别人眼中的个人资料</text></view><text>›</text></view>
         <view class="menu__item" @tap="go('/pages/follows/index')"><view><strong>关注设置</strong><text>修改关注城市和店家</text></view><text>›</text></view>
         <view class="menu__item" @tap="go('/pages/mine/account')"><view><strong>账号设置</strong><text>手机号、登录状态与隐私说明</text></view><text>›</text></view>
-        <view class="menu__item" @tap="go('/pages/mine/account-status')"><view><strong>账号通知与申诉</strong><text>限制原因、申诉进度和管理员回复</text></view><text>›</text></view>
         <view class="menu__item" @tap="go('/pages/feedback/index')"><view><strong>问题反馈</strong><text>功能故障、资料纠错、联系方式和支付问题</text></view><text>›</text></view>
       </view>
       <view v-if="auth.role === 'admin'" class="admin surface"><view><strong>平台管理后台</strong><text>审核、账号治理和证据处理继续在网站完成。</text></view><button class="secondary-button" @tap="copyAdmin">复制网站后台地址</button></view>
@@ -105,6 +145,17 @@ onPullDownRefresh(pullRefresh)
 .error { color: #b42318; }
 .login-button { width: 100%; margin-top: 18rpx; }
 .account { display: flex; align-items: center; gap: 16rpx; }
+.quick-grid { display: grid; gap: 2rpx; margin: 14rpx 0; overflow: hidden; border-radius: 12rpx; background: #e8ebef; }
+.quick-entry { display: flex; min-height: 104rpx; align-items: center; gap: 16rpx; padding: 18rpx 20rpx; background: #fff; }
+.quick-entry__icon { position: relative; display: flex; width: 62rpx; height: 62rpx; flex: 0 0 62rpx; align-items: center; justify-content: center; border-radius: 12rpx; background: #edf3fb; }
+.quick-entry__icon image { width: 36rpx; height: 36rpx; }
+.quick-entry__icon.publication-icon { background: #fff3dc; color: #8b5919; font-size: 26rpx; font-weight: 900; }
+.quick-entry__badge { position: absolute; top: -9rpx; right: -11rpx; min-width: 30rpx; height: 30rpx; padding: 0 7rpx; border: 3rpx solid #fff; border-radius: 15rpx; background: #c83939; color: #fff; font-size: 18rpx; font-weight: 850; line-height: 27rpx; text-align: center; }
+.quick-entry__copy { min-width: 0; flex: 1; }
+.quick-entry__copy strong, .quick-entry__copy text { display: block; }
+.quick-entry__copy strong { color: #1f2937; font-size: 27rpx; }
+.quick-entry__copy text { margin-top: 5rpx; overflow: hidden; color: #7b8492; font-size: 21rpx; text-overflow: ellipsis; white-space: nowrap; }
+.quick-entry__chevron { width: 26rpx; height: 26rpx; flex: 0 0 26rpx; }
 .checkin-entry { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; margin-top: 14rpx; padding: 20rpx 4rpx; border-top: 1rpx solid #e7e1d8; border-bottom: 1rpx solid #e7e1d8; }
 .checkin-entry strong, .checkin-entry > view > text { display: block; }
 .checkin-entry strong { color: #27364a; font-size: 28rpx; }

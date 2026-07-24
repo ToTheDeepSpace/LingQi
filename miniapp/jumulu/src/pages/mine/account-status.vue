@@ -105,7 +105,7 @@ onPullDownRefresh(load)
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="站内消息" nav-title="消息通知" title="消息通知" description="委托申请、处理结果、账号状态和管理员回复都在这里留痕。" />
+    <PageIntro nav-title="消息中心" title="消息中心" />
     <view v-if="loading" class="surface state-card"><text class="muted">正在读取账号状态...</text></view>
     <view v-if="error" class="surface error-card"><text>{{ error }}</text></view>
 

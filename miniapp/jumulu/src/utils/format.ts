@@ -25,6 +25,7 @@ export function statusText(status?: string | null) {
   const map: Record<string, string> = {
     pending: '审核中', approved: '已公开', rejected: '未通过', withdrawn: '已撤回',
     closed: '已关闭', deleted_by_author: '已删除', pending_owner: '等待本人确认',
+    needs_submission: '已付费待补交',
   }
   return map[String(status || '')] || status || '未知状态'
 }

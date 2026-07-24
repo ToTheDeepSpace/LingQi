@@ -6423,25 +6423,45 @@ app.get('/api/lc/miniapp/me/content', authMiddleware, async (req, res) => {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
 
-    const [rankingsResult, carpoolsResult, dmRatingsResult, storeRatingsResult, roleRatingsResult, commentsResult, reportsResult, dossierEditsResult] = await Promise.all([
+    const [rankingsResult, carpoolsResult, commissionsResult, dmRatingsResult, storeRatingsResult, roleRatingsResult, commentsResult, reportsResult, dossierEditsResult, providerReviewsResult, providerPurchaseResult, providerListingResult] = await Promise.all([
       supabase.from('lc_rankings').select('*').eq('poster_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_carpools').select('*').eq('poster_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_commissions').select('*').eq('poster_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_dm_ratings').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_store_ratings').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_entity_ratings').select('*').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_comments').select('*').eq('author_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_reports').select('*').eq('reporter_id', profile.id).order('created_at', { ascending: false }).limit(100),
       supabase.from('lc_public_reviews').select('*').eq('target_type', 'dossier_update').eq('profile_id', profile.id).order('created_at', { ascending: false }).limit(100),
+      supabase.from('lc_public_reviews').select('id, status, summary, review_note, created_at, updated_at')
+        .eq('target_type', 'provider_listing_update')
+        .eq('profile_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase.from('lc_service_purchases').select('id, status, paid_at, created_at')
+        .eq('profile_id', profile.id)
+        .eq('product_type', 'provider_listing')
+        .eq('target_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from('lc_provider_listings').select('profile_id, is_active, created_at, updated_at')
+        .eq('profile_id', profile.id)
+        .maybeSingle(),
     ]);
     const results = [
       [rankingsResult, 'lc_rankings'],
       [carpoolsResult, 'lc_carpools'],
+      [commissionsResult, 'lc_commissions'],
       [dmRatingsResult, 'lc_dm_ratings'],
       [storeRatingsResult, 'lc_store_ratings'],
       [roleRatingsResult, 'lc_entity_ratings'],
       [commentsResult, 'lc_comments'],
       [reportsResult, 'lc_reports'],
       [dossierEditsResult, 'lc_public_reviews'],
+      [providerReviewsResult, 'lc_public_reviews'],
+      [providerPurchaseResult, 'lc_service_purchases'],
+      [providerListingResult, 'lc_provider_listings'],
     ] as const;
     for (const [result, relation] of results) {
       if (result.error && !isMissingRelation(result.error, relation)) throw result.error;
@@ -6452,11 +6472,12 @@ app.get('/api/lc/miniapp/me/content', authMiddleware, async (req, res) => {
       content: cleanText(row.content, 2400),
       status: cleanText(row.status, 40),
       created_at: cleanText(row.created_at, 80),
-      reject_reason: cleanText(row.reject_reason, 500) || null,
+      reject_reason: cleanText(row.reject_reason || row.review_note, 500) || null,
     });
     const rankingLabels: Record<string, string> = { red: '红榜', black: '黑榜', white: '白榜' };
     const rankings = rows(rankingsResult).map(row => ({ ...base(row), kind: 'ranking', title: `${rankingLabels[cleanText(row.type, 20)] || '榜单'} · ${cleanText(row.subject_name, 120) || '未命名对象'}` }));
     const carpools = rows(carpoolsResult).map(row => ({ ...base(row), kind: 'carpool', title: `拼车 · ${cleanText(row.script_name, 120) || cleanText(row.title, 120) || '未命名活动'}` }));
+    const commissions = rows(commissionsResult).map(row => ({ ...base(row), kind: 'commission', title: `委托需求 · ${cleanText(row.title, 120) || '未命名委托'}` }));
     const ratings = [
       ...rows(dmRatingsResult).map(row => ({ ...base(row), kind: 'dm_rating', title: `DM 评价 · ${cleanText(row.script_name, 120) || '体验记录'}` })),
       ...rows(storeRatingsResult).map(row => ({ ...base(row), kind: 'store_rating', title: `店家评价 · ${cleanText(row.script_name, 120) || '到店记录'}` })),
@@ -6467,9 +6488,51 @@ app.get('/api/lc/miniapp/me/content', authMiddleware, async (req, res) => {
     const dossierEdits = rows(dossierEditsResult).map(row => {
       const review = publicDossierEditReview(row);
       const payload = objectPayload(row.payload);
-      return { ...review, kind: 'dossier_edit', title: `档案补充 · ${cleanText(payload.dossier_name, 120) || cleanText(payload.dm_name, 120) || '资料修改'}`, created_at: cleanText(row.created_at, 80) };
+      return {
+        ...review,
+        kind: 'dossier_edit',
+        title: `档案补充 · ${cleanText(payload.dossier_name, 120) || cleanText(payload.dm_name, 120) || '资料修改'}`,
+        status: cleanText(row.status, 40),
+        reject_reason: cleanText(row.review_note, 500) || null,
+        created_at: cleanText(row.created_at, 80),
+      };
     });
-    res.json(ok({ rankings, carpools, ratings, comments, reports, dossier_edits: dossierEdits }));
+    const providerListings = rows(providerReviewsResult).map(row => ({
+      ...base(row),
+      kind: 'provider_listing',
+      title: '委托条 · 上架与修改',
+      content: cleanText(row.summary, 500),
+    }));
+    if (providerListings.length === 0 && !providerListingResult.data && providerPurchaseResult.data?.status === 'paid') {
+      providerListings.push({
+        id: cleanText(providerPurchaseResult.data.id, 80),
+        kind: 'provider_listing',
+        title: '委托条 · 已付费待补交',
+        content: '付款资格已经保留，请补齐主图、资料和业务联系方式后提交审核。',
+        status: 'needs_submission',
+        created_at: cleanText(providerPurchaseResult.data.paid_at || providerPurchaseResult.data.created_at, 80),
+        reject_reason: null,
+      });
+    }
+    const publicationItems = [...rankings, ...carpools, ...commissions, ...dossierEdits, ...providerListings];
+    const summary = {
+      total: publicationItems.length,
+      pending: publicationItems.filter(item => item.status === 'pending' || item.status === 'pending_owner').length,
+      approved: publicationItems.filter(item => item.status === 'approved').length,
+      rejected: publicationItems.filter(item => item.status === 'rejected').length,
+      needs_submission: publicationItems.filter(item => item.status === 'needs_submission').length,
+    };
+    res.json(ok({
+      rankings,
+      carpools,
+      commissions,
+      provider_listings: providerListings,
+      ratings,
+      comments,
+      reports,
+      dossier_edits: dossierEdits,
+      summary,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

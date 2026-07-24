@@ -2520,6 +2520,12 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         )}
                         {item.status === 'refunded' && item.refund_reason && <ContentBox>退款说明：{item.refund_reason}</ContentBox>}
                       </div>
+                      {item.submission_status === 'pending' && item.submission_id && (
+                        <Actions vertical>
+                          <ActionButton kind="ok" onClick={() => approvePublicReview(item.submission_id!)}>通过并公开</ActionButton>
+                          <ActionButton kind="bad" onClick={() => openRejectModal(item.submission_id!, 'publicReview')}>驳回修改</ActionButton>
+                        </Actions>
+                      )}
                     </Row>
                   );
                 })}

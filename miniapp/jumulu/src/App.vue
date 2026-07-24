@@ -51,7 +51,7 @@ onShow(() => {
 <style>
 page {
   min-height: 100%;
-  background: #fffdf8;
+  background: #f5f6f8;
   color: #1f2937;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 28rpx;
@@ -70,8 +70,8 @@ button::after { border: 0; }
 
 .surface {
   background: #ffffff;
-  border: 1rpx solid #eadfce;
-  border-radius: 10rpx;
+  border: 0;
+  border-radius: 12rpx;
 }
 
 .section-title {
@@ -158,9 +158,9 @@ button::after { border: 0; }
 
 .page-tools {
   margin-bottom: 16rpx;
-  padding: 12rpx;
-  border: 1rpx solid #eadfce;
-  border-radius: 10rpx;
+  padding: 12rpx 0;
+  border: 0;
+  border-radius: 0;
   background: #ffffff;
 }
 
@@ -184,8 +184,8 @@ button::after { border: 0; }
   bottom: 0;
   margin: 24rpx -24rpx calc(-48rpx - env(safe-area-inset-bottom));
   padding: 16rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
-  border-top: 1rpx solid #eadfce;
-  background: rgba(255, 253, 248, 0.98);
+  border-top: 1rpx solid #e4e7eb;
+  background: rgba(255, 255, 255, 0.98);
 }
 
 .safe-bottom { padding-bottom: calc(24rpx + env(safe-area-inset-bottom)); }
