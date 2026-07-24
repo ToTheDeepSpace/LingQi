@@ -9,7 +9,6 @@ import StoreSearchSelect from '../components/StoreSearchSelect';
 import ImageUpload from '../components/ImageUpload';
 import SocialPlatformLink, { InternalProfileLink } from '../components/SocialPlatformLink';
 import {
-  JumuluCompactHeader,
   JumuluPageFrame,
 } from '../components/JumuluPageChrome';
 import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
@@ -21,6 +20,7 @@ import type { DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
 import type { DmGraphDossier } from '../components/DmRelationshipGraph';
 import { dmAffiliationLabel, dmClaimLabel, type PublicDmAffiliation } from '../lib/dmDossierPresentation';
 import { sortDmDossiers, type DmDossierSortMode } from '../lib/dmDossierSort';
+import './DmWall.css';
 
 const DmRelationshipGraph = lazy(() => import('../components/DmRelationshipGraph'));
 
@@ -89,6 +89,18 @@ type DmDossier = {
   };
 };
 
+type DmRatingExcerpt = {
+  id: string;
+  rating: number;
+  content?: string | null;
+  script_name?: string | null;
+  played_on?: string | null;
+};
+
+type DmDossierDetail = {
+  ratings?: DmRatingExcerpt[];
+};
+
 const RATING_FILTERS: { value: RatingFilter; label: string }[] = [
   { value: 'all', label: '全部评价' },
   { value: 'rated', label: '已有评价' },
@@ -107,6 +119,7 @@ const SORT_OPTIONS: { value: DmDossierSortMode; label: string }[] = [
 
 const DM_SORT_STORAGE_KEY = 'jumulu:dm-sort-mode';
 const DM_CHANTO_SORT_STORAGE_KEY = 'jumulu:dm-chanto-first';
+const DM_DIRECTORY_PAGE_SIZE = 8;
 
 function readStoredSortMode(): DmDossierSortMode {
   if (typeof window === 'undefined') return 'comprehensive';
@@ -218,6 +231,11 @@ export default function DmWall() {
   const [sortMode, setSortMode] = useState<DmDossierSortMode>(readStoredSortMode);
   const [chantoFirst, setChantoFirst] = useState(readStoredChantoFirst);
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState('');
+  const [detailDismissed, setDetailDismissed] = useState(false);
+  const [selectedDetailState, setSelectedDetailState] = useState<{ id: string; detail: DmDossierDetail } | null>(null);
+  const [isDirectoryDesktop, setIsDirectoryDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 981px)').matches);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<DossierDraft>({ entityType: 'dm', dmName: '', city: '', workplace: '', profileUrl: '', photoUrl: '', photoFocusX: 50, photoFocusY: 25, note: '', tags: '', employmentStatus: 'store_affiliated', employerStoreId: '' });
   const [storeOptions, setStoreOptions] = useState<DmDossier[]>([]);
@@ -225,7 +243,7 @@ export default function DmWall() {
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [claimTarget, setClaimTarget] = useState<{ id: string; name: string; entityType: DossierEntityType } | null>(null);
 
-  const requestKey = useMemo(() => `${city}|dm`, [city]);
+  const requestKey = 'dm';
   const loading = loadedKey !== requestKey;
   const activeFormCopy = ENTITY_COPY[form.entityType];
 
@@ -245,6 +263,7 @@ export default function DmWall() {
     const normalizedQuery = normalizeDossierSearch(query);
     const filtered = items.filter(item => {
       const displayTags = dossierDisplayTags(item);
+      if (city !== 'all' && normalizeDossierSearch(item.city || '') !== normalizeDossierSearch(city)) return false;
       if (tagFilter !== 'all' && !displayTags.some(tag => normalizeDossierSearch(tag) === tagFilter)) return false;
       if (!matchesRatingFilter(item, ratingFilter)) return false;
       if (!normalizedQuery) return true;
@@ -259,16 +278,67 @@ export default function DmWall() {
       return normalizeDossierSearch(searchable).includes(normalizedQuery);
     });
     return sortDmDossiers(filtered, sortMode, chantoFirst);
-  }, [chantoFirst, items, query, ratingFilter, sortMode, tagFilter]);
+  }, [chantoFirst, city, items, query, ratingFilter, sortMode, tagFilter]);
+
+  const cityFacets = useMemo(() => {
+    const counts = new Map<string, number>();
+    items.forEach(item => {
+      const label = item.city?.trim();
+      if (!label) return;
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'zh-CN'))
+      .map(([label, count]) => ({ label, count }));
+  }, [items]);
+
+  const pageCount = Math.max(1, Math.ceil(visibleItems.length / DM_DIRECTORY_PAGE_SIZE));
+  const pagedItems = useMemo(
+    () => visibleItems.slice((page - 1) * DM_DIRECTORY_PAGE_SIZE, page * DM_DIRECTORY_PAGE_SIZE),
+    [page, visibleItems],
+  );
+
+  const selectedIdOnPage = Boolean(selectedId && pagedItems.some(item => item.id === selectedId));
+  const activeSelectedId = viewMode === 'cards'
+    ? selectedIdOnPage
+      ? selectedId
+      : isDirectoryDesktop && !detailDismissed
+        ? pagedItems[0]?.id || ''
+        : ''
+    : '';
+  const selectedItem = useMemo(
+    () => visibleItems.find(item => item.id === activeSelectedId) || null,
+    [activeSelectedId, visibleItems],
+  );
+  const selectedDetail = selectedDetailState?.id === activeSelectedId ? selectedDetailState.detail : null;
+  const selectedDetailLoading = Boolean(activeSelectedId && selectedDetailState?.id !== activeSelectedId);
 
   const changeSortMode = (value: DmDossierSortMode) => {
     setSortMode(value);
+    setPage(1);
+    setSelectedId('');
+    setDetailDismissed(false);
     window.localStorage.setItem(DM_SORT_STORAGE_KEY, value);
   };
 
   const changeChantoFirst = (value: boolean) => {
     setChantoFirst(value);
+    setPage(1);
+    setSelectedId('');
+    setDetailDismissed(false);
     window.localStorage.setItem(DM_CHANTO_SORT_STORAGE_KEY, String(value));
+  };
+
+  const resetDirectoryPage = () => {
+    setPage(1);
+    setSelectedId('');
+    setDetailDismissed(false);
+  };
+
+  const changeDirectoryPage = (nextPage: number) => {
+    setPage(Math.min(pageCount, Math.max(1, nextPage)));
+    setSelectedId('');
+    setDetailDismissed(false);
   };
 
   const dossierDraft = useDraftAutosave<DossierDraft>({
@@ -296,9 +366,8 @@ export default function DmWall() {
   });
 
   const loadDossiers = useCallback((signal?: AbortSignal) => {
-    const nextKey = `${city}|dm`;
+    const nextKey = 'dm';
     const params = new URLSearchParams();
-    if (city !== 'all') params.set('city', city);
     params.set('entityType', 'dm');
     fetch(`${API}/lc/dm-dossiers?${params}`, { signal })
       .then(r => r.json())
@@ -319,7 +388,7 @@ export default function DmWall() {
       .finally(() => {
         if (!signal?.aborted) setLoadedKey(nextKey);
       });
-  }, [city]);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -335,6 +404,33 @@ export default function DmWall() {
       .catch(() => undefined);
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 981px)');
+    const syncViewport = () => {
+      setIsDirectoryDesktop(media.matches);
+      if (!media.matches) setSelectedId('');
+    };
+    media.addEventListener('change', syncViewport);
+    return () => media.removeEventListener('change', syncViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!activeSelectedId) return;
+    const controller = new AbortController();
+    fetch(`${API}/lc/dm-dossiers/${encodeURIComponent(activeSelectedId)}`, { signal: controller.signal })
+      .then(response => response.json())
+      .then(payload => {
+        if (payload.success) {
+          setSelectedDetailState({
+            id: activeSelectedId,
+            detail: { ratings: payload.data?.ratings || [] },
+          });
+        }
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [activeSelectedId]);
 
   const updateForm = (patch: Partial<typeof form>) => {
     setForm(prev => ({ ...prev, ...patch }));
@@ -398,18 +494,18 @@ export default function DmWall() {
 
   return (
     <JumuluPageFrame currentLabel="DM评分">
-      <JumuluCompactHeader
-        eyebrow="剧本杀 DM 评分"
-        title="查 DM，评体验"
-        description="每次体验都可以留下评分；综合分按独立玩家计算，多次体验完整展示但不重复增加计分权重。"
-        aside={
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <Link to="/dm/rate" style={jumuluPrimaryLinkStyle}>给 DM 评分</Link>
-            <Link to="/chanto" style={jumuluSecondaryLinkStyle}>缠头榜</Link>
-            <button onClick={() => auth ? setShowForm(v => !v) : navigate('/login')} style={jumuluSecondaryLinkStyle}>{showForm ? '收起建档' : '创建档案'}</button>
-          </div>
-        }
-      />
+      <header className="dm-directory-header">
+        <div className="dm-directory-heading">
+          <h1>查 DM</h1>
+          <p>按独立玩家计算综合分，多次体验完整保留但不重复增加计分权重。</p>
+        </div>
+        <div className="dm-directory-header-actions">
+          <Link to="/chanto" style={jumuluSecondaryLinkStyle}>缠头榜</Link>
+          <button onClick={() => auth ? setShowForm(value => !value) : navigate('/login')} style={jumuluSecondaryLinkStyle}>
+            {showForm ? '收起建档' : '创建档案'}
+          </button>
+        </div>
+      </header>
 
       <section className="dm-dossier-filter-panel" style={{ ...jumuluFilterPanelStyle, padding: 8 }}>
         <div className="dm-filter-toolbar">
@@ -418,25 +514,26 @@ export default function DmWall() {
             onChange={value => {
               setCity(value);
               setTagFilter('all');
+              resetDirectoryPage();
             }}
             allowAll
             allowCustom
             style={{ minWidth: 0 }}
           />
-          <input className="dm-filter-query" value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索名称、标签或常开剧本" style={{ ...inputStyle, minWidth: 0, width: '100%' }} />
+          <input className="dm-filter-query" value={query} onChange={event => { setQuery(event.target.value); resetDirectoryPage(); }} placeholder="搜索名称、标签或常开剧本" style={{ ...inputStyle, minWidth: 0, width: '100%' }} />
           <Link className="dm-filter-city-link" to="/reputation/city" style={ghostButton}>看城市口碑</Link>
-          <select aria-label="按标签筛选" value={tagFilter} onChange={event => setTagFilter(event.target.value)} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
+          <select aria-label="按标签筛选" value={tagFilter} onChange={event => { setTagFilter(event.target.value); resetDirectoryPage(); }} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
             <option value="all">全部标签</option>
             {availableTags.map(tag => <option key={tag.value} value={tag.value}>{tag.label}（{tag.count}）</option>)}
           </select>
-          <select aria-label="按评价筛选" value={ratingFilter} onChange={event => setRatingFilter(event.target.value as RatingFilter)} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
+          <select aria-label="按评价筛选" value={ratingFilter} onChange={event => { setRatingFilter(event.target.value as RatingFilter); resetDirectoryPage(); }} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
             {RATING_FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <select aria-label="选择排序方式" value={sortMode} onChange={event => changeSortMode(event.target.value as DmDossierSortMode)} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
             {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <ChantoSortSwitch checked={chantoFirst} onChange={changeChantoFirst} />
-          <ViewModeSwitch value={viewMode} onChange={setViewMode} />
+          <ViewModeSwitch value={viewMode} onChange={value => { setViewMode(value); setSelectedId(''); setDetailDismissed(false); }} />
           <span className="dm-filter-count" style={{ color: MUTED, fontSize: 12, marginLeft: 'auto' }}>共 {visibleItems.length} 个档案</span>
         </div>
       </section>
@@ -523,64 +620,78 @@ export default function DmWall() {
             <DmRelationshipGraph items={visibleItems as DmGraphDossier[]} />
           </Suspense>
         ) : (
-          <div className="dm-dossier-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
-            {visibleItems.map(item => {
-              const kind = normalizeEntityType(item.entity_type);
-              const dossierHref = kind === 'store' ? `/stores/${encodeURIComponent(item.id)}` : `/dm/${encodeURIComponent(item.id)}`;
-              const displayTags = dossierDisplayTags(item);
-              const hasRatings = kind === 'dm' && item.rating_summary && item.rating_summary.player_count > 0 && item.rating_summary.avg !== null;
-              const affiliationText = dmAffiliationLabel({
-                affiliation: item.affiliation,
-                claimStatus: item.claim_status,
-                employmentStatus: item.employment_status,
-              });
-              const showClaimStatus = ['approved', 'pending', 'withdrawn'].includes(item.claim_status || '');
-              return (
-                <article key={item.id} className="dm-dossier-card" style={cardStyle}>
-                  <Link to={dossierHref} aria-label={`查看${item.dm_name}${kind === 'store' ? '店家' : 'DM'}专属页`} style={cardOverlayLinkStyle} />
-                  <div className="dm-dossier-summary">
-                    <img className="dm-dossier-photo" src={item.photo_url || generatedAvatarDataUrl(item.dm_name, item.id)} alt="" style={{ objectPosition: `${item.photo_focus_x ?? 50}% ${item.photo_focus_y ?? 25}%` }} />
-                    <div className="dm-dossier-summary-copy">
-                      <div className="dm-dossier-title-row" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap', overflow: 'hidden', marginBottom: 6 }}>
-                        <h2 style={{ margin: 0, fontSize: 17, flex: '0 0 auto' }}>{item.dm_name}</h2>
-                        <span className="dm-dossier-inline-meta" title={`${item.city || '未知城市'} · ${affiliationText}`} style={{ minWidth: 0, flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: MUTED, fontSize: 11.5, fontWeight: 700 }}>
-                          {item.city || '未知城市'} · {affiliationText}
-                        </span>
-                        {showClaimStatus && <span className="dm-dossier-status-badge" style={{ ...badgeStyle, flex: '0 0 auto', color: item.claim_status === 'approved' ? '#15803d' : item.claim_status === 'withdrawn' ? '#9f1239' : GOLD, background: item.claim_status === 'approved' ? 'rgba(220,252,231,0.72)' : item.claim_status === 'withdrawn' ? 'rgba(255,228,230,0.76)' : 'rgba(166,106,31,0.10)' }}>
-                          {dmClaimLabel(item.claim_status)}
-                        </span>}
-                        {item.claim_status !== 'approved' && item.claim_status !== 'pending' && item.claim_status !== 'withdrawn' && (
-                          <button type="button" title="本人认领" onClick={() => openClaim(item)} style={{ ...claimButtonStyle, flex: '0 0 auto' }}>
-                            认领
-                          </button>
-                        )}
-                      </div>
-                      {item.note && <p className="dm-dossier-note" style={{ margin: 0, color: 'rgba(31,41,55,0.74)', lineHeight: 1.55, fontSize: 13 }}>{item.note}</p>}
-                    </div>
-                  </div>
-                  {hasRatings && item.rating_summary && (
-                    <div className="dm-dossier-rating-line" style={{ display: 'flex', alignItems: 'center', gap: 7, color: MUTED, fontSize: 12, marginBottom: 8, whiteSpace: 'nowrap' }}>
-                      <strong style={{ color: '#9a5f18', fontSize: 13 }}>★ {item.rating_summary.avg?.toFixed(1)}</strong>
-                      <span>{item.rating_summary.player_count} 位玩家</span>
-                      <span>{item.rating_summary.review_count} 次体验</span>
-                      {item.rating_summary.sample_status === 'insufficient' && <span style={{ color: '#b45309' }}>样本较少</span>}
-                    </div>
-                  )}
-                  {displayTags.length > 0 && (
-                    <div className="dm-dossier-tags" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-                      {displayTags.slice(0, 6).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}
-                    </div>
-                  )}
-                  <div className="dm-dossier-actions" style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'nowrap', marginTop: 'auto' }}>
-                    {kind === 'dm' && <Link to={`/dm/rate?dmId=${encodeURIComponent(item.id)}`} title="写一条评价" style={compactGhostButton}>＋评价</Link>}
-                    {item.profile_url && <SocialPlatformLink url={item.profile_url} />}
-                    {item.claim_status === 'approved' && item.claimed_by
-                      ? (kind === 'dm' ? <InternalProfileLink to={`/explore/${item.claimed_by}`} /> : null)
-                      : null}
-                  </div>
-                </article>
-              );
-            })}
+          <div className={`dm-directory-workspace${selectedItem ? ' is-detail-open' : ''}`}>
+            <aside className="dm-city-index" aria-label="城市索引">
+              <div className="dm-city-index-heading">
+                <strong>城市</strong>
+                <span>{items.length}</span>
+              </div>
+              <button type="button" className={city === 'all' ? 'is-active' : ''} onClick={() => { setCity('all'); resetDirectoryPage(); }}>
+                <span>全部城市</span>
+                <b>{items.length}</b>
+              </button>
+              {cityFacets.slice(0, 12).map(facet => (
+                <button key={facet.label} type="button" className={city === facet.label ? 'is-active' : ''} onClick={() => { setCity(facet.label); resetDirectoryPage(); }}>
+                  <span>{facet.label}</span>
+                  <b>{facet.count}</b>
+                </button>
+              ))}
+              {cityFacets.length > 12 && <span className="dm-city-index-more">更多城市可在上方搜索</span>}
+            </aside>
+
+            <section className="dm-directory-list-panel" aria-label="DM档案列表">
+              <div className="dm-directory-table-head" aria-hidden="true">
+                <span>#</span>
+                <span>DM信息</span>
+                <span>认证 / 状态</span>
+                <span>城市 / 店家</span>
+                <span>代表剧本 / 擅长领域</span>
+                <span>综合评分</span>
+                <span>体验 / 评分人</span>
+              </div>
+              <div className="dm-directory-rows" role="list">
+                {pagedItems.map((item, index) => (
+                  <DmDirectoryRow
+                    key={item.id}
+                    item={item}
+                    index={(page - 1) * DM_DIRECTORY_PAGE_SIZE + index + 1}
+                    selected={activeSelectedId === item.id}
+                    onSelect={() => { setSelectedId(item.id); setDetailDismissed(false); }}
+                  />
+                ))}
+              </div>
+              <nav className="dm-directory-pagination" aria-label="DM档案分页">
+                <span>共 {visibleItems.length} 条</span>
+                <div>
+                  <button type="button" disabled={page === 1} onClick={() => changeDirectoryPage(page - 1)}>上一页</button>
+                  {Array.from({ length: pageCount }, (_, index) => index + 1).map(pageNumber => (
+                    <button
+                      key={pageNumber}
+                      type="button"
+                      className={pageNumber === page ? 'is-active' : ''}
+                      aria-current={pageNumber === page ? 'page' : undefined}
+                      onClick={() => changeDirectoryPage(pageNumber)}
+                    >
+                      {pageNumber}
+                    </button>
+                  ))}
+                  <button type="button" disabled={page === pageCount} onClick={() => changeDirectoryPage(page + 1)}>下一页</button>
+                </div>
+              </nav>
+            </section>
+
+            {selectedItem && (
+              <>
+                <button className="dm-detail-backdrop" type="button" aria-label="关闭DM档案预览" onClick={() => { setSelectedId(''); setDetailDismissed(true); }} />
+                <DmDirectoryDetail
+                  item={selectedItem}
+                  detail={selectedDetail}
+                  loading={selectedDetailLoading}
+                  onClose={() => { setSelectedId(''); setDetailDismissed(true); }}
+                  onClaim={() => openClaim(selectedItem)}
+                />
+              </>
+            )}
           </div>
         )}
       <DossierClaimModal
@@ -595,154 +706,192 @@ export default function DmWall() {
           loadDossiers();
         }}
       />
-      <style>{`
-        .dm-dossier-summary {
-          display: block;
-          margin-bottom: 10px;
-        }
-        .dm-dossier-photo {
-          display: block;
-          width: 100%;
-          aspect-ratio: 16 / 9;
-          object-fit: cover;
-          border-radius: 8px;
-          border: 1px solid rgba(31,41,55,0.06);
-          background: #fffaf2;
-          margin-bottom: 10px;
-        }
-        .dm-dossier-note {
-          display: -webkit-box;
-          overflow: hidden;
-          -webkit-box-orient: vertical;
-          -webkit-line-clamp: 2;
-        }
-        .dm-filter-toolbar {
-          display: grid;
-          grid-template-columns: minmax(120px, 145px) minmax(190px, 1fr) auto minmax(120px, 145px) 118px 120px 112px 140px auto;
-          gap: 8px;
-          align-items: center;
-        }
-        .dm-filter-toolbar input,
-        .dm-filter-toolbar select {
-          height: 38px !important;
-          padding: 0 10px !important;
-          border-radius: 8px !important;
-        }
-        .dm-filter-toolbar [role="switch"],
-        .dm-filter-toolbar [aria-label="展示方式"] {
-          height: 38px !important;
-        }
-        .dm-filter-toolbar .dm-filter-city-link {
-          min-height: 38px !important;
-          padding: 0 10px !important;
-          white-space: nowrap;
-        }
-        .dm-filter-count {
-          white-space: nowrap;
-        }
-        @media (max-width: 1180px) {
-          .dm-filter-toolbar {
-            grid-template-columns: minmax(120px, 1fr) minmax(180px, 2fr) minmax(180px, 2fr) auto auto;
-          }
-          .dm-filter-query {
-            grid-column: span 2;
-          }
-          .dm-filter-count {
-            text-align: right;
-          }
-        }
-        @media (max-width: 640px) {
-          .dm-dossier-filter-panel {
-            padding: 8px !important;
-          }
-          .dm-filter-toolbar {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px !important;
-          }
-          .dm-filter-toolbar > * {
-            box-sizing: border-box;
-            min-width: 0 !important;
-            width: 100% !important;
-          }
-          .dm-filter-query {
-            grid-column: auto;
-          }
-          .dm-filter-city-link {
-            justify-content: center;
-          }
-          .dm-filter-count {
-            margin-left: 0 !important;
-            text-align: right;
-          }
-          .dm-dossier-grid {
-            grid-template-columns: 1fr !important;
-            gap: 9px !important;
-          }
-          .dm-dossier-card {
-            padding: 8px !important;
-          }
-          .dm-dossier-summary {
-            display: grid;
-            grid-template-columns: 72px minmax(0, 1fr);
-            gap: 8px;
-            align-items: start;
-            margin-bottom: 5px;
-          }
-          .dm-dossier-photo {
-            width: 72px;
-            height: 72px;
-            aspect-ratio: 1;
-            margin: 0;
-          }
-          .dm-dossier-title-row {
-            gap: 5px !important;
-            margin-bottom: 4px !important;
-          }
-          .dm-dossier-title-row h2 {
-            font-size: 16px !important;
-          }
-          .dm-dossier-title-row .dm-dossier-status-badge {
-            padding: 2px 6px !important;
-            font-size: 10px !important;
-          }
-          .dm-dossier-location,
-          .dm-dossier-note {
-            font-size: 12px !important;
-            line-height: 1.45 !important;
-          }
-          .dm-dossier-location {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-          }
-          .dm-dossier-note {
-            -webkit-line-clamp: 1 !important;
-          }
-          .dm-dossier-tags > :nth-child(n + 3) {
-            display: none !important;
-          }
-          .dm-dossier-rating-line {
-            margin-bottom: 4px !important;
-            overflow-x: auto;
-            scrollbar-width: none;
-          }
-          .dm-dossier-tags {
-            margin-bottom: 4px !important;
-          }
-          .dm-dossier-actions {
-            overflow-x: auto;
-            scrollbar-width: none;
-          }
-        }
-      `}</style>
     </JumuluPageFrame>
   );
+}
+
+function DmDirectoryRow({ item, index, selected, onSelect }: {
+  item: DmDossier;
+  index: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const displayTags = dossierDisplayTags(item);
+  const scripts = item.common_scripts || [];
+  const summary = item.rating_summary;
+  const hasRatings = Boolean(summary && summary.player_count > 0 && summary.avg !== null);
+  const affiliationText = dmAffiliationLabel({
+    affiliation: item.affiliation,
+    claimStatus: item.claim_status,
+    employmentStatus: item.employment_status,
+  });
+  const statusVisible = ['approved', 'pending', 'withdrawn'].includes(item.claim_status || '');
+  const workPrimary = scripts.length > 0
+    ? scripts.slice(0, 2).map(script => `《${script.name}》`).join(' ')
+    : displayTags.slice(0, 2).join(' · ') || item.note || '资料待补充';
+  const workSecondary = scripts.length > 0
+    ? displayTags.slice(0, 3).join(' · ') || item.note || '擅长领域待补充'
+    : item.note || displayTags.slice(2, 5).join(' · ') || '更多资料待补充';
+
+  return (
+    <button
+      type="button"
+      role="listitem"
+      className={`dm-directory-row${selected ? ' is-selected' : ''}`}
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
+      <span className="dm-row-index">{index}</span>
+      <span className="dm-row-identity">
+        <img
+          src={dossierPhotoUrl(item)}
+          alt=""
+          style={{ objectPosition: `${item.photo_focus_x ?? 50}% ${item.photo_focus_y ?? 25}%` }}
+        />
+        <span className="dm-row-identity-copy">
+          <span className="dm-row-name-line">
+            <strong>{item.dm_name}</strong>
+            {item.chanto_summary && item.chanto_summary.total > 0 && <small>缠头 {item.chanto_summary.total}</small>}
+          </span>
+          <span className="dm-row-traits">{displayTags.slice(0, 3).join(' · ') || item.note || '档案资料待补充'}</span>
+        </span>
+      </span>
+      <span className="dm-row-status">
+        {statusVisible ? (
+          <b className={`is-${item.claim_status}`}>{dmClaimLabel(item.claim_status)}</b>
+        ) : (
+          <b className="is-unclaimed">未认证</b>
+        )}
+        <small>{item.affiliation?.status === 'approved' ? '任职已确认' : item.affiliation?.status === 'pending' ? '任职待确认' : '公开档案'}</small>
+      </span>
+      <span className="dm-row-location">
+        <strong>{item.city || '未知城市'}</strong>
+        <small title={affiliationText}>{item.workplace || affiliationText}</small>
+      </span>
+      <span className="dm-row-work">
+        <strong>{workPrimary}</strong>
+        <small>{workSecondary}</small>
+      </span>
+      <span className="dm-row-score">
+        <strong>{hasRatings ? summary?.avg?.toFixed(1) : '—'}</strong>
+        <small>{hasRatings ? '综合评分' : '暂无评分'}</small>
+      </span>
+      <span className="dm-row-counts">
+        <strong>{summary?.review_count || 0} 次体验</strong>
+        <small>{summary?.player_count || 0} 位玩家</small>
+      </span>
+    </button>
+  );
+}
+
+function DmDirectoryDetail({ item, detail, loading, onClose, onClaim }: {
+  item: DmDossier;
+  detail: DmDossierDetail | null;
+  loading: boolean;
+  onClose: () => void;
+  onClaim: () => void;
+}) {
+  const summary = item.rating_summary;
+  const displayTags = dossierDisplayTags(item);
+  const scripts = item.common_scripts || [];
+  const ratingExcerpt = detail?.ratings?.find(rating => rating.content?.trim());
+  const affiliationText = dmAffiliationLabel({
+    affiliation: item.affiliation,
+    claimStatus: item.claim_status,
+    employmentStatus: item.employment_status,
+  });
+  const statusVisible = ['approved', 'pending', 'withdrawn'].includes(item.claim_status || '');
+  const photoCount = Math.max(item.photo_files?.length || 0, item.photo_url ? 1 : 0);
+
+  return (
+    <aside className="dm-directory-detail" aria-label={`${item.dm_name}档案预览`}>
+      <div className="dm-detail-scroll">
+        <div className="dm-detail-hero">
+          <img
+            src={dossierPhotoUrl(item)}
+            alt={`${item.dm_name}的档案照片`}
+            style={{ objectPosition: `${item.photo_focus_x ?? 50}% ${item.photo_focus_y ?? 25}%` }}
+          />
+          <div className="dm-detail-photo-meta">
+            <span>{statusVisible ? dmClaimLabel(item.claim_status) : '公开档案'}</span>
+            <span>{photoCount > 0 ? `图集 ${photoCount} 张` : '暂无本人照片'}</span>
+          </div>
+          <button type="button" className="dm-detail-close" aria-label="关闭档案预览" onClick={onClose}>关闭</button>
+        </div>
+
+        <section className="dm-detail-intro">
+          <div>
+            <h2>{item.dm_name}</h2>
+            <p>{item.city || '未知城市'} · {item.workplace || affiliationText}</p>
+            <small>{summary?.review_count || 0} 次体验 · {summary?.player_count || 0} 位玩家</small>
+          </div>
+          <div className="dm-detail-score">
+            <strong>{summary?.avg !== null && summary?.avg !== undefined ? summary.avg.toFixed(1) : '—'}</strong>
+            <span>综合评分</span>
+          </div>
+        </section>
+
+        <section className="dm-detail-section">
+          <div className="dm-detail-section-heading">
+            <h3>代表剧本</h3>
+            <span>{scripts.length > 0 ? `共 ${scripts.length} 个` : '待补充'}</span>
+          </div>
+          {scripts.length > 0 ? (
+            <div className="dm-detail-script-list">
+              {scripts.slice(0, 4).map(script => <span key={script.id || script.name}>《{script.name}》</span>)}
+            </div>
+          ) : (
+            <p className="dm-detail-empty">这份档案还没有补充代表剧本。</p>
+          )}
+        </section>
+
+        <section className="dm-detail-section">
+          <div className="dm-detail-section-heading">
+            <h3>擅长特点</h3>
+            <span>{displayTags.length > 0 ? `${displayTags.length} 项` : '待补充'}</span>
+          </div>
+          {displayTags.length > 0 ? (
+            <div className="dm-detail-tags">
+              {displayTags.slice(0, 8).map(tag => <span key={tag}>{tag}</span>)}
+            </div>
+          ) : (
+            <p className="dm-detail-empty">暂时还没有形成稳定的玩家标签。</p>
+          )}
+        </section>
+
+        <section className="dm-detail-section">
+          <div className="dm-detail-section-heading">
+            <h3>玩家评价摘要</h3>
+            {ratingExcerpt && <strong>{Number(ratingExcerpt.rating || 0).toFixed(1)}</strong>}
+          </div>
+          <blockquote className="dm-detail-review">
+            {loading ? '正在读取最近评价…' : ratingExcerpt?.content || item.note || '暂时还没有公开的文字评价。'}
+          </blockquote>
+          {ratingExcerpt?.script_name && <small className="dm-detail-review-source">来自《{ratingExcerpt.script_name}》的体验记录</small>}
+        </section>
+      </div>
+
+      <div className="dm-detail-actions">
+        <Link to={`/dm/${encodeURIComponent(item.id)}`} className="dm-detail-secondary-action">查看完整档案</Link>
+        <Link to={`/dm/rate?dmId=${encodeURIComponent(item.id)}`} className="dm-detail-primary-action">去评分</Link>
+        {item.claim_status !== 'approved' && item.claim_status !== 'pending' && item.claim_status !== 'withdrawn' && (
+          <button type="button" className="dm-detail-text-action" onClick={onClaim}>本人认领</button>
+        )}
+        {item.profile_url && <SocialPlatformLink url={item.profile_url} />}
+        {item.claim_status === 'approved' && item.claimed_by && <InternalProfileLink to={`/explore/${item.claimed_by}`} />}
+      </div>
+    </aside>
+  );
+}
+
+function dossierPhotoUrl(item: DmDossier) {
+  return item.photo_url || item.photo_files?.[0]?.url || generatedAvatarDataUrl(item.dm_name, item.id);
 }
 
 function ViewModeSwitch({ value, onChange }: { value: ViewMode; onChange: (value: ViewMode) => void }) {
   return (
     <div aria-label="展示方式" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', width: 152, height: 42, padding: 3, borderRadius: 8, border: '1px solid rgba(31,41,55,0.12)', background: '#f8fafc' }}>
-      {([['cards', '卡片'], ['graph', '关系图']] as const).map(([mode, label]) => (
+      {([['cards', '列表'], ['graph', '关系图']] as const).map(([mode, label]) => (
         <button
           key={mode}
           type="button"
@@ -882,11 +1031,5 @@ const segmentButton = (active: boolean): React.CSSProperties => ({
 });
 const primaryButton: React.CSSProperties = { ...jumuluPrimaryLinkStyle, minHeight: 36, padding: '0 12px' };
 const ghostButton: React.CSSProperties = { ...jumuluSecondaryLinkStyle, minHeight: 36, padding: '0 12px' };
-const compactGhostButton: React.CSSProperties = { ...jumuluSecondaryLinkStyle, minHeight: 28, padding: '0 8px', borderRadius: 7, fontSize: 11 };
 const formCard: React.CSSProperties = { ...jumuluCardStyle, padding: 16 };
-const cardStyle: React.CSSProperties = { ...jumuluCardStyle, position: 'relative', display: 'flex', flexDirection: 'column', padding: 14, minHeight: 0 };
-const cardOverlayLinkStyle: React.CSSProperties = { position: 'absolute', inset: 0, zIndex: 1, borderRadius: 8 };
-const badgeStyle: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, border: '1px solid rgba(166,106,31,0.14)', fontSize: 12, fontWeight: 900 };
-const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.88)', color: '#275389', fontSize: 12, fontWeight: 800 };
-const claimButtonStyle: React.CSSProperties = { position: 'relative', zIndex: 2, padding: '4px 7px', borderRadius: 5, border: '1px solid rgba(166,106,31,0.22)', background: '#fffdf8', color: '#8a5a19', fontSize: 11, fontWeight: 900, cursor: 'pointer' };
 const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 8, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };
