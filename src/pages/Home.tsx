@@ -157,7 +157,7 @@ export default function Home() {
   };
 
   const featuredPhoto = featuredDm?.photo_url || generatedAvatarDataUrl(featuredDm?.dm_name || '剧幕录', featuredDm?.id || 'jumulu');
-  const featuredTags = [...(featuredDm?.rating_tags || []), ...(featuredDm?.tags || [])].filter(Boolean).slice(0, 4);
+  const featuredTags = [...new Set([...(featuredDm?.rating_tags || []), ...(featuredDm?.tags || [])].filter(Boolean))].slice(0, 4);
 
   return (
     <main className="home-product">

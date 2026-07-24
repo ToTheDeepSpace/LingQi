@@ -12,10 +12,11 @@ type OpenMenu = 'community' | 'account' | null;
 const PRIMARY_LINKS = [
   { to: '/dm', label: 'DM百科' },
   { to: '/commissions', label: 'DM委托' },
+  { to: '/rankings', label: '红黑榜' },
+  { to: '/scripts', label: '角色点评' },
 ] as const;
 
 const COMMUNITY_LINKS = [
-  { to: '/rankings', label: '红黑榜', description: '围绕 DM、店家和剧本讨论具体事件' },
   { to: '/carpools', label: '拼车区', description: '按日期、城市和剧本寻找同场玩家' },
   { to: '/guides', label: '玩家攻略', description: '查找和发布真实玩家经验' },
 ] as const;
@@ -189,16 +190,26 @@ export default function Navbar() {
             <BrandLogo />
           </Link>
         ) : (
-          <button
-            type="button"
-            className="site-back-button"
-            onClick={goBack}
-            aria-label="返回上一级"
-          >
-            <span className="site-back-chevron" aria-hidden="true">‹</span>
-            <span>返回</span>
-            <span className="site-back-location">· {currentPageLabel}</span>
-          </button>
+          <div className="site-nav-origin">
+            <button
+              type="button"
+              className="site-back-button"
+              onClick={goBack}
+              aria-label="返回上一级"
+            >
+              <span className="site-back-chevron" aria-hidden="true">‹</span>
+              <span>返回</span>
+              <span className="site-back-location">· {currentPageLabel}</span>
+            </button>
+            <Link
+              to="/"
+              className="site-home-link"
+              onMouseEnter={() => preloadRoute('/')}
+              onFocus={() => preloadRoute('/')}
+            >
+              首页
+            </Link>
+          </div>
         )}
 
         <div className="site-nav-primary">
@@ -349,9 +360,15 @@ export default function Navbar() {
           text-decoration: none;
           border-radius: 6px;
         }
+        .site-nav-origin {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 3px;
+        }
         .site-back-button {
           min-width: 0;
-          max-width: 190px;
+          max-width: 168px;
           display: inline-flex;
           align-items: center;
           gap: 2px;
@@ -367,6 +384,23 @@ export default function Navbar() {
           line-height: 1;
           cursor: pointer;
           white-space: nowrap;
+        }
+        .site-home-link {
+          flex: 0 0 auto;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 32px;
+          border-left: 1px solid rgba(31, 41, 55, 0.1);
+          padding: 0 7px 0 10px;
+          color: rgba(71, 85, 105, 0.74);
+          text-decoration: none;
+          font-size: 12px;
+          font-weight: 850;
+          white-space: nowrap;
+        }
+        .site-home-link:hover {
+          color: #275389;
         }
         .site-back-chevron {
           flex: 0 0 auto;
@@ -626,6 +660,16 @@ export default function Navbar() {
           }
           .site-back-location {
             display: none;
+          }
+          .site-back-button {
+            max-width: none;
+            margin-left: -4px;
+            padding-right: 3px;
+          }
+          .site-home-link {
+            min-height: 30px;
+            padding: 0 4px 0 7px;
+            font-size: 11px;
           }
           .site-nav-primary,
           .site-nav-actions {
