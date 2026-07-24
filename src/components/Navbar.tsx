@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { isTokenExpired, readStoredCreatorAuth, type StoredCreatorAuth } from '../lib/authSession';
 import { preloadRoute } from '../lib/routePreload';
 import BrandLogo from './BrandLogo';
@@ -51,6 +51,7 @@ function readAuthSnapshot() {
 
 export default function Navbar() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const navRef = useRef<HTMLElement>(null);
   const [authSnapshot, setAuthSnapshot] = useState(readAuthSnapshot);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
@@ -63,6 +64,8 @@ export default function Navbar() {
   const identity = creatorAuth?.display_name || creatorAuth?.phone || creatorAuth?.email || (isAdmin ? '管理员' : '用户');
   const identityInitial = identity.trim().slice(0, 1) || '剧';
   const communityActive = COMMUNITY_LINKS.some(item => isNavPathActive(pathname, item.to));
+  const isHome = pathname === '/';
+  const currentPageLabel = locationLabelFor(pathname);
 
   useEffect(() => {
     const syncAuth = () => setAuthSnapshot(readAuthSnapshot());
@@ -134,18 +137,40 @@ export default function Navbar() {
     };
   }, [adminToken]);
 
+  const goBack = () => {
+    const historyState = window.history.state as { idx?: number } | null;
+    if (historyState?.idx && historyState.idx > 0) {
+      navigate(-1);
+      return;
+    }
+    navigate(fallbackPathFor(pathname));
+  };
+
   return (
     <nav ref={navRef} className="site-nav" aria-label="主导航">
       <div className="site-nav-shell">
-        <Link
-          className="site-brand-link"
-          to="/"
-          aria-label="剧幕录首页"
-          onMouseEnter={() => preloadRoute('/')}
-          onFocus={() => preloadRoute('/')}
-        >
-          <BrandLogo />
-        </Link>
+        {isHome ? (
+          <Link
+            className="site-brand-link"
+            to="/"
+            aria-label="剧幕录首页"
+            onMouseEnter={() => preloadRoute('/')}
+            onFocus={() => preloadRoute('/')}
+          >
+            <BrandLogo />
+          </Link>
+        ) : (
+          <button
+            type="button"
+            className="site-back-button"
+            onClick={goBack}
+            aria-label="返回上一级"
+          >
+            <span className="site-back-chevron" aria-hidden="true">‹</span>
+            <span>返回</span>
+            <span className="site-back-location">· {currentPageLabel}</span>
+          </button>
+        )}
 
         <div className="site-nav-primary">
           {PRIMARY_LINKS.map(item => <DesktopNavLink key={item.to} to={item.to} onNavigate={() => setOpenMenu(null)}>{item.label}</DesktopNavLink>)}
@@ -281,7 +306,42 @@ export default function Navbar() {
           text-decoration: none;
           border-radius: 6px;
         }
+        .site-back-button {
+          min-width: 0;
+          max-width: 190px;
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          border: 0;
+          border-radius: 10px;
+          background: transparent;
+          margin-left: -6px;
+          padding: 8px 6px;
+          color: #275389;
+          font: inherit;
+          font-size: 0.9rem;
+          font-weight: 800;
+          line-height: 1;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        .site-back-chevron {
+          flex: 0 0 auto;
+          font-size: 28px;
+          font-weight: 900;
+          line-height: 0.8;
+          transform: translateY(-1px);
+        }
+        .site-back-location {
+          min-width: 0;
+          overflow: hidden;
+          color: rgba(71, 85, 105, 0.58);
+          font-weight: 760;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
         .site-brand-link:focus-visible,
+        .site-back-button:focus-visible,
         .site-nav a:focus-visible,
         .site-nav button:focus-visible {
           outline: 2px solid rgba(39, 83, 137, 0.5);
@@ -500,6 +560,9 @@ export default function Navbar() {
           .site-brand-link strong {
             font-size: 1.02rem !important;
           }
+          .site-back-location {
+            display: none;
+          }
           .site-nav-primary,
           .site-nav-actions {
             display: none;
@@ -649,4 +712,73 @@ function isNavPathActive(pathname: string, to: string) {
   if (to === '/scripts/contribute') return pathname.startsWith('/scripts/contribute');
   if (to === '/rankings') return pathname.startsWith('/rankings') || pathname.startsWith('/reputation');
   return pathname === to || pathname.startsWith(`${to}/`);
+}
+
+function locationLabelFor(pathname: string) {
+  if (pathname === '/') return '首页';
+  if (pathname.startsWith('/dm/rate')) return '给DM评分';
+  if (pathname.startsWith('/dm/') && pathname !== '/dm-wall') return 'DM档案';
+  if (pathname === '/dm' || pathname === '/dm-wall') return 'DM评分';
+  if (pathname.startsWith('/chanto')) return '缠头榜';
+  if (pathname.startsWith('/stores/rate')) return '给店家评分';
+  if (pathname.startsWith('/stores/')) return '店家详情';
+  if (pathname === '/stores') return '店家评分';
+  if (pathname.startsWith('/commissions/new')) return '发布委托';
+  if (pathname.startsWith('/commissions')) return '委托需求';
+  if (pathname.startsWith('/carpools/new')) return '发布拼车';
+  if (pathname.startsWith('/carpools')) return '拼车区';
+  if (pathname.startsWith('/rankings/new')) return '发布评价';
+  if (pathname.startsWith('/rankings')) return '红黑榜';
+  if (pathname.startsWith('/reputation/city')) return '城市口碑';
+  if (pathname.startsWith('/reputation/dossier')) return '口碑档案';
+  if (pathname.startsWith('/scripts/rate')) return '添加角色评分';
+  if (pathname.startsWith('/scripts/roles/')) return '角色评分详情';
+  if (pathname.startsWith('/scripts/contribute')) return '维护剧本库';
+  if (pathname.startsWith('/scripts')) return '角色点评';
+  if (pathname.startsWith('/guides/new')) return '发布攻略';
+  if (pathname.startsWith('/guides/income')) return '创作者收入';
+  if (pathname.startsWith('/income')) return '创作者收入';
+  if (pathname.startsWith('/guides')) return '攻略交易';
+  if (pathname.startsWith('/dashboard/services/availability')) return '可约档期';
+  if (pathname.startsWith('/dashboard/services/works')) return '作品集';
+  if (pathname.startsWith('/dashboard/services')) return '服务管理';
+  if (pathname.startsWith('/dashboard/profile')) return '公开资料';
+  if (pathname.startsWith('/dashboard/account')) return '账号安全';
+  if (pathname.startsWith('/dashboard/posts')) return '我的发布';
+  if (pathname.startsWith('/dashboard')) return '我的主页';
+  if (pathname.startsWith('/wallet')) return '钱包';
+  if (pathname.startsWith('/referrals')) return '我的邀请';
+  if (pathname.startsWith('/certification')) return '身份认证';
+  if (pathname.startsWith('/shop/dashboard')) return '店家后台';
+  if (pathname.startsWith('/admin')) return '管理后台';
+  if (pathname.startsWith('/login')) return '登录注册';
+  if (pathname.startsWith('/contact')) return '建议反馈';
+  if (pathname.startsWith('/rules')) return '审核规则';
+  if (pathname.startsWith('/roadmap')) return '口碑路线图';
+  return '剧幕录';
+}
+
+function fallbackPathFor(pathname: string) {
+  if (pathname.startsWith('/dm/rate') || (pathname.startsWith('/dm/') && pathname !== '/dm-wall') || pathname.startsWith('/chanto')) return '/dm';
+  if (pathname.startsWith('/stores/')) return '/stores';
+  if (pathname.startsWith('/reputation/dossier')) return '/reputation/city';
+  if (pathname.startsWith('/reputation')) return '/rankings';
+  if (pathname.startsWith('/explore/')) return '/explore';
+  if (pathname.startsWith('/scripts/')) return '/scripts';
+  if (pathname.startsWith('/boundary-votes')) return '/roadmap';
+  if (pathname.startsWith('/wallet') || pathname.startsWith('/referrals') || pathname.startsWith('/certification') || pathname.startsWith('/income')) return '/dashboard';
+  if (pathname.startsWith('/shop/dashboard')) return '/dashboard';
+  if (pathname.startsWith('/commissions/new')) return '/commissions';
+  if (pathname.startsWith('/carpools/new')) return '/carpools';
+  if (pathname.startsWith('/rankings/new')) return '/rankings';
+  if (
+    pathname.startsWith('/rules') ||
+    pathname.startsWith('/moderation') ||
+    pathname.startsWith('/terms') ||
+    pathname.startsWith('/privacy') ||
+    pathname.startsWith('/security-assessment') ||
+    pathname.startsWith('/business-license') ||
+    pathname.startsWith('/contact')
+  ) return '/';
+  return '/';
 }
