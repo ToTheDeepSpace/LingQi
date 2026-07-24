@@ -805,6 +805,32 @@
   }
 }
 
+@media (max-width: 820px) {
+  .dm-dossier-filter-panel {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .dm-filter-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dm-filter-toolbar > * {
+    min-width: 0 !important;
+    max-width: 100%;
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+  .dm-filter-query {
+    grid-column: span 2;
+  }
+  .dm-filter-city-link {
+    justify-content: center;
+  }
+  .dm-filter-count {
+    display: none;
+  }
+}
+
 @media (max-width: 640px) {
   .dm-directory-header {
     align-items: flex-start;
