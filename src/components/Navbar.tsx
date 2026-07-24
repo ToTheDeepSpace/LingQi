@@ -10,17 +10,14 @@ const API = '/api';
 type OpenMenu = 'community' | 'account' | null;
 
 const PRIMARY_LINKS = [
-  { to: '/dm', label: 'DM评分' },
-  { to: '/stores', label: '店家评分' },
-  { to: '/scripts', label: '角色点评' },
-  { to: '/scripts/contribute', label: '剧本库' },
+  { to: '/dm', label: 'DM百科' },
+  { to: '/commissions', label: 'DM委托' },
 ] as const;
 
 const COMMUNITY_LINKS = [
-  { to: '/rankings', label: '红黑榜', description: '查看具体事件和相关回应' },
-  { to: '/carpools', label: '拼车区', description: '按日期和城市找同场玩家' },
-  { to: '/commissions', label: '委托需求', description: '发布或承接沉浸式娱乐委托' },
-  { to: '/guides', label: '攻略交易', description: '查找和发布玩家攻略' },
+  { to: '/rankings', label: '红黑榜', description: '围绕 DM、店家和剧本讨论具体事件' },
+  { to: '/carpools', label: '拼车区', description: '按日期、城市和剧本寻找同场玩家' },
+  { to: '/guides', label: '玩家攻略', description: '查找和发布真实玩家经验' },
 ] as const;
 
 function handleLogout() {
@@ -208,7 +205,7 @@ export default function Navbar() {
 
         <div className="site-nav-actions">
           <Link to="/dm/rate" className="site-rate-link" onMouseEnter={() => preloadRoute('/dm/rate')} onFocus={() => preloadRoute('/dm/rate')}>
-            去评分
+            给DM评分
           </Link>
           {isLoggedIn || isAdmin ? (
             <div className="site-nav-menu-anchor">
@@ -240,7 +237,7 @@ export default function Navbar() {
         </div>
 
         <div className="site-nav-mobile-actions">
-          <Link to="/dm/rate" className="site-mobile-rate-link">评分</Link>
+          <Link to="/dm/rate" className="site-mobile-rate-link">给DM评分</Link>
           <button
             type="button"
             className="site-mobile-menu-button"
