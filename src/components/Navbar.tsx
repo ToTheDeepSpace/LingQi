@@ -1,14 +1,27 @@
-import { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import type React from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { isTokenExpired, readStoredCreatorAuth, type StoredCreatorAuth } from '../lib/authSession';
 import { preloadRoute } from '../lib/routePreload';
 import BrandLogo from './BrandLogo';
 
-const BG = 'rgba(255,253,248,0.94)';
-const GOLD = '#d9a857';
-const INK = '#1f2937';
-const MUTED = 'rgba(71,85,105,0.76)';
 const API = '/api';
+
+type OpenMenu = 'community' | 'account' | null;
+
+const PRIMARY_LINKS = [
+  { to: '/dm', label: 'DM评分' },
+  { to: '/stores', label: '店家评分' },
+  { to: '/scripts', label: '角色点评' },
+  { to: '/scripts/contribute', label: '剧本库' },
+] as const;
+
+const COMMUNITY_LINKS = [
+  { to: '/rankings', label: '红黑榜', description: '查看具体事件和相关回应' },
+  { to: '/carpools', label: '拼车区', description: '按日期和城市找同场玩家' },
+  { to: '/commissions', label: '委托需求', description: '发布或承接沉浸式娱乐委托' },
+  { to: '/guides', label: '攻略交易', description: '查找和发布玩家攻略' },
+] as const;
 
 function handleLogout() {
   localStorage.removeItem('lc_creator');
@@ -38,18 +51,18 @@ function readAuthSnapshot() {
 
 export default function Navbar() {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
+  const navRef = useRef<HTMLElement>(null);
   const [authSnapshot, setAuthSnapshot] = useState(readAuthSnapshot);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const { creatorAuth, adminToken } = authSnapshot;
-  const isLoggedIn = !!creatorAuth;
-  const isAdmin = !!adminToken;
+  const isLoggedIn = Boolean(creatorAuth);
+  const isAdmin = Boolean(adminToken);
   const isShop = Boolean(creatorAuth?.verified_shop || creatorAuth?.role === 'shop' || creatorAuth?.identity_roles?.includes('shop'));
-  const isHome = pathname === '/';
-  const mobileIdentity = creatorAuth?.display_name || creatorAuth?.phone || creatorAuth?.email || (isAdmin ? '管理员' : '');
-  const currentPageLabel = locationLabelFor(pathname);
-  const adminActive = pathname.startsWith('/admin');
+  const identity = creatorAuth?.display_name || creatorAuth?.phone || creatorAuth?.email || (isAdmin ? '管理员' : '用户');
+  const identityInitial = identity.trim().slice(0, 1) || '剧';
+  const communityActive = COMMUNITY_LINKS.some(item => isNavPathActive(pathname, item.to));
 
   useEffect(() => {
     const syncAuth = () => setAuthSnapshot(readAuthSnapshot());
@@ -64,17 +77,32 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
+    const closeMenus = (event: PointerEvent) => {
+      if (navRef.current && !navRef.current.contains(event.target as Node)) setOpenMenu(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenMenu(null);
+    };
+    window.addEventListener('pointerdown', closeMenus);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('pointerdown', closeMenus);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
+  useEffect(() => {
     let alive = true;
     if (!adminToken) {
       return () => { alive = false; };
     }
     const loadPending = async () => {
       try {
-        const r = await fetch(`${API}/lc/admin/pending`, { headers: { Authorization: `Bearer ${adminToken}` } });
-        const d = await r.json();
-        if (!alive || !d.success) return;
-        const data = d.data || {};
-        const pendingProfiles = (data.profiles || []).filter((p: { is_visible?: boolean; reject_reason?: string | null }) => !p.is_visible && !p.reject_reason).length;
+        const response = await fetch(`${API}/lc/admin/pending`, { headers: { Authorization: `Bearer ${adminToken}` } });
+        const payload = await response.json();
+        if (!alive || !payload.success) return;
+        const data = payload.data || {};
+        const pendingProfiles = (data.profiles || []).filter((profile: { is_visible?: boolean; reject_reason?: string | null }) => !profile.is_visible && !profile.reject_reason).length;
         const total = pendingProfiles
           + (data.contactRequests || []).length
           + (data.rankings || []).length
@@ -91,9 +119,9 @@ export default function Navbar() {
           + (data.storeRatings || []).length
           + (data.dmIdentityWithdrawals || []).length
           + (data.guides || []).length
-          + (data.guideWithdrawals || []).length;
-        const dmDossierCount = (data.dmDossiers || []).length;
-        setPendingCount(total + dmDossierCount);
+          + (data.guideWithdrawals || []).length
+          + (data.dmDossiers || []).length;
+        setPendingCount(total);
       } catch {
         if (alive) setPendingCount(0);
       }
@@ -106,442 +134,519 @@ export default function Navbar() {
     };
   }, [adminToken]);
 
-  const goBack = () => {
-    const historyState = window.history.state as { idx?: number } | null;
-    if (historyState?.idx && historyState.idx > 0) {
-      navigate(-1);
-      return;
-    }
-    navigate(fallbackPathFor(pathname));
-  };
-
   return (
-    <nav style={{
-      position: 'sticky', top: 0, zIndex: 50,
-      backgroundColor: BG,
-      borderBottom: '1px solid rgba(201,146,46,0.22)',
-      backdropFilter: 'blur(16px)',
-      WebkitBackdropFilter: 'blur(16px)',
-      boxShadow: '0 10px 32px rgba(31,41,55,0.06)',
-    }}>
-      <div style={{
-        width: '100%', boxSizing: 'border-box',
-        padding: '0 16px', height: 64,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 16,
-      }}>
+    <nav ref={navRef} className="site-nav" aria-label="主导航">
+      <div className="site-nav-shell">
+        <Link
+          className="site-brand-link"
+          to="/"
+          aria-label="剧幕录首页"
+          onMouseEnter={() => preloadRoute('/')}
+          onFocus={() => preloadRoute('/')}
+        >
+          <BrandLogo />
+        </Link>
 
-        {/* 首页显示品牌；其他页面统一显示返回上一级。 */}
-        {isHome ? (
-          <Link
-            className="home-return-link"
-            to="/"
-            aria-label="剧幕录首页"
-            style={brandLinkStyle}
-            onMouseEnter={() => preloadRoute('/')}
-            onFocus={() => preloadRoute('/')}
-          >
-            <BrandLogo />
-          </Link>
-        ) : (
-          <button
-            type="button"
-            onClick={goBack}
-            aria-label="返回上一级"
-            style={backButtonStyle}
-          >
-            <span aria-hidden="true" style={backChevronStyle}>‹</span>
-            <span>返回</span>
-            <span className="hidden lg:inline" style={{ color: 'rgba(71,85,105,0.58)', fontWeight: 760 }}>· {currentPageLabel}</span>
-          </button>
-        )}
-
-        <span className="lg:hidden" style={mobileLocationStyle} aria-live="polite">
-          {currentPageLabel}
-        </span>
-
-        {/* 桌面导航 — 右 */}
-        <div className="hidden lg:flex" style={{
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gap: 6,
-          minWidth: 0,
-          flex: '1 1 auto',
-          flexWrap: 'nowrap',
-          whiteSpace: 'nowrap',
-        }}>
-          <NavLink to="/dm">DM评分</NavLink>
-          <NavLink to="/stores">店家评分</NavLink>
-          <NavLink to="/commissions">找/接委托</NavLink>
-          <NavLink to="/carpools">拼车区</NavLink>
-          <NavLink to="/rankings">红黑榜</NavLink>
-          <NavLink to="/scripts">角色点评</NavLink>
-          <NavLink to="/guides">攻略交易</NavLink>
-          {creatorAuth && <IdentityChip tone="user">用户：{creatorAuth.display_name || creatorAuth.phone || creatorAuth.email || '已登录'}</IdentityChip>}
-          {isLoggedIn
-            ? <>
-              <NavLink to="/dashboard">我的主页</NavLink>
-              <NavLink to="/referrals">邀请</NavLink>
-              <NavLink to="/certification">认证</NavLink>
-              {isShop && <NavLink to="/shop/dashboard">店家后台</NavLink>}
-              <button onClick={handleLogout}
-                style={{
-                  padding: '8px 14px', borderRadius: 8, fontSize: '0.85rem',
-                  background: 'rgba(254,242,242,0.78)', border: '1px solid rgba(220,38,38,0.22)', color: '#b91c1c',
-                  cursor: 'pointer', fontWeight: 500, transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(220,38,38,0.42)'; e.currentTarget.style.color = '#991b1b'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(220,38,38,0.22)'; e.currentTarget.style.color = '#b91c1c'; }}>
-                退出
-              </button>
-            </>
-            : !isAdmin && (
-              <Link to="/login" className="btn-gold" style={{ marginLeft: 8, padding: '8px 20px', fontSize: '0.875rem', display: 'inline-block' }}>
-                登录 / 注册
-              </Link>
-            )
-          }
-          <Link to="/admin" style={{
-            marginLeft: 4, padding: '6px 12px', borderRadius: 8, fontSize: '0.78rem',
-            color: adminActive || isAdmin ? '#0F1117' : 'rgba(146,95,24,0.68)',
-            textDecoration: 'none',
-            border: adminActive || isAdmin ? '1px solid rgba(217,168,87,0.75)' : '1px solid rgba(201,146,46,0.15)',
-            background: adminActive || isAdmin ? 'linear-gradient(135deg, #f4c873 0%, #d9a857 100%)' : 'transparent',
-            fontWeight: adminActive || isAdmin ? 900 : 500,
-            transition: 'all 0.2s',
-          }}
-            aria-current={adminActive ? 'page' : undefined}
-            onMouseEnter={e => { if (!isAdmin && !adminActive) { (e.currentTarget as HTMLElement).style.color = GOLD; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.4)'; } }}
-            onMouseLeave={e => { if (!isAdmin && !adminActive) { (e.currentTarget as HTMLElement).style.color = 'rgba(146,95,24,0.68)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201,146,46,0.15)'; } }}>
-            管理{pendingCount > 0 ? `(${pendingCount})` : ''}
-          </Link>
-          {isAdmin && !isLoggedIn && (
-            <button onClick={handleLogout}
-              style={{
-                padding: '7px 12px', borderRadius: 8, fontSize: '0.78rem',
-                background: 'rgba(254,242,242,0.78)', border: '1px solid rgba(220,38,38,0.22)', color: '#b91c1c',
-                cursor: 'pointer', fontWeight: 650, transition: 'all 0.2s',
-              }}>
-              退出
+        <div className="site-nav-primary">
+          {PRIMARY_LINKS.map(item => <DesktopNavLink key={item.to} to={item.to} onNavigate={() => setOpenMenu(null)}>{item.label}</DesktopNavLink>)}
+          <div className="site-nav-menu-anchor">
+            <button
+              type="button"
+              className={`site-nav-link site-nav-menu-button${communityActive ? ' is-active' : ''}`}
+              aria-expanded={openMenu === 'community'}
+              aria-haspopup="menu"
+              onClick={() => setOpenMenu(openMenu === 'community' ? null : 'community')}
+            >
+              社区
+              <span className="site-nav-caret" aria-hidden="true">⌄</span>
             </button>
+            {openMenu === 'community' && (
+              <div className="site-nav-dropdown site-community-menu" role="menu">
+                {COMMUNITY_LINKS.map(item => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    role="menuitem"
+                    className={`site-community-link${isNavPathActive(pathname, item.to) ? ' is-active' : ''}`}
+                    onClick={() => setOpenMenu(null)}
+                    onMouseEnter={() => preloadRoute(item.to)}
+                    onFocus={() => preloadRoute(item.to)}
+                  >
+                    <strong>{item.label}</strong>
+                    <span>{item.description}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="site-nav-actions">
+          <Link to="/dm/rate" className="site-rate-link" onMouseEnter={() => preloadRoute('/dm/rate')} onFocus={() => preloadRoute('/dm/rate')}>
+            去评分
+          </Link>
+          {isLoggedIn || isAdmin ? (
+            <div className="site-nav-menu-anchor">
+              <button
+                type="button"
+                className={`site-account-button${openMenu === 'account' ? ' is-open' : ''}`}
+                aria-expanded={openMenu === 'account'}
+                aria-haspopup="menu"
+                onClick={() => setOpenMenu(openMenu === 'account' ? null : 'account')}
+              >
+                <span className="site-account-avatar" aria-hidden="true">{identityInitial}</span>
+                <span className="site-account-name">{identity}</span>
+                <span className="site-nav-caret" aria-hidden="true">⌄</span>
+              </button>
+              {openMenu === 'account' && (
+                <div className="site-nav-dropdown site-account-menu" role="menu">
+                  {creatorAuth && <AccountMenuLink to="/dashboard" onNavigate={() => setOpenMenu(null)}>我的主页</AccountMenuLink>}
+                  {creatorAuth && <AccountMenuLink to="/certification" onNavigate={() => setOpenMenu(null)}>身份认证</AccountMenuLink>}
+                  {creatorAuth && <AccountMenuLink to="/referrals" onNavigate={() => setOpenMenu(null)}>我的邀请</AccountMenuLink>}
+                  {isShop && <AccountMenuLink to="/shop/dashboard" onNavigate={() => setOpenMenu(null)}>店家后台</AccountMenuLink>}
+                  {isAdmin && <AccountMenuLink to="/admin" onNavigate={() => setOpenMenu(null)}>管理后台{pendingCount > 0 ? `（${pendingCount}）` : ''}</AccountMenuLink>}
+                  <button type="button" role="menuitem" className="site-account-logout" onClick={handleLogout}>退出登录</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link to="/login" className="site-login-link">登录</Link>
           )}
         </div>
 
-        {/* 移动端身份 + 菜单 — 右 */}
-        <div className="flex lg:hidden" style={{ alignItems: 'center', gap: 8, minWidth: 0 }}>
-          {isLoggedIn || isAdmin ? (
-            <Link
-              to={isAdmin ? '/admin' : '/dashboard'}
-              style={mobileIdentityStyle(isAdmin)}
-              onClick={() => setMenuOpen(false)}
-            >
-              <span style={{
-                width: 7, height: 7, borderRadius: 999,
-                background: isAdmin ? '#925f18' : '#15803d',
-                flex: '0 0 auto',
-              }} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {isAdmin ? `管理员${pendingCount > 0 ? ` ${pendingCount}` : ''}` : mobileIdentity}
-              </span>
-            </Link>
-          ) : (
-            <Link to="/login" style={mobileLoginStyle} onClick={() => setMenuOpen(false)}>登录</Link>
-          )}
+        <div className="site-nav-mobile-actions">
+          <Link to="/dm/rate" className="site-mobile-rate-link">评分</Link>
           <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            aria-label={menuOpen ? '关闭菜单' : '打开菜单'}
-            style={{ background: 'rgba(255,250,242,0.84)', border: '1px solid rgba(201,146,46,0.18)', borderRadius: 10, cursor: 'pointer', padding: 8, color: MUTED, display: 'inline-flex' }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              {menuOpen
-                ? <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
-                : <><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></>
-              }
-            </svg>
+            type="button"
+            className="site-mobile-menu-button"
+            aria-expanded={mobileOpen}
+            aria-controls="site-mobile-menu"
+            onClick={() => setMobileOpen(value => !value)}
+          >
+            {mobileOpen ? '关闭' : '菜单'}
           </button>
         </div>
       </div>
 
-      {/* 移动端下拉菜单 */}
-      {menuOpen && (
-        <div style={{
-          backgroundColor: BG,
-          borderTop: '1px solid rgba(201,146,46,0.16)',
-          padding: '12px 20px 16px',
-          boxShadow: '0 18px 36px rgba(31,41,55,0.08)',
-        }}>
-          <MobileLink to="/dm" onClick={() => setMenuOpen(false)}>DM评分</MobileLink>
-          <MobileLink to="/dm/rate" onClick={() => setMenuOpen(false)}>给DM评分</MobileLink>
-          <MobileLink to="/stores" onClick={() => setMenuOpen(false)}>店家评分</MobileLink>
-          <MobileLink to="/commissions" onClick={() => setMenuOpen(false)}>找/接委托</MobileLink>
-          <MobileLink to="/carpools" onClick={() => setMenuOpen(false)}>拼车区</MobileLink>
-          <MobileLink to="/rankings" onClick={() => setMenuOpen(false)}>红黑榜</MobileLink>
-          <MobileLink to="/scripts" onClick={() => setMenuOpen(false)}>角色点评</MobileLink>
-          <MobileLink to="/guides" onClick={() => setMenuOpen(false)}>攻略交易</MobileLink>
-          {creatorAuth && <MobileStatus tone="user">当前用户：{creatorAuth.display_name || creatorAuth.phone || creatorAuth.email || '已登录'}</MobileStatus>}
-          {isAdmin && <MobileStatus tone="admin">管理员已登录{pendingCount > 0 ? `，待审 ${pendingCount}` : ''}</MobileStatus>}
-          {isLoggedIn
-            ? <>
-              <MobileLink to="/dashboard" onClick={() => setMenuOpen(false)}>我的主页</MobileLink>
-              <MobileLink to="/referrals" onClick={() => setMenuOpen(false)}>我的邀请</MobileLink>
-              <MobileLink to="/certification" onClick={() => setMenuOpen(false)}>认证</MobileLink>
-              {isShop && <MobileLink to="/shop/dashboard" onClick={() => setMenuOpen(false)}>店家后台</MobileLink>}
-              <button onClick={() => { setMenuOpen(false); handleLogout(); }}
-                style={{
-                  width: '100%', textAlign: 'left', padding: '10px 0', fontSize: '0.9rem',
-                  background: 'none', border: 'none', borderBottom: '1px solid rgba(201,146,46,0.12)',
-                  color: '#b91c1c', cursor: 'pointer', fontWeight: 500,
-                }}>
-                退出登录
-              </button>
-            </>
-            : <MobileLink to="/login" gold onClick={() => setMenuOpen(false)}>登录 / 注册 →</MobileLink>
-          }
-          <MobileLink to="/admin" gold={isAdmin} onClick={() => setMenuOpen(false)}>管理后台{pendingCount > 0 ? ` (${pendingCount})` : ''}</MobileLink>
+      {mobileOpen && (
+        <div id="site-mobile-menu" className="site-mobile-menu">
+          <div className="site-mobile-primary">
+            {PRIMARY_LINKS.map(item => <MobileNavLink key={item.to} to={item.to} onNavigate={() => setMobileOpen(false)}>{item.label}</MobileNavLink>)}
+          </div>
+          <div className="site-mobile-group">
+            <span className="site-mobile-group-title">社区</span>
+            {COMMUNITY_LINKS.map(item => <MobileNavLink key={item.to} to={item.to} onNavigate={() => setMobileOpen(false)}>{item.label}</MobileNavLink>)}
+          </div>
+          <div className="site-mobile-group">
+            <span className="site-mobile-group-title">账号</span>
+            {creatorAuth ? (
+              <>
+                <MobileNavLink to="/dashboard" onNavigate={() => setMobileOpen(false)}>我的主页</MobileNavLink>
+                <MobileNavLink to="/certification" onNavigate={() => setMobileOpen(false)}>身份认证</MobileNavLink>
+                <MobileNavLink to="/referrals" onNavigate={() => setMobileOpen(false)}>我的邀请</MobileNavLink>
+                {isShop && <MobileNavLink to="/shop/dashboard" onNavigate={() => setMobileOpen(false)}>店家后台</MobileNavLink>}
+              </>
+            ) : !isAdmin && <MobileNavLink to="/login" onNavigate={() => setMobileOpen(false)}>登录 / 注册</MobileNavLink>}
+            {isAdmin && <MobileNavLink to="/admin" onNavigate={() => setMobileOpen(false)}>管理后台{pendingCount > 0 ? `（${pendingCount}）` : ''}</MobileNavLink>}
+            {(isLoggedIn || isAdmin) && <button type="button" className="site-mobile-logout" onClick={handleLogout}>退出登录</button>}
+          </div>
         </div>
       )}
+
+      <style>{`
+        .site-nav {
+          position: sticky;
+          top: 0;
+          z-index: 60;
+          border-bottom: 1px solid rgba(31, 41, 55, 0.08);
+          background: rgba(255, 253, 248, 0.96);
+          color: #1f2937;
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+        }
+        .site-nav-shell {
+          width: 100%;
+          height: 60px;
+          box-sizing: border-box;
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 22px;
+          padding: 0 clamp(16px, 2.2vw, 32px);
+        }
+        .site-brand-link {
+          display: inline-flex;
+          align-items: center;
+          color: #1f2937;
+          text-decoration: none;
+          border-radius: 6px;
+        }
+        .site-brand-link:focus-visible,
+        .site-nav a:focus-visible,
+        .site-nav button:focus-visible {
+          outline: 2px solid rgba(39, 83, 137, 0.5);
+          outline-offset: 3px;
+        }
+        .site-nav-primary,
+        .site-nav-actions {
+          display: flex;
+          align-items: stretch;
+          min-width: 0;
+          height: 100%;
+        }
+        .site-nav-primary {
+          justify-content: flex-start;
+          gap: 4px;
+        }
+        .site-nav-actions {
+          align-items: center;
+          justify-content: flex-end;
+          gap: 10px;
+        }
+        .site-nav-link {
+          position: relative;
+          min-width: 0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          border: 0;
+          background: transparent;
+          padding: 0 13px;
+          color: rgba(71, 85, 105, 0.78);
+          text-decoration: none;
+          font: inherit;
+          font-size: 14px;
+          font-weight: 720;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        .site-nav-link::after {
+          content: "";
+          position: absolute;
+          right: 12px;
+          bottom: 0;
+          left: 12px;
+          height: 2px;
+          background: transparent;
+        }
+        .site-nav-link:hover {
+          color: #1f2937;
+        }
+        .site-nav-link.is-active {
+          color: #925f18;
+          font-weight: 900;
+        }
+        .site-nav-link.is-active::after {
+          background: #b57b21;
+        }
+        .site-nav-menu-anchor {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+        }
+        .site-nav-caret {
+          display: inline-flex;
+          transform: translateY(-1px);
+          font-size: 13px;
+          line-height: 1;
+        }
+        .site-nav-dropdown {
+          position: absolute;
+          top: calc(100% + 8px);
+          right: 0;
+          z-index: 80;
+          border: 1px solid rgba(31, 41, 55, 0.1);
+          border-radius: 8px;
+          background: #fffdf8;
+          box-shadow: 0 16px 34px rgba(31, 41, 55, 0.12);
+          overflow: hidden;
+        }
+        .site-community-menu {
+          right: auto;
+          left: 0;
+          width: 290px;
+          padding: 6px;
+        }
+        .site-community-link {
+          display: grid;
+          gap: 3px;
+          padding: 10px 11px;
+          border-radius: 6px;
+          color: #1f2937;
+          text-decoration: none;
+        }
+        .site-community-link:hover,
+        .site-community-link.is-active {
+          background: rgba(239, 246, 255, 0.92);
+        }
+        .site-community-link strong {
+          font-size: 13px;
+        }
+        .site-community-link span {
+          color: rgba(71, 85, 105, 0.72);
+          font-size: 11px;
+          line-height: 1.45;
+        }
+        .site-rate-link,
+        .site-login-link {
+          min-height: 36px;
+          box-sizing: border-box;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 6px;
+          padding: 0 15px;
+          text-decoration: none;
+          font-size: 13px;
+          font-weight: 900;
+        }
+        .site-rate-link {
+          border: 1px solid #275389;
+          background: #275389;
+          color: #fff;
+        }
+        .site-login-link {
+          border: 1px solid rgba(39, 83, 137, 0.18);
+          background: #fff;
+          color: #275389;
+        }
+        .site-account-button {
+          min-height: 38px;
+          max-width: 190px;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          border: 1px solid transparent;
+          border-radius: 6px;
+          background: transparent;
+          padding: 0 8px 0 5px;
+          color: #1f2937;
+          font: inherit;
+          cursor: pointer;
+        }
+        .site-account-button:hover,
+        .site-account-button.is-open {
+          border-color: rgba(31, 41, 55, 0.09);
+          background: #fff;
+        }
+        .site-account-avatar {
+          width: 28px;
+          height: 28px;
+          flex: 0 0 auto;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          background: #1f2937;
+          color: #fffdf8;
+          font-size: 12px;
+          font-weight: 900;
+        }
+        .site-account-name {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 13px;
+          font-weight: 780;
+        }
+        .site-account-menu {
+          width: 190px;
+          padding: 6px;
+        }
+        .site-account-link,
+        .site-account-logout {
+          width: 100%;
+          box-sizing: border-box;
+          display: flex;
+          align-items: center;
+          min-height: 36px;
+          border: 0;
+          border-radius: 6px;
+          background: transparent;
+          padding: 0 10px;
+          color: #1f2937;
+          text-decoration: none;
+          font: inherit;
+          font-size: 13px;
+          font-weight: 720;
+          cursor: pointer;
+        }
+        .site-account-link:hover {
+          background: rgba(239, 246, 255, 0.9);
+        }
+        .site-account-logout {
+          margin-top: 4px;
+          border-top: 1px solid rgba(31, 41, 55, 0.08);
+          border-radius: 0 0 6px 6px;
+          color: #b91c1c;
+        }
+        .site-nav-mobile-actions,
+        .site-mobile-menu {
+          display: none;
+        }
+        @media (max-width: 980px) {
+          .site-nav-shell {
+            grid-template-columns: minmax(0, 1fr) auto;
+            height: 56px;
+            gap: 10px;
+            padding: 0 12px;
+          }
+          .site-brand-link img {
+            width: 27px !important;
+            height: 27px !important;
+          }
+          .site-brand-link strong {
+            font-size: 1.02rem !important;
+          }
+          .site-nav-primary,
+          .site-nav-actions {
+            display: none;
+          }
+          .site-nav-mobile-actions {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+          }
+          .site-mobile-rate-link,
+          .site-mobile-menu-button {
+            min-height: 34px;
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            padding: 0 11px;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 900;
+            text-decoration: none;
+          }
+          .site-mobile-rate-link {
+            border: 1px solid #275389;
+            background: #275389;
+            color: #fff;
+          }
+          .site-mobile-menu-button {
+            border: 1px solid rgba(39, 83, 137, 0.18);
+            background: #fff;
+            color: #275389;
+          }
+          .site-mobile-menu {
+            max-height: calc(100dvh - 56px);
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            overflow-y: auto;
+            border-top: 1px solid rgba(31, 41, 55, 0.07);
+            background: #fffdf8;
+            padding: 14px 16px 18px;
+          }
+          .site-mobile-primary,
+          .site-mobile-group {
+            min-width: 0;
+            display: grid;
+            align-content: start;
+            gap: 2px;
+          }
+          .site-mobile-group-title {
+            padding: 6px 8px;
+            color: rgba(71, 85, 105, 0.58);
+            font-size: 10px;
+            font-weight: 900;
+          }
+          .site-mobile-link,
+          .site-mobile-logout {
+            min-height: 36px;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            padding: 0 8px;
+            color: rgba(31, 41, 55, 0.82);
+            text-align: left;
+            text-decoration: none;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 700;
+          }
+          .site-mobile-link.is-active {
+            background: rgba(239, 246, 255, 0.9);
+            color: #275389;
+            font-weight: 900;
+          }
+          .site-mobile-logout {
+            color: #b91c1c;
+          }
+        }
+        @media (max-width: 620px) {
+          .site-mobile-menu {
+            grid-template-columns: 1fr 1fr;
+          }
+          .site-mobile-primary {
+            grid-column: 1 / -1;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(31, 41, 55, 0.08);
+          }
+        }
+      `}</style>
     </nav>
   );
 }
 
-const brandLinkStyle: React.CSSProperties = {
-  textDecoration: 'none',
-  display: 'inline-flex',
-  alignItems: 'center',
-  flex: '0 0 auto',
-  minWidth: 0,
-  padding: '7px 10px',
-  borderRadius: 12,
-  border: '1px solid rgba(201,146,46,0.18)',
-  background: 'rgba(255,250,242,0.72)',
-  color: INK,
-  transition: 'transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease',
-  willChange: 'transform',
-};
-
-const backButtonStyle: React.CSSProperties = {
-  appearance: 'none',
-  border: 'none',
-  background: 'transparent',
-  color: '#275389',
-  padding: '8px 6px',
-  marginLeft: -6,
-  borderRadius: 10,
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 2,
-  cursor: 'pointer',
-  fontSize: '0.9rem',
-  fontWeight: 800,
-  lineHeight: 1,
-};
-
-const backChevronStyle: React.CSSProperties = {
-  fontSize: 28,
-  fontWeight: 900,
-  lineHeight: 0.8,
-  transform: 'translateY(-1px)',
-};
-
-const mobileLoginStyle: React.CSSProperties = {
-  maxWidth: 86,
-  padding: '7px 10px',
-  borderRadius: 999,
-  border: '1px solid rgba(201,146,46,0.24)',
-  background: 'rgba(255,250,242,0.92)',
-  color: '#925f18',
-  textDecoration: 'none',
-  fontSize: '0.8rem',
-  fontWeight: 900,
-};
-
-const mobileLocationStyle: React.CSSProperties = {
-  minWidth: 0,
-  flex: '1 1 auto',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  textAlign: 'center',
-  color: '#1f2937',
-  fontSize: '0.82rem',
-  fontWeight: 900,
-};
-
-const mobileIdentityStyle = (admin: boolean): React.CSSProperties => ({
-  maxWidth: 142,
-  minWidth: 0,
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  padding: '7px 10px',
-  borderRadius: 999,
-  border: admin ? '1px solid rgba(217,168,87,0.48)' : '1px solid rgba(22,163,74,0.22)',
-  background: admin ? 'rgba(217,168,87,0.18)' : 'rgba(220,252,231,0.78)',
-  color: admin ? '#925f18' : '#15803d',
-  textDecoration: 'none',
-  fontSize: '0.78rem',
-  fontWeight: 900,
-});
-
-function IdentityChip({ children, tone }: { children: React.ReactNode; tone: 'user' | 'admin' }) {
-  const admin = tone === 'admin';
-  return (
-    <span style={{
-      maxWidth: 180,
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      whiteSpace: 'nowrap',
-      padding: '6px 10px',
-      borderRadius: 8,
-      border: admin ? '1px solid rgba(217,168,87,0.55)' : '1px solid rgba(125,147,170,0.22)',
-      background: admin ? 'rgba(217,168,87,0.18)' : 'rgba(239,246,255,0.78)',
-      color: admin ? '#925f18' : '#275389',
-      fontSize: '0.76rem',
-      fontWeight: admin ? 900 : 700,
-    }}>
-      {children}
-    </span>
-  );
-}
-
-function MobileStatus({ children, tone }: { children: React.ReactNode; tone: 'user' | 'admin' }) {
-  const admin = tone === 'admin';
-  return (
-    <div style={{
-      padding: '9px 10px',
-      borderRadius: 8,
-      margin: '6px 0',
-      border: admin ? '1px solid rgba(217,168,87,0.42)' : '1px solid rgba(125,147,170,0.22)',
-      background: admin ? 'rgba(217,168,87,0.14)' : 'rgba(239,246,255,0.78)',
-      color: admin ? '#925f18' : '#275389',
-      fontSize: '0.82rem',
-      fontWeight: admin ? 900 : 700,
-    }}>
-      {children}
-    </div>
-  );
-}
-
-function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+function DesktopNavLink({ to, children, onNavigate }: { to: string; children: React.ReactNode; onNavigate: () => void }) {
   const { pathname } = useLocation();
-  const active = to === '/dm'
-    ? pathname === '/dm' || pathname === '/dm-wall' || pathname.startsWith('/dm/')
-    : isNavPathActive(pathname, to);
+  const active = isNavPathActive(pathname, to);
   return (
-    <Link to={to} aria-current={active ? 'page' : undefined} style={{
-      textDecoration: 'none',
-      padding: '8px 14px',
-      borderRadius: 8,
-      fontSize: '0.875rem',
-      color: active ? '#925f18' : MUTED,
-      background: active ? 'rgba(217,168,87,0.12)' : 'transparent',
-      boxShadow: active ? 'inset 0 -2px 0 rgba(185,130,35,0.82)' : 'none',
-      transition: 'color 0.2s, background 0.2s',
-      fontWeight: active ? 900 : 650,
-    }}
-      onMouseEnter={e => { preloadRoute(to); e.currentTarget.style.color = INK; e.currentTarget.style.background = 'rgba(217,168,87,0.10)'; }}
+    <Link
+      to={to}
+      aria-current={active ? 'page' : undefined}
+      className={`site-nav-link${active ? ' is-active' : ''}`}
+      onClick={onNavigate}
+      onMouseEnter={() => preloadRoute(to)}
       onFocus={() => preloadRoute(to)}
-      onMouseLeave={e => {
-        e.currentTarget.style.color = active ? '#925f18' : MUTED;
-        e.currentTarget.style.background = active ? 'rgba(217,168,87,0.12)' : 'transparent';
-      }}>
+    >
       {children}
     </Link>
   );
 }
 
-function MobileLink({ to, children, gold, onClick }: { to: string; children: React.ReactNode; gold?: boolean; onClick: () => void }) {
+function AccountMenuLink({ to, children, onNavigate }: { to: string; children: React.ReactNode; onNavigate: () => void }) {
+  return (
+    <Link to={to} role="menuitem" className="site-account-link" onClick={onNavigate} onMouseEnter={() => preloadRoute(to)} onFocus={() => preloadRoute(to)}>
+      {children}
+    </Link>
+  );
+}
+
+function MobileNavLink({ to, children, onNavigate }: { to: string; children: React.ReactNode; onNavigate: () => void }) {
   const { pathname } = useLocation();
   const active = isNavPathActive(pathname, to);
   return (
-    <Link to={to} onClick={onClick} aria-current={active ? 'page' : undefined} style={{
-      display: 'block', textDecoration: 'none',
-      padding: active ? '10px 10px' : '10px 0',
-      fontSize: '0.9rem',
-      color: active ? '#925f18' : gold ? GOLD : MUTED,
-      background: active ? 'rgba(217,168,87,0.10)' : 'transparent',
-      borderLeft: active ? '3px solid rgba(185,130,35,0.86)' : '3px solid transparent',
-      borderBottom: '1px solid rgba(201,146,46,0.12)',
-      fontWeight: active ? 900 : gold ? 600 : 400,
-    }}
+    <Link
+      to={to}
+      className={`site-mobile-link${active ? ' is-active' : ''}`}
+      aria-current={active ? 'page' : undefined}
+      onClick={onNavigate}
       onTouchStart={() => preloadRoute(to)}
-      onFocus={() => preloadRoute(to)}>
+      onFocus={() => preloadRoute(to)}
+    >
       {children}
     </Link>
   );
 }
 
 function isNavPathActive(pathname: string, to: string) {
-  if (to === '/dm/rate') return pathname.startsWith('/dm/rate');
-  if (to === '/dm') return pathname === '/dm' || (pathname.startsWith('/dm/') && !pathname.startsWith('/dm/rate'));
+  if (to === '/dm') return pathname === '/dm' || pathname === '/dm-wall' || pathname.startsWith('/dm/');
+  if (to === '/scripts') {
+    return (pathname === '/scripts' || pathname.startsWith('/scripts/roles/') || pathname.startsWith('/scripts/rate'))
+      && !pathname.startsWith('/scripts/contribute');
+  }
+  if (to === '/scripts/contribute') return pathname.startsWith('/scripts/contribute');
   if (to === '/rankings') return pathname.startsWith('/rankings') || pathname.startsWith('/reputation');
   return pathname === to || pathname.startsWith(`${to}/`);
-}
-
-function locationLabelFor(pathname: string) {
-  if (pathname === '/') return '首页';
-  if (pathname.startsWith('/dm/rate')) return '给DM评分';
-  if (pathname.startsWith('/dm/') && pathname !== '/dm-wall') return 'DM档案';
-  if (pathname === '/dm' || pathname === '/dm-wall') return 'DM评分';
-  if (pathname.startsWith('/chanto')) return '缠头榜';
-  if (pathname.startsWith('/stores/rate')) return '给店家评分';
-  if (pathname.startsWith('/stores/')) return '店家详情';
-  if (pathname === '/stores') return '店家评分';
-  if (pathname.startsWith('/commissions/new')) return '发布委托';
-  if (pathname.startsWith('/commissions')) return '委托需求';
-  if (pathname.startsWith('/carpools/new')) return '发布拼车';
-  if (pathname.startsWith('/carpools')) return '拼车区';
-  if (pathname.startsWith('/rankings/new')) return '发布评价';
-  if (pathname.startsWith('/rankings')) return '红黑榜';
-  if (pathname.startsWith('/reputation/city')) return '城市口碑';
-  if (pathname.startsWith('/reputation/dossier')) return '口碑档案';
-  if (pathname.startsWith('/scripts/rate')) return '添加角色评分';
-  if (pathname.startsWith('/scripts/roles/')) return '角色评分详情';
-  if (pathname.startsWith('/scripts/contribute')) return '维护剧本库';
-  if (pathname.startsWith('/scripts')) return '角色点评';
-  if (pathname.startsWith('/guides/new')) return '发布攻略';
-  if (pathname.startsWith('/guides/income')) return '创作者收入';
-  if (pathname.startsWith('/income')) return '创作者收入';
-  if (pathname.startsWith('/guides')) return '攻略交易';
-  if (pathname.startsWith('/dashboard/services/availability')) return '可约档期';
-  if (pathname.startsWith('/dashboard/services/works')) return '作品集';
-  if (pathname.startsWith('/dashboard/services')) return '服务管理';
-  if (pathname.startsWith('/dashboard/profile')) return '公开资料';
-  if (pathname.startsWith('/dashboard/account')) return '账号安全';
-  if (pathname.startsWith('/dashboard/posts')) return '我的发布';
-  if (pathname.startsWith('/dashboard')) return '我的主页';
-  if (pathname.startsWith('/wallet')) return '钱包';
-  if (pathname.startsWith('/referrals')) return '我的邀请';
-  if (pathname.startsWith('/certification')) return '身份认证';
-  if (pathname.startsWith('/shop/dashboard')) return '店家后台';
-  if (pathname.startsWith('/admin')) return '管理后台';
-  if (pathname.startsWith('/login')) return '登录注册';
-  if (pathname.startsWith('/contact')) return '建议反馈';
-  if (pathname.startsWith('/rules')) return '审核规则';
-  if (pathname.startsWith('/roadmap')) return '口碑路线图';
-  return '剧幕录';
-}
-
-function fallbackPathFor(pathname: string) {
-  if (pathname.startsWith('/dm/rate') || (pathname.startsWith('/dm/') && pathname !== '/dm-wall') || pathname.startsWith('/chanto')) return '/dm';
-  if (pathname.startsWith('/stores/')) return '/stores';
-  if (pathname.startsWith('/reputation/dossier')) return '/reputation/city';
-  if (pathname.startsWith('/reputation')) return '/rankings';
-  if (pathname.startsWith('/explore/')) return '/explore';
-  if (pathname.startsWith('/scripts/')) return '/scripts';
-  if (pathname.startsWith('/boundary-votes')) return '/roadmap';
-  if (pathname.startsWith('/wallet') || pathname.startsWith('/referrals') || pathname.startsWith('/certification') || pathname.startsWith('/income')) return '/dashboard';
-  if (pathname.startsWith('/shop/dashboard')) return '/dashboard';
-  if (pathname.startsWith('/commissions/new')) return '/commissions';
-  if (pathname.startsWith('/carpools/new')) return '/carpools';
-  if (pathname.startsWith('/rankings/new')) return '/rankings';
-  if (
-    pathname.startsWith('/rules') ||
-    pathname.startsWith('/moderation') ||
-    pathname.startsWith('/terms') ||
-    pathname.startsWith('/privacy') ||
-    pathname.startsWith('/security-assessment') ||
-    pathname.startsWith('/business-license') ||
-    pathname.startsWith('/contact')
-  ) return '/';
-  return '/';
 }
