@@ -64,6 +64,7 @@ function AppLayout() {
   const isDashboardRoute = pathname === '/dashboard' || pathname.startsWith('/dashboard/');
   const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new' && pathname !== '/guides/new';
   const showFooter = pathname !== '/login' && !isDashboardRoute;
+  const showFeedback = pathname !== '/contact';
 
   return (
     <>
@@ -131,8 +132,24 @@ function AppLayout() {
           <Route path="/business-license" element={<BusinessLicense />} />
         </Routes>
       </Suspense>
+      {showFeedback && <FeedbackFloat />}
       {showFooter && <SiteFooter />}
     </>
+  );
+}
+
+function FeedbackFloat() {
+  return (
+    <Link
+      to="/contact"
+      className="site-feedback-float"
+      aria-label="建议反馈"
+      onMouseEnter={() => preloadRoute('/contact')}
+      onFocus={() => preloadRoute('/contact')}
+    >
+      <span>建议</span>
+      <span>反馈</span>
+    </Link>
   );
 }
 

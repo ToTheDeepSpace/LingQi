@@ -478,6 +478,43 @@ body {
   white-space: nowrap;
 }
 
+.site-feedback-float {
+  position: fixed;
+  top: 52%;
+  right: 14px;
+  z-index: 55;
+  width: 40px;
+  min-height: 68px;
+  box-sizing: border-box;
+  display: grid;
+  place-content: center;
+  gap: 2px;
+  border: 1px solid rgba(181, 123, 33, 0.34);
+  border-radius: 7px;
+  background: rgba(255, 253, 248, 0.96);
+  box-shadow: 0 8px 22px rgba(31, 41, 55, 0.11);
+  color: #275389;
+  text-align: center;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.25;
+  transform: translateY(-50%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.site-feedback-float:hover {
+  border-color: rgba(181, 123, 33, 0.58);
+  background: #fff;
+  color: #925f18;
+}
+
+.site-feedback-float:focus-visible {
+  outline: 2px solid rgba(39, 83, 137, 0.5);
+  outline-offset: 3px;
+}
+
 @media (max-width: 720px) {
   .jumulu-compact-header {
     display: grid;
@@ -514,6 +551,16 @@ body {
     max-height: none !important;
     min-height: 0;
     overflow-y: auto;
+  }
+
+  .site-feedback-float {
+    top: auto;
+    right: 8px;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    width: 36px;
+    min-height: 62px;
+    font-size: 11px;
+    transform: none;
   }
 }
 
