@@ -417,6 +417,24 @@ type ServicePurchaseAudit = {
   updated_at?: string | null;
 };
 
+type ProviderListingRecoveryModal = {
+  purchaseId: string;
+  profileName: string;
+  posterUrl: string;
+  posterUploadedAt: string;
+  headline: string;
+  description: string;
+  heightCm: string;
+  weightKg: string;
+  roleTypesText: string;
+  businessContact: string;
+  contactAvailable: boolean;
+  loading: boolean;
+  saving: boolean;
+  error: string;
+  reviewId?: string | null;
+};
+
 type CertReview = {
   id: string;
   profile_id: string;
@@ -1090,6 +1108,7 @@ const [loading, setLoading] = useState(false);
 const [transactionLoading, setTransactionLoading] = useState(false);
 const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [error, setError] = useState('');
+  const [providerRecovery, setProviderRecovery] = useState<ProviderListingRecoveryModal | null>(null);
   const [tab, setTab] = useState<Tab>('allPending');
   const [rejectModal, setRejectModal] = useState<{ open: boolean; id: string; reason: string; type: RejectType; revisionKind: 'content' | 'evidence' }>({
     open: false,
@@ -1683,6 +1702,119 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       void loadData();
     } catch (reviewError) {
       setError(reviewError instanceof Error ? reviewError.message : '审核提交失败');
+    }
+  };
+
+  const openProviderListingRecovery = async (item: ServicePurchaseAudit) => {
+    setProviderRecovery({
+      purchaseId: item.id,
+      profileName: item.target_name || item.profile_name || '用户',
+      posterUrl: '',
+      posterUploadedAt: '',
+      headline: '',
+      description: '',
+      heightCm: '',
+      weightKg: '',
+      roleTypesText: '',
+      businessContact: '',
+      contactAvailable: true,
+      loading: true,
+      saving: false,
+      error: '',
+    });
+    try {
+      const response = await fetch(`${API}/lc/admin/service-purchases/${item.id}/provider-recovery`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '异常订单资料读取失败');
+      }
+      const data = payload.data || {};
+      setProviderRecovery(current => current?.purchaseId === item.id ? {
+        ...current,
+        profileName: data.profile_name || current.profileName,
+        posterUrl: data.poster_url || '',
+        posterUploadedAt: data.poster_uploaded_at || '',
+        headline: data.headline || '',
+        description: data.description || '',
+        heightCm: data.height_cm ? String(data.height_cm) : '',
+        weightKg: data.weight_kg ? String(data.weight_kg) : '',
+        roleTypesText: Array.isArray(data.role_types) ? data.role_types.join('、') : '',
+        businessContact: data.business_contact || '',
+        contactAvailable: data.contact_available !== false,
+        loading: false,
+        error: data.poster_url ? '' : '没有找到付款前上传的委托条主图，暂时不能恢复。',
+      } : current);
+    } catch (recoveryError) {
+      setProviderRecovery(current => current?.purchaseId === item.id ? {
+        ...current,
+        loading: false,
+        error: recoveryError instanceof Error ? recoveryError.message : '异常订单资料读取失败',
+      } : current);
+    }
+  };
+
+  const submitProviderListingRecovery = async (approveImmediately: boolean) => {
+    const current = providerRecovery;
+    if (!current || current.loading || current.saving) return;
+    if (!current.posterUrl) {
+      setProviderRecovery({ ...current, error: '没有找回委托条主图，不能提交审核。' });
+      return;
+    }
+    if (current.businessContact.trim().length < 2) {
+      setProviderRecovery({ ...current, error: '请先补录委托师公开解锁用的业务联系方式。' });
+      return;
+    }
+    setProviderRecovery({ ...current, saving: true, error: '' });
+    let recoveredReviewId = current.reviewId || '';
+    try {
+      if (!recoveredReviewId) {
+        const response = await fetch(`${API}/lc/admin/service-purchases/${current.purchaseId}/provider-recovery`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            headline: current.headline.trim(),
+            description: current.description.trim(),
+            heightCm: current.heightCm || null,
+            weightKg: current.weightKg || null,
+            roleTypes: current.roleTypesText.split(/[，,、\n]/).map(item => item.trim()).filter(Boolean).slice(0, 12),
+            businessContact: current.businessContact.trim(),
+            contactAvailable: current.contactAvailable,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) {
+          throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '异常订单恢复失败');
+        }
+        recoveredReviewId = String(payload.data?.review_id || '');
+        if (!recoveredReviewId) throw new Error('资料已恢复，但没有返回审核编号');
+        setProviderRecovery(latest => latest?.purchaseId === current.purchaseId
+          ? { ...latest, reviewId: recoveredReviewId }
+          : latest);
+      }
+      if (approveImmediately) {
+        const approvalResponse = await fetch(`${API}/lc/admin/public-reviews/${recoveredReviewId}/approve`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reviewNote: '历史支付异常订单恢复并审核通过' }),
+        });
+        const approvalPayload = await approvalResponse.json();
+        if (!approvalResponse.ok || !approvalPayload.success) {
+          throw new Error(typeof approvalPayload.error === 'string' ? approvalPayload.error : approvalPayload.error?.message || '资料已恢复，但审核通过失败');
+        }
+      }
+      setProviderRecovery(null);
+      await loadData();
+      window.alert(approveImmediately ? '委托条已恢复并公开。' : '委托条资料已恢复，已进入待审列表。');
+    } catch (recoveryError) {
+      setProviderRecovery(latest => latest?.purchaseId === current.purchaseId ? {
+        ...latest,
+        reviewId: recoveredReviewId || latest.reviewId,
+        saving: false,
+        error: recoveryError instanceof Error ? recoveryError.message : '异常订单恢复失败',
+      } : latest);
+      if (recoveredReviewId) void loadData();
     }
   };
 
@@ -2515,11 +2647,18 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                         </Proof>
                         {awaitingSubmission && (
                           <ReviewNotice tone="gold">
-                            款项已经确认，但用户尚未完成资料提交。付款资格会永久保留，请让用户回到原页面补交，不要重复收费。
+                            {item.product_type === 'provider_listing'
+                              ? '款项已经确认，但支付完成后没有生成审核记录。可从服务器找回已上传主图并由管理员补录缺失信息。'
+                              : '款项已经确认，但用户尚未完成资料提交。付款资格会永久保留，请让用户回到原页面补交，不要重复收费。'}
                           </ReviewNotice>
                         )}
                         {item.status === 'refunded' && item.refund_reason && <ContentBox>退款说明：{item.refund_reason}</ContentBox>}
                       </div>
+                      {awaitingSubmission && item.product_type === 'provider_listing' && (
+                        <Actions>
+                          <ActionButton kind="ok" onClick={() => void openProviderListingRecovery(item)}>找回资料并审核</ActionButton>
+                        </Actions>
+                      )}
                       {item.submission_status === 'pending' && item.submission_id && (
                         <Actions vertical>
                           <ActionButton kind="ok" onClick={() => approvePublicReview(item.submission_id!)}>通过并公开</ActionButton>
@@ -3533,6 +3672,108 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         </div>
       )}
 
+      {providerRecovery && (
+        <div
+          role="presentation"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget && !providerRecovery.saving) setProviderRecovery(null);
+          }}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.52)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120, padding: 18 }}
+        >
+          <section role="dialog" aria-modal="true" aria-labelledby="provider-recovery-title"
+            style={{ width: 'min(760px, 100%)', maxHeight: '94dvh', overflow: 'auto', borderRadius: 8, border: `1px solid ${LINE}`, background: SURFACE, boxShadow: '0 24px 80px rgba(15,23,42,0.26)' }}>
+            <header style={{ padding: '16px 18px 12px', borderBottom: `1px solid ${LINE}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ color: GOLD, fontSize: '0.72rem', fontWeight: 850 }}>异常支付订单恢复</div>
+                <h3 id="provider-recovery-title" style={{ margin: '3px 0 0', color: INK, fontSize: '1.05rem' }}>{providerRecovery.profileName}的委托条</h3>
+              </div>
+              <button type="button" disabled={providerRecovery.saving} onClick={() => setProviderRecovery(null)}
+                style={{ width: 32, height: 32, border: `1px solid ${LINE}`, borderRadius: 6, background: '#fff', color: MUTED, cursor: providerRecovery.saving ? 'not-allowed' : 'pointer', fontSize: 18 }}>×</button>
+            </header>
+            <div style={{ padding: 18, display: 'grid', gap: 14 }}>
+              {providerRecovery.loading ? (
+                <div style={{ minHeight: 220, display: 'grid', placeItems: 'center', color: MUTED }}>正在找回已上传资料…</div>
+              ) : (
+                <>
+                  <ReviewNotice tone="gold">
+                    已付款但审核记录未生成。请先核对找回的原图并补录业务联系方式，再恢复为正式审核记录。
+                  </ReviewNotice>
+                  <div className="provider-recovery-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 240px) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
+                    <div style={{ minWidth: 0 }}>
+                      {providerRecovery.posterUrl ? (
+                        <a href={providerRecovery.posterUrl} target="_blank" rel="noreferrer" style={{ display: 'grid', gap: 6, color: '#275389', textDecoration: 'none', fontSize: '0.74rem', fontWeight: 800 }}>
+                          <img src={providerRecovery.posterUrl} alt="找回的委托条主图"
+                            style={{ width: '100%', aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 7, border: `1px solid ${LINE}`, background: '#fff' }} />
+                          点击查看原图
+                        </a>
+                      ) : (
+                        <div style={{ minHeight: 220, display: 'grid', placeItems: 'center', border: `1px dashed ${LINE}`, borderRadius: 7, color: MUTED, fontSize: '0.78rem' }}>未找到原图</div>
+                      )}
+                      {providerRecovery.posterUploadedAt && <Meta>上传于 {providerRecovery.posterUploadedAt.slice(0, 16).replace('T', ' ')}</Meta>}
+                    </div>
+                    <div style={{ display: 'grid', gap: 11, minWidth: 0 }}>
+                      <label style={{ display: 'grid', gap: 5 }}>
+                        <span style={{ color: INK, fontSize: '0.74rem', fontWeight: 800 }}>标题</span>
+                        <input value={providerRecovery.headline} maxLength={80}
+                          onChange={event => setProviderRecovery({ ...providerRecovery, headline: event.target.value, error: '' })}
+                          style={{ minHeight: 36, padding: '7px 10px', border: `1px solid ${LINE}`, borderRadius: 6, background: '#fff', color: INK, boxSizing: 'border-box' }} />
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+                        <label style={{ display: 'grid', gap: 5 }}>
+                          <span style={{ color: INK, fontSize: '0.74rem', fontWeight: 800 }}>身高（cm）</span>
+                          <input type="number" min={100} max={250} step={1} value={providerRecovery.heightCm}
+                            onChange={event => setProviderRecovery({ ...providerRecovery, heightCm: event.target.value, error: '' })}
+                            style={{ minHeight: 36, padding: '7px 10px', border: `1px solid ${LINE}`, borderRadius: 6, background: '#fff', color: INK, boxSizing: 'border-box', width: '100%' }} />
+                        </label>
+                        <label style={{ display: 'grid', gap: 5 }}>
+                          <span style={{ color: INK, fontSize: '0.74rem', fontWeight: 800 }}>体重（kg）</span>
+                          <input type="number" min={30} max={300} step={1} value={providerRecovery.weightKg}
+                            onChange={event => setProviderRecovery({ ...providerRecovery, weightKg: event.target.value, error: '' })}
+                            style={{ minHeight: 36, padding: '7px 10px', border: `1px solid ${LINE}`, borderRadius: 6, background: '#fff', color: INK, boxSizing: 'border-box', width: '100%' }} />
+                        </label>
+                      </div>
+                      <label style={{ display: 'grid', gap: 5 }}>
+                        <span style={{ color: INK, fontSize: '0.74rem', fontWeight: 800 }}>擅长角色类型</span>
+                        <input value={providerRecovery.roleTypesText} placeholder="用顿号或逗号分隔" maxLength={240}
+                          onChange={event => setProviderRecovery({ ...providerRecovery, roleTypesText: event.target.value, error: '' })}
+                          style={{ minHeight: 36, padding: '7px 10px', border: `1px solid ${LINE}`, borderRadius: 6, background: '#fff', color: INK, boxSizing: 'border-box' }} />
+                      </label>
+                      <label style={{ display: 'grid', gap: 5 }}>
+                        <span style={{ color: INK, fontSize: '0.74rem', fontWeight: 800 }}>业务联系方式 *</span>
+                        <input value={providerRecovery.businessContact} placeholder="微信号、手机号或其他业务联系方式" maxLength={300}
+                          onChange={event => setProviderRecovery({ ...providerRecovery, businessContact: event.target.value, error: '' })}
+                          style={{ minHeight: 36, padding: '7px 10px', border: '1px solid rgba(180,83,9,0.42)', borderRadius: 6, background: '#fffbeb', color: INK, boxSizing: 'border-box' }} />
+                      </label>
+                    </div>
+                  </div>
+                  <label style={{ display: 'grid', gap: 5 }}>
+                    <span style={{ color: INK, fontSize: '0.74rem', fontWeight: 800 }}>委托说明</span>
+                    <textarea value={providerRecovery.description} rows={3} maxLength={1200}
+                      onChange={event => setProviderRecovery({ ...providerRecovery, description: event.target.value, error: '' })}
+                      style={{ width: '100%', padding: '8px 10px', border: `1px solid ${LINE}`, borderRadius: 6, background: '#fff', color: INK, boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.5 }} />
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: INK, fontSize: '0.76rem', fontWeight: 750 }}>
+                    <input type="checkbox" checked={providerRecovery.contactAvailable}
+                      onChange={event => setProviderRecovery({ ...providerRecovery, contactAvailable: event.target.checked, error: '' })} />
+                    允许付费用户解锁该联系方式
+                  </label>
+                  {providerRecovery.error && <div style={{ padding: '9px 10px', borderRadius: 6, background: '#fef2f2', color: '#b91c1c', fontSize: '0.76rem', lineHeight: 1.5 }}>{providerRecovery.error}</div>}
+                </>
+              )}
+            </div>
+            <footer style={{ padding: '12px 18px', borderTop: `1px solid ${LINE}`, display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <ActionButton disabled={providerRecovery.saving} onClick={() => setProviderRecovery(null)}>取消</ActionButton>
+              <ActionButton disabled={providerRecovery.loading || providerRecovery.saving || !providerRecovery.posterUrl} onClick={() => void submitProviderListingRecovery(false)}>
+                {providerRecovery.saving ? '处理中…' : '恢复为待审'}
+              </ActionButton>
+              <ActionButton kind="ok" disabled={providerRecovery.loading || providerRecovery.saving || !providerRecovery.posterUrl} onClick={() => void submitProviderListingRecovery(true)}>
+                {providerRecovery.saving ? '处理中…' : '恢复并通过'}
+              </ActionButton>
+            </footer>
+          </section>
+        </div>
+      )}
+
       {rejectModal.open && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(31,41,55,0.48)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ backgroundColor: SURFACE, border: '1px solid rgba(217,168,87,0.24)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 28px 80px rgba(31,41,55,0.22)' }}>
@@ -3572,6 +3813,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             max-height: 96vh !important;
           }
           .ranking-evidence-editor-layout {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+          .provider-recovery-grid {
             grid-template-columns: minmax(0, 1fr) !important;
           }
           .admin-header-inner {

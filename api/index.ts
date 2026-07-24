@@ -125,6 +125,7 @@ import {
   providerInquiryPayload,
   publicProviderListing,
 } from './providerMarketplace.js';
+import { findRecoverableProviderPoster } from './providerListingRecovery.js';
 import {
   SERVICE_FEE_FEN,
   SERVICE_FEE_YUAN,
@@ -10543,8 +10544,214 @@ app.get('/api/lc/contact-requests/:creatorId', authMiddleware, async (req, res) 
 
 // ==================== 管理员 ====================
 
+type ProviderListingRecoveryLoadResult =
+  | {
+      ok: true;
+      purchase: Record<string, unknown>;
+      profile: Record<string, unknown>;
+      poster: Awaited<ReturnType<typeof findRecoverableProviderPoster>>;
+      defaults: {
+        headline: string;
+        description: string;
+        height_cm: number | null;
+        weight_kg: number | null;
+        role_types: string[];
+        business_contact: string;
+        contact_available: boolean;
+      };
+    }
+  | { ok: false; status: number; message: string };
+
+async function loadProviderListingRecovery(purchaseId: string): Promise<ProviderListingRecoveryLoadResult> {
+  const purchaseResult = await supabase.from('lc_service_purchases')
+    .select('id, profile_id, product_type, target_id, amount_fen, status, paid_at, created_at')
+    .eq('id', purchaseId)
+    .maybeSingle();
+  if (purchaseResult.error) throw purchaseResult.error;
+  if (!purchaseResult.data) return { ok: false, status: 404, message: '付费订单不存在' };
+  const purchase = purchaseResult.data as Record<string, unknown>;
+  const profileId = cleanText(purchase.profile_id, 80);
+  const targetId = cleanText(purchase.target_id, 80);
+  if (purchase.product_type !== 'provider_listing') {
+    return { ok: false, status: 400, message: '这笔订单不是委托条上架服务' };
+  }
+  if (purchase.status !== 'paid') {
+    return { ok: false, status: 409, message: '只有已支付的委托条订单可以恢复资料' };
+  }
+  if (!profileId || (targetId && targetId !== profileId)) {
+    return { ok: false, status: 409, message: '订单关联账号不一致，不能自动恢复' };
+  }
+
+  const [profileResult, dossierResult, servicesResult, contactResult, listingResult, reviewsResult] = await Promise.all([
+    supabase.from('lc_profiles').select('*').eq('id', profileId).maybeSingle(),
+    supabase.from('lc_dm_dossiers')
+      .select('photo_url, height_cm, weight_kg, bio')
+      .eq('claimed_by', profileId)
+      .eq('claim_status', 'approved')
+      .eq('entity_type', 'dm')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from('lc_services')
+      .select('service_type, description')
+      .eq('creator_id', profileId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(12),
+    supabase.from('lc_provider_contacts')
+      .select('business_contact, is_available')
+      .eq('profile_id', profileId)
+      .maybeSingle(),
+    supabase.from('lc_provider_listings')
+      .select('profile_id, initial_purchase_id')
+      .eq('profile_id', profileId)
+      .maybeSingle(),
+    supabase.from('lc_public_reviews')
+      .select('id, status, payload, created_at')
+      .eq('target_type', 'provider_listing_update')
+      .eq('profile_id', profileId)
+      .order('created_at', { ascending: false })
+      .limit(50),
+  ]);
+  if (profileResult.error) throw profileResult.error;
+  if (!profileResult.data) return { ok: false, status: 404, message: '订单关联账号不存在' };
+  if (dossierResult.error && !isMissingRelation(dossierResult.error, 'lc_dm_dossiers')) throw dossierResult.error;
+  if (servicesResult.error && !isMissingRelation(servicesResult.error, 'lc_services')) throw servicesResult.error;
+  if (contactResult.error && !isMissingRelation(contactResult.error, 'lc_provider_contacts')) throw contactResult.error;
+  if (listingResult.error && !isMissingRelation(listingResult.error, 'lc_provider_listings')) throw listingResult.error;
+  if (reviewsResult.error && !isMissingRelation(reviewsResult.error, 'lc_public_reviews')) throw reviewsResult.error;
+  if (listingResult.data) {
+    return { ok: false, status: 409, message: '该账号已经有正式委托条，不需要恢复历史订单' };
+  }
+  const existingReview = (reviewsResult.error ? [] : reviewsResult.data || []).find(review =>
+    cleanText(objectPayload(review.payload).initial_purchase_id, 80) === purchaseId);
+  if (existingReview) {
+    return {
+      ok: false,
+      status: 409,
+      message: existingReview.status === 'pending'
+        ? '这笔订单已经生成待审资料，请直接在待审列表处理'
+        : '这笔订单已经有审核记录，不能重复恢复',
+    };
+  }
+
+  const poster = await findRecoverableProviderPoster({
+    localUploadRoot: LOCAL_UPLOAD_ROOT,
+    profileId,
+    paidAt: cleanText(purchase.paid_at, 80) || cleanText(purchase.created_at, 80),
+    siteUrl: LINGQI_SITE_URL,
+  });
+  const dossier = dossierResult.error ? null : dossierResult.data;
+  const services = servicesResult.error ? [] : servicesResult.data || [];
+  return {
+    ok: true,
+    purchase,
+    profile: profileResult.data as Record<string, unknown>,
+    poster,
+    defaults: {
+      headline: cleanText(dossier?.bio || profileResult.data.bio, 80),
+      description: '',
+      height_cm: normalizePositiveIntegerField(dossier?.height_cm, 250),
+      weight_kg: normalizePositiveIntegerField(dossier?.weight_kg, 300),
+      role_types: Array.from(new Set(services.map(item => cleanText(item.service_type, 30)).filter(Boolean))).slice(0, 12),
+      business_contact: contactResult.error ? '' : cleanText(contactResult.data?.business_contact, 300),
+      contact_available: contactResult.error ? true : contactResult.data?.is_available !== false,
+    },
+  };
+}
+
 app.post('/api/lc/admin/login', async (req, res) => {
   res.status(410).json(err(new Error('独立管理密码已停用，请使用管理员手机号或邮箱在普通登录页登录')));
+});
+
+app.get('/api/lc/admin/service-purchases/:id/provider-recovery', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const recovery = await loadProviderListingRecovery(req.params.id);
+    if ('status' in recovery) return res.status(recovery.status).json(err(new Error(recovery.message)));
+    res.json(ok({
+      purchase_id: recovery.purchase.id,
+      profile_name: cleanText(recovery.profile.display_name, 120) || '用户',
+      poster_url: recovery.poster?.url || null,
+      poster_uploaded_at: recovery.poster?.uploaded_at || null,
+      poster_payment_distance_ms: recovery.poster?.distance_ms ?? null,
+      ...recovery.defaults,
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/admin/service-purchases/:id/provider-recovery', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const recovery = await loadProviderListingRecovery(req.params.id);
+    if ('status' in recovery) return res.status(recovery.status).json(err(new Error(recovery.message)));
+    if (!recovery.poster?.url) {
+      return res.status(409).json(err(new Error('没有找到这笔订单付款前上传的委托条主图，不能直接恢复')));
+    }
+    const businessContact = cleanText(req.body?.businessContact ?? req.body?.business_contact, 300);
+    if (businessContact.length < 2) {
+      return res.status(400).json(err(new Error('请补录至少 2 个字的委托师业务联系方式')));
+    }
+    let draft;
+    try {
+      draft = normalizeProviderListingDraft({
+        posterUrl: recovery.poster.url,
+        headline: req.body?.headline ?? recovery.defaults.headline,
+        description: req.body?.description ?? recovery.defaults.description,
+        heightCm: req.body?.heightCm ?? req.body?.height_cm ?? recovery.defaults.height_cm,
+        weightKg: req.body?.weightKg ?? req.body?.weight_kg ?? recovery.defaults.weight_kg,
+        roleTypes: req.body?.roleTypes ?? req.body?.role_types ?? recovery.defaults.role_types,
+      });
+    } catch (validationError) {
+      return res.status(400).json(err(validationError));
+    }
+    const posterUrl = normalizeOptionalPublicUrl(draft.poster_url, 1200, true);
+    if (!posterUrl) return res.status(400).json(err(new Error('找回的委托条主图地址无效')));
+    draft.poster_url = posterUrl;
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'provider_listing_admin_recovery',
+      targetType: 'provider_listing',
+      texts: {
+        headline: draft.headline,
+        description: draft.description,
+        role_types: draft.role_types.join(' '),
+      },
+      files: [{ url: draft.poster_url, type: 'image/*' }],
+    });
+    const review = await createPublicReview({
+      targetType: 'provider_listing_update',
+      profile: recovery.profile,
+      title: '委托师委托条',
+      summary: '管理员从异常支付订单恢复的委托条资料',
+      payload: {
+        profile_id: recovery.profile.id,
+        ...draft,
+        business_contact: businessContact,
+        contact_available: req.body?.contactAvailable !== false && req.body?.contact_available !== false,
+        initial_purchase_id: recovery.purchase.id,
+        is_active: true,
+        recovered_by_admin: true,
+        recovered_poster_uploaded_at: recovery.poster.uploaded_at,
+      },
+      moderationPrecheck,
+    });
+    await logSecurityEvent(req, {
+      action: 'admin_provider_listing_submission_recovered',
+      targetType: 'public_review',
+      targetId: review?.id,
+      metadata: {
+        purchase_id: recovery.purchase.id,
+        profile_id: recovery.profile.id,
+        poster_uploaded_at: recovery.poster.uploaded_at,
+        poster_payment_distance_ms: recovery.poster.distance_ms,
+        moderation: moderationPrecheck.decision,
+      },
+    });
+    res.status(201).json(ok({
+      review_id: review?.id,
+      status: 'pending',
+      message: '异常订单资料已恢复并进入正式审核',
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.get('/api/lc/admin/profiles', authMiddleware, adminMiddleware, async (req, res) => {
