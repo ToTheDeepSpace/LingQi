@@ -3,9 +3,10 @@ import { computed, ref } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
+import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Commission, CommissionApplication, ProviderInquiry, ProviderListing } from '../../types'
-import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
+import { apiRequest, encoded, readAuth, requestServicePayment, requireLogin, type ServicePurchase } from '../../utils/api'
 import { dateText } from '../../utils/format'
 
 type PageView = 'demands' | 'providers' | 'mine'
@@ -31,10 +32,7 @@ const applyTarget = ref<Commission | null>(null)
 const applyLetter = ref('')
 const applyContact = ref('')
 const applyBusy = ref(false)
-const inquiryTarget = ref<ProviderListing | null>(null)
-const inquiryMessage = ref('')
-const inquiryContact = ref('')
-const inquiryBusy = ref(false)
+const contactBusyId = ref('')
 const authId = computed(() => readAuth()?.id || '')
 
 const visibleItems = computed(() => commissions.value.filter(item =>
@@ -159,36 +157,49 @@ function showContacts(contacts: { poster: string; applicant: string }) {
   uni.showModal({ title: '双方联系方式', content: text, confirmText: '复制全部', success: result => { if (result.confirm) uni.setClipboardData({ data: text }) } })
 }
 
-function openInquiry(item: ProviderListing) {
-  void requireLogin().then(() => {
-    if (item.profile_id === authId.value) return editProviderListing()
-    inquiryTarget.value = item
-    inquiryMessage.value = ''
-    inquiryContact.value = ''
-  }).catch(() => undefined)
-}
-
-function closeInquiry() {
-  if (!inquiryBusy.value) inquiryTarget.value = null
-}
-
-async function submitInquiry() {
-  if (!inquiryTarget.value || !inquiryMessage.value.trim() || !inquiryContact.value.trim()) {
-    return uni.showToast({ title: '请填写咨询内容和联系方式', icon: 'none' })
-  }
-  inquiryBusy.value = true
+async function openInquiry(item: ProviderListing) {
+  if (item.profile_id === authId.value) return editProviderListing()
+  if (contactBusyId.value) return
+  contactBusyId.value = item.profile_id
   try {
-    await apiRequest(`/lc/provider-listings/${encoded(inquiryTarget.value.profile_id)}/inquiries`, {
-      method: 'POST',
-      data: { message: inquiryMessage.value.trim(), privateContact: inquiryContact.value.trim() },
+    await requireLogin()
+    let access = await apiRequest<ServicePurchase & { owner?: boolean }>(`/lc/provider-listings/${encoded(item.profile_id)}/contact-access`)
+    if (!access.paid) {
+      const confirmed = await new Promise<boolean>(resolve => {
+        uni.showModal({
+          title: '永久解锁联系方式',
+          content: `支付 8.88 元后立即查看 ${item.profile?.display_name || '这位委托师'} 当前审核通过的业务联系方式。同一账号联系同一位委托师只需支付一次。`,
+          confirmText: '支付 8.88 元',
+          success: result => resolve(result.confirm),
+          fail: () => resolve(false),
+        })
+      })
+      if (!confirmed) return
+      access = await requestServicePayment('provider_contact', item.profile_id)
+    }
+    if (!access.contact_available || !access.business_contact) {
+      uni.showModal({
+        title: '暂未开放联系',
+        content: '这位委托师已暂停显示联系方式。你的永久解锁资格不会失效，恢复开放后无需再次支付。',
+        showCancel: false,
+      })
+      return
+    }
+    const contact = access.business_contact
+    uni.showModal({
+      title: `${item.profile?.display_name || '委托师'}的联系方式`,
+      content: contact,
+      cancelText: '问题反馈',
+      confirmText: '复制',
+      success: result => {
+        if (result.confirm) uni.setClipboardData({ data: contact })
+        else if (result.cancel) uni.navigateTo({ url: `/pages/feedback/index?category=invalid_contact&purchaseId=${encoded(access.id)}` })
+      },
     })
-    uni.showToast({ title: '联系申请已发送', icon: 'success' })
-    inquiryTarget.value = null
-    await load()
   } catch (reason) {
     uni.showToast({ title: (reason as Error).message, icon: 'none' })
   } finally {
-    inquiryBusy.value = false
+    contactBusyId.value = ''
   }
 }
 
@@ -240,7 +251,7 @@ onPullDownRefresh(load)
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="委托撮合" nav-title="委托" title="委托" description="发需求或找委托师；双方同意后自行联系，当前不经过平台收款。" fallback="/pages/index/index">
+    <PageIntro eyebrow="委托撮合" nav-title="委托" title="委托" description="发需求或找委托师；同一账号联系同一位委托师只支付一次，永久解锁其审核通过的业务联系方式。" fallback="/pages/index/index">
       <view class="intro-actions">
         <button class="primary-button" @tap="create">发布需求</button>
         <button class="secondary-button" @tap="editProviderListing">我的委托条</button>
@@ -262,7 +273,7 @@ onPullDownRefresh(load)
       <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visibleItems.length" empty-text="当前城市暂时没有公开委托" @retry="load" />
       <view class="listing-list">
       <view v-for="item in visibleItems" :key="item.id" class="listing">
-        <view class="listing__top"><text class="listing__title">{{ item.title }}</text><image src="/static/icons/ui-chevron-right.png" mode="aspectFit" /></view>
+        <view class="listing__top"><text class="listing__title">{{ item.title }}</text><ReportFlag target-type="commission" :target-id="item.id" :title="item.title" :own="item.poster_id === authId" /></view>
         <view class="chips"><text v-if="item.city" class="chip">{{ item.city }}</text><text v-if="item.accept_expedition" class="chip expedition">接受远征</text></view>
         <text class="listing__meta">{{ [item.needed_date ? `${dateText(item.needed_date)}${item.needed_end_date && item.needed_end_date !== item.needed_date ? ` 至 ${dateText(item.needed_end_date)}` : ''}` : '', item.script_name, item.desired_role, item.budget].filter(Boolean).join(' · ') || '需求细节见正文' }}</text>
         <text v-if="item.poster_name" class="poster" @tap="openProfile(item.poster_id)">委托人 {{ item.poster_name }}</text>
@@ -295,12 +306,12 @@ onPullDownRefresh(load)
           <view class="provider-row__body">
             <view class="provider-row__head">
               <text class="provider-row__name">{{ item.profile?.display_name || '委托师' }}</text>
-              <text v-if="item.profile?.city" class="provider-row__city">{{ item.profile.city }}</text>
+              <view class="provider-row__head-actions"><text v-if="item.profile?.city" class="provider-row__city">{{ item.profile.city }}</text><ReportFlag target-type="provider_listing" :target-id="item.profile_id" :title="`${item.profile?.display_name || '委托师'}的委托条`" :own="item.profile_id === authId" /></view>
             </view>
             <text v-if="item.headline" class="provider-row__headline">{{ item.headline }}</text>
             <text class="provider-row__meta">{{ [item.height_cm ? `${item.height_cm}cm` : '', item.weight_kg ? `${item.weight_kg}kg` : '', item.profile?.commission_match === 'expedition' && city !== '全部城市' ? `可远征到${city}` : ''].filter(Boolean).join(' · ') || '资料待补充' }}</text>
             <view v-if="item.role_types?.length" class="provider-row__roles"><text v-for="role in item.role_types.slice(0, 3)" :key="role">{{ role }}</text></view>
-            <button class="inquiry-button" @tap.stop="openInquiry(item)">{{ item.profile_id === authId ? '编辑委托条' : '联系 TA' }}</button>
+            <button class="inquiry-button" :loading="contactBusyId === item.profile_id" @tap.stop="openInquiry(item)">{{ item.profile_id === authId ? '编辑委托条' : '查看联系方式' }}</button>
           </view>
         </view>
       </view>
@@ -355,13 +366,6 @@ onPullDownRefresh(load)
       <view class="action-row"><button class="secondary-button" @tap="closeApply">取消</button><button class="primary-button" :loading="applyBusy" @tap="submitApply">发送申请</button></view>
     </view></view>
 
-    <view v-if="inquiryTarget" class="sheet-mask" @tap="closeInquiry"><view class="sheet" @tap.stop>
-      <text class="sheet__title">联系 {{ inquiryTarget.profile?.display_name || '委托师' }}</text>
-      <text class="field-label">想咨询什么 *</text><textarea v-model="inquiryMessage" class="textarea" maxlength="1200" placeholder="说明时间、城市、角色方向或其他需求" />
-      <text class="field-label">同意后交换的联系方式 *</text><input v-model="inquiryContact" class="input" maxlength="300" placeholder="微信号、手机号或其他联系方式" />
-      <text class="privacy">申请内容会留档供管理员抽查；联系方式只在对方同意后向双方显示。</text>
-      <view class="action-row"><button class="secondary-button" @tap="closeInquiry">取消</button><button class="primary-button" :loading="inquiryBusy" @tap="submitInquiry">发送申请</button></view>
-    </view></view>
   </view>
 </template>
 
@@ -386,6 +390,7 @@ onPullDownRefresh(load)
 .provider-row__poster { width: 190rpx; height: 250rpx; border-radius: 8rpx; background: #f2ece4; }
 .provider-row__body { min-width: 0; }
 .provider-row__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12rpx; }
+.provider-row__head-actions { display: flex; align-items: center; gap: 4rpx; }
 .provider-row__name { overflow: hidden; color: #27364a; font-size: 29rpx; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
 .provider-row__city { flex: 0 0 auto; color: #64748b; font-size: 21rpx; }
 .provider-row__headline, .provider-row__meta { display: block; margin-top: 8rpx; }

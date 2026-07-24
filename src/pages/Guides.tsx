@@ -8,6 +8,7 @@ import {
 import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import ProfileNameLink from '../components/ProfileNameLink';
+import ReportFlagButton from '../components/ReportFlagButton';
 
 const API = '/api';
 const BG = '#fffdf8';
@@ -174,7 +175,10 @@ export default function Guides() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                   <strong style={{ color: '#925f18' }}>{guide.price > 0 ? `${guide.price} 榜金` : '免费'}</strong>
-                  <button type="button" onClick={() => void loadDetail(guide)} style={smallButton}>查看</button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <ReportFlagButton targetType="guide" targetId={guide.id} targetTitle={`攻略 · ${guide.title}`} ownerId={guide.author_id} />
+                    <button type="button" onClick={() => void loadDetail(guide)} style={smallButton}>查看</button>
+                  </div>
                 </div>
               </article>
             ))}
@@ -189,6 +193,9 @@ export default function Guides() {
               <span style={{ ...pillStyle, background: 'rgba(239,246,255,0.92)', color: '#275389' }}>{spoilerLabels[selected.spoiler_level] || '剧透提示'}</span>
             </div>
             <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.6rem', marginBottom: 8 }}>{selected.title}</h2>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <ReportFlagButton targetType="guide" targetId={selected.id} targetTitle={`攻略 · ${selected.title}`} ownerId={selected.author_id} />
+            </div>
             <p style={{ color: MUTED, lineHeight: 1.8 }}>{selected.summary}</p>
             <div style={{ color: 'rgba(71,85,105,0.64)', fontSize: '0.82rem', margin: '10px 0 18px' }}>
               作者：<ProfileNameLink profileId={selected.author_id}>{selected.author_name || '匿名作者'}</ProfileNameLink> · 对象：{selected.target_name || '未绑定对象'} · 已购 {selected.purchase_count || 0}

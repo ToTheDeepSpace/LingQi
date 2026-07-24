@@ -2,9 +2,10 @@
 import { computed, ref } from 'vue'
 import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
+import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { DossierDetail } from '../../types'
-import { apiRequest, encoded } from '../../utils/api'
+import { apiRequest, encoded, readAuth } from '../../utils/api'
 import { dateText, ratingText } from '../../utils/format'
 
 const id = ref('')
@@ -37,6 +38,11 @@ function goRanking() {
   if (!dossier) return
   uni.navigateTo({ url: `/pages/rankings/create?subjectType=dm&subjectDossierId=${encoded(dossier.id)}&subjectName=${encoded(dossier.dm_name)}&subjectCity=${encoded(dossier.city)}` })
 }
+function goClaim() {
+  const dossier = data.value?.dossier
+  if (!dossier) return
+  uni.navigateTo({ url: `/pages/dm/claim?id=${encoded(dossier.id)}&name=${encoded(dossier.dm_name)}&entityType=dm` })
+}
 function openProfile(profileId?: string | null) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 
 onLoad(options => { id.value = String(options?.id || ''); void load() })
@@ -55,8 +61,9 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
         <scroll-view v-if="photos.length > 1" class="thumbs" scroll-x :show-scrollbar="false">
           <image v-for="(photo, index) in photos" :key="photo.url" class="thumb" :class="{ active: selectedPhoto === index }" :src="photo.url" mode="aspectFill" @tap="selectedPhoto = index" />
         </scroll-view>
+        <view v-if="activePhoto" class="media-report"><ReportFlag target-type="dossier_image" :target-id="data.dossier.id" :target-sub-id="`photo:${selectedPhoto}`" :title="`${data.dossier.dm_name}的第 ${selectedPhoto + 1} 张图片`" :own="data.dossier.claimed_by === readAuth()?.id" /></view>
         <view class="hero__info">
-          <text class="hero__name">{{ data.dossier.dm_name }}</text>
+          <view class="hero__title-row"><text class="hero__name">{{ data.dossier.dm_name }}</text><ReportFlag target-type="dossier" :target-id="data.dossier.id" :title="`${data.dossier.dm_name}的 DM 档案`" :own="data.dossier.claimed_by === readAuth()?.id" /></view>
           <text class="hero__meta">{{ data.dossier.city || '城市待补充' }}</text>
           <text v-if="data.dossier.affiliation?.store_name" class="hero__store" @tap="goStore">{{ data.dossier.affiliation.store_name }} ›</text>
           <text v-else class="hero__meta">{{ data.dossier.employment_status === 'freelance' ? '自由 DM' : data.dossier.workplace || '任职资料待补充' }}</text>
@@ -67,6 +74,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
           <view class="page-actions hero-actions">
             <button class="primary-button" @tap="goRate">给 TA 评分</button>
             <button class="secondary-button" @tap="goRanking">发布红黑榜</button>
+            <button v-if="data.dossier.claim_status !== 'approved'" class="secondary-button" @tap="goClaim">本人认领</button>
           </view>
         </view>
       </view>
@@ -99,7 +107,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
       <text class="section-title">玩家体验</text>
       <view v-if="!data.ratings.length" class="surface empty-reviews">还没有公开评分。</view>
       <view v-for="rating in data.ratings" :key="rating.id" class="review surface">
-        <view class="review__head"><text class="review__author" :class="{ link: rating.profile_id }" @tap="openProfile(rating.profile_id)">{{ rating.profile_name || '用户' }}</text><text class="review__score">{{ rating.rating }} 星</text></view>
+        <view class="review__head"><text class="review__author" :class="{ link: rating.profile_id }" @tap="openProfile(rating.profile_id)">{{ rating.profile_name || '用户' }}</text><view class="review__head-actions"><text class="review__score">{{ rating.rating }} 星</text><ReportFlag target-type="dm_rating" :target-id="rating.id" title="DM 体验评价" :own="rating.profile_id === readAuth()?.id" /></view></view>
         <text class="review__meta">《{{ rating.script_name }}》 · {{ rating.store_name }} · {{ dateText(rating.played_on) }}<template v-if="rating.replay_number"> · 第 {{ rating.replay_number }} 刷</template></text>
         <text class="review__content">{{ rating.content }}</text>
         <view v-if="rating.tags?.length" class="chip-row"><text v-for="tag in rating.tags" :key="tag" class="chip">{{ tag }}</text></view>
@@ -116,7 +124,9 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 .thumbs { width: 100%; padding: 10rpx 14rpx; white-space: nowrap; }
 .thumb { width: 92rpx; height: 92rpx; margin-right: 10rpx; border: 4rpx solid transparent; border-radius: 8rpx; }
 .thumb.active { border-color: #b9781f; }
+.media-report { display: flex; justify-content: flex-end; padding: 0 14rpx; }
 .hero__info { padding: 22rpx; }
+.hero__title-row, .review__head-actions { display: flex; align-items: center; justify-content: space-between; gap: 10rpx; }
 .hero__name, .hero__meta, .hero__store { display: block; }
 .hero__name { color: #1f2937; font-family: serif; font-size: 46rpx; font-weight: 900; }
 .hero__meta, .hero__store { margin-top: 8rpx; color: #64748b; font-size: 24rpx; }

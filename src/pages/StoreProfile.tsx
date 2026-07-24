@@ -9,6 +9,7 @@ import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { JumuluPageFrame } from '../components/JumuluPageChrome';
 import { jumuluCardStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
+import ReportFlagButton from '../components/ReportFlagButton';
 
 const API = '/api';
 const INK = '#1f2937';
@@ -114,7 +115,12 @@ export default function StoreProfile() {
       {!loading && data && (
         <>
           <section style={heroStyle}>
-            <img src={data.dossier.photo_url || generatedAvatarDataUrl(data.dossier.name, `store:${id}`)} alt="" style={{ ...avatarStyle, objectPosition: `${data.dossier.photo_focus_x ?? 50}% ${data.dossier.photo_focus_y ?? 25}%` }} />
+            <div style={{ position: 'relative', flex: '0 0 auto' }}>
+              <img src={data.dossier.photo_url || generatedAvatarDataUrl(data.dossier.name, `store:${id}`)} alt="" style={{ ...avatarStyle, objectPosition: `${data.dossier.photo_focus_x ?? 50}% ${data.dossier.photo_focus_y ?? 25}%` }} />
+              <div style={{ position: 'absolute', right: 4, bottom: 4, borderRadius: 6, background: 'rgba(255,255,255,.9)' }}>
+                <ReportFlagButton targetType="dossier_image" targetId={id} targetSubId="photo:0" targetTitle={`${data.dossier.name}的店家图片`} ownerId={data.dossier.claimed_by} />
+              </div>
+            </div>
             <div style={{ minWidth: 0, flex: '1 1 260px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                 <p style={eyebrowStyle}>店家档案{data.dossier.claim_status === 'approved' ? ' · 已认领' : ' · 未认领'}</p>
@@ -122,7 +128,10 @@ export default function StoreProfile() {
                   {data.dossier.claimed_by === auth?.id ? '编辑我的档案' : '补充 / 纠错资料'}
                 </button>
               </div>
-              <h1 style={titleStyle}>{data.dossier.name}</h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <h1 style={titleStyle}>{data.dossier.name}</h1>
+                <ReportFlagButton targetType="dossier" targetId={id} targetTitle={`${data.dossier.name}的店家档案`} ownerId={data.dossier.claimed_by} />
+              </div>
               <p style={metaStyle}>{data.dossier.city || '城市待补'}{data.dossier.address ? ` · ${data.dossier.address}` : ''}</p>
               {editMessage && <p style={{ margin: '7px 0 0', color: '#15803d', fontSize: 12, fontWeight: 800 }}>{editMessage}</p>}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
@@ -150,7 +159,7 @@ export default function StoreProfile() {
               <div style={listStyle}>
                 {data.ratings.map(item => (
                   <article key={item.id} style={reviewStyle}>
-                    <div style={reviewHeadStyle}><strong><ProfileNameLink profileId={item.profile_id}>{item.profile_name || '匿名玩家'}</ProfileNameLink></strong><span style={reviewScoreStyle}>{item.rating} 星</span></div>
+                    <div style={reviewHeadStyle}><strong><ProfileNameLink profileId={item.profile_id}>{item.profile_name || '匿名玩家'}</ProfileNameLink></strong><div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={reviewScoreStyle}>{item.rating} 星</span><ReportFlagButton targetType="store_rating" targetId={item.id} targetTitle={`${data.dossier.name}的到店评价`} ownerId={item.profile_id} /></div></div>
                     <p style={proofStyle}>《{item.script_name}》 · {item.visited_on}</p>
                     <p style={contentStyle}>{item.content}</p>
                     {item.tags && item.tags.length > 0 && <div style={tagRowStyle}>{item.tags.map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}</div>}

@@ -146,7 +146,7 @@ export default function CommunityModeration() {
         ) : items.length === 0 ? (
           <div style={cardStyle}>
             <h2 style={{ margin: '0 0 8px', fontSize: '1.1rem' }}>暂无需要众审的内容</h2>
-            <p style={{ margin: 0, color: MUTED, lineHeight: 1.8 }}>只有进入优先复核或临时折叠的举报对象会出现在这里。</p>
+            <p style={{ margin: 0, color: MUTED, lineHeight: 1.8 }}>只有管理员列入重点复核的举报对象会出现在这里。</p>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 14 }}>
@@ -157,7 +157,7 @@ export default function CommunityModeration() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
                     <div>
                       <p style={{ margin: '0 0 6px', color: GOLD, fontSize: '0.78rem', fontWeight: 900 }}>
-                        {targetTypeLabel(item.target_type)} · {item.auto_action === 'temporary_hidden' ? '已临时折叠' : '优先复核'}
+                        {targetTypeLabel(item.target_type)} · 重点复核
                         {item.report_count ? ` · 有效举报 ${item.report_count}` : ''}
                       </p>
                       <h2 style={{ margin: 0, fontSize: '1.15rem', lineHeight: 1.35 }}>{item.target_title || item.target_id}</h2>

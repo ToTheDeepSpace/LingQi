@@ -71,6 +71,7 @@ export type Dossier = {
   rating_tags?: string[]
   common_scripts?: Array<{ id?: string; name: string }>
   claim_status?: string
+  claimed_by?: string | null
   birth_year?: number | null
   height_cm?: number | null
   weight_kg?: number | null

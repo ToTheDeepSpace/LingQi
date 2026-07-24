@@ -3,6 +3,7 @@
     { "path": "pages/index/index", "style": { "navigationBarTitleText": "剧幕录" } },
     { "path": "pages/dm/index", "style": { "navigationBarTitleText": "查 DM", "enablePullDownRefresh": true } },
     { "path": "pages/dm/detail", "style": { "navigationBarTitleText": "DM 档案", "enablePullDownRefresh": true } },
+    { "path": "pages/dm/claim", "style": { "navigationBarTitleText": "认领档案" } },
     { "path": "pages/dm/rate", "style": { "navigationBarTitleText": "评价 DM" } },
     { "path": "pages/stores/index", "style": { "navigationBarTitleText": "店家档案", "enablePullDownRefresh": true } },
     { "path": "pages/stores/detail", "style": { "navigationBarTitleText": "店家详情", "enablePullDownRefresh": true } },
@@ -23,6 +24,7 @@
     { "path": "pages/mine/content", "style": { "navigationBarTitleText": "我的内容", "enablePullDownRefresh": true } },
     { "path": "pages/mine/account", "style": { "navigationBarTitleText": "账号设置" } },
     { "path": "pages/mine/account-status", "style": { "navigationBarTitleText": "消息通知", "enablePullDownRefresh": true } },
+    { "path": "pages/feedback/index", "style": { "navigationBarTitleText": "问题反馈", "enablePullDownRefresh": true } },
     { "path": "pages/profile/detail", "style": { "navigationBarTitleText": "用户主页" } },
     { "path": "pages/report/index", "style": { "navigationBarTitleText": "举报内容" } }
   ],

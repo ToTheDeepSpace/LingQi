@@ -17,6 +17,14 @@ type ClaimHistory = {
   reviewed_at?: string | null;
 };
 
+type ClaimState = {
+  claim: ClaimHistory | null;
+  payment: {
+    paid?: boolean;
+    amount_yuan?: string;
+  };
+};
+
 type Props = {
   open: boolean;
   dossier: { id: string; name: string; entityType: EntityType } | null;
@@ -72,6 +80,7 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
   const [files, setFiles] = useState<SelectedProofFile[]>([]);
   const [truthConfirmed, setTruthConfirmed] = useState(false);
   const [history, setHistory] = useState<ClaimHistory | null>(null);
+  const [paymentPaid, setPaymentPaid] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -92,8 +101,10 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
       .then(async response => ({ response, body: await response.json() }))
       .then(({ response, body }) => {
         if (!response.ok || !body.success) throw new Error(errorMessage(body.error, '认领记录读取失败'));
-        const latest = body.data as ClaimHistory | null;
+        const state = body.data as ClaimState;
+        const latest = state?.claim || null;
         setHistory(latest);
+        setPaymentPaid(Boolean(state?.payment?.paid));
         if (latest?.status === 'rejected') {
           setClaimNote(latest.claim_note || '');
           if (PROOF_OPTIONS[entityType].some(option => option.value === latest.proof_type)) setProofType(latest.proof_type);
@@ -169,6 +180,10 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
       setError('请确认材料真实且你有权提交');
       return;
     }
+    if (!paymentPaid) {
+      setError('请先在剧幕录微信小程序支付 8.88 元认领审核服务费');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -214,6 +229,11 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
             </div>
           )}
           {history?.status === 'pending' && <div className="dossier-claim-pending">这份认领申请正在审核，无需重复提交。</div>}
+          {!paymentPaid && (
+            <div className="dossier-claim-payment">
+              本人认领审核服务费为 8.88 元，请先在剧幕录微信小程序完成支付。认领成功后的资料修改不再收费，但仍需审核。
+            </div>
+          )}
 
           <fieldset disabled={loadingHistory || history?.status === 'pending' || submitting}>
             <legend>你准备提交哪类证明？</legend>
@@ -280,8 +300,8 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
 
         <footer className="dossier-claim-actions">
           <button type="button" className="secondary" onClick={onClose} disabled={submitting}>取消</button>
-          <button type="button" className="primary" onClick={submit} disabled={loadingHistory || history?.status === 'pending' || submitting}>
-            {submitting ? '提交中…' : history?.status === 'pending' ? '审核中' : '提交认领审核'}
+          <button type="button" className="primary" onClick={submit} disabled={loadingHistory || history?.status === 'pending' || submitting || !paymentPaid}>
+            {submitting ? '提交中…' : history?.status === 'pending' ? '审核中' : paymentPaid ? '提交认领审核' : '请先在小程序支付 8.88 元'}
           </button>
         </footer>
       </section>
@@ -294,8 +314,9 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
         .dossier-claim-header p{margin:7px 0 0;color:rgba(71,85,105,.78);font-size:13px;line-height:1.6}
         .dossier-claim-close{width:32px;height:32px;display:grid;place-items:center;flex:0 0 32px;padding:0;border:1px solid rgba(31,41,55,.12);border-radius:6px;background:#fff;color:#475569;font-size:22px;line-height:1;cursor:pointer}
         .dossier-claim-body{padding:18px 22px;overflow:auto}
-        .dossier-claim-rejected,.dossier-claim-pending{display:grid;gap:3px;margin-bottom:14px;padding:10px 12px;border-radius:7px;font-size:13px;line-height:1.55}
+        .dossier-claim-rejected,.dossier-claim-pending,.dossier-claim-payment{display:grid;gap:3px;margin-bottom:14px;padding:10px 12px;border-radius:7px;font-size:13px;line-height:1.55}
         .dossier-claim-rejected{border:1px solid rgba(185,28,28,.16);background:#fff5f5;color:#991b1b}.dossier-claim-pending{border:1px solid rgba(166,106,31,.18);background:#fff8e8;color:#8a5a19;font-weight:800}
+        .dossier-claim-payment{border:1px solid rgba(166,106,31,.22);background:#fff8e8;color:#7a4a0c}
         .dossier-claim-body fieldset{margin:0 0 15px;padding:0;border:0}.dossier-claim-body legend,.dossier-claim-field>span{display:block;margin-bottom:8px;font-size:13px;font-weight:900}
         .dossier-claim-proof-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
         .dossier-claim-proof-options button{min-height:70px;padding:10px;text-align:left;border:1px solid rgba(31,41,55,.12);border-radius:7px;background:#fff;color:#1f2937;cursor:pointer}

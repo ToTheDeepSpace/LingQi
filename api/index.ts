@@ -36,6 +36,14 @@ import {
   type DossierClaimProofFile,
 } from './dossierClaimStorage.js';
 import {
+  MAX_MODERATION_EVIDENCE_FILES,
+  internalModerationEvidenceFiles,
+  publicModerationEvidenceMetadata,
+  readModerationEvidenceFile,
+  removeModerationEvidenceFile,
+  saveModerationEvidenceFile,
+} from './moderationEvidenceStorage.js';
+import {
   MAX_RANKING_EVIDENCE_FILES,
   internalRankingEvidenceFiles,
   publicRankingEvidenceMetadata,
@@ -117,6 +125,17 @@ import {
   providerInquiryPayload,
   publicProviderListing,
 } from './providerMarketplace.js';
+import {
+  SERVICE_FEE_FEN,
+  SERVICE_FEE_YUAN,
+  assertServicePaymentEnvelope,
+  assertServicePaymentOwnership,
+  createMiniappPaymentParams,
+  normalizeServiceProductType,
+  serviceProductDescription,
+  servicePurchaseGrantsAccess,
+  type ServiceProductType,
+} from './servicePayments.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -345,6 +364,7 @@ app.use((req, res, next) => {
   if (path === '/api/lc/reports' || path === '/api/lc/site-messages') return reportRateLimit(req, res, next);
   if (req.method === 'POST' && (
     path.includes('/purchase')
+    || path === '/api/lc/service-payments/create'
     || path === '/api/lc/wallet/recharge'
     || path === '/api/lc/wallet/alipay/create'
     || path === '/api/lc/wallet/wechat/create'
@@ -1366,11 +1386,45 @@ type RelatedProofFile = { name: string; url: string; type?: string };
 type SubsidyMode = 'none' | 'asking' | 'offering';
 type CarpoolSubsidyType = 'none' | 'half_price' | 'free_ticket' | 'discount' | 'a_subsidy' | 'fixed_deduct' | 'custom';
 const CARPOOL_SUBSIDY_TYPES: CarpoolSubsidyType[] = ['none', 'half_price', 'free_ticket', 'discount', 'a_subsidy', 'fixed_deduct', 'custom'];
-type ReportTargetType = 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile' | 'dm_affiliation';
-const REPORT_TARGET_TYPES: ReportTargetType[] = ['carpool', 'ranking', 'comment', 'commission', 'profile', 'dm_affiliation'];
+type ReportTargetType =
+  | 'carpool'
+  | 'ranking'
+  | 'comment'
+  | 'commission'
+  | 'profile'
+  | 'dm_affiliation'
+  | 'dossier'
+  | 'dossier_image'
+  | 'dm_rating'
+  | 'store_rating'
+  | 'role_rating'
+  | 'rating_reply'
+  | 'provider_listing'
+  | 'guide'
+  | 'service'
+  | 'portfolio'
+  | 'portfolio_image';
+const REPORT_TARGET_TYPES: ReportTargetType[] = [
+  'carpool',
+  'ranking',
+  'comment',
+  'commission',
+  'profile',
+  'dm_affiliation',
+  'dossier',
+  'dossier_image',
+  'dm_rating',
+  'store_rating',
+  'role_rating',
+  'rating_reply',
+  'provider_listing',
+  'guide',
+  'service',
+  'portfolio',
+  'portfolio_image',
+];
 type ModerationDecision = 'safe' | 'hide' | 'needs_more_evidence' | 'privacy_risk' | 'legal_risk' | 'duplicate' | 'unclear';
 const MODERATION_DECISIONS: ModerationDecision[] = ['safe', 'hide', 'needs_more_evidence', 'privacy_risk', 'legal_risk', 'duplicate', 'unclear'];
-const TEMPORARY_HIDE_REASON = '收到有效举报后临时折叠，等待管理员复核';
 
 function sanitizeRelatedFiles(input: unknown): RelatedProofFile[] {
   if (!Array.isArray(input)) return [];
@@ -1862,7 +1916,8 @@ function isWechatPayConfigured() {
     WECHAT_PAY_API_V3_KEY &&
     WECHAT_PAY_PRIVATE_KEY &&
     WECHAT_PAY_PUBLIC_KEY_ID &&
-    WECHAT_PAY_PUBLIC_KEY,
+    WECHAT_PAY_PUBLIC_KEY &&
+    WECHAT_PAY_NOTIFY_URL,
   );
 }
 
@@ -1966,6 +2021,306 @@ async function createWechatPayNativeOrder(outTradeNo: string, amount: number, ex
   });
   if (!data?.code_url) throw new Error('微信支付未返回二维码链接');
   return { codeUrl: data.code_url, description, totalFee, expiresAt };
+}
+
+function makeServicePayOrderNo() {
+  return `JMLS${Date.now()}${randomInt(10000, 100000)}`;
+}
+
+async function createWechatPayMiniappOrder(input: {
+  outTradeNo: string;
+  productType: ServiceProductType;
+  openid: string;
+  expiresAt: Date;
+}) {
+  const description = serviceProductDescription(input.productType);
+  const data = await wechatPayRequest<{ prepay_id?: string }>('POST', '/v3/pay/transactions/jsapi', {
+    appid: WECHAT_PAY_APP_ID,
+    mchid: WECHAT_PAY_MCH_ID,
+    description,
+    out_trade_no: input.outTradeNo,
+    time_expire: formatWechatPayTimeExpire(input.expiresAt),
+    notify_url: WECHAT_PAY_NOTIFY_URL,
+    attach: 'jumulu_service_purchase',
+    amount: {
+      total: SERVICE_FEE_FEN,
+      currency: 'CNY',
+    },
+    payer: {
+      openid: input.openid,
+    },
+  });
+  if (!data?.prepay_id) throw new Error('微信支付未返回预支付信息');
+  return {
+    prepayId: data.prepay_id,
+    payParams: createMiniappPaymentParams({
+      appId: WECHAT_PAY_APP_ID,
+      prepayId: data.prepay_id,
+      privateKey: WECHAT_PAY_PRIVATE_KEY,
+    }),
+    description,
+  };
+}
+
+type ServicePurchaseRow = {
+  id: string;
+  profile_id: string;
+  product_type: ServiceProductType;
+  target_id: string;
+  amount_fen: number;
+  status: 'unpaid' | 'paid' | 'refunded';
+  paid_at?: string | null;
+  refunded_at?: string | null;
+};
+
+type ServicePaymentAttemptRow = {
+  id: string;
+  purchase_id: string;
+  out_trade_no: string;
+  prepay_id?: string | null;
+  amount_fen: number;
+  status: 'created' | 'paid' | 'failed' | 'expired' | 'duplicate_paid' | 'refunded';
+  expires_at: string;
+  paid_at?: string | null;
+};
+
+function publicServicePurchase(purchase: ServicePurchaseRow, extra: Record<string, unknown> = {}) {
+  return {
+    id: purchase.id,
+    product_type: purchase.product_type,
+    target_id: purchase.target_id,
+    amount_fen: SERVICE_FEE_FEN,
+    amount_yuan: SERVICE_FEE_YUAN,
+    status: purchase.status,
+    paid: servicePurchaseGrantsAccess(purchase.status),
+    paid_at: purchase.paid_at || null,
+    refunded_at: purchase.refunded_at || null,
+    ...extra,
+  };
+}
+
+async function findServicePurchase(profileId: string, productType: ServiceProductType, targetId: string) {
+  const result = await supabase.from('lc_service_purchases')
+    .select('*')
+    .eq('profile_id', profileId)
+    .eq('product_type', productType)
+    .eq('target_id', targetId)
+    .maybeSingle();
+  if (result.error && !isMissingRelation(result.error, 'lc_service_purchases')) throw result.error;
+  return result.error ? null : result.data as ServicePurchaseRow | null;
+}
+
+async function ensureServicePurchase(profileId: string, productType: ServiceProductType, targetId: string) {
+  const existing = await findServicePurchase(profileId, productType, targetId);
+  if (existing) return existing;
+  const result = await supabase.from('lc_service_purchases').insert({
+    profile_id: profileId,
+    product_type: productType,
+    target_id: targetId,
+    amount_fen: SERVICE_FEE_FEN,
+    status: 'unpaid',
+  }).select('*').single();
+  if (result.error) {
+    if (result.error.code === '23505') {
+      const raced = await findServicePurchase(profileId, productType, targetId);
+      if (raced) return raced;
+    }
+    if (isMissingRelation(result.error, 'lc_service_purchases')) throw new Error('付费服务数据表尚未初始化');
+    throw result.error;
+  }
+  return result.data as ServicePurchaseRow;
+}
+
+async function paidServicePurchase(profileId: string, productType: ServiceProductType, targetId: string) {
+  const purchase = await findServicePurchase(profileId, productType, targetId);
+  return purchase && servicePurchaseGrantsAccess(purchase.status) ? purchase : null;
+}
+
+async function providerBusinessContact(providerId: string) {
+  const result = await supabase.from('lc_provider_contacts')
+    .select('business_contact, is_available, reviewed_at, updated_at')
+    .eq('profile_id', providerId)
+    .maybeSingle();
+  if (result.error && !isMissingRelation(result.error, 'lc_provider_contacts')) throw result.error;
+  return result.error ? null : result.data;
+}
+
+async function servicePurchaseStatusPayload(purchase: ServicePurchaseRow) {
+  if (purchase.product_type !== 'provider_contact' || !servicePurchaseGrantsAccess(purchase.status)) {
+    return publicServicePurchase(purchase);
+  }
+  const contact = await providerBusinessContact(purchase.target_id);
+  return publicServicePurchase(purchase, {
+    contact_available: Boolean(contact?.is_available && contact?.business_contact),
+    business_contact: contact?.is_available ? cleanText(contact.business_contact, 300) || null : null,
+    contact_updated_at: contact?.updated_at || null,
+  });
+}
+
+async function validateServicePurchaseTarget(profile: AuthedProfile, productType: ServiceProductType, requestedTargetId: string) {
+  if (productType === 'provider_listing') return profile.id;
+  if (!/^[0-9a-f-]{36}$/i.test(requestedTargetId)) throw Object.assign(new Error('付费服务对象不正确'), { statusCode: 400 });
+  if (productType === 'dossier_claim') {
+    const result = await supabase.from('lc_dm_dossiers')
+      .select('id, status, claim_status, claimed_by')
+      .eq('id', requestedTargetId)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data || result.data.status !== 'approved') throw Object.assign(new Error('档案不存在或尚未公开'), { statusCode: 404 });
+    if (result.data.claim_status === 'approved' && result.data.claimed_by !== profile.id) {
+      throw Object.assign(new Error('这个档案已经被认领'), { statusCode: 409 });
+    }
+    if (result.data.claim_status === 'pending' && result.data.claimed_by !== profile.id) {
+      throw Object.assign(new Error('这份档案已有认领申请正在审核'), { statusCode: 409 });
+    }
+    return requestedTargetId;
+  }
+  if (requestedTargetId === profile.id) throw Object.assign(new Error('不能付费解锁自己的联系方式'), { statusCode: 400 });
+  const [listingResult, contact] = await Promise.all([
+    supabase.from('lc_provider_listings')
+      .select('profile_id, is_active')
+      .eq('profile_id', requestedTargetId)
+      .eq('is_active', true)
+      .maybeSingle(),
+    providerBusinessContact(requestedTargetId),
+  ]);
+  if (listingResult.error) throw listingResult.error;
+  if (!listingResult.data) throw Object.assign(new Error('这位委托师当前没有公开委托条'), { statusCode: 404 });
+  if (!contact?.is_available || !cleanText(contact.business_contact, 300)) {
+    throw Object.assign(new Error('这位委托师暂未开放联系方式'), { statusCode: 409 });
+  }
+  return requestedTargetId;
+}
+
+async function confirmServicePayment(input: {
+  outTradeNo: string;
+  transactionId: string;
+  totalFee: number;
+  currency: string;
+  appId: string;
+  mchId: string;
+  payerOpenid: string;
+  payload: Record<string, unknown>;
+}) {
+  assertServicePaymentEnvelope({
+    appId: input.appId,
+    mchId: input.mchId,
+    currency: input.currency,
+    payerOpenid: input.payerOpenid,
+    expectedAppId: WECHAT_PAY_APP_ID,
+    expectedMchId: WECHAT_PAY_MCH_ID,
+  });
+  if (useTencentPg) {
+    const client = await tencentPgPool.connect();
+    try {
+      await client.query('begin');
+      const attemptResult = await client.query<ServicePaymentAttemptRow & { profile_id: string; product_type: ServiceProductType; target_id: string; purchase_status: string; wechat_mini_openid: string | null }>(
+        `select attempt.*,
+                purchase.profile_id,
+                purchase.product_type,
+                purchase.target_id,
+                purchase.status as purchase_status,
+                profile.wechat_mini_openid
+           from lc_service_payment_attempts attempt
+           join lc_service_purchases purchase on purchase.id = attempt.purchase_id
+           join lc_profiles profile on profile.id = purchase.profile_id
+          where attempt.out_trade_no = $1
+          for update of attempt, purchase`,
+        [input.outTradeNo],
+      );
+      const attempt = attemptResult.rows[0];
+      if (!attempt) {
+        await client.query('rollback');
+        return null;
+      }
+      assertServicePaymentOwnership({
+        totalFee: input.totalFee,
+        attemptAmountFen: Number(attempt.amount_fen),
+        payerOpenid: input.payerOpenid,
+        expectedPayerOpenid: attempt.wechat_mini_openid,
+      });
+      if (attempt.status === 'paid' || attempt.status === 'duplicate_paid') {
+        await client.query('commit');
+        return { ...attempt, newlyPaid: false, duplicatePaid: attempt.status === 'duplicate_paid' };
+      }
+      const duplicatePaid = attempt.purchase_status === 'paid';
+      await client.query(
+        `update lc_service_payment_attempts
+            set status = $2,
+                wechat_transaction_id = $3,
+                notify_payload = $4::jsonb,
+                paid_at = now(),
+                updated_at = now()
+          where id = $1`,
+        [attempt.id, duplicatePaid ? 'duplicate_paid' : 'paid', input.transactionId, JSON.stringify(input.payload)],
+      );
+      if (!duplicatePaid) {
+        await client.query(
+          `update lc_service_purchases
+              set status = 'paid',
+                  paid_attempt_id = $2,
+                  paid_at = now(),
+                  refunded_at = null,
+                  refund_reason = null,
+                  updated_at = now()
+            where id = $1`,
+          [attempt.purchase_id, attempt.id],
+        );
+      }
+      await client.query('commit');
+      return { ...attempt, newlyPaid: !duplicatePaid, duplicatePaid };
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const attemptResult = await supabase.from('lc_service_payment_attempts')
+    .select('*')
+    .eq('out_trade_no', input.outTradeNo)
+    .maybeSingle();
+  if (attemptResult.error && !isMissingRelation(attemptResult.error, 'lc_service_payment_attempts')) throw attemptResult.error;
+  const attempt = attemptResult.error ? null : attemptResult.data as ServicePaymentAttemptRow | null;
+  if (!attempt) return null;
+  const purchaseResult = await supabase.from('lc_service_purchases')
+    .select('*, lc_profiles!profile_id(wechat_mini_openid)')
+    .eq('id', attempt.purchase_id)
+    .single();
+  if (purchaseResult.error) throw purchaseResult.error;
+  const purchase = purchaseResult.data as ServicePurchaseRow;
+  const purchaseProfile = (purchaseResult.data as Record<string, unknown>).lc_profiles as { wechat_mini_openid?: string | null } | null;
+  assertServicePaymentOwnership({
+    totalFee: input.totalFee,
+    attemptAmountFen: Number(attempt.amount_fen),
+    payerOpenid: input.payerOpenid,
+    expectedPayerOpenid: purchaseProfile?.wechat_mini_openid || null,
+  });
+  if (attempt.status === 'paid' || attempt.status === 'duplicate_paid') {
+    return { ...attempt, profile_id: purchase.profile_id, product_type: purchase.product_type, target_id: purchase.target_id, newlyPaid: false, duplicatePaid: attempt.status === 'duplicate_paid' };
+  }
+  const duplicatePaid = purchase.status === 'paid';
+  const attemptUpdate = await supabase.from('lc_service_payment_attempts').update({
+    status: duplicatePaid ? 'duplicate_paid' : 'paid',
+    wechat_transaction_id: input.transactionId,
+    notify_payload: input.payload,
+    paid_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq('id', attempt.id);
+  if (attemptUpdate.error) throw attemptUpdate.error;
+  if (!duplicatePaid) {
+    const purchaseUpdate = await supabase.from('lc_service_purchases').update({
+      status: 'paid',
+      paid_attempt_id: attempt.id,
+      paid_at: new Date().toISOString(),
+      refunded_at: null,
+      refund_reason: null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', purchase.id);
+    if (purchaseUpdate.error) throw purchaseUpdate.error;
+  }
+  return { ...attempt, profile_id: purchase.profile_id, product_type: purchase.product_type, target_id: purchase.target_id, newlyPaid: !duplicatePaid, duplicatePaid };
 }
 
 function decryptWechatPayResource(resource: Record<string, unknown>) {
@@ -3117,14 +3472,26 @@ async function applyPublicReview(review: PublicReviewRecord, reviewerId: string 
   if (review.target_type === 'provider_listing_update') {
     const draft = normalizeProviderListingDraft(payload);
     const profileId = cleanText(payload.profile_id || review.profile_id, 80);
+    const businessContact = cleanText(payload.business_contact, 300);
+    const initialPurchaseId = cleanText(payload.initial_purchase_id, 80) || null;
     if (!profileId) throw new Error('审核记录缺少委托师账号');
+    if (!businessContact) throw new Error('审核记录缺少委托师业务联系方式');
     const { error: upsertErr } = await supabase.from('lc_provider_listings').upsert({
       profile_id: profileId,
       ...draft,
       is_active: payload.is_active !== false,
+      initial_purchase_id: initialPurchaseId,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'profile_id' });
     if (upsertErr) throw upsertErr;
+    const { error: contactErr } = await supabase.from('lc_provider_contacts').upsert({
+      profile_id: profileId,
+      business_contact: businessContact,
+      is_available: payload.contact_available !== false,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'profile_id' });
+    if (contactErr) throw contactErr;
     await addProfileIdentityRoles(profileId, ['creator']);
     return;
   }
@@ -4262,12 +4629,6 @@ function moderationReviewerRole(profile: Record<string, unknown> | null | undefi
   return '';
 }
 
-function reportThreshold(targetType: ReportTargetType) {
-  if (targetType === 'ranking') return 4;
-  if (targetType === 'profile') return 2;
-  return 3;
-}
-
 async function moderationEngagement(targetType: ReportTargetType, targetId: string) {
   try {
     if (targetType === 'ranking') {
@@ -4318,28 +4679,11 @@ async function currentTargetStatus(targetType: ReportTargetType, targetId: strin
     const { data } = await supabase.from('lc_carpools').select('status').eq('id', targetId).maybeSingle();
     return cleanText(data?.status, 40) || null;
   }
-  const { data } = await supabase.from('lc_profiles').select('is_visible').eq('id', targetId).maybeSingle();
-  return data?.is_visible ? 'visible' : 'hidden';
-}
-
-async function setTargetTemporaryHidden(targetType: ReportTargetType, targetId: string, reason = TEMPORARY_HIDE_REASON) {
-  const before = await currentTargetStatus(targetType, targetId);
-  const now = new Date().toISOString();
-  if (targetType === 'dm_affiliation') {
-    return { before, after: before };
-  } else if (targetType === 'ranking' && before === 'approved') {
-    await supabase.from('lc_rankings').update({ status: 'rejected' }).eq('id', targetId);
-  } else if (targetType === 'comment' && before === 'approved') {
-    await supabase.from('lc_comments').update({ status: 'rejected' }).eq('id', targetId);
-  } else if (targetType === 'commission' && before === 'approved') {
-    await supabase.from('lc_commissions').update({ status: 'rejected', reject_reason: reason, updated_at: now }).eq('id', targetId);
-  } else if (targetType === 'carpool' && before === 'approved') {
-    await supabase.from('lc_carpools').update({ status: 'rejected', reject_reason: reason, updated_at: now }).eq('id', targetId);
-  } else if (targetType === 'profile' && before === 'visible') {
-    await supabase.from('lc_profiles').update({ is_visible: false, reject_reason: reason, updated_at: now }).eq('id', targetId);
+  if (targetType === 'profile') {
+    const { data } = await supabase.from('lc_profiles').select('is_visible').eq('id', targetId).maybeSingle();
+    return data?.is_visible ? 'visible' : 'hidden';
   }
-  const after = await currentTargetStatus(targetType, targetId);
-  return { before, after };
+  return null;
 }
 
 async function restoreTargetAfterReport(targetType: ReportTargetType, targetId: string) {
@@ -4355,7 +4699,7 @@ async function restoreTargetAfterReport(targetType: ReportTargetType, targetId: 
     await supabase.from('lc_commissions').update({ status: 'approved', reject_reason: null, updated_at: now }).eq('id', targetId);
   } else if (targetType === 'carpool') {
     await supabase.from('lc_carpools').update({ status: 'approved', reject_reason: null, updated_at: now }).eq('id', targetId);
-  } else {
+  } else if (targetType === 'profile') {
     await supabase.from('lc_profiles').update({ is_visible: true, reject_reason: null, updated_at: now }).eq('id', targetId);
   }
   const after = await currentTargetStatus(targetType, targetId);
@@ -4428,39 +4772,15 @@ async function evaluateReportModeration(req: express.Request, args: {
     : (riskLevels.includes('high') || ownRisk === 'high' ? 'high' : 'normal');
   const engagement = await moderationEngagement(args.targetType, args.targetId);
   const reportRatio = effectiveCount / Math.max(1, effectiveCount + engagement);
-  const threshold = reportThreshold(args.targetType);
-
-  const shouldTemporaryHide =
-    riskLevel === 'urgent'
-    || (riskLevel === 'high' && effectiveCount >= 2)
-    || (effectiveCount >= threshold && reportRatio >= 0.25);
-  const shouldQueuePriority = !shouldTemporaryHide && (riskLevel === 'high' || effectiveCount >= 2);
-
-  let action: 'none' | 'temporary_hidden' | 'queued_priority' = 'none';
-  let statusChange: { before: string | null; after: string | null } = { before: null, after: null };
-  let reason = '';
-  if (shouldTemporaryHide) {
-    action = 'temporary_hidden';
-    reason = riskLevel === 'urgent'
-      ? '命中隐私、未打码、违法或人身安全等高风险举报，先临时折叠等待管理员复核'
-      : `收到 ${effectiveCount} 个有效举报，先临时折叠等待管理员复核`;
-    statusChange = await setTargetTemporaryHidden(args.targetType, args.targetId, reason);
-    await logSecurityEvent(req, {
-      action: 'report_auto_temporary_hidden',
-      targetType: args.targetType,
-      targetId: args.targetId,
-      metadata: { report_count: effectiveCount, report_ratio: reportRatio, risk_level: riskLevel, before: statusChange.before, after: statusChange.after },
-    });
-  } else if (shouldQueuePriority) {
-    action = 'queued_priority';
-    reason = riskLevel === 'high' ? '高风险举报，进入优先复核队列' : '多名用户举报，进入优先复核队列';
-  }
+  const action = 'none' as const;
+  const statusChange: { before: string | null; after: string | null } = { before: null, after: null };
+  const reason = '已进入管理员举报队列，不自动隐藏或删除内容';
 
   const patch = {
     risk_level: riskLevel,
     auto_action: action,
-    auto_action_reason: reason || null,
-    auto_action_at: action === 'none' ? null : new Date().toISOString(),
+    auto_action_reason: reason,
+    auto_action_at: null,
     target_status_before: statusChange.before,
     target_status_after: statusChange.after,
     report_group_count: effectiveCount,
@@ -4476,7 +4796,7 @@ async function evaluateReportModeration(req: express.Request, args: {
   return {
     risk_level: riskLevel,
     auto_action: action,
-    auto_action_reason: reason || null,
+    auto_action_reason: reason,
     report_group_count: effectiveCount,
     report_ratio: reportRatio,
     target_status_before: statusChange.before,
@@ -5867,6 +6187,7 @@ app.post('/api/lc/miniapp/content-check', authMiddleware, async (req, res) => {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     if (!profile.wechat_mini_openid) return res.status(409).json(err(new Error('请先使用微信小程序重新登录')));
+    if (!profile.phone_verified_at) return res.status(409).json(err(new Error('付费前请先绑定并验证手机号，已有网站账号请绑定原账号手机号')));
     const content = cleanText(req.body?.content, 2400);
     const scene = cleanText(req.body?.scene, 80) || 'ugc';
     if (!content) return res.status(400).json(err(new Error('缺少待检查内容')));
@@ -5887,6 +6208,212 @@ app.post('/api/lc/miniapp/content-check', authMiddleware, async (req, res) => {
     console.error('[miniapp-content-check]', e instanceof Error ? e.message : String(e));
     res.status(503).json(err(new Error('微信内容安全服务暂时不可用，请稍后重试')));
   }
+});
+
+app.post('/api/lc/service-payments/create', authMiddleware, async (req, res) => {
+  let attemptId = '';
+  try {
+    if (req.header('X-LC-Client') !== 'wechat-miniapp') {
+      return res.status(409).json(err(new Error('当前付费服务请在剧幕录微信小程序内完成')));
+    }
+    if (!isWechatPayConfigured()) return res.status(503).json(err(new Error('微信支付尚未配置')));
+    assertWechatPayConfigured();
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if (!profile.wechat_mini_openid) return res.status(409).json(err(new Error('请先使用微信小程序重新登录')));
+    const productType = normalizeServiceProductType(req.body?.productType ?? req.body?.product_type);
+    if (!productType) return res.status(400).json(err(new Error('付费服务类型不正确')));
+    const requestedTargetId = cleanText(req.body?.targetId ?? req.body?.target_id, 80);
+    const targetId = await validateServicePurchaseTarget(profile, productType, requestedTargetId);
+    let purchase = await ensureServicePurchase(profile.id, productType, targetId);
+    if (purchase.status === 'refunded') {
+      const resetResult = await supabase.from('lc_service_purchases').update({
+        status: 'unpaid',
+        paid_attempt_id: null,
+        paid_at: null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', purchase.id).eq('status', 'refunded').select('*').single();
+      if (resetResult.error) throw resetResult.error;
+      purchase = resetResult.data as ServicePurchaseRow;
+    }
+    if (servicePurchaseGrantsAccess(purchase.status)) {
+      return res.json(ok({
+        purchase: await servicePurchaseStatusPayload(purchase),
+        already_paid: true,
+      }));
+    }
+
+    await supabase.from('lc_service_payment_attempts').update({
+      status: 'expired',
+      updated_at: new Date().toISOString(),
+    }).eq('purchase_id', purchase.id).eq('status', 'created').lt('expires_at', new Date().toISOString());
+
+    const activeResult = await supabase.from('lc_service_payment_attempts')
+      .select('*')
+      .eq('purchase_id', purchase.id)
+      .eq('status', 'created')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (activeResult.error && !isMissingRelation(activeResult.error, 'lc_service_payment_attempts')) throw activeResult.error;
+    let attempt = activeResult.error ? null : activeResult.data as ServicePaymentAttemptRow | null;
+
+    if (!attempt) {
+      const expiresAt = makePaymentExpiresAt();
+      const insertResult = await supabase.from('lc_service_payment_attempts').insert({
+        purchase_id: purchase.id,
+        out_trade_no: makeServicePayOrderNo(),
+        amount_fen: SERVICE_FEE_FEN,
+        status: 'created',
+        expires_at: expiresAt.toISOString(),
+      }).select('*').single();
+      if (insertResult.error) {
+        if (insertResult.error.code === '23505') {
+          const raced = await supabase.from('lc_service_payment_attempts')
+            .select('*')
+            .eq('purchase_id', purchase.id)
+            .eq('status', 'created')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          if (raced.error) throw raced.error;
+          attempt = raced.data as ServicePaymentAttemptRow;
+        } else {
+          throw insertResult.error;
+        }
+      } else {
+        attempt = insertResult.data as ServicePaymentAttemptRow;
+      }
+    }
+    attemptId = attempt.id;
+
+    let prepayId = cleanText(attempt.prepay_id, 120);
+    if (!prepayId) {
+      try {
+        const created = await createWechatPayMiniappOrder({
+          outTradeNo: attempt.out_trade_no,
+          productType,
+          openid: profile.wechat_mini_openid,
+          expiresAt: new Date(attempt.expires_at),
+        });
+        prepayId = created.prepayId;
+        const prepayUpdate = await supabase.from('lc_service_payment_attempts').update({
+          prepay_id: prepayId,
+          updated_at: new Date().toISOString(),
+        }).eq('id', attempt.id).eq('status', 'created');
+        if (prepayUpdate.error) throw prepayUpdate.error;
+      } catch (paymentError) {
+        await supabase.from('lc_service_payment_attempts').update({
+          status: 'failed',
+          notify_payload: { create_error: cleanText(getErrorText(paymentError), 500) },
+          updated_at: new Date().toISOString(),
+        }).eq('id', attempt.id);
+        throw paymentError;
+      }
+    }
+
+    const payParams = createMiniappPaymentParams({
+      appId: WECHAT_PAY_APP_ID,
+      prepayId,
+      privateKey: WECHAT_PAY_PRIVATE_KEY,
+    });
+    await logSecurityEvent(req, {
+      action: 'service_payment_created',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: productType,
+      targetId,
+      metadata: { purchase_id: purchase.id, attempt_id: attempt.id, amount_fen: SERVICE_FEE_FEN },
+    });
+    res.status(201).json(ok({
+      purchase: publicServicePurchase(purchase),
+      already_paid: false,
+      payment: {
+        ...payParams,
+        out_trade_no: attempt.out_trade_no,
+        expires_at: attempt.expires_at,
+      },
+    }));
+  } catch (e) {
+    await logSecurityEvent(req, {
+      action: 'service_payment_create_failed',
+      targetType: 'service_payment_attempt',
+      targetId: attemptId || null,
+      metadata: { error: cleanText(getErrorText(e), 500) },
+    });
+    const statusCode = Number((e as { statusCode?: number })?.statusCode || 500);
+    res.status(statusCode).json(err(e));
+  }
+});
+
+app.get('/api/lc/service-payments/:id/status', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const purchaseResult = await supabase.from('lc_service_purchases')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('profile_id', profile.id)
+      .maybeSingle();
+    if (purchaseResult.error && isMissingRelation(purchaseResult.error, 'lc_service_purchases')) return res.status(503).json(err(new Error('付费服务数据表尚未初始化')));
+    if (purchaseResult.error) throw purchaseResult.error;
+    if (!purchaseResult.data) return res.status(404).json(err(new Error('支付订单不存在')));
+    let purchase = purchaseResult.data as ServicePurchaseRow;
+
+    if (!servicePurchaseGrantsAccess(purchase.status) && req.query.refresh === '1' && isWechatPayConfigured()) {
+      const attemptResult = await supabase.from('lc_service_payment_attempts')
+        .select('*')
+        .eq('purchase_id', purchase.id)
+        .in('status', ['created', 'expired'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (attemptResult.error && !isMissingRelation(attemptResult.error, 'lc_service_payment_attempts')) throw attemptResult.error;
+      const attempt = attemptResult.error ? null : attemptResult.data as ServicePaymentAttemptRow | null;
+      if (attempt) {
+        const transaction = await wechatPayRequest<Record<string, unknown>>(
+          'GET',
+          `/v3/pay/transactions/out-trade-no/${encodeURIComponent(attempt.out_trade_no)}?mchid=${encodeURIComponent(WECHAT_PAY_MCH_ID)}`,
+        );
+        if (transaction.trade_state === 'SUCCESS') {
+          const amount = transaction.amount && typeof transaction.amount === 'object'
+            ? transaction.amount as Record<string, unknown>
+            : {};
+          await confirmServicePayment({
+            outTradeNo: String(transaction.out_trade_no || ''),
+            transactionId: String(transaction.transaction_id || ''),
+            totalFee: Number(amount.total),
+            currency: String(amount.currency || ''),
+            appId: String(transaction.appid || ''),
+            mchId: String(transaction.mchid || ''),
+            payerOpenid: cleanText((transaction.payer as Record<string, unknown> | null)?.openid, 120),
+            payload: makeSafeWechatPayPayload(transaction, { event_type: 'ORDER.QUERY' }),
+          });
+          const refreshed = await supabase.from('lc_service_purchases').select('*').eq('id', purchase.id).single();
+          if (refreshed.error) throw refreshed.error;
+          purchase = refreshed.data as ServicePurchaseRow;
+        }
+      }
+    }
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(ok(await servicePurchaseStatusPayload(purchase)));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/service-payments/mine', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const result = await supabase.from('lc_service_purchases')
+      .select('*')
+      .eq('profile_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (result.error && isMissingRelation(result.error, 'lc_service_purchases')) return res.json(ok([]));
+    if (result.error) throw result.error;
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(ok(await Promise.all((result.data || []).map(row => servicePurchaseStatusPayload(row as ServicePurchaseRow)))));
+  } catch (e) { res.status(500).json(err(e)); }
 });
 
 app.get('/api/lc/miniapp/me/content', authMiddleware, async (req, res) => {
@@ -6315,7 +6842,7 @@ app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    const [listingResult, reviewResult] = await Promise.all([
+    const [listingResult, reviewResult, contactResult, purchase] = await Promise.all([
       supabase.from('lc_provider_listings').select('*').eq('profile_id', profile.id).maybeSingle(),
       supabase.from('lc_public_reviews')
         .select('id, status, summary, created_at, reviewed_at, review_note')
@@ -6324,15 +6851,26 @@ app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase.from('lc_provider_contacts')
+        .select('business_contact, is_available, reviewed_at, updated_at')
+        .eq('profile_id', profile.id)
+        .maybeSingle(),
+      findServicePurchase(profile.id, 'provider_listing', profile.id),
     ]);
     if (listingResult.error && isMissingRelation(listingResult.error, 'lc_provider_listings')) {
       return res.status(503).json(err(new Error('委托条数据表尚未初始化')));
     }
     if (listingResult.error) throw listingResult.error;
     if (reviewResult.error && !isMissingRelation(reviewResult.error, 'lc_public_reviews')) throw reviewResult.error;
+    if (contactResult.error && !isMissingRelation(contactResult.error, 'lc_provider_contacts')) throw contactResult.error;
+    const feePaid = Boolean(listingResult.data || (purchase && servicePurchaseGrantsAccess(purchase.status)));
     res.json(ok({
       listing: listingResult.data ? publicProviderListing(listingResult.data as Record<string, unknown>) : null,
       latest_review: reviewResult.error ? null : reviewResult.data,
+      business_contact: contactResult.error ? null : contactResult.data?.business_contact || null,
+      contact_available: contactResult.error ? false : contactResult.data?.is_available !== false,
+      initial_fee_paid: feePaid,
+      initial_fee_yuan: SERVICE_FEE_YUAN,
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -6347,15 +6885,29 @@ app.post('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
     const posterUrl = normalizeOptionalPublicUrl(draft.poster_url, 1200, true);
     if (!posterUrl) return res.status(400).json(err(new Error('委托条主图地址不正确，请重新上传')));
     draft.poster_url = posterUrl;
+    const businessContact = cleanText(req.body?.businessContact ?? req.body?.business_contact, 300);
+    if (!businessContact) return res.status(400).json(err(new Error('请填写用于付费解锁的业务联系方式')));
 
-    const pendingResult = await supabase.from('lc_public_reviews')
-      .select('id')
-      .eq('target_type', 'provider_listing_update')
-      .eq('profile_id', profile.id)
-      .eq('status', 'pending')
-      .maybeSingle();
+    const [pendingResult, listingResult, paidPurchase] = await Promise.all([
+      supabase.from('lc_public_reviews')
+        .select('id')
+        .eq('target_type', 'provider_listing_update')
+        .eq('profile_id', profile.id)
+        .eq('status', 'pending')
+        .maybeSingle(),
+      supabase.from('lc_provider_listings').select('profile_id').eq('profile_id', profile.id).maybeSingle(),
+      paidServicePurchase(profile.id, 'provider_listing', profile.id),
+    ]);
     if (pendingResult.error && !isMissingRelation(pendingResult.error, 'lc_public_reviews')) throw pendingResult.error;
     if (pendingResult.data) return res.status(409).json(err(new Error('你已有一版委托条正在审核，请等待处理后再修改')));
+    if (listingResult.error && !isMissingRelation(listingResult.error, 'lc_provider_listings')) throw listingResult.error;
+    if (!listingResult.data && !paidPurchase) {
+      return res.status(402).json(codedErr(
+        new Error(`首次上架委托条需在微信小程序支付 ${SERVICE_FEE_YUAN} 元，后续修改不再收费但仍需审核`),
+        'SERVICE_PAYMENT_REQUIRED',
+        { product_type: 'provider_listing', target_id: profile.id, amount_fen: SERVICE_FEE_FEN },
+      ));
+    }
 
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'provider_listing_submit',
@@ -6372,7 +6924,14 @@ app.post('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
       profile,
       title: '委托师委托条',
       summary: '委托条主图、身高体重与擅长角色类型',
-      payload: { profile_id: profile.id, ...draft, is_active: true },
+      payload: {
+        profile_id: profile.id,
+        ...draft,
+        business_contact: businessContact,
+        contact_available: req.body?.contactAvailable !== false && req.body?.contact_available !== false,
+        initial_purchase_id: paidPurchase?.id || null,
+        is_active: true,
+      },
       moderationPrecheck,
     });
     await logSecurityEvent(req, {
@@ -6410,7 +6969,58 @@ app.put('/api/lc/provider-listings/mine/active', authMiddleware, async (req, res
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/provider-listings/:id/inquiries', authMiddleware, async (req, res) => {
+app.put('/api/lc/provider-listings/mine/contact-available', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const available = req.body?.available !== false;
+    const result = await supabase.from('lc_provider_contacts')
+      .update({ is_available: available, updated_at: new Date().toISOString() })
+      .eq('profile_id', profile.id)
+      .select('business_contact, is_available, updated_at')
+      .maybeSingle();
+    if (result.error && isMissingRelation(result.error, 'lc_provider_contacts')) return res.status(503).json(err(new Error('委托师联系方式数据表尚未初始化')));
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('请先提交并通过委托条审核')));
+    await logSecurityEvent(req, {
+      action: available ? 'provider_contact_resumed' : 'provider_contact_paused',
+      actorId: profile.id,
+      targetType: 'provider_listing',
+      targetId: profile.id,
+    });
+    res.json(ok({ contact_available: result.data.is_available, updated_at: result.data.updated_at }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/provider-listings/:id/contact-access', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if (profile.id === req.params.id) {
+      const contact = await providerBusinessContact(profile.id);
+      return res.json(ok({
+        paid: true,
+        owner: true,
+        contact_available: Boolean(contact?.is_available && contact?.business_contact),
+        business_contact: contact?.is_available ? cleanText(contact.business_contact, 300) || null : null,
+      }));
+    }
+    const purchase = await findServicePurchase(profile.id, 'provider_contact', req.params.id);
+    if (!purchase || !servicePurchaseGrantsAccess(purchase.status)) {
+      return res.json(ok({
+        paid: false,
+        owner: false,
+        amount_fen: SERVICE_FEE_FEN,
+        amount_yuan: SERVICE_FEE_YUAN,
+        business_contact: null,
+      }));
+    }
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(ok(await servicePurchaseStatusPayload(purchase)));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/provider-listings/:id/inquiries-legacy-disabled', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -8356,6 +8966,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const targetType = REPORT_TARGET_TYPES.includes(req.body.targetType) ? req.body.targetType as ReportTargetType : null;
     const targetId = cleanText(req.body.targetId, 80);
+    const targetSubId = cleanText(req.body.targetSubId ?? req.body.target_sub_id, 300);
     const reason = cleanText(req.body.reason, 80);
     const description = cleanText(req.body.description, 800);
     if (!targetType || !targetId || !reason) {
@@ -8367,6 +8978,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
 
     let targetTitle = '';
     let snapshot: Record<string, unknown> = {};
+    let targetOwnerId = '';
     if (targetType === 'carpool') {
       const { data: item, error: qErr } = await supabase.from('lc_carpools')
         .select('id, title, poster_id, poster_name, city, event_date, script_name, role_name, content, status')
@@ -8377,6 +8989,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       if (!item) return res.status(404).json(err(new Error('举报对象不存在')));
       if (!['approved', 'pending'].includes(item.status)) return res.status(400).json(err(new Error('这条拼车已不在公开处理范围内')));
       targetTitle = item.title;
+      targetOwnerId = cleanText(item.poster_id, 80);
       snapshot = {
         city: item.city,
         event_date: item.event_date,
@@ -8387,7 +9000,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       };
     } else if (targetType === 'ranking') {
       const { data: item, error: qErr } = await supabase.from('lc_rankings')
-        .select('id, type, subject_name, subject_type, subject_city, author_name, content, status')
+        .select('id, type, subject_name, subject_type, subject_city, author_name, poster_id, content, status')
         .eq('id', targetId)
         .single();
       if (qErr && isMissingRelation(qErr, 'lc_rankings')) return res.status(503).json(err(new Error('红黑榜数据表尚未初始化')));
@@ -8395,16 +9008,18 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       if (!item) return res.status(404).json(err(new Error('举报对象不存在')));
       if (item.status !== 'approved') return res.status(400).json(err(new Error('只能举报已公开内容')));
       targetTitle = item.subject_name;
+      targetOwnerId = cleanText(item.poster_id, 80);
       snapshot = {
         ranking_type: item.type,
         subject_type: item.subject_type,
         city: item.subject_city,
         poster_name: item.author_name,
+        image_reference: targetSubId || null,
         content_preview: cleanText(item.content, 240),
       };
     } else if (targetType === 'comment') {
       const { data: item, error: qErr } = await supabase.from('lc_comments')
-        .select('id, ranking_id, author_name, content, status, is_pinned, pin_label, lc_rankings(subject_name, type)')
+        .select('id, ranking_id, author_id, author_name, content, status, is_pinned, pin_label, lc_rankings(subject_name, type)')
         .eq('id', targetId)
         .single();
       if (qErr && isMissingRelation(qErr, 'lc_comments')) return res.status(503).json(err(new Error('评论数据表尚未初始化')));
@@ -8413,6 +9028,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       if (item.status !== 'approved') return res.status(400).json(err(new Error('只能举报已公开评论')));
       const ranking = item.lc_rankings as { subject_name?: string; type?: string } | null;
       targetTitle = `${ranking?.subject_name || '红黑榜'}的评论`;
+      targetOwnerId = cleanText(item.author_id, 80);
       snapshot = {
         ranking_id: item.ranking_id,
         ranking_title: ranking?.subject_name || null,
@@ -8424,7 +9040,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       };
     } else if (targetType === 'commission') {
       const { data: item, error: qErr } = await supabase.from('lc_commissions')
-        .select('id, title, poster_name, city, needed_date, needed_end_date, target_type, content, status')
+        .select('id, title, poster_id, poster_name, city, needed_date, needed_end_date, target_type, content, status')
         .eq('id', targetId)
         .single();
       if (qErr && isMissingRelation(qErr, 'lc_commissions')) return res.status(503).json(err(new Error('委托需求表尚未初始化')));
@@ -8432,6 +9048,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       if (!item) return res.status(404).json(err(new Error('举报对象不存在')));
       if (item.status !== 'approved') return res.status(400).json(err(new Error('只能举报已公开委托需求')));
       targetTitle = item.title;
+      targetOwnerId = cleanText(item.poster_id, 80);
       snapshot = {
         city: item.city,
         needed_date: item.needed_date,
@@ -8449,12 +9066,121 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       if (!item) return res.status(404).json(err(new Error('举报对象不存在')));
       if (!item.is_visible) return res.status(400).json(err(new Error('只能举报已公开主页')));
       targetTitle = item.display_name;
+      targetOwnerId = cleanText(item.id, 80);
       snapshot = {
         display_name: item.display_name,
         role_type: item.role_type,
         city: item.city,
         content_preview: cleanText(item.bio, 240),
       };
+    } else if (targetType === 'dossier' || targetType === 'dossier_image') {
+      const { data: item, error: qErr } = await supabase.from('lc_dm_dossiers')
+        .select('*')
+        .eq('id', targetId)
+        .maybeSingle();
+      if (qErr) throw qErr;
+      if (!item || item.status !== 'approved') return res.status(404).json(err(new Error('档案不存在或尚未公开')));
+      targetTitle = `${item.entity_type === 'store' ? '店家' : 'DM'}档案 · ${item.dm_name}`;
+      targetOwnerId = cleanText(item.claimed_by, 80);
+      snapshot = {
+        entity_type: item.entity_type,
+        city: item.city,
+        workplace: item.workplace,
+        image_reference: targetType === 'dossier_image' ? targetSubId || null : null,
+        content_preview: cleanText(item.bio || item.note, 240),
+      };
+    } else if (targetType === 'dm_rating' || targetType === 'store_rating') {
+      const table = targetType === 'dm_rating' ? 'lc_dm_ratings' : 'lc_store_ratings';
+      const { data: item, error: qErr } = await supabase.from(table).select('*').eq('id', targetId).maybeSingle();
+      if (qErr) throw qErr;
+      if (!item || item.status !== 'approved') return res.status(404).json(err(new Error('评价不存在或尚未公开')));
+      targetTitle = `${targetType === 'dm_rating' ? 'DM' : '店家'}评价 · ${cleanText(item.script_name, 120) || '体验记录'}`;
+      targetOwnerId = cleanText(item.profile_id, 80);
+      snapshot = {
+        profile_name: item.profile_name,
+        script_name: item.script_name,
+        rating: item.rating,
+        content_preview: cleanText(item.content, 240),
+      };
+    } else if (targetType === 'role_rating') {
+      const { data: item, error: qErr } = await supabase.from('lc_entity_ratings').select('*').eq('id', targetId).maybeSingle();
+      if (qErr) throw qErr;
+      if (!item || item.status !== 'approved') return res.status(404).json(err(new Error('角色点评不存在或尚未公开')));
+      const metadata = objectPayload(item.entity_metadata);
+      targetTitle = `角色点评 · ${cleanText(metadata.role_name, 120) || cleanText(item.target_name, 120) || '角色体验'}`;
+      targetOwnerId = cleanText(item.profile_id, 80);
+      snapshot = {
+        profile_name: item.profile_name,
+        review_lane: item.review_lane,
+        rating: item.rating,
+        content_preview: cleanText(item.content, 240),
+      };
+    } else if (targetType === 'rating_reply') {
+      const { data: item, error: qErr } = await supabase.from('lc_rating_discussion_nodes').select('*').eq('id', targetId).maybeSingle();
+      if (qErr) throw qErr;
+      if (!item || item.status !== 'approved') return res.status(404).json(err(new Error('评价回复不存在或尚未公开')));
+      targetTitle = item.node_type === 'official_response' ? '评价相关方回应' : '评价补充回复';
+      targetOwnerId = cleanText(item.profile_id, 80);
+      snapshot = {
+        rating_type: item.rating_type,
+        rating_id: item.rating_id,
+        node_type: item.node_type,
+        profile_name: item.is_anonymous ? '匿名用户' : item.profile_name,
+        content_preview: cleanText(item.content, 240),
+      };
+    } else if (targetType === 'provider_listing') {
+      const [listingResult, profileResult] = await Promise.all([
+        supabase.from('lc_provider_listings').select('*').eq('profile_id', targetId).eq('is_active', true).maybeSingle(),
+        supabase.from('lc_profiles').select('id, display_name, city').eq('id', targetId).maybeSingle(),
+      ]);
+      if (listingResult.error) throw listingResult.error;
+      if (profileResult.error) throw profileResult.error;
+      if (!listingResult.data || !profileResult.data) return res.status(404).json(err(new Error('委托条不存在或已下架')));
+      targetTitle = `委托条 · ${profileResult.data.display_name || '委托师'}`;
+      targetOwnerId = cleanText(targetId, 80);
+      snapshot = {
+        city: profileResult.data.city,
+        headline: listingResult.data.headline,
+        role_types: listingResult.data.role_types,
+        content_preview: cleanText(listingResult.data.description, 240),
+      };
+    } else if (targetType === 'guide') {
+      const { data: item, error: qErr } = await supabase.from('lc_guides').select('*').eq('id', targetId).maybeSingle();
+      if (qErr) throw qErr;
+      if (!item || item.status !== 'approved') return res.status(404).json(err(new Error('攻略不存在或尚未公开')));
+      targetTitle = `攻略 · ${item.title}`;
+      targetOwnerId = cleanText(item.author_id, 80);
+      snapshot = {
+        author_name: item.author_name,
+        guide_type: item.guide_type,
+        target_name: item.target_name,
+        content_preview: cleanText(item.summary || item.content, 240),
+      };
+    } else if (targetType === 'service') {
+      const { data: item, error: qErr } = await supabase.from('lc_services').select('*').eq('id', targetId).maybeSingle();
+      if (qErr) throw qErr;
+      if (!item || item.is_active === false) return res.status(404).json(err(new Error('服务不存在或已下架')));
+      targetTitle = `服务 · ${cleanText(item.service_type, 120) || '服务项目'}`;
+      targetOwnerId = cleanText(item.creator_id, 80);
+      snapshot = {
+        service_type: item.service_type,
+        price: item.price,
+        duration: item.duration,
+        content_preview: cleanText(item.description, 240),
+      };
+    } else if (targetType === 'portfolio' || targetType === 'portfolio_image') {
+      const { data: item, error: qErr } = await supabase.from('lc_portfolio').select('*').eq('id', targetId).maybeSingle();
+      if (qErr) throw qErr;
+      if (!item) return res.status(404).json(err(new Error('作品不存在或已删除')));
+      targetTitle = targetType === 'portfolio_image' ? '作品图片' : `作品 · ${cleanText(item.title, 120) || '未命名作品'}`;
+      targetOwnerId = cleanText(item.creator_id, 80);
+      snapshot = {
+        image_reference: targetType === 'portfolio_image' ? targetSubId || cleanText(item.image_url, 300) || null : null,
+        content_preview: cleanText(item.description || item.title, 240),
+      };
+    }
+    if (targetOwnerId && targetOwnerId === profile.id) {
+      return res.status(400).json(err(new Error('自己的内容请使用编辑、撤回或下架入口')));
     }
 
     const moderationPrecheck = runLocalModerationPrecheck({
@@ -8467,6 +9193,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
     const { data, error: insErr } = await supabase.from('lc_reports').upsert({
       target_type: targetType,
       target_id: targetId,
+      target_sub_id: targetSubId,
       target_title: targetTitle,
       reporter_id: profile.id,
       reporter_name: profile.display_name,
@@ -8476,7 +9203,7 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       moderation_precheck: moderationPrecheck,
       status: 'pending',
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'target_type,target_id,reporter_id' }).select('id').single();
+    }, { onConflict: 'target_type,target_id,target_sub_id,reporter_id' }).select('id').single();
     if (insErr) {
       if (isMissingRelation(insErr, 'lc_reports')) return res.status(503).json(err(new Error('举报表尚未初始化，请先执行 Supabase migration')));
       throw insErr;
@@ -8494,6 +9221,78 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
       metadata: { report_id: data?.id, reason, target_title: targetTitle, moderation, precheck: moderationPrecheck },
     });
     res.json(ok({ id: data?.id, moderation }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/reports/:id/evidence', authMiddleware, upload.single('file'), async (req, res) => {
+  let savedFile: ReturnType<typeof saveModerationEvidenceFile> | null = null;
+  let evidenceCommitted = false;
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const file = req.file;
+    if (!file) return res.status(400).json(err(new Error('请选择证据图片')));
+    const result = await supabase.from('lc_reports')
+      .select('id, reporter_id, status, evidence_files')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('举报记录不存在')));
+    if (result.data.reporter_id !== profile.id) return res.status(403).json(err(new Error('只能补充自己的举报材料')));
+    if (result.data.status !== 'pending') return res.status(400).json(err(new Error('这条举报已经处理，不能继续补充图片')));
+    const currentFiles = internalModerationEvidenceFiles(result.data.evidence_files);
+    if (currentFiles.length >= MAX_MODERATION_EVIDENCE_FILES) {
+      return res.status(400).json(err(new Error(`最多上传 ${MAX_MODERATION_EVIDENCE_FILES} 张证据图片`)));
+    }
+    const image = await sanitizeUploadedImageFile({ buffer: file.buffer, mimetype: file.mimetype });
+    savedFile = saveModerationEvidenceFile({
+      root: PRIVATE_UPLOAD_ROOT,
+      kind: 'report',
+      recordId: result.data.id,
+      originalName: file.originalname,
+      image,
+    });
+    const nextFiles = [...currentFiles, savedFile];
+    const updateResult = await supabase.from('lc_reports')
+      .update({ evidence_files: nextFiles, updated_at: new Date().toISOString() })
+      .eq('id', result.data.id)
+      .eq('reporter_id', profile.id);
+    if (updateResult.error) throw updateResult.error;
+    evidenceCommitted = true;
+    await logSecurityEvent(req, {
+      action: 'report_private_evidence_uploaded',
+      targetType: 'report',
+      targetId: result.data.id,
+      metadata: { file_id: savedFile.id, file_count: nextFiles.length },
+    });
+    res.json(ok({ file: publicModerationEvidenceMetadata([savedFile])[0] }));
+  } catch (e) {
+    if (savedFile && !evidenceCommitted) removeModerationEvidenceFile(PRIVATE_UPLOAD_ROOT, savedFile.relative_path);
+    res.status(500).json(err(e));
+  }
+});
+
+app.get('/api/lc/admin/reports/:id/evidence/:fileId', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const result = await supabase.from('lc_reports')
+      .select('id, target_type, evidence_files')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data || result.data.target_type === 'dm_affiliation') {
+      return res.status(404).json(err(new Error('举报材料不存在')));
+    }
+    const file = internalModerationEvidenceFiles(result.data.evidence_files)
+      .find(item => item.id === req.params.fileId);
+    if (!file) return res.status(404).json(err(new Error('举报材料不存在')));
+    const body = readModerationEvidenceFile(PRIVATE_UPLOAD_ROOT, 'report', result.data.id, file.relative_path);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Length', String(body.length));
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `inline; filename="report-evidence-${file.id}.jpg"`);
+    res.send(body);
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -8591,13 +9390,36 @@ app.post('/api/lc/site-messages', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
-    const allowedCategories = ['suggestion', 'dm_correction', 'appeal', 'account', 'bug', 'cooperation', 'general'];
+    const allowedCategories = [
+      'suggestion',
+      'dm_correction',
+      'dossier_correction',
+      'appeal',
+      'account',
+      'bug',
+      'cooperation',
+      'invalid_contact',
+      'payment_refund',
+      'report_abuse',
+      'other',
+      'general',
+    ];
     const rawCategory = cleanText(req.body?.category, 40);
     const category = allowedCategories.includes(rawCategory) ? rawCategory : 'general';
     const subject = cleanText(req.body?.subject, 80);
     const content = cleanText(req.body?.content, 2000);
     const contact = cleanText(req.body?.contact, 300);
+    const paymentPurchaseId = cleanText(req.body?.paymentPurchaseId ?? req.body?.payment_purchase_id, 80);
     if (!subject || !content) return res.status(400).json(err(new Error('请填写站内信标题和内容')));
+    if (paymentPurchaseId) {
+      const purchaseResult = await supabase.from('lc_service_purchases')
+        .select('id')
+        .eq('id', paymentPurchaseId)
+        .eq('profile_id', profile.id)
+        .maybeSingle();
+      if (purchaseResult.error) throw purchaseResult.error;
+      if (!purchaseResult.data) return res.status(400).json(err(new Error('关联的支付订单不存在')));
+    }
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'site_feedback_submit',
       targetType: 'site_message',
@@ -8612,6 +9434,8 @@ app.post('/api/lc/site-messages', authMiddleware, async (req, res) => {
       subject,
       content,
       contact: contact || null,
+      evidence_files: [],
+      payment_purchase_id: paymentPurchaseId || null,
       status: 'pending',
       moderation_precheck: moderationPrecheck,
     }).select('id').single();
@@ -8626,6 +9450,95 @@ app.post('/api/lc/site-messages', authMiddleware, async (req, res) => {
       metadata: { category, subject, moderation: moderationPrecheck },
     });
     res.json(ok({ id: data?.id }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/site-messages/:id/evidence', authMiddleware, upload.single('file'), async (req, res) => {
+  let savedFile: ReturnType<typeof saveModerationEvidenceFile> | null = null;
+  let evidenceCommitted = false;
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const file = req.file;
+    if (!file) return res.status(400).json(err(new Error('请选择反馈图片')));
+    const result = await supabase.from('lc_site_messages')
+      .select('id, sender_id, status, evidence_files')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('反馈记录不存在')));
+    if (result.data.sender_id !== profile.id) return res.status(403).json(err(new Error('只能补充自己的反馈图片')));
+    if (result.data.status !== 'pending') return res.status(400).json(err(new Error('这条反馈已经处理，不能继续补充图片')));
+    const currentFiles = internalModerationEvidenceFiles(result.data.evidence_files);
+    if (currentFiles.length >= MAX_MODERATION_EVIDENCE_FILES) {
+      return res.status(400).json(err(new Error(`最多上传 ${MAX_MODERATION_EVIDENCE_FILES} 张反馈图片`)));
+    }
+    const image = await sanitizeUploadedImageFile({ buffer: file.buffer, mimetype: file.mimetype });
+    savedFile = saveModerationEvidenceFile({
+      root: PRIVATE_UPLOAD_ROOT,
+      kind: 'feedback',
+      recordId: result.data.id,
+      originalName: file.originalname,
+      image,
+    });
+    const nextFiles = [...currentFiles, savedFile];
+    const updateResult = await supabase.from('lc_site_messages')
+      .update({ evidence_files: nextFiles, updated_at: new Date().toISOString() })
+      .eq('id', result.data.id)
+      .eq('sender_id', profile.id);
+    if (updateResult.error) throw updateResult.error;
+    evidenceCommitted = true;
+    await logSecurityEvent(req, {
+      action: 'feedback_private_evidence_uploaded',
+      targetType: 'site_message',
+      targetId: result.data.id,
+      metadata: { file_id: savedFile.id, file_count: nextFiles.length },
+    });
+    res.json(ok({ file: publicModerationEvidenceMetadata([savedFile])[0] }));
+  } catch (e) {
+    if (savedFile && !evidenceCommitted) removeModerationEvidenceFile(PRIVATE_UPLOAD_ROOT, savedFile.relative_path);
+    res.status(500).json(err(e));
+  }
+});
+
+app.get('/api/lc/admin/site-messages/:id/evidence/:fileId', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const result = await supabase.from('lc_site_messages')
+      .select('id, evidence_files')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json(err(new Error('反馈图片不存在')));
+    const file = internalModerationEvidenceFiles(result.data.evidence_files)
+      .find(item => item.id === req.params.fileId);
+    if (!file) return res.status(404).json(err(new Error('反馈图片不存在')));
+    const body = readModerationEvidenceFile(PRIVATE_UPLOAD_ROOT, 'feedback', result.data.id, file.relative_path);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Length', String(body.length));
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `inline; filename="feedback-evidence-${file.id}.jpg"`);
+    res.send(body);
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.get('/api/lc/site-messages/mine', authMiddleware, async (req, res) => {
+  try {
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const result = await supabase.from('lc_site_messages')
+      .select('id, category, subject, content, status, evidence_files, payment_purchase_id, admin_reply, replied_at, created_at, updated_at')
+      .eq('sender_id', profile.id)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (result.error && isMissingRelation(result.error, 'lc_site_messages')) return res.json(ok([]));
+    if (result.error) throw result.error;
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(ok((result.data || []).map(item => ({
+      ...item,
+      evidence_files: publicModerationEvidenceMetadata(item.evidence_files),
+    }))));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -9728,8 +10641,16 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       transactions: transactions || [],
       certifications: certifications || [],
       carpools: carpools || [],
-      reports: reports || [],
-      siteMessages: siteMessages || [],
+      reports: (reports || []).map((report: Record<string, unknown>) => ({
+        ...report,
+        evidence_files: report.target_type === 'dm_affiliation'
+          ? publicClaimProofMetadata(report.evidence_files)
+          : publicModerationEvidenceMetadata(report.evidence_files),
+      })),
+      siteMessages: (siteMessages || []).map((message: Record<string, unknown>) => ({
+        ...message,
+        evidence_files: publicModerationEvidenceMetadata(message.evidence_files),
+      })),
       accountAppeals: accountAppeals.map(item => ({
         ...item,
         profile_name: appealProfileMap.get(String(item.profile_id))?.display_name || '未知用户',
@@ -10906,14 +11827,32 @@ app.put('/api/lc/admin/profile/:id/unflag', authMiddleware, adminMiddleware, asy
 app.put('/api/lc/admin/site-messages/:id/resolve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const adminNote = cleanText(req.body?.adminNote, 800);
+    const adminReply = cleanText(req.body?.adminReply ?? req.body?.admin_reply, 1000);
     const { data, error: updErr } = await supabase.from('lc_site_messages')
-      .update({ status: 'resolved', admin_note: adminNote || null, updated_at: new Date().toISOString() })
+      .update({
+        status: 'resolved',
+        admin_note: adminNote || null,
+        admin_reply: adminReply || null,
+        replied_at: adminReply ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', req.params.id)
-      .select('id')
+      .select('id, sender_id, subject')
       .single();
     if (updErr) {
       if (isMissingRelation(updErr, 'lc_site_messages')) return res.status(503).json(err(new Error('站内信表尚未初始化')));
       throw updErr;
+    }
+    if (data?.sender_id) {
+      await notifyProfile({
+        profileId: data.sender_id,
+        type: 'site_message_resolved',
+        title: '反馈已有处理结果',
+        content: adminReply || `你提交的“${cleanText(data.subject, 80) || '反馈'}”已处理，可在“我的反馈”中查看。`,
+        relatedType: 'site_message',
+        relatedId: data.id,
+        actionUrl: '/contact',
+      });
     }
     await logSecurityEvent(req, {
       action: 'site_message_resolved',
@@ -13849,6 +14788,7 @@ async function createDossierClaimRecord(input: {
   proofType: DossierClaimProofType;
   claimNote: string;
   proofFiles: DossierClaimProofFile[];
+  paymentPurchaseId: string;
 }) {
   if (useTencentPg) {
     const client = await tencentPgPool.connect();
@@ -13868,9 +14808,9 @@ async function createDossierClaimRecord(input: {
 
       await client.query(
         `insert into lc_dm_dossier_claims
-          (id, dossier_id, claimant_id, entity_type, proof_type, claim_note, proof_files, status)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, 'pending')`,
-        [input.claimId, input.dossierId, input.claimantId, input.entityType, input.proofType, input.claimNote, JSON.stringify(input.proofFiles)],
+          (id, dossier_id, claimant_id, entity_type, proof_type, claim_note, proof_files, payment_purchase_id, status)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, 'pending')`,
+        [input.claimId, input.dossierId, input.claimantId, input.entityType, input.proofType, input.claimNote, JSON.stringify(input.proofFiles), input.paymentPurchaseId],
       );
       const updatedResult = await client.query(
         `update lc_dm_dossiers
@@ -13900,6 +14840,7 @@ async function createDossierClaimRecord(input: {
     proof_type: input.proofType,
     claim_note: input.claimNote,
     proof_files: input.proofFiles,
+    payment_purchase_id: input.paymentPurchaseId,
     status: 'pending',
   });
   if (claimErr) throw claimErr;
@@ -14445,16 +15386,28 @@ app.get('/api/lc/dm-dossiers/:id/my-claim', authMiddleware, async (req, res) => 
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    const result = await supabase.from('lc_dm_dossier_claims')
-      .select('id, dossier_id, proof_type, claim_note, status, reject_reason, created_at, reviewed_at')
-      .eq('dossier_id', req.params.id)
-      .eq('claimant_id', profile.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const [result, purchase] = await Promise.all([
+      supabase.from('lc_dm_dossier_claims')
+        .select('id, dossier_id, proof_type, claim_note, status, reject_reason, created_at, reviewed_at')
+        .eq('dossier_id', req.params.id)
+        .eq('claimant_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      findServicePurchase(profile.id, 'dossier_claim', req.params.id),
+    ]);
     if (result.error && isMissingRelation(result.error, 'lc_dm_dossier_claims')) return res.json(ok(null));
     if (result.error) throw result.error;
-    res.json(ok(result.data || null));
+    res.json(ok({
+      claim: result.data || null,
+      payment: purchase ? await servicePurchaseStatusPayload(purchase) : {
+        paid: false,
+        amount_fen: SERVICE_FEE_FEN,
+        amount_yuan: SERVICE_FEE_YUAN,
+        product_type: 'dossier_claim',
+        target_id: req.params.id,
+      },
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -14503,6 +15456,14 @@ app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, upload.array('proofFil
     if (!dossier || dossier.status !== 'approved') return res.status(404).json(err(new Error('档案不存在或尚未公开')));
     if (dossier.claim_status === 'approved') return res.status(400).json(err(new Error('这个档案已经被认领')));
     if (dossier.claim_status === 'pending') return res.status(409).json(err(new Error('这份档案已经有认领申请正在审核')));
+    const paidPurchase = await paidServicePurchase(profile.id, 'dossier_claim', dossier.id);
+    if (!paidPurchase) {
+      return res.status(402).json(codedErr(
+        new Error(`提交本人认领前需在微信小程序支付 ${SERVICE_FEE_YUAN} 元认证审核服务费`),
+        'SERVICE_PAYMENT_REQUIRED',
+        { product_type: 'dossier_claim', target_id: dossier.id, amount_fen: SERVICE_FEE_FEN },
+      ));
+    }
     const entityType = dossier.entity_type === 'store' ? 'store' : 'dm';
     const proofType = normalizeDossierClaimProofType(entityType, req.body?.proofType ?? req.body?.proof_type);
     if (!proofType) return res.status(400).json(err(new Error('请选择有效的证明类型')));
@@ -14532,6 +15493,7 @@ app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, upload.array('proofFil
       proofType,
       claimNote,
       proofFiles: savedProofs,
+      paymentPurchaseId: paidPurchase.id,
     });
     claimCommitted = true;
 
@@ -16871,6 +17833,42 @@ app.post('/api/lc/wallet/wechat/notify', async (req, res) => {
     }
 
     const payload = makeSafeWechatPayPayload(transaction, notification);
+    const servicePayment = await confirmServicePayment({
+      outTradeNo,
+      transactionId,
+      totalFee,
+      currency: String(amount.currency || ''),
+      appId: String(transaction.appid || ''),
+      mchId: String(transaction.mchid || ''),
+      payerOpenid: cleanText((transaction.payer as Record<string, unknown> | null)?.openid, 120),
+      payload,
+    });
+    if (servicePayment) {
+      if (servicePayment.newlyPaid) {
+        await notifyProfile({
+          profileId: servicePayment.profile_id,
+          type: 'service_payment_succeeded',
+          title: '支付成功',
+          content: `${serviceProductDescription(servicePayment.product_type)}已支付成功，权益已经生效。`,
+          relatedType: servicePayment.product_type,
+          relatedId: servicePayment.target_id,
+        });
+      }
+      await logSecurityEvent(req, {
+        action: servicePayment.duplicatePaid ? 'service_payment_duplicate_paid' : 'service_payment_notify_paid',
+        targetType: servicePayment.product_type,
+        targetId: servicePayment.target_id,
+        actorRole: 'wechat_pay',
+        metadata: {
+          purchase_id: servicePayment.purchase_id,
+          out_trade_no: outTradeNo,
+          transaction_id: transactionId,
+          amount_fen: totalFee,
+          newly_paid: servicePayment.newlyPaid,
+        },
+      });
+      return res.status(204).send();
+    }
     const { data, error: rpcErr } = await supabase.rpc('lc_confirm_wechat_pay_recharge', {
       p_out_trade_no: outTradeNo,
       p_transaction_id_wechat: transactionId,

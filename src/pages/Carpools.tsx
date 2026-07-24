@@ -555,13 +555,13 @@ function CarpoolCard({ item, showStatus, onApply, onContact, onReport, applied, 
               {expired ? '已过期' : '联系车头'}
             </button>
           )}
-          {onReport && (
-            <button onClick={onReport}
+          {onReport && !ownItem && (
+            <button onClick={onReport} aria-label="举报这条拼车" title="举报"
               style={{
-                minHeight: 36, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(185,28,28,0.18)',
-                background: 'rgba(254,242,242,0.82)', color: '#b91c1c', cursor: 'pointer', fontSize: 13, fontWeight: 900,
+                width: 28, minWidth: 28, height: 28, minHeight: 28, padding: 0, borderRadius: 6, border: 0,
+                background: 'transparent', color: 'rgba(71,85,105,0.72)', cursor: 'pointer', fontSize: 16,
               }}>
-              举报
+              ⚑
             </button>
           )}
         </div>

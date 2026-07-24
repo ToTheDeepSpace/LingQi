@@ -746,10 +746,10 @@ function CommissionCard({ item, showStatus, onDelete, onApply, onReport, applied
               {expired ? '已过期' : ownItem ? '自己的需求' : applied ? '已提交申请' : '我要接单'}
             </button>
           )}
-          {onReport && (
-            <button onClick={onReport}
-              style={{ padding: '10px 13px', borderRadius: 10, border: '1px solid rgba(185,28,28,0.18)', background: 'rgba(254,242,242,0.86)', color: 'rgba(185,28,28,0.78)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 800 }}>
-              举报
+          {onReport && !ownItem && (
+            <button onClick={onReport} aria-label="举报这条委托" title="举报"
+              style={{ width: 28, minWidth: 28, height: 28, minHeight: 28, padding: 0, borderRadius: 6, border: 0, background: 'transparent', color: 'rgba(71,85,105,0.72)', cursor: 'pointer', fontSize: 16 }}>
+              ⚑
             </button>
           )}
         </div>

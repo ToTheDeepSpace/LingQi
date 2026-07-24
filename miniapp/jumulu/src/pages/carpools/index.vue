@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
+import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Carpool, CarpoolApplication } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
@@ -114,7 +115,7 @@ onPullDownRefresh(load)
       </view>
       <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visibleItems.length" empty-text="暂时没有符合条件的拼车" @retry="load" />
       <view v-for="item in visibleItems" :key="item.id" class="listing surface">
-        <view class="listing__top"><text class="listing__title">{{ item.script_name || item.title }}</text><text class="listing__date">{{ dateText(item.event_date) }}</text></view>
+        <view class="listing__top"><text class="listing__title">{{ item.script_name || item.title }}</text><view class="listing__top-actions"><text class="listing__date">{{ dateText(item.event_date) }}</text><ReportFlag target-type="carpool" :target-id="item.id" :title="item.title" :own="item.poster_id === authId" /></view></view>
         <text class="listing__meta">{{ item.city }}<template v-if="item.start_time"> · {{ item.start_time }}</template> · 已上 {{ item.joined_count || 0 }}/{{ item.needed_count || '?' }}</text>
         <text v-if="item.poster_name" class="poster" @tap="openProfile(item.poster_id)">车头 {{ item.poster_name }}</text>
         <text v-if="item.role_name" class="listing__roles">缺：{{ item.role_name }}</text>
@@ -146,6 +147,7 @@ onPullDownRefresh(load)
 .filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
 .listing, .inbox { margin-bottom: 14rpx; padding: 20rpx; }
 .listing__top { display: flex; justify-content: space-between; gap: 14rpx; }
+.listing__top-actions { display: flex; align-items: center; gap: 4rpx; }
 .listing__title, .inbox__title { color: #27364a; font-size: 29rpx; font-weight: 850; }
 .listing__date { flex: 0 0 auto; color: #9a651e; font-size: 23rpx; }
 .listing__meta, .listing__roles, .listing__content, .poster, .inbox__body, .status { display: block; margin-top: 9rpx; }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ProfileNameLink from './ProfileNameLink';
+import ReportFlagButton from './ReportFlagButton';
 
 const API = '/api';
 const INK = '#1f2937';
@@ -84,7 +85,10 @@ function NodeHeader({ label, node }: { label: string; node: RatingDiscussionNode
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
       <strong style={{ color: INK, fontSize: 13 }}>{label} · <ProfileNameLink profileId={node.profile_id}>{node.profile_name}</ProfileNameLink></strong>
-      {node.created_at && <span style={{ color: MUTED, fontSize: 12 }}>{node.created_at.slice(0, 10)}</span>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {node.created_at && <span style={{ color: MUTED, fontSize: 12 }}>{node.created_at.slice(0, 10)}</span>}
+        <ReportFlagButton targetType="rating_reply" targetId={node.id} targetTitle={label} ownerId={node.profile_id} />
+      </div>
     </div>
   );
 }

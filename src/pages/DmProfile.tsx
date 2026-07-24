@@ -8,6 +8,7 @@ import DmGiftModal from '../components/DmGiftModal';
 import RatingDiscussion from '../components/RatingDiscussion';
 import type { RatingOfficialResponse, RatingReaction } from '../components/RatingDiscussion';
 import AffiliationDisputeModal from '../components/AffiliationDisputeModal';
+import ReportFlagButton from '../components/ReportFlagButton';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import type { DossierCareerEntry, DossierFieldProvenance, DossierNamedRef, DossierPhoto } from '../lib/dossierWiki';
@@ -148,10 +149,13 @@ export default function DmProfile() {
     <main style={{ minHeight: '100vh', background: BG, color: INK }}>
       <section className="dm-profile-hero" style={{ padding: '24px 20px 26px', borderBottom: '1px solid rgba(31,41,55,0.09)', background: '#fff' }}>
         <div className="dm-profile-hero-inner" style={{ maxWidth: 960, margin: '0 auto', display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) minmax(0, 1fr)', gap: 32, alignItems: 'stretch' }}>
-          <div className="dm-profile-gallery" style={{ minWidth: 0 }}>
+          <div className="dm-profile-gallery" style={{ position: 'relative', minWidth: 0 }}>
             <button type="button" className="dm-profile-portrait" onClick={() => setLightboxPhoto(activePhoto)} aria-label="查看大图" style={{ width: '100%', aspectRatio: '4 / 5', maxHeight: 350, display: 'block', overflow: 'hidden', padding: 0, borderRadius: 8, border: '1px solid rgba(31,41,55,0.09)', background: '#fffaf2', cursor: 'zoom-in' }}>
               <img src={activePhoto.url} alt={activePhoto.caption || ''} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover', objectPosition: `${activePhoto.focus_x ?? 50}% ${activePhoto.focus_y ?? 25}%` }} />
             </button>
+            <div style={{ position: 'absolute', right: 6, top: 6, borderRadius: 6, background: 'rgba(255,255,255,.9)' }}>
+              <ReportFlagButton targetType="dossier_image" targetId={dossier.id} targetSubId={`photo:${selectedPhotoIndex}`} targetTitle={`${dossier.dm_name}的第 ${selectedPhotoIndex + 1} 张照片`} ownerId={dossier.claimed_by} />
+            </div>
             {photos.length > 1 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 6, marginTop: 7 }}>
                 {photos.slice(0, 9).map((photo, index) => (
@@ -173,6 +177,7 @@ export default function DmProfile() {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginTop: 18 }}>
               <h1 className="dm-profile-name" style={{ margin: 0, fontSize: 'clamp(2.25rem, 5vw, 3.35rem)', lineHeight: 1.08, fontFamily: 'var(--font-serif)', overflowWrap: 'anywhere' }}>{dossier.dm_name}</h1>
               <SourceBadge source={dossier.field_provenance?.dm_name?.source} />
+              <ReportFlagButton targetType="dossier" targetId={dossier.id} targetTitle={`${dossier.dm_name}的 DM 档案`} ownerId={dossier.claimed_by} />
             </div>
             <div className="dm-profile-meta" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
               <span style={{ color: MUTED, fontSize: 14, fontWeight: 750 }}>{dossier.city || '城市待补'}</span>
@@ -264,7 +269,10 @@ export default function DmProfile() {
             {ratings.map(item => <article key={item.id} style={{ borderTop: '1px solid rgba(31,41,55,0.09)', paddingTop: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
                 <div><strong><ProfileNameLink profileId={item.profile_id}>{item.profile_name}</ProfileNameLink></strong><div style={{ color: MUTED, fontSize: 13, marginTop: 4 }}>{item.script_name} · {item.store_dossier_id ? <Link to={`/stores/${item.store_dossier_id}`} style={inlineStoreLinkStyle}>{item.store_name}</Link> : item.store_name} · {item.played_on} · 第{item.replay_number}刷</div></div>
-                <strong style={{ color: '#8a5a19' }}>{item.rating} / 5</strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <strong style={{ color: '#8a5a19' }}>{item.rating} / 5</strong>
+                  <ReportFlagButton targetType="dm_rating" targetId={item.id} targetTitle={`${dossier.dm_name}的体验评价`} ownerId={item.profile_id} />
+                </div>
               </div>
               <p style={{ margin: '10px 0 0', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{item.content}</p>
               {item.tags && item.tags.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>{item.tags.map(tag => <span key={tag} style={tagStyle}>#{tag}</span>)}</div>}

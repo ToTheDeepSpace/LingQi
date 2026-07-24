@@ -2,9 +2,10 @@
 import { computed, ref } from 'vue'
 import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
+import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Ranking, RankingComment } from '../../types'
-import { apiRequest, checkMiniContent, encoded, requireLogin } from '../../utils/api'
+import { apiRequest, checkMiniContent, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText, RANKING_TYPE_TEXT } from '../../utils/format'
 
 const id = ref('')
@@ -74,14 +75,17 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
           <text class="article__type">{{ RANKING_TYPE_TEXT[item.type] }}</text>
           <view class="article__tools">
             <text class="article__city">{{ item.subject_city || '城市待补充' }}</text>
-            <button class="report-icon" aria-label="举报这条内容" @tap="report('ranking', item.id, item.subject_name)">⚑</button>
+            <button v-if="item.poster_id !== readAuth()?.id" class="report-icon" aria-label="举报这条内容" @tap="report('ranking', item.id, item.subject_name)">⚑</button>
           </view>
         </view>
         <text class="article__subject">{{ item.subject_name }}</text>
         <text class="article__meta"><template v-if="item.event_script_name">《{{ item.event_script_name }}》 · </template><template v-if="item.event_store_name">{{ item.event_store_name }} · </template>{{ dateText(item.event_date || item.created_at) }}</text>
         <text class="article__content">{{ item.content }}</text>
         <view v-if="images.length" class="gallery">
-          <image v-for="(url, index) in images" :key="url" class="gallery__image" :src="url" mode="aspectFill" @tap="previewImages(index)" />
+          <view v-for="(url, index) in images" :key="url" class="gallery__item">
+            <image class="gallery__image" :src="url" mode="aspectFill" @tap="previewImages(index)" />
+            <ReportFlag target-type="ranking" :target-id="item.id" :target-sub-id="`image:${index}`" :title="`${item.subject_name}的第 ${index + 1} 张图片`" :own="item.poster_id === readAuth()?.id" />
+          </view>
         </view>
         <view class="article__author">
           <text :class="{ link: item.poster_id }" @tap="openProfile(item.poster_id)">发布人：{{ item.author_name || '用户' }}</text>
@@ -106,7 +110,7 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
         <text class="comment__content">{{ comment.content }}</text>
         <view class="comment__bottom">
           <text v-if="comment.is_pinned" class="pinned">相关方回应</text>
-          <button class="report-icon report-icon--comment" aria-label="举报这条评论" @tap="report('comment', comment.id, '榜单评论')">⚑</button>
+          <button v-if="comment.author_id !== readAuth()?.id" class="report-icon report-icon--comment" aria-label="举报这条评论" @tap="report('comment', comment.id, '榜单评论')">⚑</button>
         </view>
       </view>
     </template>
@@ -128,7 +132,9 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
 .article__author { margin-top: 20rpx; padding-top: 14rpx; border-top: 1rpx solid #ece6de; }
 .link { color: #275389; font-weight: 750; }
 .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 8rpx; margin-top: 18rpx; }
+.gallery__item { position: relative; }
 .gallery__image { width: 100%; height: 250rpx; border-radius: 8rpx; background: #f2ece4; }
+.gallery__item :deep(.report-flag) { position: absolute; right: 6rpx; bottom: 6rpx; background: rgba(255,255,255,.9); }
 .votes { display: flex; gap: 10rpx; margin-top: 14rpx; padding: 10rpx; }
 .vote { flex: 1; min-width: 0; border-radius: 8rpx; background: #fff; color: #475569; font-size: 24rpx; }
 .vote.active { background: #f3e4c9; color: #8b5919; font-weight: 850; }

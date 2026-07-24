@@ -89,6 +89,7 @@ onPullDownRefresh(pullRefresh)
         <view class="menu__item" @tap="go('/pages/follows/index')"><view><strong>关注设置</strong><text>修改关注城市和店家</text></view><text>›</text></view>
         <view class="menu__item" @tap="go('/pages/mine/account')"><view><strong>账号设置</strong><text>手机号、登录状态与隐私说明</text></view><text>›</text></view>
         <view class="menu__item" @tap="go('/pages/mine/account-status')"><view><strong>账号通知与申诉</strong><text>限制原因、申诉进度和管理员回复</text></view><text>›</text></view>
+        <view class="menu__item" @tap="go('/pages/feedback/index')"><view><strong>问题反馈</strong><text>功能故障、资料纠错、联系方式和支付问题</text></view><text>›</text></view>
       </view>
       <view v-if="auth.role === 'admin'" class="admin surface"><view><strong>平台管理后台</strong><text>审核、账号治理和证据处理继续在网站完成。</text></view><button class="secondary-button" @tap="copyAdmin">复制网站后台地址</button></view>
       <button class="secondary-button logout" @tap="signOut">退出登录</button>

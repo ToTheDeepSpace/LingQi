@@ -1417,7 +1417,7 @@ export default function Rankings() {
                     <details style={{ position: 'relative', marginLeft: 'auto' }}>
                       <summary aria-label="更多操作" style={{ listStyle: 'none', cursor: 'pointer', color: 'rgba(71,85,105,0.42)', fontSize: '1rem', lineHeight: 1 }}>···</summary>
                       <div style={{ position: 'absolute', right: 0, bottom: 24, zIndex: 4, display: 'grid', minWidth: 116, padding: 6, border: '1px solid rgba(31,41,55,0.10)', borderRadius: 7, background: '#fff', boxShadow: '0 8px 24px rgba(31,41,55,0.12)' }}>
-                        <button onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: heading })} style={overflowActionStyle}>举报</button>
+                        {(!auth?.userId || item.poster_id !== auth.userId) && <button aria-label="举报这条榜单" title="举报" onClick={() => openReportModal({ targetType: 'ranking', targetId: item.id, targetTitle: heading })} style={overflowActionStyle}>⚑</button>}
                         {item.audit_proof && <button onClick={() => openAuditModal(item)} style={overflowActionStyle}>查看审计</button>}
                       </div>
                     </details>
@@ -1452,7 +1452,7 @@ export default function Rankings() {
                     {auth?.userId && comment.author_id === auth.userId && !comment.is_pinned && <button onClick={() => openRelatedCertModal(commentsViewerId, comment.id)} style={commentMinorActionStyle}>认证为相关方回应</button>}
                     <button onClick={() => likeComment(commentsViewerId, comment.id)} disabled={likingComment === comment.id} style={{ ...commentMinorActionStyle, marginLeft: 'auto' }}>赞 {comment.likes}</button>
                     {auth?.userId && comment.author_id === auth.userId && <button onClick={() => deleteOwnComment(commentsViewerId, comment.id)} disabled={deletingComment === comment.id} style={commentMinorActionStyle}>删除</button>}
-                    <button onClick={() => openReportModal({ targetType: 'comment', targetId: comment.id, targetTitle: `${eventTitle(commentsViewerItem.content)}的评论` })} style={commentMinorActionStyle}>举报</button>
+                    {(!auth?.userId || comment.author_id !== auth.userId) && <button aria-label="举报这条评论" title="举报" onClick={() => openReportModal({ targetType: 'comment', targetId: comment.id, targetTitle: `${eventTitle(commentsViewerItem.content)}的评论` })} style={{ ...commentMinorActionStyle, width: 28, height: 28, fontSize: 16 }}>⚑</button>}
                   </div>
                 </article>
               ))}

@@ -411,8 +411,9 @@ type CertReview = {
 
 type ReportReview = {
   id: string;
-  target_type: 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile' | 'dm_affiliation';
+  target_type: string;
   target_id: string;
+  target_sub_id?: string | null;
   target_title?: string | null;
   reporter_name: string;
   reason: string;
@@ -457,6 +458,10 @@ type SiteMessage = {
   contact?: string | null;
   status: 'pending' | 'resolved';
   admin_note?: string | null;
+  admin_reply?: string | null;
+  evidence_urls?: string[];
+  evidence_files?: DossierClaimProof[];
+  payment_purchase_id?: string | null;
   moderation_precheck?: ModerationPrecheck | null;
   created_at: string;
   updated_at?: string;
@@ -502,10 +507,11 @@ type PublicReview = {
 type DossierClaimProof = {
   id: string;
   name: string;
-  type: 'image/jpeg';
-  size: number;
-  width: number;
-  height: number;
+  type?: string;
+  size?: number;
+  width?: number;
+  height?: number;
+  url?: string;
   public_copy?: { url: string; published_at: string } | null;
 };
 
@@ -719,8 +725,12 @@ function publicReviewTypeLabel(type: string) {
 
 function siteMessageCategoryLabel(category?: string | null) {
   if (category === 'dm_correction') return 'DM资料纠错';
+  if (category === 'dossier_correction') return '档案纠错';
   if (category === 'appeal') return '申诉';
   if (category === 'bug') return '故障反馈';
+  if (category === 'invalid_contact') return '联系方式无效';
+  if (category === 'payment_refund') return '支付退款';
+  if (category === 'report_abuse') return '举报滥用';
   if (category === 'account') return '账号问题';
   if (category === 'cooperation') return '合作共建';
   if (category === 'suggestion') return '功能建议';
@@ -1672,10 +1682,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   };
 
   const resolveSiteMessage = async (id: string) => {
+    const adminReply = window.prompt('填写给用户的处理回复。该回复会进入用户的消息通知：', '');
+    if (adminReply === null) return;
+    if (!adminReply.trim()) {
+      setError('请填写处理回复后再完成反馈');
+      return;
+    }
     await fetch(`${API}/lc/admin/site-messages/${id}/resolve`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminNote: '已处理' }),
+      body: JSON.stringify({ adminNote: '已处理并回复用户', adminReply: adminReply.trim() }),
     });
     setSiteMessages(prev => prev.filter(item => item.id !== id));
     void loadData();
@@ -2981,12 +2997,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <Meta>
                         举报人：{r.reporter_name}
                         {` · 原因：${r.reason}`}
+                        {r.target_sub_id ? ` · 精确位置：${r.target_sub_id}` : ''}
                         {r.report_group_count && r.report_group_count > 1 ? ` · 同对象有效举报 ${r.report_group_count}` : ''}
                         {r.created_at ? ` · ${r.created_at.slice(0, 10)}` : ''}
                       </Meta>
                       {(r.auto_action === 'temporary_hidden' || r.auto_action === 'queued_priority') && (
                         <Proof>
-                          {r.auto_action === 'temporary_hidden' ? '已临时折叠，等待复核' : '已进入优先复核'}
+                          {r.auto_action === 'temporary_hidden' ? '历史自动处置记录：曾临时折叠' : '历史自动处置记录：曾进入优先复核'}
                           {r.risk_level ? ` · 风险级别：${r.risk_level}` : ''}
                           {r.auto_action_reason ? <div style={{ marginTop: 6, lineHeight: 1.7 }}>{r.auto_action_reason}</div> : null}
                         </Proof>
@@ -3001,6 +3018,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       <ModerationPrecheckBadge value={r.moderation_precheck} />
                       {r.description && <ContentBox>{r.description}</ContentBox>}
                       {r.target_type === 'dm_affiliation' && <AdminPrivateClaimProofs claimId={r.id} files={r.evidence_files || []} route="affiliation" />}
+                      {r.target_type !== 'dm_affiliation' && <AdminPrivateModerationEvidence recordId={r.id} files={r.evidence_files || []} kind="report" />}
                       {r.target_snapshot && (
                         <Proof>
                           {typeof r.target_snapshot.city === 'string' ? `城市：${r.target_snapshot.city} ` : ''}
@@ -3039,9 +3057,16 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       </Meta>
                       <ModerationPrecheckBadge value={m.moderation_precheck} />
                       <ContentBox>{m.content}</ContentBox>
+                      {m.payment_purchase_id && <Meta>关联付费记录：{m.payment_purchase_id}</Meta>}
+                      <AdminPrivateModerationEvidence recordId={m.id} files={m.evidence_files || []} kind="feedback" />
+                      {m.evidence_urls && m.evidence_urls.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                          {m.evidence_urls.map((url, index) => <a key={url} href={url} target="_blank" rel="noreferrer" style={{ color: '#275389', fontSize: 12, fontWeight: 800 }}>查看图片 {index + 1}</a>)}
+                        </div>
+                      )}
                     </div>
                     <Actions vertical>
-                      <ActionButton kind="ok" onClick={() => resolveSiteMessage(m.id)}>标记已处理</ActionButton>
+                      <ActionButton kind="ok" onClick={() => resolveSiteMessage(m.id)}>回复并处理</ActionButton>
                     </Actions>
                   </Row>
                 ))}
@@ -3726,6 +3751,81 @@ function AdminPrivateClaimProofImage({ claimId, file, index, route }: { claimId:
     <a href={source} target="_blank" rel="noreferrer" style={{ display: 'block', color: '#275389', textDecoration: 'none' }}>
       <img src={source} alt={`认领凭证 ${index + 1}`} style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: `1px solid ${LINE}`, background: '#fff' }} />
       <div style={{ overflow: 'hidden', marginTop: 4, fontSize: 10, fontWeight: 800, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || `凭证 ${index + 1}`}</div>
+    </a>
+  );
+}
+
+function AdminPrivateModerationEvidence({
+  recordId,
+  files,
+  kind,
+}: {
+  recordId: string;
+  files: DossierClaimProof[];
+  kind: 'report' | 'feedback';
+}) {
+  if (files.length === 0) return null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: '0.78rem', fontWeight: 900, color: INK, marginBottom: 7 }}>
+        私密{kind === 'report' ? '举报材料' : '反馈图片'}（仅管理员可见）
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 180px))', gap: 9 }}>
+        {files.map((file, index) => (
+          <AdminPrivateModerationEvidenceImage key={file.id} recordId={recordId} file={file} index={index} kind={kind} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminPrivateModerationEvidenceImage({
+  recordId,
+  file,
+  index,
+  kind,
+}: {
+  recordId: string;
+  file: DossierClaimProof;
+  index: number;
+  kind: 'report' | 'feedback';
+}) {
+  const [source, setSource] = useState('');
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl = '';
+    const resource = kind === 'report'
+      ? `${API}/lc/admin/reports/${encodeURIComponent(recordId)}/evidence/${encodeURIComponent(file.id)}`
+      : `${API}/lc/admin/site-messages/${encodeURIComponent(recordId)}/evidence/${encodeURIComponent(file.id)}`;
+    fetch(resource, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+      signal: controller.signal,
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error('私密图片读取失败');
+        return response.blob();
+      })
+      .then(blob => {
+        objectUrl = URL.createObjectURL(blob);
+        setSource(objectUrl);
+      })
+      .catch(reason => {
+        if (reason?.name !== 'AbortError') setLoadError(reason instanceof Error ? reason.message : '私密图片读取失败');
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [file.id, kind, recordId]);
+
+  if (loadError) return <div style={{ minHeight: 96, padding: 9, border: '1px solid rgba(185,28,28,0.18)', borderRadius: 7, background: '#fff', color: '#991b1b', fontSize: 11 }}>{loadError}</div>;
+  if (!source) return <div style={{ minHeight: 96, display: 'grid', placeItems: 'center', border: `1px solid ${LINE}`, borderRadius: 7, background: '#fff', color: MUTED, fontSize: 11 }}>读取中…</div>;
+  return (
+    <a href={source} target="_blank" rel="noreferrer" style={{ display: 'block', color: '#275389', textDecoration: 'none' }}>
+      <img src={source} alt={`${kind === 'report' ? '举报材料' : '反馈图片'} ${index + 1}`} style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: `1px solid ${LINE}`, background: '#fff' }} />
+      <div style={{ overflow: 'hidden', marginTop: 4, fontSize: 10, fontWeight: 800, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name || `图片 ${index + 1}`}</div>
     </a>
   );
 }

@@ -1,14 +1,13 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import type { Availability, Creator, Service, Portfolio, ProfileRolePreference, ScriptCatalogItem, SocialSnapshot } from '../types';
-import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import ReportModal from '../components/ReportModal';
+import ReportFlagButton from '../components/ReportFlagButton';
 import SocialPlatformLink from '../components/SocialPlatformLink';
 import { generatedAvatarDataUrl } from '../lib/avatar';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { normalizeServiceCategory, primaryDisplayIdentityRole, serviceCategoryLabel } from '../lib/serviceCategories';
 import { formatTravelStatus } from '../lib/travelStatus';
-import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API  = '/api';
 const C    = '#fffdf8';
@@ -45,11 +44,6 @@ async function readJsonSafe(url: string, init?: RequestInit) {
   }
 }
 
-type ContactRequestDraft = {
-  wechat: string;
-  message: string;
-};
-
 type PlayerExperience = {
   script_id: string;
   script_name: string;
@@ -75,28 +69,10 @@ export default function CreatorProfile() {
   const [loading, setLoading]     = useState(true);
 
   const [contactShown, setContactShown] = useState(false);
-  const [formWechat, setFormWechat]     = useState('');
-  const [formMsg, setFormMsg]           = useState('');
-  const [contactSent, setContactSent]   = useState(false);
-  const [contactSubmitting, setContactSubmitting] = useState(false);
+  const [contactLoading, setContactLoading] = useState(false);
+  const [unlockedContact, setUnlockedContact] = useState('');
   const [contactError, setContactError] = useState('');
   const [reportOpen, setReportOpen] = useState(false);
-  const contactDraftValue = useMemo<ContactRequestDraft>(() => ({
-    wechat: formWechat,
-    message: formMsg,
-  }), [formMsg, formWechat]);
-  const contactDraft = useDraftAutosave<ContactRequestDraft>({
-    key: `lc:draft:creator-contact:${id || 'unknown'}`,
-    version: 1,
-    enabled: !!id && !contactSent,
-    value: contactDraftValue,
-    shouldSave: data => !!(data.wechat.trim() || data.message.trim()),
-    onRestore: data => {
-      setContactShown(true);
-      setFormWechat(data.wechat || '');
-      setFormMsg(data.message || '');
-    },
-  });
 
   useEffect(() => {
     if (!id) return;
@@ -165,54 +141,34 @@ export default function CreatorProfile() {
     if (response.ok) await reloadExperiences();
   };
 
-  const submitContact = async () => {
+  const openContactForm = async () => {
     const auth = readStoredCreatorAuth();
     if (!auth?.token) {
       navigate(`/login?redirect=${encodeURIComponent(`/creators/${id || ''}`)}`);
       return;
     }
-    if (!formWechat.trim()) {
-      setContactError('请填写同意后用于联系的微信号、手机号或其他方式');
-      return;
-    }
-    if (!formMsg.trim()) {
-      setContactError('请填写想咨询的内容');
-      return;
-    }
-    setContactSubmitting(true);
+    setContactShown(true);
+    setContactLoading(true);
     setContactError('');
+    setUnlockedContact('');
     try {
-      const response = await fetch(`${API}/lc/provider-listings/${encodeURIComponent(id || '')}/inquiries`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
-        body: JSON.stringify({
-          privateContact: formWechat.trim(),
-          message: formMsg.trim(),
-        }),
+      const response = await fetch(`${API}/lc/provider-listings/${encodeURIComponent(id || '')}/contact-access`, {
+        headers: { Authorization: `Bearer ${auth.token}` },
       });
       const payload = await response.json();
-      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '联系申请提交失败');
-      contactDraft.clearDraft();
-      setContactSent(true);
+      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '联系方式读取失败');
+      if (!payload.data?.paid) {
+        setContactError('请在剧幕录微信小程序支付 8.88 元。支付后同一账号可永久查看这位委托师当前审核通过的业务联系方式。');
+      } else if (!payload.data?.contact_available || !payload.data?.business_contact) {
+        setContactError('这位委托师暂未开放联系方式。你的永久解锁资格不会失效。');
+      } else {
+        setUnlockedContact(payload.data.business_contact);
+      }
     } catch (error) {
-      setContactError(error instanceof Error ? error.message : '联系申请提交失败');
+      setContactError(error instanceof Error ? error.message : '联系方式读取失败');
     } finally {
-      setContactSubmitting(false);
+      setContactLoading(false);
     }
-  };
-
-  const openContactForm = () => {
-    if (!readStoredCreatorAuth()?.token) {
-      navigate(`/login?redirect=${encodeURIComponent(`/creators/${id || ''}`)}`);
-      return;
-    }
-    setContactShown(true);
-  };
-
-  const inputStyle: React.CSSProperties = {
-    padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.2)',
-    backgroundColor: '#fff', color: INK, fontSize: '0.875rem',
-    outline: 'none', width: '100%', boxSizing: 'border-box',
   };
 
   const openReport = () => {
@@ -342,11 +298,13 @@ export default function CreatorProfile() {
               <div className="creator-profile-badges" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {creator.is_realname && <Badge>⭐ 实名</Badge>}
                 {creator.travel_status && <Badge>{formatTravelStatus(creator.travel_status, creator.city)}</Badge>}
-                <button
+                {!isOwnProfile && <button
                   onClick={openReport}
-                  style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(254,242,242,0.86)', border: '1px solid rgba(185,28,28,0.18)', color: 'rgba(185,28,28,0.78)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>
-                  举报主页
-                </button>
+                  aria-label="举报主页"
+                  title="举报"
+                  style={{ width: 28, height: 28, padding: 0, borderRadius: 6, background: 'transparent', border: 0, color: 'rgba(71,85,105,0.72)', fontSize: 16, cursor: 'pointer' }}>
+                  ⚑
+                </button>}
               </div>
             </div>
           </div>
@@ -412,37 +370,17 @@ export default function CreatorProfile() {
             {creator.provider_listing && <div className="creator-profile-card" style={card}>
               <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 8, color: INK }}>联系委托师</h3>
               <p style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.78rem', lineHeight: 1.7, marginBottom: 12 }}>
-                发送私密申请；对方同意后双方立即看到各自留下的联系方式。
+                同一账号联系同一位委托师只支付一次，永久解锁其审核通过的业务联系方式。
               </p>
               {contactShown ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <DraftAutosaveNotice
-                    savedAt={contactDraft.savedAt}
-                    restoredAt={contactDraft.restoredAt}
-                    error={contactDraft.error}
-                    note="未提交的联系申请会自动保存到当前浏览器。"
-                  />
-                  <p style={{ margin: 0, fontSize: '0.76rem', color: 'rgba(71,85,105,0.62)' }}>
-                    将以当前登录账号的公开昵称提交。
-                  </p>
-                  <input value={formWechat} onChange={e => setFormWechat(e.target.value)} placeholder="微信号、手机号或其他联系方式" style={inputStyle} />
-                  <textarea value={formMsg} onChange={e => setFormMsg(e.target.value)} placeholder="说明时间、城市、角色方向或其他需求" rows={3}
-                    style={{ ...inputStyle, resize: 'none' }} />
-                  <button onClick={submitContact} disabled={contactSent || contactSubmitting}
-                    style={{
-                      padding: '10px', borderRadius: 10, border: 'none', cursor: contactSent || contactSubmitting ? 'default' : 'pointer',
-                      background: contactSent || contactSubmitting ? 'rgba(241,245,249,0.86)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-                      color: contactSent || contactSubmitting ? 'rgba(71,85,105,0.6)' : INK,
-                      fontWeight: 600, fontSize: '0.875rem',
-                    }}>
-                    {contactSent ? '已发送，等待回复' : contactSubmitting ? '提交中...' : '发送联系申请'}
-                  </button>
-                  {contactError && <p style={{ margin: 0, color: '#b91c1c', fontSize: '0.76rem', textAlign: 'center' }}>{contactError}</p>}
-                  {!contactSent && (
-                    <p style={{ fontSize: '0.75rem', color: 'rgba(71,85,105,0.56)', textAlign: 'center' }}>
-                      联系方式不会公开，对方同意后仅双方可见。
-                    </p>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {contactLoading && <p style={{ margin: 0, color: MUTED, fontSize: '0.8rem' }}>正在读取解锁状态...</p>}
+                  {unlockedContact && (
+                    <button type="button" onClick={() => void navigator.clipboard.writeText(unlockedContact)} style={{ padding: 11, borderRadius: 7, border: '1px solid rgba(39,83,137,.18)', background: '#eef4fb', color: '#275389', fontWeight: 850, cursor: 'pointer' }}>
+                      {unlockedContact} · 点击复制
+                    </button>
                   )}
+                  {contactError && <p style={{ margin: 0, padding: 10, borderRadius: 7, background: '#fff8e8', color: '#7a4a0c', fontSize: '0.78rem', lineHeight: 1.6 }}>{contactError}</p>}
                 </div>
               ) : (
                 <button onClick={openContactForm}
@@ -451,7 +389,7 @@ export default function CreatorProfile() {
                     background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
                     color: INK, fontWeight: 600, fontSize: '0.875rem',
                   }}>
-                  联系 TA
+                  查看联系方式
                 </button>
               )}
             </div>}
@@ -462,15 +400,23 @@ export default function CreatorProfile() {
 
             {creator.provider_listing && (
               <div className="creator-profile-card creator-provider-listing" style={{ ...card, display: 'grid', gridTemplateColumns: 'minmax(220px, 0.8fr) minmax(260px, 1.2fr)', gap: 16 }}>
-                <a href={creator.provider_listing.poster_url} target="_blank" rel="noreferrer" style={{ display: 'block', minHeight: 220 }}>
-                  <img
-                    src={creator.provider_listing.poster_url}
-                    alt={`${creator.display_name}的委托条`}
-                    style={{ width: '100%', height: '100%', maxHeight: 380, objectFit: 'cover', borderRadius: 6, background: '#f2ece4' }}
-                  />
-                </a>
+                <div style={{ position: 'relative', minHeight: 220 }}>
+                  <a href={creator.provider_listing.poster_url} target="_blank" rel="noreferrer" style={{ display: 'block', height: '100%' }}>
+                    <img
+                      src={creator.provider_listing.poster_url}
+                      alt={`${creator.display_name}的委托条`}
+                      style={{ width: '100%', height: '100%', maxHeight: 380, objectFit: 'cover', borderRadius: 6, background: '#f2ece4' }}
+                    />
+                  </a>
+                  <span style={{ position: 'absolute', right: 5, bottom: 5, borderRadius: 6, background: 'rgba(255,255,255,.9)' }}>
+                    <ReportFlagButton targetType="provider_listing" targetId={creator.id} targetSubId="poster:0" targetTitle={`${creator.display_name}的委托条图片`} ownerId={creator.id} />
+                  </span>
+                </div>
                 <div style={{ minWidth: 0, alignSelf: 'center' }}>
-                  <p style={{ margin: 0, color: '#925f18', fontWeight: 850, fontSize: 12 }}>委托条</p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <p style={{ margin: 0, color: '#925f18', fontWeight: 850, fontSize: 12 }}>委托条</p>
+                    <ReportFlagButton targetType="provider_listing" targetId={creator.id} targetTitle={`${creator.display_name}的委托条`} ownerId={creator.id} />
+                  </div>
                   <h2 style={{ margin: '7px 0 0', color: INK, fontFamily: 'var(--font-serif)', fontSize: '1.35rem' }}>
                     {creator.provider_listing.headline || `${creator.display_name}的委托资料`}
                   </h2>
@@ -492,7 +438,7 @@ export default function CreatorProfile() {
                   )}
                   {!isOwnProfile && (
                     <button type="button" onClick={openContactForm} style={{ marginTop: 16, padding: '10px 18px', borderRadius: 7, border: 0, background: '#b9781f', color: '#fff', fontWeight: 850, cursor: 'pointer' }}>
-                      联系 TA
+                      查看联系方式
                     </button>
                   )}
                 </div>
@@ -615,7 +561,10 @@ export default function CreatorProfile() {
                         {s.duration && <span style={{ fontSize: '0.82rem', color: 'rgba(71,85,105,0.62)', marginLeft: 8 }}>· {s.duration}</span>}
                         {s.description && <p style={{ fontSize: '0.8rem', color: 'rgba(71,85,105,0.62)', marginTop: 4 }}>{s.description}</p>}
                       </div>
-                      <span style={{ fontWeight: 700, fontSize: '1.05rem', color: GOLD, marginLeft: 16, flexShrink: 0 }}>¥{s.price}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 16, flexShrink: 0 }}>
+                        <span style={{ fontWeight: 700, fontSize: '1.05rem', color: GOLD }}>¥{s.price}</span>
+                        <ReportFlagButton targetType="service" targetId={s.id} targetTitle={`${creator.display_name}的服务`} ownerId={creator.id} />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -681,8 +630,11 @@ export default function CreatorProfile() {
                 <h3 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK }}>作品集</h3>
                 <div className="creator-portfolio-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
                   {portfolio.map(p => (
-                    <div key={p.id} style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', background: 'rgba(201,146,46,0.08)', border: '1px solid rgba(201,146,46,0.12)' }}>
+                    <div key={p.id} style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', background: 'rgba(201,146,46,0.08)', border: '1px solid rgba(201,146,46,0.12)' }}>
                       <img src={p.image_url} alt={p.caption || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <span style={{ position: 'absolute', right: 4, bottom: 4, borderRadius: 6, background: 'rgba(255,255,255,.9)' }}>
+                        <ReportFlagButton targetType="portfolio_image" targetId={p.id} targetSubId="image:0" targetTitle={`${creator.display_name}的作品图片`} ownerId={creator.id} />
+                      </span>
                     </div>
                   ))}
                 </div>

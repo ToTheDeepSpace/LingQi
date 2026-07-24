@@ -2,9 +2,10 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
+import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { RoleRating, Script } from '../../types'
-import { apiRequest, checkMiniContent, encoded, requireLogin } from '../../utils/api'
+import { apiRequest, checkMiniContent, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText } from '../../utils/format'
 import { flattenRoles, roleKind } from '../../utils/roles'
 
@@ -79,7 +80,7 @@ onShareAppMessage(() => ({ title: role.value ? `${role.value.role_name}《${role
       <template v-else>
         <view v-if="!laneRatings.length" class="surface empty">这一栏还没有公开评价。</view>
         <view v-for="item in laneRatings" :key="item.id" class="review surface">
-          <view class="review__head"><text :class="{ link: item.profile_id }" @tap="openProfile(item.profile_id)">{{ item.profile_name || '用户' }}</text><strong>{{ item.rating }} 分</strong></view>
+          <view class="review__head"><text :class="{ link: item.profile_id }" @tap="openProfile(item.profile_id)">{{ item.profile_name || '用户' }}</text><view class="review__actions"><strong>{{ item.rating }} 分</strong><ReportFlag target-type="role_rating" :target-id="item.id" :title="`${role.role_name}的角色点评`" :own="item.profile_id === readAuth()?.id" /></view></view>
           <text class="review__content">{{ item.content }}</text>
           <text class="review__date">{{ dateText(item.created_at) }}</text>
         </view>
@@ -115,6 +116,7 @@ onShareAppMessage(() => ({ title: role.value ? `${role.value.role_name}《${role
 .empty { color: #64748b; text-align: center; }
 .review { margin-top: 12rpx; padding: 18rpx; }
 .review__head { display: flex; justify-content: space-between; font-weight: 850; }
+.review__actions { display: flex; align-items: center; gap: 6rpx; }
 .review__head strong { color: #9a651e; }
 .link { color: #275389; }
 .review__content, .review__date { display: block; margin-top: 10rpx; }

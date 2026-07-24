@@ -6,6 +6,7 @@ import { readStoredCreatorAuth } from '../lib/authSession';
 import { flattenScriptRoles, roleKindLabel } from '../lib/scriptRoleCatalog';
 import type { ScriptCatalogItem } from '../types';
 import ProfileNameLink from '../components/ProfileNameLink';
+import ReportFlagButton from '../components/ReportFlagButton';
 
 const API = '/api';
 const INK = '#1f2937';
@@ -141,7 +142,10 @@ export default function RoleRatingDetail() {
                   <article key={item.id} style={reviewStyle}>
                     <div style={reviewHeadStyle}>
                       <strong><ProfileNameLink profileId={item.profile_id}>{item.profile_name || '用户'}</ProfileNameLink></strong>
-                      <span style={reviewScoreStyle}>{item.rating} 分</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={reviewScoreStyle}>{item.rating} 分</span>
+                        <ReportFlagButton targetType="role_rating" targetId={item.id} targetTitle={`${role.role_name}的角色点评`} ownerId={item.profile_id} />
+                      </div>
                     </div>
                     {showContent ? (
                       <p style={reviewContentStyle}>{item.content}</p>

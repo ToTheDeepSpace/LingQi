@@ -112,3 +112,135 @@ export async function uploadImageFile(filePath: string, scope: string) {
   }
   return body.data.url
 }
+
+export async function uploadPrivateEvidence(filePath: string, kind: 'report' | 'feedback', recordId: string) {
+  const auth = await requireLogin()
+  const route = kind === 'report'
+    ? `/lc/reports/${encoded(recordId)}/evidence`
+    : `/lc/site-messages/${encoded(recordId)}/evidence`
+  const response = await new Promise<UniApp.UploadFileSuccessCallbackResult>((resolve, reject) => {
+    uni.uploadFile({
+      url: `${API_BASE}${route}`,
+      filePath,
+      name: 'file',
+      header: { Authorization: `Bearer ${auth.token}`, 'X-LC-Client': 'wechat-miniapp' },
+      success: resolve,
+      fail: reject,
+    })
+  })
+  let body: ApiEnvelope<{ file: { id: string; name: string } }>
+  try { body = JSON.parse(response.data) as ApiEnvelope<{ file: { id: string; name: string } }> }
+  catch { throw new Error('私密图片上传返回格式不正确') }
+  if (response.statusCode < 200 || response.statusCode >= 300 || !body.success || !body.data?.file?.id) {
+    throw new Error(errorText(body.error, `私密图片上传失败 ${response.statusCode}`))
+  }
+  return body.data.file
+}
+
+export type ServiceProductType = 'dossier_claim' | 'provider_listing' | 'provider_contact'
+
+export type ServicePurchase = {
+  id: string
+  product_type: ServiceProductType
+  target_id: string
+  amount_fen: number
+  amount_yuan: string
+  status: 'unpaid' | 'paid' | 'refunded'
+  paid: boolean
+  paid_at?: string | null
+  contact_available?: boolean
+  business_contact?: string | null
+  contact_updated_at?: string | null
+}
+
+type ServicePaymentCreation = {
+  purchase: ServicePurchase
+  already_paid: boolean
+  payment?: {
+    timeStamp: string
+    nonceStr: string
+    package: string
+    signType: 'RSA'
+    paySign: string
+    out_trade_no: string
+    expires_at: string
+  }
+}
+
+function wait(milliseconds: number) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
+export async function requestServicePayment(productType: ServiceProductType, targetId: string) {
+  await requireLogin()
+  const creation = await apiRequest<ServicePaymentCreation>('/lc/service-payments/create', {
+    method: 'POST',
+    data: { productType, targetId },
+  })
+  if (creation.already_paid || creation.purchase.paid) return creation.purchase
+  if (!creation.payment) throw new Error('微信支付参数缺失，请稍后重试')
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const paymentOptions = {
+        provider: 'wxpay',
+        timeStamp: creation.payment!.timeStamp,
+        nonceStr: creation.payment!.nonceStr,
+        package: creation.payment!.package,
+        signType: creation.payment!.signType,
+        paySign: creation.payment!.paySign,
+        success: () => resolve(),
+        fail: reject,
+      } as unknown as UniApp.RequestPaymentOptions
+      uni.requestPayment(paymentOptions)
+    })
+  } catch (reason) {
+    const message = errorText(reason, '支付未完成')
+    if (/cancel/i.test(message)) throw new Error('已取消支付', { cause: reason })
+    throw new Error(message, { cause: reason })
+  }
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      const purchase = await apiRequest<ServicePurchase>(
+        `/lc/service-payments/${encoded(creation.purchase.id)}/status?refresh=1`,
+      )
+      if (purchase.paid) return purchase
+    } catch {
+      // 微信回调可能略晚于客户端返回，继续向服务端确认。
+    }
+    await wait(700 + attempt * 150)
+  }
+  throw new Error('支付结果仍在确认中，请稍后重试；同一项目不会重复收费')
+}
+
+export async function submitDossierClaim(input: {
+  dossierId: string
+  proofType: string
+  claimNote: string
+  proofFilePath: string
+}) {
+  const auth = await requireLogin()
+  const response = await new Promise<UniApp.UploadFileSuccessCallbackResult>((resolve, reject) => {
+    uni.uploadFile({
+      url: `${API_BASE}/lc/dm-dossiers/${encoded(input.dossierId)}/claim`,
+      filePath: input.proofFilePath,
+      name: 'proofFiles',
+      formData: {
+        proofType: input.proofType,
+        claimNote: input.claimNote,
+        truthConfirmed: 'true',
+      },
+      header: { Authorization: `Bearer ${auth.token}`, 'X-LC-Client': 'wechat-miniapp' },
+      success: resolve,
+      fail: reject,
+    })
+  })
+  let body: ApiEnvelope<{ id: string; claim_id: string; claim_status: string }>
+  try { body = JSON.parse(response.data) as ApiEnvelope<{ id: string; claim_id: string; claim_status: string }> }
+  catch { throw new Error('认领提交返回格式不正确') }
+  if (response.statusCode < 200 || response.statusCode >= 300 || !body.success) {
+    throw new Error(errorText(body.error, `认领提交失败 ${response.statusCode}`))
+  }
+  return body.data
+}
