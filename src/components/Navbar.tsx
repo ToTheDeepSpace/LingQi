@@ -54,6 +54,7 @@ export default function Navbar() {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { creatorAuth, adminToken } = authSnapshot;
   const isLoggedIn = Boolean(creatorAuth);
   const isAdmin = Boolean(adminToken);
@@ -63,6 +64,9 @@ export default function Navbar() {
   const communityActive = COMMUNITY_LINKS.some(item => isNavPathActive(pathname, item.to));
   const isHome = pathname === '/';
   const currentPageLabel = locationLabelFor(pathname);
+  const messageCount = creatorAuth ? unreadCount : isAdmin ? pendingCount : 0;
+  const messagePath = creatorAuth ? '/account-status' : isAdmin ? '/admin' : '/login?redirect=%2Faccount-status';
+  const messagePreloadPath = creatorAuth ? '/account-status' : isAdmin ? '/admin' : '/login';
 
   useEffect(() => {
     const syncAuth = () => setAuthSnapshot(readAuthSnapshot());
@@ -134,6 +138,34 @@ export default function Navbar() {
     };
   }, [adminToken]);
 
+  useEffect(() => {
+    let alive = true;
+    const loadUnread = async () => {
+      if (!creatorAuth?.token) {
+        if (alive) setUnreadCount(0);
+        return;
+      }
+      try {
+        const response = await fetch(`${API}/lc/account/status`, {
+          headers: { Authorization: `Bearer ${creatorAuth.token}` },
+        });
+        const payload = await response.json();
+        if (!alive || !payload.success) return;
+        setUnreadCount(Math.max(0, Number(payload.data?.unread_count || 0)));
+      } catch {
+        if (alive) setUnreadCount(0);
+      }
+    };
+    void loadUnread();
+    window.addEventListener('focus', loadUnread);
+    window.addEventListener('lc-auth-changed', loadUnread);
+    return () => {
+      alive = false;
+      window.removeEventListener('focus', loadUnread);
+      window.removeEventListener('lc-auth-changed', loadUnread);
+    };
+  }, [creatorAuth?.token]);
+
   const goBack = () => {
     const historyState = window.history.state as { idx?: number } | null;
     if (historyState?.idx && historyState.idx > 0) {
@@ -204,8 +236,15 @@ export default function Navbar() {
         </div>
 
         <div className="site-nav-actions">
-          <Link to="/dm/rate" className="site-rate-link" onMouseEnter={() => preloadRoute('/dm/rate')} onFocus={() => preloadRoute('/dm/rate')}>
-            给DM评分
+          <Link
+            to={messagePath}
+            className="site-message-link"
+            aria-label={messageCount > 0 ? `消息，${messageCount}条未读` : '消息'}
+            onMouseEnter={() => preloadRoute(messagePreloadPath)}
+            onFocus={() => preloadRoute(messagePreloadPath)}
+          >
+            <span>消息</span>
+            {messageCount > 0 && <span className="site-message-badge" aria-hidden="true">{messageCount > 99 ? '99+' : messageCount}</span>}
           </Link>
           {isLoggedIn || isAdmin ? (
             <div className="site-nav-menu-anchor">
@@ -237,7 +276,14 @@ export default function Navbar() {
         </div>
 
         <div className="site-nav-mobile-actions">
-          <Link to="/dm/rate" className="site-mobile-rate-link">给DM评分</Link>
+          <Link
+            to={messagePath}
+            className="site-mobile-message-link"
+            aria-label={messageCount > 0 ? `消息，${messageCount}条未读` : '消息'}
+          >
+            <span>消息</span>
+            {messageCount > 0 && <span className="site-message-badge" aria-hidden="true">{messageCount > 99 ? '99+' : messageCount}</span>}
+          </Link>
           <button
             type="button"
             className="site-mobile-menu-button"
@@ -445,8 +491,9 @@ export default function Navbar() {
           font-size: 11px;
           line-height: 1.45;
         }
-        .site-rate-link,
+        .site-message-link,
         .site-login-link {
+          position: relative;
           min-height: 36px;
           box-sizing: border-box;
           display: inline-flex;
@@ -458,10 +505,30 @@ export default function Navbar() {
           font-size: 13px;
           font-weight: 900;
         }
-        .site-rate-link {
-          border: 1px solid #275389;
-          background: #275389;
+        .site-message-link {
+          gap: 6px;
+          border: 1px solid rgba(39, 83, 137, 0.18);
+          background: #fff;
+          color: #275389;
+        }
+        .site-message-link:hover {
+          border-color: rgba(39, 83, 137, 0.34);
+          background: rgba(239, 246, 255, 0.72);
+        }
+        .site-message-badge {
+          min-width: 17px;
+          height: 17px;
+          box-sizing: border-box;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          background: #b42318;
+          padding: 0 4px;
           color: #fff;
+          font-size: 9px;
+          font-weight: 900;
+          line-height: 1;
         }
         .site-login-link {
           border: 1px solid rgba(39, 83, 137, 0.18);
@@ -569,7 +636,7 @@ export default function Navbar() {
             align-items: center;
             gap: 7px;
           }
-          .site-mobile-rate-link,
+          .site-mobile-message-link,
           .site-mobile-menu-button {
             min-height: 34px;
             box-sizing: border-box;
@@ -583,10 +650,11 @@ export default function Navbar() {
             font-weight: 900;
             text-decoration: none;
           }
-          .site-mobile-rate-link {
-            border: 1px solid #275389;
-            background: #275389;
-            color: #fff;
+          .site-mobile-message-link {
+            gap: 5px;
+            border: 1px solid rgba(39, 83, 137, 0.18);
+            background: #fff;
+            color: #275389;
           }
           .site-mobile-menu-button {
             border: 1px solid rgba(39, 83, 137, 0.18);
@@ -748,6 +816,7 @@ function locationLabelFor(pathname: string) {
   if (pathname.startsWith('/certification')) return '身份认证';
   if (pathname.startsWith('/shop/dashboard')) return '店家后台';
   if (pathname.startsWith('/admin')) return '管理后台';
+  if (pathname.startsWith('/account-status')) return '消息通知';
   if (pathname.startsWith('/login')) return '登录注册';
   if (pathname.startsWith('/contact')) return '建议反馈';
   if (pathname.startsWith('/rules')) return '审核规则';
@@ -764,6 +833,7 @@ function fallbackPathFor(pathname: string) {
   if (pathname.startsWith('/scripts/')) return '/scripts';
   if (pathname.startsWith('/boundary-votes')) return '/roadmap';
   if (pathname.startsWith('/wallet') || pathname.startsWith('/referrals') || pathname.startsWith('/certification') || pathname.startsWith('/income')) return '/dashboard';
+  if (pathname.startsWith('/account-status')) return '/dashboard';
   if (pathname.startsWith('/shop/dashboard')) return '/dashboard';
   if (pathname.startsWith('/commissions/new')) return '/commissions';
   if (pathname.startsWith('/carpools/new')) return '/carpools';
