@@ -90,6 +90,7 @@ type Ranking = {
     created_at: string;
   } | null;
   pinned_comments?: Comment[];
+  my_joy_vote?: MyVote | null;
 };
 
 type Comment = {
@@ -758,13 +759,18 @@ export default function Rankings() {
         setItems(prev => prev.map(i => i.id === voteModal.id ? {
           ...applyMetricPatch(i, d.data),
           my_vote: d.data.myVote || null,
+          my_joy_vote: d.data.myJoyVote || null,
         } : i));
 	        if (voteCommentText.trim()) fetchComments(voteModal.id);
 	        setVoteModal(null);
 	        setVoteCommentText('');
       } else {
-        if (d.data?.myVote) {
-          setItems(prev => prev.map(i => i.id === voteModal.id ? { ...i, my_vote: d.data.myVote } : i));
+        if (d.data && ('myVote' in d.data || 'myJoyVote' in d.data)) {
+          setItems(prev => prev.map(i => i.id === voteModal.id ? {
+            ...i,
+            my_vote: d.data.myVote || null,
+            my_joy_vote: d.data.myJoyVote || null,
+          } : i));
         }
         setVoteError(d.error || '操作失败');
       }
@@ -781,13 +787,15 @@ export default function Rankings() {
     try {
       const r = await fetch(`${API}/lc/rankings/${voteModal.id}/vote`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${current.token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${current.token}` },
+        body: JSON.stringify({ voteType: voteModal.voteType }),
       });
       const d = await r.json();
       if (d.success) {
         setItems(prev => prev.map(i => i.id === voteModal.id ? {
           ...applyMetricPatch(i, d.data),
-          my_vote: null,
+          my_vote: d.data.myVote || null,
+          my_joy_vote: d.data.myJoyVote || null,
         } : i));
 	        setVoteModal(null);
 	        setVoteCommentText('');
@@ -1039,11 +1047,16 @@ export default function Rankings() {
   const commentsViewerId = Array.from(openComments)[0] || '';
   const commentsViewerItem = commentsViewerId ? items.find(item => item.id === commentsViewerId) : undefined;
   const commentsViewerComments = commentsViewerId ? commentsMap[commentsViewerId] || [] : [];
-	  const existingMyVote = voteModalItem?.my_vote || null;
+	  const existingMyVote = voteModal?.voteType === 'joy'
+	    ? voteModalItem?.my_joy_vote || null
+	    : voteModalItem?.my_vote || null;
 	  const existingVoteCopy = existingMyVote ? voteCopy(existingMyVote.vote_type, voteModalItem?.type) : null;
 	  const requestedVoteCopy = voteModal ? voteCopy(voteModal.voteType, voteModalItem?.type) : null;
 	  const canCancelExistingVote = voteCanCancel(existingMyVote);
-	  const isChangingVote = !!existingMyVote && !!voteModal && existingMyVote.vote_type !== voteModal.voteType;
+	  const isChangingVote = !!existingMyVote
+	    && !!voteModal
+	    && voteModal.voteType !== 'joy'
+	    && existingMyVote.vote_type !== voteModal.voteType;
 	  const showVoteCommentBox = !!voteModal;
 	  const voteCommentField = showVoteCommentBox ? (
 	    <div style={{ marginBottom: 14 }}>
@@ -1211,7 +1224,7 @@ export default function Rankings() {
               lineHeight: 1.7,
               maxWidth: 860,
             }}>
-              主帖证据首次提交选填；审核员认为内容不足时可以打回并要求补充。涉及第三方隐私的信息请先打码。口碑票一人一票，可改票；事件帖不接受付费打榜。发布者对事实、证据、隐私打码和言论后果负责。
+              主帖证据首次提交选填；审核员认为内容不足时可以打回并要求补充。涉及第三方隐私的信息请先打码。立场票按已验证自然人一人一票，可改票；欢乐独立计算。事件帖不接受付费打榜。发布者对事实、证据、隐私打码和言论后果负责。
             </div>
           </details>
         </div>
@@ -1256,6 +1269,7 @@ export default function Rankings() {
               const pinnedComment = (item.pinned_comments || []).find(comment => comment.is_pinned);
               const left = daysLeft(item);
               const myVote = item.my_vote || null;
+              const myJoyVote = item.my_joy_vote || null;
               const kind = eventKindCopy(item.type);
               const heading = eventTitle(item.content);
               const summary = eventSummary(item.content);
@@ -1395,8 +1409,8 @@ export default function Rankings() {
                       {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}
                     </button>
                     <button onClick={() => openVoteModal(item.id, 'joy')}
-                      style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'joy' ? GOLD : 'rgba(71,85,105,0.66)' }}>
-                      欢乐 {item.joys || 0}
+                      style={{ ...compactActionButtonStyle, color: myJoyVote?.vote_type === 'joy' ? GOLD : 'rgba(71,85,105,0.66)' }}>
+                      {myJoyVote ? '已欢乐' : '欢乐'} {item.joys || 0}
                     </button>
                     <button onClick={() => openVoteModal(item.id, 'dislike')}
                       style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'dislike' ? '#303846' : 'rgba(71,85,105,0.66)' }}>
@@ -1478,7 +1492,7 @@ export default function Rankings() {
                     : <>已投过：{existingVoteCopy.icon} {existingVoteCopy.label}</>}
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-                  每个账号对同一条内容只能保留一张口碑票。当前账号：<strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong>。
+                  同一位已验证用户对同一条内容可保留一张立场票；欢乐是独立反馈。当前账号：<strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong>。
                 </p>
                 <div style={{ border: '1px solid rgba(166,106,31,0.16)', background: '#fffaf2', borderRadius: 12, padding: '12px 14px', marginBottom: 14, color: 'rgba(71,85,105,0.78)', fontSize: '0.82rem', lineHeight: 1.7 }}>
                   {isChangingVote
@@ -1488,7 +1502,9 @@ export default function Rankings() {
                       : <>这票已经超过 24 小时撤销期，只保留公开态度记录。</>}
                 </div>
                 {isChangingVote && voteCommentField}
-                {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
+                {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>
+                  {voteError}{voteError.includes('验证手机号') && <> · <Link to="/dashboard" style={{ color: '#275389' }}>去绑定手机号</Link></>}
+                </p>}
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={closeVoteModal}
                     style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>
@@ -1513,10 +1529,12 @@ export default function Rankings() {
                   {requestedVoteCopy?.icon} {requestedVoteCopy?.label} · 免费
                 </h3>
                 <p style={{ fontSize: '0.85rem', color: 'rgba(71,85,105,0.80)', lineHeight: 1.7, marginBottom: 12 }}>
-                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份投口碑票。一人一票，可以顺带写一条评论。
+                  以 <strong style={{ color: GOLD }}>{auth?.displayName || '当前账号'}</strong> 的身份表达态度。立场票按已验证自然人一人一票，欢乐独立计算，可以顺带写一条评论。
                 </p>
                 {voteCommentField}
-                {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>{voteError}</p>}
+                {voteError && <p style={{ color: RED, fontSize: '0.8rem', marginBottom: 12 }}>
+                  {voteError}{voteError.includes('验证手机号') && <> · <Link to="/dashboard" style={{ color: '#275389' }}>去绑定手机号</Link></>}
+                </p>}
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={closeVoteModal}
                     style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.18)', background: '#fffaf2', color: 'rgba(71,85,105,0.74)', cursor: 'pointer', fontSize: '0.875rem' }}>取消</button>

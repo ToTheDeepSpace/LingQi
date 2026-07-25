@@ -15,6 +15,11 @@ import { normalizeRankingRevisionKind } from './rankingWorkflow.js';
 import { sortRankingFeedDiscussed, sortRankingFeedLatest } from './rankingFeed.js';
 import { assessRankingAuthorEdit, RANKING_AUTHOR_EDITABLE_FIELDS } from './rankingAuthorEditPolicy.js';
 import {
+  reputationVoteBlockReason,
+  reputationVoteIdentityKind,
+  type ReputationVoteType,
+} from './reputationVotePolicy.js';
+import {
   findSharedRole,
   findSharedScript,
   normalizeSharedCatalog,
@@ -1053,12 +1058,14 @@ type AuthedProfile = {
   community_role?: string | null;
   community_role_expires_at?: string | null;
   wechat_mini_openid?: string | null;
+  wechat_unionid?: string | null;
+  reputation_identity_id?: string | null;
 };
 
 async function getAuthedProfile(req: express.Request): Promise<AuthedProfile | null> {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, bio, phone, phone_verified_at, email, email_verified_at, gender, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, wechat_mini_openid')
+    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, bio, phone, phone_verified_at, email, email_verified_at, gender, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, wechat_mini_openid, wechat_unionid, reputation_identity_id')
     .eq('id', creatorId)
     .single();
   return data as AuthedProfile | null;
@@ -4549,7 +4556,9 @@ function buildReputationSummary(
   const participants = new Set<string>();
   relatedVotes.forEach(vote => {
     if (vote.source !== 'free_vote') return;
-    const voterKey = cleanText(vote.voter_id, 80) || cleanText(vote.voter_name, 80);
+    const voterKey = cleanText(vote.reputation_identity_id, 80)
+      || cleanText(vote.voter_id, 80)
+      || cleanText(vote.voter_name, 80);
     if (!voterKey) return;
     participants.add(voterKey);
     if (vote.vote_type === 'like') supportVoters.add(voterKey);
@@ -5333,11 +5342,12 @@ async function upsertAvailabilityBySource(row: {
   return data;
 }
 
-type RankingVoteType = 'like' | 'dislike' | 'joy';
+type RankingVoteType = ReputationVoteType;
 type RankingVoteRow = {
   id: string;
   ranking_id?: string;
   vote_type: RankingVoteType;
+  vote_channel?: 'stance' | 'joy';
   created_at: string;
 };
 type RankingMetrics = {
@@ -5397,12 +5407,38 @@ function serializeMyVote(vote: RankingVoteRow) {
   };
 }
 
+async function getRankingVoteState(profileId: string, rankingId: string) {
+  const profileResult = await supabase.from('lc_profiles')
+    .select('reputation_identity_id')
+    .eq('id', profileId)
+    .maybeSingle();
+  if (profileResult.error) throw profileResult.error;
+  const identityId = cleanText(profileResult.data?.reputation_identity_id, 80);
+  if (!identityId) return { myVote: null, myJoyVote: null };
+
+  const voteResult = await supabase.from('lc_votes')
+    .select('id, ranking_id, vote_type, vote_channel, created_at')
+    .eq('ranking_id', rankingId)
+    .eq('reputation_identity_id', identityId)
+    .eq('source', 'free_vote');
+  if (voteResult.error) throw voteResult.error;
+  const votes = (voteResult.data || []) as RankingVoteRow[];
+  const stanceVote = votes.find(vote => vote.vote_channel === 'stance' && vote.vote_type !== 'joy') || null;
+  const joyVote = votes.find(vote => vote.vote_channel === 'joy' && vote.vote_type === 'joy') || null;
+  return {
+    myVote: stanceVote ? serializeMyVote(stanceVote) : null,
+    myJoyVote: joyVote ? serializeMyVote(joyVote) : null,
+  };
+}
+
 function firstRpcRow<T>(data: T | T[] | null): T | null {
   if (Array.isArray(data)) return data[0] || null;
   return data || null;
 }
 
 function rankingVoteRpcStatus(message: string) {
+  if (message.includes('验证手机号') || message.includes('UnionID')) return 403;
+  if (message.includes('身份绑定冲突') || message.includes('重复历史票') || message.includes('账号已合并')) return 409;
   if (message.includes('榜金不足') || message.includes('契约币不足')) return 402;
   if (message.includes('不存在') || message.includes('未上线') || message.includes('还没有')) return 404;
   if (message.includes('无效') || message.includes('超过24小时')) return 400;
@@ -13214,7 +13250,7 @@ app.get('/api/lc/reputation/city', async (req, res) => {
     const rankingIds = rows.map(row => String(row.id)).filter(Boolean);
     const [{ data: votes }, { data: comments }] = rankingIds.length > 0
       ? await Promise.all([
-          supabase.from('lc_votes').select('ranking_id, vote_type, voter_id, voter_name, source, created_at').in('ranking_id', rankingIds).limit(2000),
+          supabase.from('lc_votes').select('ranking_id, vote_type, reputation_identity_id, voter_id, voter_name, source, created_at').in('ranking_id', rankingIds).limit(2000),
           supabase.from('lc_comments').select('ranking_id, id, likes, created_at').in('ranking_id', rankingIds).eq('status', 'approved').limit(2000),
         ])
       : [{ data: [] }, { data: [] }];
@@ -13351,7 +13387,7 @@ app.get('/api/lc/reputation/dossier', async (req, res) => {
     const rankingIds = rows.map(row => String(row.id)).filter(Boolean);
     const [{ data: votes }, { data: comments }] = rankingIds.length > 0
       ? await Promise.all([
-          supabase.from('lc_votes').select('ranking_id, vote_type, voter_id, voter_name, source, created_at').in('ranking_id', rankingIds).limit(2000),
+          supabase.from('lc_votes').select('ranking_id, vote_type, reputation_identity_id, voter_id, voter_name, source, created_at').in('ranking_id', rankingIds).limit(2000),
           supabase.from('lc_comments').select('ranking_id, id, content, author_name, is_realname, is_pinned, pin_label, likes, created_at').in('ranking_id', rankingIds).eq('status', 'approved').limit(2000),
         ])
       : [{ data: [] }, { data: [] }];
@@ -16266,25 +16302,47 @@ app.get('/api/lc/rankings', async (req, res) => {
     const visibleWithAudit = await attachAuditProof('ranking', visible);
     const rankingIds = visibleWithAudit.map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
     let pinnedByRanking = new Map<string, PinnedCommentRow[]>();
+    let participantCountByRanking = new Map<string, number>();
     if (rankingIds.length > 0) {
-      const { data: pinnedComments, error: pinnedErr } = await supabase.from('lc_comments')
-        .select('id, ranking_id, content, author_id, author_name, is_realname, is_pinned, pin_label, likes, created_at')
-        .in('ranking_id', rankingIds)
-        .eq('status', 'approved')
-        .eq('is_pinned', true)
-        .order('created_at', { ascending: false });
+      const [pinnedResult, participantResult] = await Promise.all([
+        supabase.from('lc_comments')
+          .select('id, ranking_id, content, author_id, author_name, is_realname, is_pinned, pin_label, likes, created_at')
+          .in('ranking_id', rankingIds)
+          .eq('status', 'approved')
+          .eq('is_pinned', true)
+          .order('created_at', { ascending: false }),
+        supabase.from('lc_votes')
+          .select('ranking_id, reputation_identity_id, voter_id')
+          .in('ranking_id', rankingIds)
+          .eq('source', 'free_vote'),
+      ]);
+      const { data: pinnedComments, error: pinnedErr } = pinnedResult;
       if (pinnedErr) throw pinnedErr;
+      if (participantResult.error) throw participantResult.error;
       pinnedByRanking = (pinnedComments || []).reduce((map: Map<string, PinnedCommentRow[]>, comment: PinnedCommentRow) => {
         const list = map.get(comment.ranking_id) || [];
         list.push(comment);
         map.set(comment.ranking_id, list);
         return map;
       }, new Map<string, PinnedCommentRow[]>());
+      const participantKeysByRanking = (participantResult.data || []).reduce((map: Map<string, Set<string>>, vote: Record<string, unknown>) => {
+        const rankingId = cleanText(vote.ranking_id, 80);
+        const participantKey = cleanText(vote.reputation_identity_id, 80) || cleanText(vote.voter_id, 80);
+        if (!rankingId || !participantKey) return map;
+        const keys = map.get(rankingId) || new Set<string>();
+        keys.add(participantKey);
+        map.set(rankingId, keys);
+        return map;
+      }, new Map<string, Set<string>>());
+      participantCountByRanking = new Map(
+        Array.from(participantKeysByRanking.entries()).map(([rankingId, keys]) => [rankingId, keys.size]),
+      );
     }
 
     const feedRows = visibleWithAudit.map((row: Record<string, unknown>) => ({
       ...withRankingMetrics(row),
       pinned_comments: pinnedByRanking.get(String(row.id)) || [],
+      participant_count: participantCountByRanking.get(String(row.id)) || 0,
     }));
     const withPinnedComments = feedMode === 'discussed'
       ? sortRankingFeedDiscussed(feedRows)
@@ -16292,18 +16350,38 @@ app.get('/api/lc/rankings', async (req, res) => {
 
     if (!viewerId || withPinnedComments.length === 0) return res.json(ok(withPinnedComments));
 
+    const identityResult = await supabase.from('lc_profiles')
+      .select('reputation_identity_id')
+      .eq('id', viewerId)
+      .maybeSingle();
+    if (identityResult.error) throw identityResult.error;
+    const reputationIdentityId = cleanText(identityResult.data?.reputation_identity_id, 80);
+    if (!reputationIdentityId) return res.json(ok(withPinnedComments));
+
     const { data: myVotes, error: myVoteErr } = await supabase.from('lc_votes')
-      .select('id, ranking_id, vote_type, created_at')
+      .select('id, ranking_id, vote_type, vote_channel, created_at')
       .in('ranking_id', rankingIds)
-      .eq('voter_id', viewerId)
+      .eq('reputation_identity_id', reputationIdentityId)
       .eq('source', 'free_vote');
     if (myVoteErr) throw myVoteErr;
 
-    const voteByRanking = new Map((myVotes || []).map((vote: RankingVoteRow) => [vote.ranking_id, vote]));
+    const stanceVoteByRanking = new Map(
+      ((myVotes || []) as RankingVoteRow[])
+        .filter(vote => vote.vote_channel === 'stance' && vote.vote_type !== 'joy')
+        .map(vote => [vote.ranking_id, vote]),
+    );
+    const joyVoteByRanking = new Map(
+      ((myVotes || []) as RankingVoteRow[])
+        .filter(vote => vote.vote_channel === 'joy' && vote.vote_type === 'joy')
+        .map(vote => [vote.ranking_id, vote]),
+    );
     const withMyVotes = withPinnedComments.map((row: Record<string, unknown>) => ({
       ...row,
-      my_vote: voteByRanking.get(String(row.id))
-        ? serializeMyVote(voteByRanking.get(String(row.id)) as RankingVoteRow)
+      my_vote: stanceVoteByRanking.get(String(row.id))
+        ? serializeMyVote(stanceVoteByRanking.get(String(row.id)) as RankingVoteRow)
+        : null,
+      my_joy_vote: joyVoteByRanking.get(String(row.id))
+        ? serializeMyVote(joyVoteByRanking.get(String(row.id)) as RankingVoteRow)
         : null,
     }));
 
@@ -16356,17 +16434,13 @@ app.get('/api/lc/rankings/:id', async (req, res) => {
     }
     const [withAudit] = await attachAuditProof('ranking', [publicRankingPayload(withRankingMetrics(data as Record<string, unknown>))]);
     let myVote = null;
+    let myJoyVote = null;
     if (viewerId) {
-      const voteResult = await supabase.from('lc_votes')
-        .select('id, ranking_id, vote_type, created_at')
-        .eq('ranking_id', req.params.id)
-        .eq('voter_id', viewerId)
-        .eq('source', 'free_vote')
-        .maybeSingle();
-      if (voteResult.error) throw voteResult.error;
-      if (voteResult.data) myVote = serializeMyVote(voteResult.data as RankingVoteRow);
+      const voteState = await getRankingVoteState(viewerId, req.params.id);
+      myVote = voteState.myVote;
+      myJoyVote = voteState.myJoyVote;
     }
-    res.json(ok({ ...withRankingMetrics(withAudit), my_vote: myVote }));
+    res.json(ok({ ...withRankingMetrics(withAudit), my_vote: myVote, my_joy_vote: myJoyVote }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -16880,6 +16954,14 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const speakBlock = getSpeakBlockReason(profile);
     if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
+    const voteBlock = reputationVoteBlockReason(profile);
+    if (voteBlock) {
+      return res.status(403).json(codedErr(
+        new Error(voteBlock),
+        'REPUTATION_IDENTITY_REQUIRED',
+        { action_url: '/dashboard' },
+      ));
+    }
     if (!['like', 'dislike', 'joy'].includes(voteType)) return res.status(400).json(err(new Error('无效投票类型')));
 
     const { data: targetRanking, error: targetErr } = await supabase.from('lc_rankings')
@@ -16900,17 +16982,18 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
     });
     if (voteErr) {
       const message = voteErr.message || '';
-      if (message.includes('duplicate key') || message.includes('lc_votes_ranking_voter')) {
-        const { data: existingVote } = await supabase.from('lc_votes')
-          .select('id, vote_type, created_at')
-          .eq('ranking_id', req.params.id)
-          .eq('voter_id', profile.id)
-          .eq('source', 'free_vote')
-          .maybeSingle();
-        const myVote = existingVote ? serializeMyVote(existingVote as RankingVoteRow) : null;
+      if (message.includes('duplicate key') || message.includes('lc_votes_one_reputation_vote')) {
+        const voteState = await getRankingVoteState(profile.id, req.params.id);
+        const currentChannelVote = voteType === 'joy' ? voteState.myJoyVote : voteState.myVote;
+        if (currentChannelVote?.vote_type === voteType) {
+          return res.json(ok({
+            ...voteState,
+            unchanged: true,
+          }));
+        }
         return res.status(409).json({
           ...err(new Error('你已经投过票了，请刷新后撤销或改票')),
-          data: { myVote },
+          data: voteState,
         });
       }
       return res.status(rankingVoteRpcStatus(message)).json(err(new Error(message || '投票失败')));
@@ -16918,7 +17001,7 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
 
     const row = firstRpcRow<RankingVoteRpcResult>(data);
     if (!row || !row.vote_id || !row.vote_type || !row.vote_created_at) throw new Error('投票结果为空');
-    const myVote = serializeMyVote({ id: row.vote_id, vote_type: row.vote_type, created_at: row.vote_created_at });
+    const voteState = await getRankingVoteState(profile.id, req.params.id);
 
     if (row.is_duplicate) {
       await logSecurityEvent(req, {
@@ -16927,10 +17010,19 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
         targetId: req.params.id,
         metadata: { vote_type: voteType },
       });
-      return res.status(409).json({
-        ...err(new Error('你已经投过票了')),
-        data: { myVote },
-      });
+      return res.json(ok({
+        likes: row.likes,
+        dislikes: row.dislikes,
+        joys: row.joys,
+        boost_amount: row.boost_amount,
+        negative_boost_amount: row.negative_boost_amount,
+        agree_count: row.agree_count,
+        oppose_count: row.oppose_count,
+        ...voteState,
+        balance: row.balance,
+        balanceDelta: 0,
+        unchanged: true,
+      }));
     }
 
     let attachedCommentId: string | null = null;
@@ -16952,7 +17044,13 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       action: 'ranking_vote_applied',
       targetType: 'ranking',
       targetId: req.params.id,
-      metadata: { vote_type: voteType, balance_delta: row.balance_delta || 0, attached_comment_id: attachedCommentId, attached_comment_error: attachedCommentError || null },
+      metadata: {
+        vote_type: voteType,
+        identity_kind: reputationVoteIdentityKind(profile),
+        balance_delta: row.balance_delta || 0,
+        attached_comment_id: attachedCommentId,
+        attached_comment_error: attachedCommentError || null,
+      },
     });
     res.json(ok({
       likes: row.likes,
@@ -16962,7 +17060,7 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       negative_boost_amount: row.negative_boost_amount,
       agree_count: row.agree_count,
       oppose_count: row.oppose_count,
-      myVote,
+      ...voteState,
       balance: row.balance,
       balanceDelta: row.balance_delta || 0,
       comment: attachedCommentId ? { id: attachedCommentId, status: 'pending' } : null,
@@ -16975,21 +17073,35 @@ app.delete('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const voteBlock = reputationVoteBlockReason(profile);
+    if (voteBlock) {
+      return res.status(403).json(codedErr(
+        new Error(voteBlock),
+        'REPUTATION_IDENTITY_REQUIRED',
+        { action_url: '/dashboard' },
+      ));
+    }
+    const voteType = cleanText(req.body?.voteType ?? req.query?.voteType, 20) as RankingVoteType;
+    if (!['like', 'dislike', 'joy'].includes(voteType)) {
+      return res.status(400).json(err(new Error('请选择要撤销的口碑票')));
+    }
 
     const { data, error: cancelErr } = await supabase.rpc('lc_cancel_ranking_vote', {
       p_ranking_id: req.params.id,
       p_voter_id: profile.id,
+      p_vote_type: voteType,
     });
     if (cancelErr) return res.status(rankingVoteRpcStatus(cancelErr.message || '')).json(err(new Error(cancelErr.message || '撤销失败')));
 
     const row = firstRpcRow<RankingVoteRpcResult>(data);
     if (!row) throw new Error('撤销结果为空');
+    const voteState = await getRankingVoteState(profile.id, req.params.id);
 
     await logSecurityEvent(req, {
       action: 'ranking_vote_cancelled',
       targetType: 'ranking',
       targetId: req.params.id,
-      metadata: { refunded: row.refunded || 0 },
+      metadata: { vote_type: voteType, identity_kind: reputationVoteIdentityKind(profile), refunded: row.refunded || 0 },
     });
     res.json(ok({
       likes: row.likes,
@@ -16999,7 +17111,7 @@ app.delete('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       negative_boost_amount: row.negative_boost_amount,
       agree_count: row.agree_count,
       oppose_count: row.oppose_count,
-      myVote: null,
+      ...voteState,
       refunded: row.refunded || 0,
       balance: row.balance,
     }));

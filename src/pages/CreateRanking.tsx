@@ -407,7 +407,7 @@ export default function CreateRanking() {
             <h1 className="ranking-new-title">{resubmitId ? '修改并重新提交' : '发布红黑榜'}</h1>
             <span className="ranking-new-coin"><span>✓</span> 免费发布</span>
           </div>
-          <p className="ranking-new-subtitle">口碑票一人一票 · 真实口碑 · {publishCostText}</p>
+          <p className="ranking-new-subtitle">已验证身份一人一票 · 真实口碑 · {publishCostText}</p>
         </div>
       </header>
 
@@ -839,7 +839,7 @@ function RankingRulesNotice({ type, accepted, onAcceptedChange }: { type: Rankin
         <RuleLine><strong>写什么</strong> — {typeTip}</RuleLine>
         <RuleLine><strong>上传证据</strong> — 红榜、黑榜、白榜首次提交都不强制上传；审核员认为现有内容不足时，可以打回并要求补证据。</RuleLine>
         <RuleLine><strong>保护隐私</strong> — 聊天记录、订单、群聊、照片等第三方信息请先打码，否则可能被驳回。</RuleLine>
-        <RuleLine><strong>口碑票</strong> — 同一账号对同一帖只保留一张口碑票；榜金只用于正向打榜，不开放付费踩榜，禁止多号刷票或重复提交同一事件。</RuleLine>
+        <RuleLine><strong>口碑票</strong> — 已验证手机号或微信 UnionID 对同一帖只保留一张立场票；欢乐独立计算。榜金不影响口碑态度，禁止多号刷票或重复提交同一事件。</RuleLine>
         <RuleLine><strong>审核边界</strong> — 审核通过仅代表符合展示规则，不代表平台已核实全部陈述。</RuleLine>
         <RuleLine><strong>相关方回应</strong> — 回应不是删帖入口；先发普通评论，通过后再提交关系材料申请置顶。</RuleLine>
         <RuleLine><strong>黑榜期限</strong> — 黑榜默认公开展示 30 天后进入已过期记录，后续可去标识化沉淀为共性问题和礼仪建议。</RuleLine>

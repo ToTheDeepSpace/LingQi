@@ -4,6 +4,7 @@ export type RankingFeedRow = Record<string, unknown> & {
   agree_count?: number | null;
   oppose_count?: number | null;
   joys?: number | null;
+  participant_count?: number | null;
 };
 
 function timestamp(value: unknown) {
@@ -20,10 +21,13 @@ export function rankingActivityTime(row: RankingFeedRow) {
 }
 
 export function rankingRecentDiscussionScore(row: RankingFeedRow, now = Date.now()) {
-  const participants = Math.max(0,
-    Number(row.agree_count || 0)
-    + Number(row.oppose_count || 0)
-    + Number(row.joys || 0));
+  const explicitParticipantCount = Number(row.participant_count);
+  const participants = Number.isFinite(explicitParticipantCount)
+    ? Math.max(0, explicitParticipantCount)
+    : Math.max(0,
+      Number(row.agree_count || 0)
+      + Number(row.oppose_count || 0)
+      + Number(row.joys || 0));
   const ageDays = Math.max(0, (now - rankingActivityTime(row)) / (24 * 60 * 60 * 1000));
   return Math.log1p(participants) * Math.exp(-ageDays / 7);
 }

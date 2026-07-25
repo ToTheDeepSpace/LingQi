@@ -17,9 +17,28 @@ test('activity falls back to creation time for historical rows', () => {
 
 test('recent discussion uses unique free-vote participation with time decay', () => {
   const now = new Date('2026-07-14T00:00:00Z').getTime();
-  const active = { created_at: '2026-07-13T00:00:00Z', agree_count: 8, oppose_count: 2, joys: 1 };
+  const active = { created_at: '2026-07-13T00:00:00Z', agree_count: 8, oppose_count: 2, joys: 1, participant_count: 10 };
   const stale = { created_at: '2026-04-01T00:00:00Z', agree_count: 500, oppose_count: 0, joys: 0 };
   assert.ok(rankingRecentDiscussionScore(active, now) > rankingRecentDiscussionScore(stale, now));
+});
+
+test('independent joy does not count the same identity twice in discussion ranking', () => {
+  const now = new Date('2026-07-14T00:00:00Z').getTime();
+  const onePersonTwoReactions = {
+    created_at: '2026-07-13T00:00:00Z',
+    agree_count: 1,
+    joys: 1,
+    participant_count: 1,
+  };
+  const oneReaction = {
+    created_at: '2026-07-13T00:00:00Z',
+    agree_count: 1,
+    participant_count: 1,
+  };
+  assert.equal(
+    rankingRecentDiscussionScore(onePersonTwoReactions, now),
+    rankingRecentDiscussionScore(oneReaction, now),
+  );
 });
 
 test('feed accepts PostgreSQL Date objects before JSON serialization', () => {

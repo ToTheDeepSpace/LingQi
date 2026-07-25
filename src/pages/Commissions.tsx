@@ -428,7 +428,7 @@ export default function Commissions() {
               {providerReceived.map(inquiry => (
                 <article key={inquiry.id} style={{ borderRadius: 8, border: '1px solid rgba(39,83,137,0.14)', background: '#fff', padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-                    <ProfileNameLink profileId={inquiry.requester_id} name={inquiry.requester_name} />
+                    <ProfileNameLink profileId={inquiry.requester_id}>{inquiry.requester_name}</ProfileNameLink>
                     <ApplicationStatus status={inquiry.status} />
                   </div>
                   <p style={{ margin: '9px 0 0', color: MUTED, lineHeight: 1.7, fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{inquiry.message}</p>
@@ -464,7 +464,7 @@ export default function Commissions() {
               {providerSent.map(inquiry => (
                 <article key={inquiry.id} style={{ borderRadius: 8, border: '1px solid rgba(31,41,55,0.1)', background: '#fff', padding: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-                    <ProfileNameLink profileId={inquiry.provider_id} name={inquiry.provider?.display_name || '委托师'} />
+                    <ProfileNameLink profileId={inquiry.provider_id}>{inquiry.provider?.display_name || '委托师'}</ProfileNameLink>
                     <ApplicationStatus status={inquiry.status} />
                   </div>
                   <p style={{ margin: '9px 0 0', color: MUTED, lineHeight: 1.7, fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{inquiry.message}</p>

@@ -34,8 +34,41 @@ async function load() {
 async function vote(voteType: 'like' | 'dislike' | 'joy') {
   try {
     await requireLogin()
-    const result = await apiRequest<Partial<Ranking> & { myVote?: Ranking['my_vote'] }>(`/lc/rankings/${encoded(id.value)}/vote`, { method: 'POST', data: { voteType } })
-    if (item.value) item.value = { ...item.value, ...result, my_vote: result.myVote || { id: '', vote_type: voteType } }
+    const existingVote = voteType === 'joy' ? item.value?.my_joy_vote : item.value?.my_vote
+    if (existingVote?.vote_type === voteType) {
+      const confirm = await new Promise<boolean>(resolve => {
+        uni.showModal({
+          title: voteType === 'joy' ? '撤销欢乐？' : '撤销这张立场票？',
+          content: existingVote.can_cancel === false ? '这张票已经超过 24 小时，不能撤销。' : '24 小时内可以撤销，口碑票不涉及退款。',
+          confirmText: '撤销',
+          success: result => resolve(Boolean(result.confirm && existingVote.can_cancel !== false)),
+          fail: () => resolve(false),
+        })
+      })
+      if (!confirm) return
+      const result = await apiRequest<Partial<Ranking> & {
+        myVote?: Ranking['my_vote']
+        myJoyVote?: Ranking['my_joy_vote']
+      }>(`/lc/rankings/${encoded(id.value)}/vote?voteType=${voteType}`, { method: 'DELETE' })
+      if (item.value) item.value = {
+        ...item.value,
+        ...result,
+        my_vote: result.myVote || null,
+        my_joy_vote: result.myJoyVote || null,
+      }
+      uni.showToast({ title: '已撤销', icon: 'success' })
+      return
+    }
+    const result = await apiRequest<Partial<Ranking> & {
+      myVote?: Ranking['my_vote']
+      myJoyVote?: Ranking['my_joy_vote']
+    }>(`/lc/rankings/${encoded(id.value)}/vote`, { method: 'POST', data: { voteType } })
+    if (item.value) item.value = {
+      ...item.value,
+      ...result,
+      my_vote: result.myVote || null,
+      my_joy_vote: result.myJoyVote || null,
+    }
     uni.showToast({ title: voteType === 'like' ? '已同意' : voteType === 'dislike' ? '已反对' : '已标记欢乐', icon: 'success' })
   } catch (err) { if ((err as Error).message !== '请先登录') uni.showToast({ title: (err as Error).message, icon: 'none' }) }
 }
@@ -96,7 +129,7 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
       <view class="votes surface">
         <button class="vote" :class="{ active: item.my_vote?.vote_type === 'like' }" @tap="vote('like')">同意 {{ item.agree_count ?? item.likes ?? 0 }}</button>
         <button class="vote" :class="{ active: item.my_vote?.vote_type === 'dislike' }" @tap="vote('dislike')">反对 {{ item.oppose_count ?? item.dislikes ?? 0 }}</button>
-        <button class="vote" :class="{ active: item.my_vote?.vote_type === 'joy' }" @tap="vote('joy')">欢乐 {{ item.joys || 0 }}</button>
+        <button class="vote" :class="{ active: item.my_joy_vote?.vote_type === 'joy' }" @tap="vote('joy')">欢乐 {{ item.joys || 0 }}</button>
       </view>
 
       <text class="section-title">评论</text>

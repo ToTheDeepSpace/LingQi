@@ -143,7 +143,8 @@ export type Ranking = {
   status?: string
   reject_reason?: string | null
   pinned_comments?: RankingComment[]
-  my_vote?: { id: string; vote_type: 'like' | 'dislike' | 'joy'; created_at?: string } | null
+  my_vote?: { id: string; vote_type: 'like' | 'dislike'; created_at?: string; can_cancel?: boolean } | null
+  my_joy_vote?: { id: string; vote_type: 'joy'; created_at?: string; can_cancel?: boolean } | null
 }
 
 export type RankingComment = {
