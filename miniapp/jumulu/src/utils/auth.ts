@@ -16,14 +16,12 @@ export async function refreshCurrentUser(options: { silent?: boolean } = {}) {
   }
 }
 
-export async function loginWithWechat(displayName: string) {
-  const name = displayName.trim()
-  if (!name) throw new Error('首次注册请填写昵称')
+export async function loginWithWechat() {
   const login = await uni.login({ provider: 'weixin' })
   if (!login.code) throw new Error('微信登录凭证获取失败')
   const auth = await apiRequest<AuthSession>('/lc/miniapp/auth/wechat', {
     method: 'POST',
-    data: { code: login.code, displayName: name },
+    data: { code: login.code },
   })
   writeAuth(auth)
   uni.$emit('jumulu:auth-changed', auth)

@@ -13,6 +13,7 @@ export type AuthSession = {
   role?: string
   auth_provider?: string
   account_merged?: boolean
+  profile_setup_completed?: boolean
 }
 
 export type AccountStatus = {

@@ -124,6 +124,7 @@ import {
   type AccountRestrictionProfile,
   type AccountRestrictionScope,
 } from './accountRestrictionPolicy.js';
+import { profileSetupBlockReason } from './profileSetupPolicy.js';
 import {
   firstPublicImage,
   normalizeSubmissionState,
@@ -1060,19 +1061,26 @@ type AuthedProfile = {
   wechat_mini_openid?: string | null;
   wechat_unionid?: string | null;
   reputation_identity_id?: string | null;
+  profile_setup_completed?: boolean | null;
 };
 
 async function getAuthedProfile(req: express.Request): Promise<AuthedProfile | null> {
   const creatorId = getReq(req, 'creatorId');
   const { data } = await supabase.from('lc_profiles')
-    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, bio, phone, phone_verified_at, email, email_verified_at, gender, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, wechat_mini_openid, wechat_unionid, reputation_identity_id')
+    .select('id, display_name, is_realname, balance, paid_balance, bonus_balance, is_banned, ban_reason, avatar, bio, phone, phone_verified_at, email, email_verified_at, gender, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, wechat_mini_openid, wechat_unionid, reputation_identity_id, profile_setup_completed')
     .eq('id', creatorId)
     .single();
   return data as AuthedProfile | null;
 }
 
-function getSpeakBlockReason(profile: { phone_verified_at?: string | null; email_verified_at?: string | null } | null) {
+function getSpeakBlockReason(profile: {
+  phone_verified_at?: string | null;
+  email_verified_at?: string | null;
+  profile_setup_completed?: boolean | null;
+} | null) {
   if (!profile) return '用户不存在';
+  const setupBlock = profileSetupBlockReason(profile);
+  if (setupBlock) return setupBlock;
   if (!profile.phone_verified_at && !profile.email_verified_at) return '发言前请先完成手机号或邮箱验证';
   return '';
 }
@@ -6052,7 +6060,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
         role_type: 'player',
         identity_roles: ['player'],
         password_hash: null,
-        is_visible: true,
+        is_visible: false,
         balance: 30,
         paid_balance: 0,
         bonus_balance: 30,
@@ -6160,11 +6168,7 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
       return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
     }
 
-    if (!profile && !displayNameInput) {
-      return res.status(400).json(err(new Error('首次注册请填写昵称')));
-    }
-
-    const displayName = displayNameInput || profile?.display_name || `微信用户${openid.slice(-4)}`;
+    const displayName = displayNameInput || profile?.display_name || '新用户';
     if (profile) {
       const patch: Record<string, unknown> = {
         wechat_mini_openid: openid,
@@ -6190,6 +6194,7 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
         balance: 30,
         paid_balance: 0,
         bonus_balance: 30,
+        profile_setup_completed: false,
         auth_provider: 'wechat_miniapp',
         wechat_mini_openid: openid,
         wechat_unionid: unionid,
@@ -6237,6 +6242,7 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
       token,
       auth_provider: 'wechat_miniapp',
       has_password: Boolean(profile.password_hash),
+      profile_setup_completed: profile.profile_setup_completed !== false,
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -6978,7 +6984,7 @@ app.post('/api/lc/auth', async (req, res) => {
 app.get('/api/lc/me', authMiddleware, async (req, res) => {
   try {
     const { data } = await supabase.from('lc_profiles')
-      .select('id, display_name, avatar, phone, phone_verified_at, email, email_verified_at, password_hash, is_realname, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at')
+      .select('id, display_name, avatar, phone, phone_verified_at, email, email_verified_at, password_hash, is_realname, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, profile_setup_completed')
       .eq('id', getReq(req, 'creatorId'))
       .single();
     res.json(ok(data ? sanitizeProfile(data, true) : null));
@@ -7814,6 +7820,19 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
     }
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if (profile.profile_setup_completed === false) {
+      const pendingSetup = await supabase.from('lc_public_reviews')
+        .select('id')
+        .eq('target_type', 'profile_update')
+        .eq('profile_id', profile.id)
+        .eq('status', 'pending')
+        .limit(1)
+        .maybeSingle();
+      if (pendingSetup.error && !isMissingRelation(pendingSetup.error, 'lc_public_reviews')) throw pendingSetup.error;
+      if (pendingSetup.data) {
+        return res.status(409).json(err(new Error('公开昵称正在审核，请等待处理后再提交')));
+      }
+    }
     const {
       display_name, avatar, bio, tags, city, social_links, wechat,
       available_cities, travel_status, contact_unlock_enabled, contact_intent_amount,
@@ -7827,8 +7846,15 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
     const normalizedTravelStatus = !hasField('travel_status') ? undefined : travel_status === '常驻本地'
       ? '常驻所在城市'
       : (travel_status || '常驻所在城市');
+    const normalizedDisplayName = hasField('display_name') ? cleanText(display_name, 30) : undefined;
+    if (hasField('display_name') && (!normalizedDisplayName || normalizedDisplayName.length < 2)) {
+      return res.status(400).json(err(new Error('公开昵称请填写 2 至 30 个字符')));
+    }
+    if (profile.profile_setup_completed === false && !normalizedDisplayName) {
+      return res.status(400).json(err(new Error('请先设置公开昵称')));
+    }
     const candidatePatch: Record<string, unknown> = {
-      display_name: hasField('display_name') ? display_name : undefined,
+      display_name: normalizedDisplayName,
       avatar: hasField('avatar') ? avatar : undefined,
       bio: hasField('bio') ? bio : undefined,
       tags: hasField('tags') ? (Array.isArray(tags) ? tags : []) : undefined,
@@ -7853,6 +7879,10 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
       profilePatch[field] = value;
       beforeSnapshot[field] = profile[field] ?? null;
       changedFields.push(field);
+    }
+    if (profile.profile_setup_completed === false && changedFields.includes('display_name')) {
+      profilePatch.profile_setup_completed = true;
+      profilePatch.is_visible = true;
     }
     if (changedFields.includes('social_links') && socialSnapshots) profilePatch.social_snapshots = socialSnapshots;
 

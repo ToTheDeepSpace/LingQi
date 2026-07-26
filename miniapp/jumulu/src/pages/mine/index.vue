@@ -16,8 +16,10 @@ type PublicationSummary = {
 }
 
 const auth = ref<AuthSession | null>(readAuth())
-const nickname = ref('')
+const setupNickname = ref('')
 const loading = ref(false)
+const setupSubmitting = ref(false)
+const setupPending = ref(false)
 const error = ref('')
 const accountStatus = ref<AccountStatus | null>(null)
 const publicationSummary = ref<PublicationSummary>({ total: 0, pending: 0, approved: 0, action_required: 0, closed: 0 })
@@ -29,10 +31,11 @@ async function refresh() {
   try {
     const [nextAccountStatus, content] = await Promise.all([
       apiRequest<AccountStatus>('/lc/account/status'),
-      apiRequest<{ summary?: PublicationSummary }>('/lc/account/submissions'),
+      apiRequest<{ summary?: PublicationSummary; items?: Array<{ kind?: string; status?: string }> }>('/lc/account/submissions'),
     ])
     accountStatus.value = nextAccountStatus
     publicationSummary.value = content.summary || { total: 0, pending: 0, approved: 0, action_required: 0, closed: 0 }
+    setupPending.value = Boolean(content.items?.some(item => item.kind === 'profile_update' && item.status === 'pending'))
     if (accountStatus.value.state === 'merged') {
       logout(); auth.value = null
       uni.showModal({ title: '账号已合并', content: accountStatus.value.message || '请重新登录原网站账号。', showCancel: false })
@@ -45,9 +48,37 @@ async function refresh() {
 }
 async function login() {
   error.value = ''
-  try { loading.value = true; auth.value = await loginWithWechat(nickname.value); nickname.value = ''; uni.showToast({ title: '登录成功', icon: 'success' }) }
+  try {
+    loading.value = true
+    auth.value = await loginWithWechat()
+    uni.showToast({ title: '登录成功', icon: 'success' })
+    await refresh()
+  }
   catch (err) { error.value = err instanceof Error ? err.message : '微信登录失败' }
   finally { loading.value = false }
+}
+async function submitInitialProfile() {
+  const displayName = setupNickname.value.trim()
+  if (displayName.length < 2) return uni.showToast({ title: '昵称至少 2 个字', icon: 'none' })
+  if (!auth.value?.id) return
+  try {
+    setupSubmitting.value = true
+    await apiRequest(`/lc/creators/${auth.value.id}`, {
+      method: 'PUT',
+      data: { display_name: displayName },
+    })
+    setupPending.value = true
+    setupNickname.value = ''
+    uni.showModal({
+      title: '昵称已提交',
+      content: '审核通过后会成为你的公开昵称。等待期间可以继续浏览和完善关注城市。',
+      showCancel: false,
+    })
+  } catch (err) {
+    uni.showToast({ title: (err as Error).message, icon: 'none' })
+  } finally {
+    setupSubmitting.value = false
+  }
 }
 function signOut() { logout(); auth.value = null }
 function go(url: string) { uni.navigateTo({ url }) }
@@ -80,17 +111,29 @@ onPullDownRefresh(pullRefresh)
     <template v-else>
     <PageIntro nav-title="我的" :title="auth ? auth.display_name : '微信登录剧幕录'" />
     <view v-if="!auth" class="login surface">
-      <text class="field-label">公开昵称</text>
-      <input v-model="nickname" class="input" maxlength="40" placeholder="例如：泡泡" />
-      <text class="hint">昵称会显示在公开主页和你发布的内容中，可以后续治理，但不做发布前审核。</text>
+      <view class="login-mark">幕</view>
+      <text class="login-title">微信一键登录</text>
+      <text class="hint">先进入剧幕录浏览内容，再设置公开昵称、关注城市和个人主页。</text>
       <text v-if="error" class="error">{{ error }}</text>
-      <button class="primary-button login-button" :loading="loading" :disabled="loading || !nickname.trim()" @tap="login">微信登录</button>
+      <button class="primary-button login-button" :loading="loading" :disabled="loading" @tap="login">微信一键登录</button>
     </view>
     <template v-else>
       <view class="account surface">
         <image v-if="auth.avatar" class="avatar" :src="auth.avatar" mode="aspectFill" />
-        <view v-else class="avatar placeholder">{{ auth.display_name.slice(0, 1) }}</view>
-        <view class="account__main"><text class="account__name">{{ auth.display_name }}</text><text class="account__meta">{{ auth.city || '城市未设置' }} · {{ auth.phone_verified_at || auth.email_verified_at ? '账号已验证' : '仅浏览' }}</text></view>
+        <view v-else class="avatar placeholder">{{ auth.profile_setup_completed === false ? '幕' : auth.display_name.slice(0, 1) }}</view>
+        <view class="account__main"><text class="account__name">{{ auth.profile_setup_completed === false ? '待设置公开昵称' : auth.display_name }}</text><text class="account__meta">{{ auth.city || '城市未设置' }} · {{ auth.phone_verified_at || auth.email_verified_at ? '账号已验证' : '仅浏览' }}</text></view>
+      </view>
+      <view v-if="auth.profile_setup_completed === false" class="setup surface">
+        <template v-if="setupPending">
+          <view class="setup-status"><view class="setup-status__mark">✓</view><view><strong>公开昵称审核中</strong><text>审核通过前可以正常浏览，公开发布暂不可用。</text></view></view>
+        </template>
+        <template v-else>
+          <view class="setup-heading"><strong>先设置公开昵称</strong><text>昵称不是登录账号，审核通过后显示在主页和发布内容中。</text></view>
+          <view class="setup-row">
+            <input v-model="setupNickname" class="input" maxlength="30" placeholder="2 至 30 个字符" />
+            <button class="primary-button setup-button" :loading="setupSubmitting" :disabled="setupSubmitting || setupNickname.trim().length < 2" @tap="submitInitialProfile">提交</button>
+          </view>
+        </template>
       </view>
       <view class="quick-grid">
         <view class="quick-entry" @tap="go('/pages/mine/account-status')">
@@ -134,11 +177,22 @@ onPullDownRefresh(pullRefresh)
 </template>
 
 <style scoped>
-.login, .account, .menu, .admin { margin-top: 14rpx; padding: 20rpx; }
+.login, .account, .menu, .admin, .setup { margin-top: 14rpx; padding: 20rpx; }
+.login { padding: 34rpx 26rpx 28rpx; text-align: center; }
+.login-mark { display: flex; width: 74rpx; height: 74rpx; align-items: center; justify-content: center; margin: 0 auto; border-radius: 8rpx; background: #edf3fb; color: #275389; font-family: serif; font-size: 34rpx; font-weight: 900; }
+.login-title { display: block; margin-top: 16rpx; color: #1f2937; font-size: 30rpx; font-weight: 850; }
 .hint, .error { display: block; margin-top: 12rpx; font-size: 22rpx; line-height: 1.5; }
-.hint { color: #7b8492; }
+.hint { color: #7b8492; text-align: center; }
 .error { color: #b42318; }
 .login-button { width: 100%; margin-top: 18rpx; }
+.setup { border-color: #d7e3f1; background: #f7faff; }
+.setup-heading strong, .setup-heading text, .setup-status strong, .setup-status text { display: block; }
+.setup-heading strong, .setup-status strong { color: #27364a; font-size: 27rpx; }
+.setup-heading text, .setup-status text { margin-top: 5rpx; color: #64748b; font-size: 21rpx; line-height: 1.45; }
+.setup-row { display: grid; grid-template-columns: minmax(0, 1fr) 132rpx; gap: 10rpx; margin-top: 14rpx; }
+.setup-button { width: 100%; padding: 0 8rpx; }
+.setup-status { display: flex; align-items: center; gap: 14rpx; }
+.setup-status__mark { display: flex; width: 52rpx; height: 52rpx; flex: 0 0 52rpx; align-items: center; justify-content: center; border-radius: 50%; background: #e8f4ed; color: #23734d; font-size: 26rpx; font-weight: 900; }
 .account { display: flex; align-items: center; gap: 16rpx; }
 .quick-grid { display: grid; gap: 2rpx; margin: 14rpx 0; overflow: hidden; border-radius: 12rpx; background: #e8ebef; }
 .quick-entry { display: flex; min-height: 104rpx; align-items: center; gap: 16rpx; padding: 18rpx 20rpx; background: #fff; }
