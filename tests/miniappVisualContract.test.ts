@@ -213,6 +213,16 @@ test('keeps follow settings compact and searchable across website and miniapp', 
   assert.match(miniapp, /\{\{ cities\.length \}\}\/5/);
 });
 
+test('keeps creator income on the compact shell without a duplicate page return', () => {
+  const source = read('src/pages/GuideIncome.tsx');
+
+  assert.match(source, /JumuluPageFrame currentLabel="创作者收入"/);
+  assert.match(source, /JumuluCompactHeader/);
+  assert.match(source, /className="guide-income-metrics"/);
+  assert.match(source, /className="guide-income-grid"/);
+  assert.doesNotMatch(source, /返回我的主页|linear-gradient/);
+});
+
 test('keeps the website carpool workbench message-first and compact', () => {
   const page = read('src/pages/CreateCarpool.tsx');
   const miniPage = read('miniapp/jumulu/src/pages/carpools/create.vue');

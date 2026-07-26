@@ -2,12 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import InfoTip from '../components/InfoTip';
+import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import {
+  jumuluCardStyle,
+  jumuluPrimaryLinkStyle,
+  jumuluSecondaryLinkStyle,
+} from '../styles/jumuluPageStyles';
 
 const API = '/api';
-const BG = '#fffdf8';
 const INK = '#1f2937';
-const GOLD = '#d9a857';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 type IncomeEntry = {
@@ -95,77 +99,76 @@ export default function GuideIncome() {
   if (!auth) return null;
 
   return (
-    <main style={{ minHeight: '100vh', background: BG, color: INK }}>
-      <section style={{ maxWidth: 980, margin: '0 auto', padding: '24px 18px 70px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 18 }}>
+    <JumuluPageFrame currentLabel="创作者收入" maxWidth={980}>
+      <JumuluCompactHeader
+        eyebrow="创作者账本"
+        title={<>创作者收入 <InfoTip>这里汇总攻略销售、攻略礼物和 DM 缠头产生的可提现收入，不是普通榜金钱包。</InfoTip></>}
+        description="查看冻结、可提现、提现中和已打款收入；提现仍按现有资金规则处理。"
+        aside={(
           <div>
-            <Link to="/dashboard" style={{ color: '#275389', textDecoration: 'none', fontWeight: 850 }}>‹ 返回我的主页</Link>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.7rem', marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              创作者收入
-              <InfoTip>这里汇总攻略销售、攻略礼物和 DM 缠头产生的可提现收入，不是普通榜金钱包。</InfoTip>
-            </h1>
+            <Link to="/chanto" style={jumuluSecondaryLinkStyle}>缠头榜</Link>
+            <Link to="/guides/new" style={jumuluPrimaryLinkStyle}>发布攻略</Link>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Link to="/chanto" style={ghostLink}>缠头榜</Link><Link to="/guides/new" style={goldButton}>发布攻略</Link></div>
-        </div>
+        )}
+      />
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
-          {[
-            ['冻结中', totals.frozen || 0],
-            ['可提现', totals.withdrawable || 0],
-            ['提现中', totals.withdraw_requested || 0],
-            ['已打款', totals.withdraw_paid || 0],
-          ].map(([label, value]) => (
-            <div key={label} style={cardStyle}>
-              <div style={{ color: '#925f18', fontWeight: 900, fontSize: '1.5rem' }}>{value as number}</div>
-              <div style={{ color: MUTED, fontSize: '0.82rem' }}>{label}</div>
+      <div className="guide-income-metrics">
+        {[
+          ['冻结中', totals.frozen || 0],
+          ['可提现', totals.withdrawable || 0],
+          ['提现中', totals.withdraw_requested || 0],
+          ['已打款', totals.withdraw_paid || 0],
+        ].map(([label, value]) => (
+          <div key={label} style={metricStyle}>
+            <div style={{ color: '#925f18', fontWeight: 900, fontSize: '1.45rem' }}>{value as number}</div>
+            <div style={{ color: MUTED, fontSize: '0.78rem' }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="guide-income-grid">
+        <section style={panelStyle}>
+          <h2 style={sectionTitleStyle}>收入流水</h2>
+          {loading ? <p style={{ color: MUTED }}>加载中...</p> : entries.length === 0 ? <p style={{ color: MUTED }}>暂无收入</p> : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {entries.map(entry => (
+                <div key={entry.id} style={{ borderBottom: '1px solid rgba(31,41,55,0.08)', paddingBottom: 8 }}>
+                  <strong>{incomeSourceLabel(entry.source_type)} · {entry.creator_amount} 收入</strong>
+                  <div style={{ color: MUTED, fontSize: '0.8rem', lineHeight: 1.7 }}>
+                    毛额 {entry.gross_amount} · 平台服务费 {entry.platform_fee} · 状态 {statusLabel(entry.status)} · 可提现日期 {entry.available_at?.slice(0, 10)}
+                  </div>
+                  {entry.metadata?.gift_message && <div style={{ marginTop: 4, color: '#475569', fontSize: '0.8rem', lineHeight: 1.65 }}>附言：{entry.metadata.gift_message}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <aside style={panelStyle}>
+          <h2 style={{ ...sectionTitleStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            申请提现
+            <InfoTip>第一版只支持一次性申请全部可提现收入，管理员审核后手工或半自动打款。</InfoTip>
+          </h2>
+          <select value={form.accountType} onChange={e => setForm({ ...form, accountType: e.target.value })} style={inputStyle}>
+            <option value="alipay">支付宝</option>
+            <option value="wechat">微信</option>
+            <option value="bank">银行卡</option>
+            <option value="other">其他</option>
+          </select>
+          <input value={form.accountName} onChange={e => setForm({ ...form, accountName: e.target.value })} placeholder="收款人姓名" style={inputStyle} />
+          <input value={form.accountIdentifier} onChange={e => setForm({ ...form, accountIdentifier: e.target.value })} placeholder="账号 / 卡号 / 备注" style={inputStyle} />
+          {message && <p style={{ color: message.includes('失败') || message.includes('不足') || message.includes('错误') ? '#b91c1c' : '#166534' }}>{message}</p>}
+          <button type="button" onClick={() => void requestWithdrawal()} style={{ ...jumuluPrimaryLinkStyle, width: '100%', marginTop: 10 }}>申请提现 {totals.withdrawable || 0}</button>
+          <h3 style={{ margin: '18px 0 8px', fontSize: 15 }}>提现记录</h3>
+          {withdrawals.length === 0 ? <p style={{ color: MUTED }}>暂无提现申请</p> : withdrawals.map(item => (
+            <div key={item.id} style={{ fontSize: '0.82rem', color: MUTED, borderTop: '1px solid rgba(31,41,55,0.08)', padding: '8px 0' }}>
+              {item.amount} · {statusLabel(item.status)} · {item.created_at?.slice(0, 10)}
+              {item.admin_note ? <div>备注：{item.admin_note}</div> : null}
             </div>
           ))}
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 340px)', gap: 14 }}>
-          <section style={cardStyle}>
-            <h2 style={{ marginBottom: 10 }}>收入流水</h2>
-            {loading ? <p style={{ color: MUTED }}>加载中...</p> : entries.length === 0 ? <p style={{ color: MUTED }}>暂无收入</p> : (
-              <div style={{ display: 'grid', gap: 8 }}>
-                {entries.map(entry => (
-                  <div key={entry.id} style={{ borderBottom: '1px solid rgba(201,146,46,0.12)', paddingBottom: 8 }}>
-                    <strong>{incomeSourceLabel(entry.source_type)} · {entry.creator_amount} 收入</strong>
-                    <div style={{ color: MUTED, fontSize: '0.8rem', lineHeight: 1.7 }}>
-                      毛额 {entry.gross_amount} · 平台服务费 {entry.platform_fee} · 状态 {statusLabel(entry.status)} · 可提现日期 {entry.available_at?.slice(0, 10)}
-                    </div>
-                    {entry.metadata?.gift_message && <div style={{ marginTop: 4, color: '#475569', fontSize: '0.8rem', lineHeight: 1.65 }}>附言：{entry.metadata.gift_message}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <aside style={cardStyle}>
-            <h2 style={{ marginBottom: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              申请提现
-              <InfoTip>第一版只支持一次性申请全部可提现收入，管理员审核后手工或半自动打款。</InfoTip>
-            </h2>
-            <select value={form.accountType} onChange={e => setForm({ ...form, accountType: e.target.value })} style={inputStyle}>
-              <option value="alipay">支付宝</option>
-              <option value="wechat">微信</option>
-              <option value="bank">银行卡</option>
-              <option value="other">其他</option>
-            </select>
-            <input value={form.accountName} onChange={e => setForm({ ...form, accountName: e.target.value })} placeholder="收款人姓名" style={inputStyle} />
-            <input value={form.accountIdentifier} onChange={e => setForm({ ...form, accountIdentifier: e.target.value })} placeholder="账号 / 卡号 / 备注" style={inputStyle} />
-            {message && <p style={{ color: message.includes('失败') || message.includes('不足') || message.includes('错误') ? '#b91c1c' : '#166534' }}>{message}</p>}
-            <button type="button" onClick={() => void requestWithdrawal()} style={goldButton}>申请提现 {totals.withdrawable || 0}</button>
-            <h3 style={{ margin: '18px 0 8px' }}>提现记录</h3>
-            {withdrawals.length === 0 ? <p style={{ color: MUTED }}>暂无提现申请</p> : withdrawals.map(item => (
-              <div key={item.id} style={{ fontSize: '0.82rem', color: MUTED, borderTop: '1px solid rgba(201,146,46,0.12)', padding: '8px 0' }}>
-                {item.amount} · {statusLabel(item.status)} · {item.created_at?.slice(0, 10)}
-                {item.admin_note ? <div>备注：{item.admin_note}</div> : null}
-              </div>
-            ))}
-          </aside>
-        </div>
-      </section>
-    </main>
+        </aside>
+      </div>
+    </JumuluPageFrame>
   );
 }
 
@@ -190,37 +193,17 @@ function incomeSourceLabel(sourceType: string) {
   return '创作者';
 }
 
-const cardStyle: React.CSSProperties = {
-  border: '1px solid rgba(201,146,46,0.16)',
-  borderRadius: 14,
-  padding: 16,
-  background: 'rgba(255,255,255,0.82)',
-  boxShadow: '0 14px 32px rgba(31,41,55,0.05)',
-};
+const metricStyle: React.CSSProperties = { ...jumuluCardStyle, padding: '12px 14px' };
+const panelStyle: React.CSSProperties = { ...jumuluCardStyle, minWidth: 0, padding: 16 };
+const sectionTitleStyle: React.CSSProperties = { margin: '0 0 12px', fontSize: 17 };
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
   marginTop: 8,
-  border: '1px solid rgba(201,146,46,0.22)',
-  borderRadius: 12,
+  border: '1px solid rgba(31,41,55,0.14)',
+  borderRadius: 8,
   padding: '10px 12px',
-  background: 'rgba(255,250,242,0.72)',
+  background: '#fff',
   color: INK,
 };
-
-const goldButton: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginTop: 10,
-  padding: '10px 14px',
-  borderRadius: 12,
-  border: 'none',
-  background: `linear-gradient(135deg, ${GOLD}, #c9922e)`,
-  color: INK,
-  fontWeight: 900,
-  textDecoration: 'none',
-  cursor: 'pointer',
-};
-const ghostLink: React.CSSProperties = { ...goldButton, border: '1px solid rgba(39,83,137,0.18)', background: '#fff', color: '#275389' };
