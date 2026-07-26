@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { JumuluCompactHeader } from '../components/JumuluPageChrome';
 import { ReputationHubShell } from '../components/ReputationHubChrome';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { flattenScriptRoles, matchesRoleSearch, roleKindLabel } from '../lib/scriptRoleCatalog';
@@ -113,12 +114,11 @@ export default function RateScriptRole() {
 
   return (
     <ReputationHubShell active="roles" currentLabel="添加角色评分">
-      <Link to="/scripts" style={backLinkStyle}>返回角色评分</Link>
-
-      <section style={headerStyle}>
-        <h1 style={titleStyle}>添加角色评分</h1>
-        <p style={descriptionStyle}>先搜索角色或相关剧本，确认评分对象后再填写体验。</p>
-      </section>
+      <JumuluCompactHeader
+        eyebrow="角色点评"
+        title="添加角色评分"
+        description="先搜索角色或相关剧本，确认评分对象后再填写体验。"
+      />
 
       <section style={searchSectionStyle}>
         <label style={fieldStyle}>
@@ -260,10 +260,6 @@ export default function RateScriptRole() {
   );
 }
 
-const backLinkStyle: React.CSSProperties = { width: 'fit-content', color: BLUE, fontSize: 13, fontWeight: 900, textDecoration: 'none' };
-const headerStyle: React.CSSProperties = { padding: '14px 4px 4px' };
-const titleStyle: React.CSSProperties = { margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.8rem, 4vw, 2.4rem)', lineHeight: 1.12 };
-const descriptionStyle: React.CSSProperties = { margin: '8px 0 0', color: MUTED, lineHeight: 1.65, fontSize: 14 };
 const searchSectionStyle: React.CSSProperties = { display: 'grid', gap: 10, maxWidth: 760, padding: 16, border: '1px solid rgba(31,41,55,0.09)', borderRadius: 8, background: '#fff' };
 const fieldStyle: React.CSSProperties = { display: 'grid', gap: 7 };
 const labelStyle: React.CSSProperties = { color: '#526170', fontSize: 12, fontWeight: 900 };

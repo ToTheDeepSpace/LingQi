@@ -181,6 +181,16 @@ test('keeps publishing responsibility notices compact and uses the shared page b
   assert.doesNotMatch(guide, /‹ 返回攻略交易/);
 });
 
+test('keeps rating publishers on one page-level back action and the compact header', () => {
+  const store = read('src/pages/StoreRating.tsx');
+  const role = read('src/pages/RateScriptRole.tsx');
+
+  assert.doesNotMatch(store, />返回店家评分<\/Link>/);
+  assert.doesNotMatch(role, />返回角色评分<\/Link>/);
+  assert.match(store, /JumuluCompactHeader/);
+  assert.match(role, /JumuluCompactHeader/);
+});
+
 test('keeps the website carpool workbench message-first and compact', () => {
   const page = read('src/pages/CreateCarpool.tsx');
   const miniPage = read('miniapp/jumulu/src/pages/carpools/create.vue');

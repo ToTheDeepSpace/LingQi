@@ -140,7 +140,6 @@ export default function StoreRating() {
 
   return (
     <JumuluPageFrame currentLabel="给店家评分" maxWidth={980}>
-      <Link to="/stores" style={backLinkStyle}>返回店家评分</Link>
       <JumuluCompactHeader
         eyebrow="每次真实到店都可以记录"
         title="给店家评分"
@@ -259,7 +258,6 @@ function starButton(active: boolean): React.CSSProperties {
   return { minWidth: 58, minHeight: 40, borderRadius: 7, border: active ? `1px solid ${GOLD}` : '1px solid rgba(148,163,184,0.24)', background: active ? '#fff8e8' : '#fff', color: active ? '#7a4d14' : MUTED, fontWeight: 900, cursor: 'pointer' };
 }
 
-const backLinkStyle: React.CSSProperties = { width: 'fit-content', color: BLUE, fontSize: 13, fontWeight: 900, textDecoration: 'none' };
 const formStyle: React.CSSProperties = { display: 'grid', gap: 12 };
 const sectionStyle: React.CSSProperties = { ...jumuluCardStyle, padding: 16 };
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', minHeight: 42, border: '1px solid rgba(39,83,137,0.18)', borderRadius: 7, padding: '0 12px', background: '#fff', color: INK, fontSize: 14 };
