@@ -94,6 +94,11 @@ test('shows the same DM identity and affiliation trust semantics on the miniapp 
   assert.match(detail, /dossierClaimLabel/);
   assert.match(detail, /dossierAffiliationLabel/);
   assert.match(detail, /class="status-row"/);
+  assert.match(detail, /v-if="!activePhoto" class="hero__avatar"/);
+  assert.match(detail, /\.hero__identity\.compact\s*\{[\s\S]*grid-template-columns:\s*112rpx minmax\(0, 1fr\)/);
+  assert.doesNotMatch(detail, /\.hero__image,\s*\.hero__avatar\s*\{[\s\S]*height:\s*500rpx/);
+  assert.match(detail, /class="secondary-button claim-action"/);
+  assert.match(detail, /\.hero-actions \.claim-action\s*\{[\s\S]*width:\s*auto/);
   assert.match(presentation, /DM 身份已认证/);
   assert.match(presentation, /暂无已确认店家/);
   assert.match(presentation, /社区提供：任职于/);

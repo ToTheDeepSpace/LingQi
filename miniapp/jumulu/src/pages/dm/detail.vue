@@ -58,21 +58,25 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
     <MiniNavBar title="DM 档案" fallback="/pages/dm/index" />
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !data" @retry="load" />
     <template v-if="data">
-      <view class="hero surface">
+      <view class="hero surface" :class="{ 'hero--no-photo': !activePhoto }">
         <image v-if="activePhoto" class="hero__image" :src="activePhoto.url" mode="aspectFill" :style="{ objectPosition: `${activePhoto.focus_x ?? 50}% ${activePhoto.focus_y ?? 25}%` }" @tap="preview()" />
-        <view v-else class="hero__avatar">{{ data.dossier.dm_name.slice(0, 1) }}</view>
         <scroll-view v-if="photos.length > 1" class="thumbs" scroll-x :show-scrollbar="false">
           <image v-for="(photo, index) in photos" :key="photo.url" class="thumb" :class="{ active: selectedPhoto === index }" :src="photo.url" mode="aspectFill" @tap="selectedPhoto = index" />
         </scroll-view>
         <view v-if="activePhoto" class="media-report"><ReportFlag target-type="dossier_image" :target-id="data.dossier.id" :target-sub-id="`photo:${selectedPhoto}`" :title="`${data.dossier.dm_name}的第 ${selectedPhoto + 1} 张图片`" :own="data.dossier.claimed_by === readAuth()?.id" /></view>
         <view class="hero__info">
-          <view class="status-row">
-            <text class="status-badge" :class="{ verified: data.dossier.claim_status === 'approved' }">{{ claimLabel }}</text>
-            <text class="affiliation-badge">{{ affiliationLabel }}</text>
+          <view class="hero__identity" :class="{ compact: !activePhoto }">
+            <view v-if="!activePhoto" class="hero__avatar">{{ data.dossier.dm_name.slice(0, 1) }}</view>
+            <view class="hero__identity-copy">
+              <view class="status-row">
+                <text class="status-badge" :class="{ verified: data.dossier.claim_status === 'approved' }">{{ claimLabel }}</text>
+                <text class="affiliation-badge">{{ affiliationLabel }}</text>
+              </view>
+              <view class="hero__title-row"><text class="hero__name">{{ data.dossier.dm_name }}</text><ReportFlag target-type="dossier" :target-id="data.dossier.id" :title="`${data.dossier.dm_name}的 DM 档案`" :own="data.dossier.claimed_by === readAuth()?.id" /></view>
+              <text class="hero__meta">{{ data.dossier.city || '城市待补充' }}</text>
+              <text v-if="data.dossier.affiliation?.store_dossier_id" class="hero__store" @tap="goStore">查看任职店家 ›</text>
+            </view>
           </view>
-          <view class="hero__title-row"><text class="hero__name">{{ data.dossier.dm_name }}</text><ReportFlag target-type="dossier" :target-id="data.dossier.id" :title="`${data.dossier.dm_name}的 DM 档案`" :own="data.dossier.claimed_by === readAuth()?.id" /></view>
-          <text class="hero__meta">{{ data.dossier.city || '城市待补充' }}</text>
-          <text v-if="data.dossier.affiliation?.store_dossier_id" class="hero__store" @tap="goStore">查看任职店家 ›</text>
           <view class="score-row">
             <text class="score">{{ ratingText(data.summary.avg) }}</text>
             <text class="score-meta">{{ data.summary.player_count }} 位玩家 · {{ data.summary.review_count }} 次体验</text>
@@ -80,7 +84,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
           <view class="page-actions hero-actions">
             <button class="primary-button" @tap="goRate">给 TA 评分</button>
             <button class="secondary-button" @tap="goRanking">发布红黑榜</button>
-            <button v-if="data.dossier.claim_status !== 'approved'" class="secondary-button" @tap="goClaim">本人认领</button>
+            <button v-if="data.dossier.claim_status !== 'approved'" class="secondary-button claim-action" @tap="goClaim">本人认领</button>
           </view>
         </view>
       </view>
@@ -125,8 +129,10 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 
 <style scoped>
 .hero { overflow: hidden; }
-.hero__image, .hero__avatar { width: 100%; height: 500rpx; background: #f2ece4; }
-.hero__avatar { display: flex; align-items: center; justify-content: center; color: #9a651e; font-family: serif; font-size: 110rpx; font-weight: 900; }
+.hero__image { width: 100%; height: 500rpx; background: #f2ece4; }
+.hero__identity.compact { display: grid; grid-template-columns: 112rpx minmax(0, 1fr); align-items: center; gap: 18rpx; }
+.hero__identity-copy { min-width: 0; }
+.hero__avatar { display: flex; width: 112rpx; height: 112rpx; align-items: center; justify-content: center; border: 1rpx solid #ead8ad; border-radius: 8rpx; background: #fff5df; color: #9a651e; font-family: serif; font-size: 46rpx; font-weight: 900; }
 .thumbs { width: 100%; padding: 10rpx 14rpx; white-space: nowrap; }
 .thumb { width: 92rpx; height: 92rpx; margin-right: 10rpx; border: 4rpx solid transparent; border-radius: 8rpx; }
 .thumb.active { border-color: #b9781f; }
@@ -146,6 +152,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 .score { color: #9a651e; font-size: 44rpx; font-weight: 900; }
 .score-meta { color: #7b8492; font-size: 22rpx; }
 .hero-actions { margin-top: 18rpx; }
+.hero-actions .claim-action { width: auto; min-width: 160rpx; min-height: 60rpx; justify-self: start; padding: 0 18rpx; font-size: 23rpx; line-height: 60rpx; }
 .section { margin-top: 14rpx; padding: 22rpx; }
 .section__title, .section__content { display: block; }
 .section__title { margin-bottom: 12rpx; color: #27364a; font-size: 28rpx; font-weight: 850; }
