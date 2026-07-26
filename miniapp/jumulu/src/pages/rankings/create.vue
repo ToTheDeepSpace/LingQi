@@ -27,6 +27,7 @@ const eventScriptId = ref('')
 const eventStoreId = ref('')
 const eventLocation = ref('')
 const content = ref('')
+const showEventDetails = ref(false)
 const displayFiles = ref<RankingFile[]>([])
 const rulesAccepted = ref(false)
 const loading = ref(true)
@@ -203,17 +204,22 @@ onLoad(options => {
       <text class="field-label">所在城市（选填）</text>
       <CitySearchPicker :value="subjectCity || '补充城市'" :allow-all="false" @change="subjectCity = $event" />
 
-      <text class="section-label">本次事件（选填）</text>
-      <view class="two-columns">
-        <view><text class="field-label compact-label">日期</text><picker mode="date" :value="eventDate" @change="eventDate = $event.detail.value"><view class="picker-field">{{ eventDate || '选择日期' }}</view></picker></view>
-        <view><text class="field-label compact-label">剧本</text><picker :range="scripts" range-key="name" :value="Math.max(0, scripts.findIndex(item => item.id === eventScriptId))" @change="eventScriptId = pickerId($event, scripts)"><view class="picker-field">{{ selectedScript?.name || '选择剧本' }}</view></picker></view>
-      </view>
-      <text class="field-label">发生店家（选填）</text>
-      <DossierSearchPicker kind="store" :items="stores" :value="eventStoreId" :allow-create="false" placeholder="搜索并选择店家" @select="eventStoreId = $event" />
-      <input v-if="!eventStoreId" v-model="eventLocation" class="input location-input" maxlength="100" placeholder="或填写其他场地（选填）" />
-
       <text class="field-label">具体内容 *</text>
       <textarea v-model="content" class="textarea" maxlength="2400" placeholder="写下具体事件或真实体验；时间、地点可以之后再补。" />
+
+      <view class="optional-toggle" @tap="showEventDetails = !showEventDetails">
+        <view><strong>补充事件信息</strong><text>{{ eventDate || selectedScript?.name || selectedEventStore?.dm_name || eventLocation || '日期、剧本、发生店家' }}</text></view>
+        <text class="optional-toggle__arrow">{{ showEventDetails ? '收起' : '补充' }} ›</text>
+      </view>
+      <view v-if="showEventDetails" class="event-panel">
+        <view class="two-columns">
+          <view><text class="field-label compact-label">日期</text><picker mode="date" :value="eventDate" @change="eventDate = $event.detail.value"><view class="picker-field">{{ eventDate || '选择日期' }}</view></picker></view>
+          <view><text class="field-label compact-label">剧本</text><picker :range="scripts" range-key="name" :value="Math.max(0, scripts.findIndex(item => item.id === eventScriptId))" @change="eventScriptId = pickerId($event, scripts)"><view class="picker-field">{{ selectedScript?.name || '选择剧本' }}</view></picker></view>
+        </view>
+        <text class="field-label">发生店家（选填）</text>
+        <DossierSearchPicker kind="store" :items="stores" :value="eventStoreId" :allow-create="false" placeholder="搜索并选择店家" @select="eventStoreId = $event" />
+        <input v-if="!eventStoreId" v-model="eventLocation" class="input location-input" maxlength="100" placeholder="或填写其他场地（选填）" />
+      </view>
 
       <view class="image-title"><text class="field-label">公开配图（选填，最多 6 张）</text><text>{{ displayFiles.length }}/6</text></view>
       <view v-if="displayFiles.length" class="image-grid">
@@ -225,7 +231,7 @@ onLoad(options => {
       <button v-if="displayFiles.length < 6" class="secondary-button upload-button" :loading="uploading" :disabled="uploading" @tap="chooseImages">{{ uploading ? '上传中' : '选择公开配图' }}</button>
 
       <checkbox-group class="rules" @change="rulesAccepted = $event.detail.value.includes('accepted')">
-        <label><checkbox value="accepted" color="#b9781f" /> <text>我确认内容来自真实体验，不公开他人隐私，并愿意对事实与言论负责。</text></label>
+        <label><checkbox value="accepted" color="#275389" /> <text>我确认内容来自真实体验，不公开他人隐私，并愿意对事实与言论负责。</text></label>
       </checkbox-group>
       <text class="evidence-note">首发无需提交私密证据；出现异议或审核需要时，可在网站补充材料。</text>
       <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting || uploading" @tap="submit">提交审核</button></view>
@@ -242,13 +248,22 @@ onLoad(options => {
 .type-option strong, .type-option text { display: block; }
 .type-option strong { color: #27364a; font-size: 26rpx; }
 .type-option text { margin-top: 4rpx; color: #7b8492; font-size: 19rpx; }
-.type-option.active { border-color: #b9781f; background: #fff5df; }
+.type-option--red.active { border-color: #c47d75; background: #fff1ef; }
+.type-option--red.active strong { color: #9a3412; }
 .type-option--black.active { border-color: #26303f; background: #edf0f4; }
-.type-option--white.active { border-color: #9ca3af; background: #f5f6f7; }
+.type-option--white.active { border-color: #d9a857; background: #fff8e8; }
+.type-option--white.active strong { color: #8a5a19; }
 .subject-tabs { display: flex; flex-wrap: wrap; gap: 9rpx; }
 .subject-tabs button { width: auto; min-width: 116rpx; min-height: 64rpx; margin: 0; padding: 0 18rpx; border: 1rpx solid #d9dde4; border-radius: 8rpx; background: #fff; color: #475569; font-size: 23rpx; line-height: 64rpx; }
-.subject-tabs button.active { border-color: #c88b31; background: #fff5df; color: #8b5919; font-weight: 850; }
+.subject-tabs button.active { border-color: #7d9bc2; background: #eef6ff; color: #275389; font-weight: 850; }
 .section-label { display: block; margin-top: 30rpx; padding-top: 22rpx; border-top: 1rpx solid #eadfce; color: #27364a; font-size: 27rpx; font-weight: 850; }
+.optional-toggle { display: flex; min-height: 78rpx; align-items: center; justify-content: space-between; gap: 16rpx; margin-top: 16rpx; padding: 0 4rpx; border-top: 1rpx solid #e7e1d8; border-bottom: 1rpx solid #e7e1d8; }
+.optional-toggle view { min-width: 0; }
+.optional-toggle strong, .optional-toggle view text { display: block; }
+.optional-toggle strong { color: #27364a; font-size: 25rpx; }
+.optional-toggle view text { margin-top: 3rpx; overflow: hidden; color: #7b8492; font-size: 20rpx; text-overflow: ellipsis; white-space: nowrap; }
+.optional-toggle__arrow { flex: 0 0 auto; color: #275389; font-size: 22rpx; font-weight: 800; }
+.event-panel { margin-top: 10rpx; padding: 0 12rpx 14rpx; border: 1rpx solid #dfe7f1; border-radius: 8rpx; background: #f8fbff; }
 .two-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; }
 .compact-label { margin-top: 14rpx; }
 .location-input { margin-top: 10rpx; }

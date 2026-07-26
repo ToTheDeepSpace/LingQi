@@ -1893,9 +1893,9 @@ export default function Dashboard() {
             {activeSection === 'overview' && (
               <div style={{ display: 'grid', gap: 12 }}>
                 <PageIntro
-                  eyebrow="HOME BASE"
+                  eyebrow="个人中心"
                   title="个人主页"
-                  subtitle="主屏只放公开展示和经营状态；账号、余额、安全都拆到独立页。"
+                  subtitle="查看主页状态，继续完善公开资料与服务。"
                   action={<Link to="/dashboard/services" style={primaryActionStyle}>发布新服务</Link>}
                 />
                 <div className="dashboard-metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
@@ -1903,7 +1903,7 @@ export default function Dashboard() {
                   <MetricCard label="可展示服务" value={`${services.length} 项`} tone="green" />
                   <MetricCard label="待处理" value={`${pendingItems} 件`} tone="gold" />
                 </div>
-                <section style={{ ...card, minHeight: 198 }}>
+                <section className="dashboard-today-panel" style={{ ...card, minHeight: 198 }}>
                   <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 12 }}>今日处理</h2>
                   <div style={{ display: 'grid', gap: 10 }}>
                     <OverviewRow label="公开页" value={creator.is_visible ? '可访问' : '资料审核中'} tone={creator.is_visible ? 'green' : 'gold'} />
@@ -1918,7 +1918,7 @@ export default function Dashboard() {
                     { title: '我的发布', copy: '查看发布内容与审核状态。', to: '/dashboard/posts' },
                     { title: '关注设置', copy: '修改关注城市和店家。', to: '/follows' },
                   ].map(item => (
-                    <Link key={item.title} to={item.to} style={{ ...card, minHeight: 110, display: 'grid', gap: 10, textDecoration: 'none' }}>
+                    <Link className="dashboard-quick-card" key={item.title} to={item.to} style={{ ...card, minHeight: 110, display: 'grid', gap: 10, textDecoration: 'none' }}>
                       <span style={{ color: INK, fontSize: 15, fontWeight: 900 }}>{item.title}</span>
                       <span style={{ color: MUTED, fontSize: 13, fontWeight: 700, lineHeight: 1.55 }}>{item.copy}</span>
                     </Link>
@@ -3664,9 +3664,32 @@ export default function Dashboard() {
           .dashboard-main {
             width: 100% !important;
           }
+          .dashboard-page-intro {
+            gap: 8px !important;
+            padding: 0 2px 2px !important;
+          }
+          .dashboard-page-intro-eyebrow,
+          .dashboard-page-intro-subtitle {
+            display: none !important;
+          }
+          .dashboard-page-intro h1 {
+            font-size: 20px !important;
+          }
+          .dashboard-page-intro > a,
+          .dashboard-page-intro > button {
+            min-height: 32px !important;
+            padding: 0 10px !important;
+            font-size: 11px !important;
+          }
           .dashboard-metric-grid,
-          .dashboard-quick-grid,
-          .account-security-grid,
+          .account-security-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 7px !important;
+          }
+          .dashboard-quick-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 7px !important;
+          }
           .dashboard-two-col {
             grid-template-columns: 1fr !important;
           }
@@ -3676,6 +3699,42 @@ export default function Dashboard() {
             border-radius: 8px !important;
             padding: 14px !important;
             box-shadow: none !important;
+          }
+          .dashboard-metric-card {
+            min-width: 0 !important;
+            min-height: 68px !important;
+            padding: 10px 8px !important;
+          }
+          .dashboard-metric-card p {
+            margin-bottom: 5px !important;
+            overflow: hidden;
+            font-size: 10px !important;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          .dashboard-metric-card strong {
+            font-size: 16px !important;
+            white-space: nowrap;
+          }
+          .dashboard-quick-card {
+            min-height: 78px !important;
+            padding: 11px !important;
+            gap: 5px !important;
+          }
+          .dashboard-quick-card span:first-child {
+            font-size: 13px !important;
+          }
+          .dashboard-quick-card span:last-child {
+            font-size: 11px !important;
+            line-height: 1.4 !important;
+          }
+          .dashboard-today-panel {
+            min-height: 0 !important;
+            padding-top: 11px !important;
+            padding-bottom: 11px !important;
+          }
+          .dashboard-overview-row {
+            min-height: 36px !important;
           }
           .profile-editor-card > h2 {
             margin-bottom: 14px !important;
@@ -3864,8 +3923,8 @@ const primaryActionStyle: React.CSSProperties = {
   padding: '0 14px',
   borderRadius: 8,
   border: 'none',
-  background: `linear-gradient(135deg, ${GOLD}, #c9922e)`,
-  color: INK,
+  background: '#275389',
+  color: '#fff',
   textDecoration: 'none',
   fontSize: 13,
   fontWeight: 900,
@@ -3954,11 +4013,11 @@ const toneStyles: Record<ToneName, { bg: string; border: string; color: string }
 
 function PageIntro({ eyebrow, title, subtitle, action }: { eyebrow: string; title: string; subtitle: string; action?: React.ReactNode }) {
   return (
-    <section style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '2px 0 4px' }}>
+    <section className="dashboard-page-intro" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '2px 0 4px' }}>
       <div style={{ flex: 1, minWidth: 0, display: 'grid', gap: 5 }}>
-        <span style={{ color: GOLD, fontSize: 11, fontWeight: 900, lineHeight: 1 }}>{eyebrow}</span>
+        <span className="dashboard-page-intro-eyebrow" style={{ color: GOLD, fontSize: 11, fontWeight: 900, lineHeight: 1 }}>{eyebrow}</span>
         <h1 style={{ margin: 0, color: INK, fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 900, lineHeight: 1.1 }}>{title}</h1>
-        <p style={{ margin: 0, color: MUTED, fontSize: 13, fontWeight: 700, lineHeight: 1.45 }}>{subtitle}</p>
+        <p className="dashboard-page-intro-subtitle" style={{ margin: 0, color: MUTED, fontSize: 13, fontWeight: 700, lineHeight: 1.45 }}>{subtitle}</p>
       </div>
       {action}
     </section>
@@ -3968,7 +4027,7 @@ function PageIntro({ eyebrow, title, subtitle, action }: { eyebrow: string; titl
 function MetricCard({ label, value, tone }: { label: string; value: string; tone: ToneName }) {
   const colors = toneStyles[tone];
   return (
-    <section style={{ ...card, minHeight: 94, background: colors.bg }}>
+    <section className="dashboard-metric-card" style={{ ...card, minHeight: 94, background: colors.bg }}>
       <p style={{ marginBottom: 9, color: MUTED, fontSize: 12, fontWeight: 800, lineHeight: 1 }}>{label}</p>
       <strong style={{ color: INK, fontSize: 24, fontWeight: 950, lineHeight: 1 }}>{value}</strong>
     </section>
@@ -3978,7 +4037,7 @@ function MetricCard({ label, value, tone }: { label: string; value: string; tone
 function OverviewRow({ label, value, tone }: { label: string; value: string; tone: ToneName }) {
   const colors = toneStyles[tone];
   return (
-    <div style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div className="dashboard-overview-row" style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 10 }}>
       <span style={{ flex: 1, color: INK, fontSize: 13, fontWeight: 800, lineHeight: 1.25 }}>{label}</span>
       <span style={{ height: 28, display: 'inline-flex', alignItems: 'center', padding: '0 10px', borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.bg, color: colors.color, fontSize: 12, fontWeight: 900 }}>
         {value}
