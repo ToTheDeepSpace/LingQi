@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
@@ -45,12 +45,15 @@ const emptySubmissions = (): SubmissionPayload => ({
   items: [],
   summary: { total: 0, pending: 0, approved: 0, action_required: 0, closed: 0 },
 })
+const ACCOUNT_LIST_BATCH = 20
 
 const status = ref<AccountStatus | null>(null)
 const notices = ref<Notice[]>([])
 const submissions = ref<SubmissionPayload>(emptySubmissions())
 const activeTab = ref<'notices' | 'submissions'>('notices')
 const stateFilter = ref<'all' | SubmissionState>('all')
+const noticeLimit = ref(ACCOUNT_LIST_BATCH)
+const submissionLimit = ref(ACCOUNT_LIST_BATCH)
 const showAccountDetail = ref(false)
 const content = ref('')
 const evidenceText = ref('')
@@ -62,6 +65,13 @@ const unreadCount = computed(() => notices.value.filter(item => !item.read_at).l
 const visibleSubmissions = computed(() => stateFilter.value === 'all'
   ? submissions.value.items
   : submissions.value.items.filter(item => item.state === stateFilter.value))
+const displayedNotices = computed(() => notices.value.slice(0, noticeLimit.value))
+const displayedSubmissions = computed(() => visibleSubmissions.value.slice(0, submissionLimit.value))
+
+watch([activeTab, stateFilter], () => {
+  if (activeTab.value === 'notices') noticeLimit.value = ACCOUNT_LIST_BATCH
+  else submissionLimit.value = ACCOUNT_LIST_BATCH
+})
 
 function formatDate(value?: string | null) {
   if (!value) return ''
@@ -129,6 +139,8 @@ async function load() {
     status.value = nextStatus
     notices.value = nextNotices
     submissions.value = nextSubmissions || emptySubmissions()
+    noticeLimit.value = ACCOUNT_LIST_BATCH
+    submissionLimit.value = ACCOUNT_LIST_BATCH
     updateUnreadStorage()
     if (nextStatus.appeal?.status === 'needs_info') {
       content.value = nextStatus.appeal.content || ''
@@ -310,7 +322,7 @@ onPullDownRefresh(load)
 
       <template v-if="activeTab === 'notices'">
         <view v-if="notices.length === 0" class="empty">暂无站内通知。</view>
-        <view v-for="item in notices" :key="item.id" class="notice" :class="{ unread: !item.read_at }" @tap="markRead(item)">
+        <view v-for="item in displayedNotices" :key="item.id" class="notice" :class="{ unread: !item.read_at }" @tap="markRead(item)">
           <view class="notice-dot" />
           <view class="notice-copy">
             <strong>{{ item.title }}</strong>
@@ -318,6 +330,10 @@ onPullDownRefresh(load)
             <text class="time">{{ formatDate(item.created_at) }}</text>
           </view>
         </view>
+        <button v-if="displayedNotices.length < notices.length" class="load-more" @tap="noticeLimit += ACCOUNT_LIST_BATCH">
+          继续加载 {{ Math.min(ACCOUNT_LIST_BATCH, notices.length - displayedNotices.length) }} 条
+          <text>已显示 {{ displayedNotices.length }} / {{ notices.length }}</text>
+        </button>
       </template>
 
       <template v-else>
@@ -330,7 +346,7 @@ onPullDownRefresh(load)
           </view>
         </scroll-view>
         <view v-if="visibleSubmissions.length === 0" class="empty">这里还没有符合条件的提交记录。</view>
-        <view v-for="item in visibleSubmissions" :key="`${item.kind}-${item.id}`" class="submission" @tap="openSubmission(item)">
+        <view v-for="item in displayedSubmissions" :key="`${item.kind}-${item.id}`" class="submission" @tap="openSubmission(item)">
           <image class="submission-image" :src="item.thumbnail_url || '/static/icons/message-star.png'" mode="aspectFill" />
           <view class="submission-copy">
             <view class="submission-meta"><text>{{ item.type_label }}</text><text>{{ formatDate(item.updated_at || item.created_at) }}</text></view>
@@ -344,6 +360,10 @@ onPullDownRefresh(load)
             <image v-else src="/static/icons/ui-chevron-right.png" mode="aspectFit" />
           </view>
         </view>
+        <button v-if="displayedSubmissions.length < visibleSubmissions.length" class="load-more" @tap="submissionLimit += ACCOUNT_LIST_BATCH">
+          继续加载 {{ Math.min(ACCOUNT_LIST_BATCH, visibleSubmissions.length - displayedSubmissions.length) }} 条
+          <text>已显示 {{ displayedSubmissions.length }} / {{ visibleSubmissions.length }}</text>
+        </button>
       </template>
     </view>
   </view>
@@ -404,4 +424,6 @@ onPullDownRefresh(load)
 .submission-state.state-approved { background: #edf8f1; color: #227346; }
 .submission-state.state-action { background: #fff0ee; color: #b64238; }
 .empty { padding: 70rpx 20rpx; color: #8a93a0; font-size: 22rpx; text-align: center; }
+.load-more { display: flex; width: 100%; min-height: 82rpx; align-items: center; justify-content: center; gap: 12rpx; margin: 0; border-top: 1rpx solid #eee9e2; border-radius: 0; background: #fff; color: #2d568f; font-size: 23rpx; font-weight: 850; line-height: 82rpx; }
+.load-more text { color: #8a93a0; font-size: 20rpx; font-weight: 650; }
 </style>

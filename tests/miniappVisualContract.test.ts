@@ -82,3 +82,12 @@ test('keeps the ranking feed bounded and moves persistent notices behind an expl
   assert.match(source, /ⓘ 发布须知/);
   assert.doesNotMatch(source, /class="responsibility"/);
 });
+
+test('keeps long-lived account histories bounded in the miniapp', () => {
+  const source = read('miniapp/jumulu/src/pages/mine/account-status.vue');
+
+  assert.match(source, /const ACCOUNT_LIST_BATCH = 20/);
+  assert.match(source, /displayedNotices/);
+  assert.match(source, /displayedSubmissions/);
+  assert.match(source, /继续加载/);
+});

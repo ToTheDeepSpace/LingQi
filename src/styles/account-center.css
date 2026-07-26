@@ -308,6 +308,26 @@
   text-align: center;
 }
 
+.account-center-load-more {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-top: 1px solid #eee9e2;
+  background: #fff;
+  color: #2d568f;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.account-center-load-more span {
+  color: #8a93a0;
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .account-center-notice {
   display: grid;
   grid-template-columns: 8px minmax(0, 1fr) auto;

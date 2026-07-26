@@ -74,6 +74,7 @@ const EMPTY_SUBMISSIONS: SubmissionPayload = {
   items: [],
   summary: { total: 0, pending: 0, approved: 0, action_required: 0, closed: 0 },
 };
+const ACCOUNT_LIST_BATCH = 20;
 
 function dateTime(value?: string | null) {
   if (!value) return '';
@@ -141,6 +142,8 @@ export default function AccountStatus() {
   );
   const [stateFilter, setStateFilter] = useState<'all' | SubmissionState>('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [noticeLimit, setNoticeLimit] = useState(ACCOUNT_LIST_BATCH);
+  const [submissionLimit, setSubmissionLimit] = useState(ACCOUNT_LIST_BATCH);
   const [showAccountDetail, setShowAccountDetail] = useState(false);
   const [content, setContent] = useState('');
   const [evidenceText, setEvidenceText] = useState('');
@@ -202,10 +205,25 @@ export default function AccountStatus() {
     )),
     [stateFilter, submissions.items, typeFilter],
   );
+  const displayedNotices = useMemo(() => notices.slice(0, noticeLimit), [noticeLimit, notices]);
+  const displayedSubmissions = useMemo(
+    () => visibleSubmissions.slice(0, submissionLimit),
+    [submissionLimit, visibleSubmissions],
+  );
 
   const setActiveTab = (tab: 'notices' | 'submissions') => {
     setActiveTabState(tab);
+    if (tab === 'notices') setNoticeLimit(ACCOUNT_LIST_BATCH);
+    else setSubmissionLimit(ACCOUNT_LIST_BATCH);
     setSearchParams(tab === 'submissions' ? { tab: 'submissions' } : {});
+  };
+  const selectStateFilter = (value: 'all' | SubmissionState) => {
+    setStateFilter(value);
+    setSubmissionLimit(ACCOUNT_LIST_BATCH);
+  };
+  const selectTypeFilter = (value: string) => {
+    setTypeFilter(value);
+    setSubmissionLimit(ACCOUNT_LIST_BATCH);
   };
 
   const submitAppeal = async (event: React.FormEvent) => {
@@ -361,7 +379,7 @@ export default function AccountStatus() {
 
           {activeTab === 'notices' ? (
             <div className="account-center-list">
-              {notices.length === 0 ? <div className="account-center-list-empty">暂无站内通知。</div> : notices.map(item => (
+              {notices.length === 0 ? <div className="account-center-list-empty">暂无站内通知。</div> : displayedNotices.map(item => (
                 <button key={item.id} type="button" className={`account-center-notice ${item.read_at ? '' : 'is-unread'}`} onClick={() => void markRead(item)}>
                   <span className="account-center-notice-dot" />
                   <span className="account-center-notice-copy">
@@ -371,6 +389,12 @@ export default function AccountStatus() {
                   <time>{dateTime(item.created_at)}</time>
                 </button>
               ))}
+              {displayedNotices.length < notices.length && (
+                <button type="button" className="account-center-load-more" onClick={() => setNoticeLimit(current => current + ACCOUNT_LIST_BATCH)}>
+                  继续加载 {Math.min(ACCOUNT_LIST_BATCH, notices.length - displayedNotices.length)} 条
+                  <span>已显示 {displayedNotices.length} / {notices.length}</span>
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -382,19 +406,19 @@ export default function AccountStatus() {
                     ['action', `需处理 ${submissions.summary.action_required}`],
                     ['approved', `已公开 ${submissions.summary.approved}`],
                   ] as const).map(([value, label]) => (
-                    <button key={value} type="button" className={stateFilter === value ? 'is-active' : ''} onClick={() => setStateFilter(value)}>{label}</button>
+                    <button key={value} type="button" className={stateFilter === value ? 'is-active' : ''} onClick={() => selectStateFilter(value)}>{label}</button>
                   ))}
                 </div>
                 <label className="account-center-type-filter">
                   <span>类型</span>
-                  <select value={typeFilter} onChange={event => setTypeFilter(event.target.value)}>
+                  <select value={typeFilter} onChange={event => selectTypeFilter(event.target.value)}>
                     <option value="all">全部类型</option>
                     {submissionTypes.map(type => <option key={type} value={type}>{type}</option>)}
                   </select>
                 </label>
               </div>
               <div className="account-center-list">
-                {visibleSubmissions.length === 0 ? <div className="account-center-list-empty">这里还没有符合条件的提交记录。</div> : visibleSubmissions.map(item => (
+                {visibleSubmissions.length === 0 ? <div className="account-center-list-empty">这里还没有符合条件的提交记录。</div> : displayedSubmissions.map(item => (
                   <article key={`${item.kind}-${item.id}`} className="account-center-submission">
                     <div className="account-center-thumbnail">
                       <img src={item.thumbnail_url || '/brand/jumulu-mark.svg'} alt="" />
@@ -416,6 +440,12 @@ export default function AccountStatus() {
                     </div>
                   </article>
                 ))}
+                {displayedSubmissions.length < visibleSubmissions.length && (
+                  <button type="button" className="account-center-load-more" onClick={() => setSubmissionLimit(current => current + ACCOUNT_LIST_BATCH)}>
+                    继续加载 {Math.min(ACCOUNT_LIST_BATCH, visibleSubmissions.length - displayedSubmissions.length)} 条
+                    <span>已显示 {displayedSubmissions.length} / {visibleSubmissions.length}</span>
+                  </button>
+                )}
               </div>
             </>
           )}
