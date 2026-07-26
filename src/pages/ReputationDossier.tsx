@@ -2,11 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { generatedAvatarDataUrl } from '../lib/avatar';
-import { cityReputationTitle } from '../lib/reputationNaming';
 import ProfileNameLink from '../components/ProfileNameLink';
+import { JumuluPageFrame } from '../components/JumuluPageChrome';
 
 const API = '/api';
-const BG = '#fffdf8';
 const GOLD = '#a66a1f';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
@@ -116,45 +115,37 @@ export default function ReputationDossier() {
 
   const recommendedRoles = useMemo(() => (data?.role_preferences || []).filter(item => item.is_recommended), [data]);
   const availableSlots = useMemo(() => (data?.availability || []).filter(item => !item.is_booked).slice(0, 6), [data]);
-  const cityReputationHref = city ? `/reputation/city?city=${encodeURIComponent(city)}` : '/reputation/city';
-
   if (!subjectName || !subjectType) {
-    return <main style={pageStyle}><div style={emptyStyle}>缺少档案对象。请从城市口碑进入。</div></main>;
+    return <JumuluPageFrame currentLabel="对象档案" maxWidth={1080}><div style={emptyStyle}>缺少档案对象。请从城市口碑进入。</div></JumuluPageFrame>;
   }
 
   return (
-    <main style={pageStyle}>
-      <section className="reputation-dossier-hero" style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '42px 20px 30px' }}>
-        <div style={{ maxWidth: 1080, margin: '0 auto' }}>
-          <Link to={cityReputationHref} style={topLink}>返回{cityReputationTitle(city)}</Link>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 20 }}>
-            <img className="reputation-dossier-avatar" src={data?.profile?.avatar || generatedAvatarDataUrl(subjectName, `${subjectType}:${subjectName}:${city}`)} alt="" style={{ width: 84, height: 84, borderRadius: 18, objectFit: 'cover', objectPosition: `${data?.profile?.avatar_focus_x ?? 50}% ${data?.profile?.avatar_focus_y ?? 25}%`, border: '1px solid rgba(166,106,31,0.20)', background: '#fffaf2' }} />
-            <div style={{ minWidth: 0 }}>
-              <p style={{ margin: '0 0 6px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>{subjectType === 'dm' ? '卡司档案' : '对象档案'}</p>
-              <h1 className="reputation-dossier-title" style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3rem)', lineHeight: 1.15, overflowWrap: 'anywhere' }}>{subjectName}</h1>
-              <p style={{ margin: '8px 0 0', color: MUTED }}>
-                {SUBJECT_LABEL[subjectType] || subjectType}{city ? ` · ${city}` : ''}{data?.profile?.verified_dm ? ' · 已认证 DM' : ''}
-              </p>
-            </div>
-          </div>
+    <JumuluPageFrame currentLabel="对象档案" maxWidth={1080}>
+      <section className="reputation-dossier-header">
+        <img className="reputation-dossier-avatar" src={data?.profile?.avatar || generatedAvatarDataUrl(subjectName, `${subjectType}:${subjectName}:${city}`)} alt="" style={{ objectPosition: `${data?.profile?.avatar_focus_x ?? 50}% ${data?.profile?.avatar_focus_y ?? 25}%` }} />
+        <div className="reputation-dossier-header-copy">
+          <p className="reputation-dossier-eyebrow">{subjectType === 'dm' ? '卡司档案' : '对象档案'}{city ? ` · ${city}` : ''}</p>
+          <h1 className="reputation-dossier-title">{subjectName}</h1>
+          <p className="reputation-dossier-summary">
+            {SUBJECT_LABEL[subjectType] || subjectType}{data?.profile?.verified_dm ? ' · 已认证 DM' : ''} · 汇总公开事件、评分与档案资料
+          </p>
         </div>
       </section>
 
-      <section className="reputation-dossier-shell" style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 20px 82px' }}>
-        {loading ? (
-          <p style={{ color: MUTED, padding: '36px 0' }}>加载中...</p>
-        ) : error ? (
-          <div style={emptyStyle}>{error}</div>
-        ) : data ? (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
-              <Metric label="同意人数" value={data.metrics.praise_people} />
-              <Metric label="口碑值" value={data.metrics.reputation_value} />
-              <Metric label="参与人数" value={data.metrics.participant_count || 0} />
-              <Metric label="事件数" value={data.metrics.event_count} />
-            </div>
+      {loading ? (
+        <p style={{ color: MUTED, padding: '36px 0' }}>加载中...</p>
+      ) : error ? (
+        <div style={emptyStyle}>{error}</div>
+      ) : data ? (
+        <>
+          <div className="reputation-dossier-metrics">
+            <Metric label="同意人数" value={data.metrics.praise_people} />
+            <Metric label="口碑值" value={data.metrics.reputation_value} />
+            <Metric label="参与人数" value={data.metrics.participant_count || 0} />
+            <Metric label="事件数" value={data.metrics.event_count} />
+          </div>
 
-            <div className="reputation-dossier-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(260px, 0.8fr)', gap: 14, alignItems: 'start' }}>
+          <div className="reputation-dossier-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(260px, 0.8fr)', gap: 12, alignItems: 'start' }}>
               <section className="reputation-dossier-card" style={cardStyle}>
                 <h2 style={sectionTitle}>事件沉淀</h2>
                 <p style={{ margin: '0 0 14px', color: MUTED, lineHeight: 1.7, fontSize: 14 }}>
@@ -164,7 +155,7 @@ export default function ReputationDossier() {
                   {data.events.length === 0 ? (
                     <div style={emptyStyle}>暂无事件记录。</div>
                   ) : data.events.map(event => (
-                    <article key={event.id} className="reputation-dossier-event" style={{ borderRadius: 12, border: '1px solid rgba(166,106,31,0.12)', background: '#fffaf2', padding: 12 }}>
+                    <article key={event.id} className="reputation-dossier-event" style={{ borderRadius: 8, border: '1px solid rgba(166,106,31,0.12)', background: '#fffaf2', padding: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                         <span style={{ ...pillStyle, color: event.type === 'black' ? '#475569' : event.type === 'red' ? '#b91c1c' : GOLD }}>
                           {event.type === 'red' ? '红榜事件' : event.type === 'black' ? '黑榜事件' : '白榜记录'}
@@ -179,7 +170,7 @@ export default function ReputationDossier() {
                         {!!event.negative_boost_amount && <span>历史踩榜 {event.negative_boost_amount}</span>}
                         <span>同意 {event.agree_count ?? 0}</span>
                         <span>反对 {event.oppose_count ?? 0}</span>
-                        <span>离谱 {event.joys || 0}</span>
+                        <span>欢乐 {event.joys || 0}</span>
                         <Link to="/rankings" style={{ color: GOLD, textDecoration: 'none', fontWeight: 800 }}>去事件榜</Link>
                       </div>
                     </article>
@@ -206,7 +197,7 @@ export default function ReputationDossier() {
                     <h2 style={sectionTitle}>最近可约档期</h2>
                     <div style={{ display: 'grid', gap: 8 }}>
                       {availableSlots.map(slot => (
-                        <div key={slot.id} style={{ borderRadius: 10, background: '#fffaf2', border: '1px solid rgba(166,106,31,0.12)', padding: '8px 10px', color: MUTED, fontSize: 14 }}>
+                        <div key={slot.id} style={{ borderRadius: 8, background: '#fffaf2', border: '1px solid rgba(166,106,31,0.12)', padding: '8px 10px', color: MUTED, fontSize: 14 }}>
                           {slot.date}{slot.start_time ? ` ${slot.start_time}` : ''}{slot.city ? ` · ${slot.city}` : ''}{slot.location ? ` · ${slot.location}` : ''}
                         </div>
                       ))}
@@ -219,7 +210,7 @@ export default function ReputationDossier() {
                     <h2 style={sectionTitle}>推荐角色</h2>
                     <div style={{ display: 'grid', gap: 8 }}>
                       {recommendedRoles.slice(0, 8).map(role => (
-                        <div key={role.id} style={{ borderRadius: 10, background: '#fffaf2', border: '1px solid rgba(166,106,31,0.12)', padding: '8px 10px' }}>
+                        <div key={role.id} style={{ borderRadius: 8, background: '#fffaf2', border: '1px solid rgba(166,106,31,0.12)', padding: '8px 10px' }}>
                           <strong style={{ color: INK }}>{role.role_name}</strong>
                           <p style={{ color: MUTED, margin: '4px 0 0', fontSize: 13 }}>{role.script_name}{role.role_gender ? ` · ${role.role_gender}` : ''}</p>
                         </div>
@@ -237,11 +228,10 @@ export default function ReputationDossier() {
                   </section>
                 )}
               </aside>
-            </div>
-          </>
-        ) : null}
-      </section>
-    </main>
+          </div>
+        </>
+      ) : null}
+    </JumuluPageFrame>
   );
 }
 
@@ -259,13 +249,11 @@ function normalizeExternalUrl(url: string) {
   return `https://${url}`;
 }
 
-const pageStyle: React.CSSProperties = { minHeight: '100vh', background: BG, color: INK };
-const topLink: React.CSSProperties = { color: '#275389', textDecoration: 'none', fontSize: 14, fontWeight: 800 };
-const cardStyle: React.CSSProperties = { minWidth: 0, padding: 16, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)', overflowWrap: 'anywhere' };
-const metricStyle: React.CSSProperties = { borderRadius: 14, background: '#fff', border: '1px solid rgba(166,106,31,0.14)', padding: 14, boxShadow: '0 10px 26px rgba(102,70,30,0.05)' };
+const cardStyle: React.CSSProperties = { minWidth: 0, padding: 16, borderRadius: 8, border: '1px solid rgba(31,41,55,0.10)', background: '#fff', overflowWrap: 'anywhere' };
+const metricStyle: React.CSSProperties = { borderRadius: 8, background: '#fff', border: '1px solid rgba(31,41,55,0.10)', padding: 12 };
 const sectionTitle: React.CSSProperties = { margin: '0 0 10px', fontFamily: 'var(--font-serif)', fontSize: '1.18rem', fontWeight: 900 };
-const emptyStyle: React.CSSProperties = { padding: 24, borderRadius: 14, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };
+const emptyStyle: React.CSSProperties = { padding: 24, borderRadius: 8, border: '1px dashed rgba(166,106,31,0.22)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };
 const pillStyle: React.CSSProperties = { padding: '3px 9px', borderRadius: 999, background: 'rgba(166,106,31,0.08)', border: '1px solid rgba(166,106,31,0.14)', fontSize: 12, fontWeight: 900 };
 const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, background: 'rgba(239,246,255,0.88)', color: '#275389', fontSize: 12, fontWeight: 800 };
-const primaryButton: React.CSSProperties = { border: 'none', borderRadius: 10, background: `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: '#fffdf8', padding: '10px 14px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
-const ghostButton: React.CSSProperties = { border: '1px solid rgba(166,106,31,0.22)', borderRadius: 10, background: '#fffaf2', color: GOLD, padding: '9px 13px', fontWeight: 800, cursor: 'pointer', textDecoration: 'none', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+const primaryButton: React.CSSProperties = { border: 'none', borderRadius: 8, background: '#275389', color: '#fff', padding: '10px 14px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+const ghostButton: React.CSSProperties = { border: '1px solid rgba(166,106,31,0.22)', borderRadius: 8, background: '#fffaf2', color: GOLD, padding: '9px 13px', fontWeight: 800, cursor: 'pointer', textDecoration: 'none', fontSize: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };

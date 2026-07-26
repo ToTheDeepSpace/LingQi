@@ -72,9 +72,9 @@ defineExpose({ load })
 
     <template v-if="state && !loading && !error">
       <view class="balance-block">
-        <text class="balance-block__label">助力金币</text>
+        <text class="balance-block__label">赠送榜金</text>
         <text class="balance-block__value">{{ state.bonus_balance }}</text>
-        <text class="balance-block__note">助力金币仅用于站内打榜，不可提现</text>
+        <text class="balance-block__note">赠送榜金仅用于站内功能，不可提现</text>
       </view>
 
       <view class="week-strip" aria-label="本周签到">

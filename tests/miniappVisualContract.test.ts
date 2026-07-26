@@ -127,6 +127,35 @@ test('keeps public social profiles available as compact miniapp actions', () => 
   assert.match(source, /setClipboardData/);
 });
 
+test('uses the same bonus balance language on the website and miniapp', () => {
+  const checkin = read('miniapp/jumulu/src/components/DailyCheckinView.vue');
+  const mine = read('miniapp/jumulu/src/pages/mine/index.vue');
+
+  assert.match(checkin, /赠送榜金/);
+  assert.match(mine, /领取赠送榜金/);
+  assert.doesNotMatch(`${checkin}\n${mine}`, /助力金币/);
+});
+
+test('uses the same joy vote language across public website and miniapp surfaces', () => {
+  const dashboard = read('src/pages/Dashboard.tsx');
+  const dossier = read('src/pages/ReputationDossier.tsx');
+  const miniRanking = read('miniapp/jumulu/src/components/RankingCard.vue');
+
+  assert.ok(dashboard.includes('反对${item.oppose_count ?? 0} 欢乐'));
+  assert.ok(dossier.includes('<span>欢乐 {event.joys || 0}</span>'));
+  assert.ok(miniRanking.includes('欢乐 {{ item.joys || 0 }}'));
+});
+
+test('keeps the website reputation dossier on the shared compact content shell', () => {
+  const dossier = read('src/pages/ReputationDossier.tsx');
+  const styles = read('src/App.css');
+
+  assert.match(dossier, /JumuluPageFrame currentLabel="对象档案"/);
+  assert.doesNotMatch(dossier, /cityReputationTitle|reputation-dossier-hero|linear-gradient/);
+  assert.match(styles, /\.reputation-dossier-metrics\s*\{[\s\S]*repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]*\.reputation-dossier-metrics\s*\{[\s\S]*repeat\(2, minmax\(0, 1fr\)\)/);
+});
+
 test('exposes public provider availability without turning the miniapp profile into a calendar', () => {
   const source = read('miniapp/jumulu/src/pages/profile/detail.vue');
 

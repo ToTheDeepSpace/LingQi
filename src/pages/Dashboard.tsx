@@ -1796,7 +1796,7 @@ export default function Dashboard() {
               {[
                 ['看红黑白榜', '夸人、避雷、记录离谱事；主帖进入审核，证据初次提交选填，相关方可以回应。'],
                 ['给万物评分', '剧本、角色、店家、DM/卡司、玩家等都可以沉淀口碑和 tag。'],
-                ['打榜与投票', '榜金只表达正向支持强度；同意、反对、离谱这类一人一票态度单独保留。'],
+                ['打榜与投票', '同意和反对按一人一票；欢乐独立计算。榜金用于站内增值与正向支持，不改变口碑票。'],
                 ['讨论圈内行为', '比如睡车、加戏、拒绝边界等，可以通过投票和口碑记录形成共识。'],
                 ['设置个人主页', '头像、昵称、常用城市先补上；公开资料提交后会进入审核。'],
                 ['成为服务者', '只有填写并通过服务审核的人，才会出现在服务大厅。'],
@@ -3148,7 +3148,7 @@ export default function Dashboard() {
                   {myRankings.map(item => (
                     <MineRow key={item.id}
                       title={item.subject_name}
-                      meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · 免费发布 · 打榜${item.boost_amount ?? (item.type === 'black' ? 0 : item.likes || 0)}${item.negative_boost_amount ? ` · 历史踩榜${item.negative_boost_amount}` : ''} · 同意${item.agree_count ?? 0} 反对${item.oppose_count ?? 0} 离谱${item.joys || 0}`}
+                      meta={`${item.type === 'red' ? '红榜' : item.type === 'black' ? '黑榜' : '白榜'} · ${item.subject_city || '未填城市'} · 免费发布${Number(item.boost_amount || 0) > 0 ? ` · 历史打榜${item.boost_amount}` : ''}${item.negative_boost_amount ? ` · 历史踩榜${item.negative_boost_amount}` : ''} · 同意${item.agree_count ?? 0} 反对${item.oppose_count ?? 0} 欢乐${item.joys || 0}`}
                       status={item.status}
                       note={item.status === 'rejected' && item.reject_reason
                         ? `${item.evidence_required ? '需补证据' : '打回修改'}：${item.reject_reason}`

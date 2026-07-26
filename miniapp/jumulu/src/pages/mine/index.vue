@@ -152,7 +152,7 @@ onPullDownRefresh(pullRefresh)
         </view>
       </view>
       <view class="checkin-entry" @tap="openCheckin">
-        <view><strong>每日签到</strong><text>领取助力金币，给喜欢的角色和 DM 打榜</text></view>
+        <view><strong>每日签到</strong><text>领取赠送榜金，支持喜欢的角色和 DM</text></view>
         <view class="checkin-entry__action"><text>签到</text><image src="/static/icons/ui-chevron-right.png" mode="aspectFit" /></view>
       </view>
       <view v-if="accountStatus?.state === 'restricted'" class="restriction surface" @tap="go('/pages/mine/account-status')">

@@ -58,7 +58,65 @@ body {
   contain-intrinsic-size: 320px;
 }
 
-/* ============ 口碑档案移动端 ============ */
+/* ============ 口碑档案 ============ */
+.reputation-dossier-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(31, 41, 55, 0.1);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.reputation-dossier-header-copy {
+  min-width: 0;
+}
+
+.reputation-dossier-eyebrow {
+  margin: 0 0 2px;
+  color: #925f18;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.reputation-dossier-title {
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: 24px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reputation-dossier-summary {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: rgba(71, 85, 105, 0.76);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reputation-dossier-avatar {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border: 1px solid rgba(166, 106, 31, 0.2);
+  border-radius: 8px;
+  background: #fffaf2;
+  object-fit: cover;
+}
+
+.reputation-dossier-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .reputation-dossier-card,
 .reputation-dossier-event,
 .reputation-dossier-side {
@@ -72,30 +130,29 @@ body {
 }
 
 @media (max-width: 760px) {
-  .reputation-dossier-hero {
-    padding: 30px 16px 24px !important;
-  }
-
-  .reputation-dossier-shell {
-    padding: 18px 16px 64px !important;
-  }
-
   .reputation-dossier-layout {
     grid-template-columns: 1fr !important;
   }
 
   .reputation-dossier-avatar {
-    width: 72px !important;
-    height: 72px !important;
-    border-radius: 16px !important;
+    width: 52px;
+    height: 52px;
+    flex-basis: 52px;
   }
 
   .reputation-dossier-title {
-    font-size: clamp(1.55rem, 8vw, 2.1rem) !important;
+    font-size: 20px;
+  }
+
+  .reputation-dossier-summary {
+    max-width: calc(100vw - 110px);
+  }
+
+  .reputation-dossier-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .reputation-dossier-card {
-    border-radius: 12px !important;
     padding: 14px !important;
   }
 }
