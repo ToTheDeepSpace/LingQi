@@ -18,7 +18,10 @@ const subtitle = computed(() => [props.item.city, props.item.affiliation?.store_
     <view v-else class="card__avatar">{{ item.dm_name.slice(0, 1) }}</view>
     <view class="card__body">
       <view class="card__top">
-        <text class="card__name">{{ item.dm_name }}</text>
+        <view class="card__name-line">
+          <text class="card__name">{{ item.dm_name }}</text>
+          <text v-if="item.chanto_summary?.total" class="card__chanto">缠头 {{ item.chanto_summary.total }}</text>
+        </view>
         <text class="card__score">{{ ratingText(summary?.avg) }}</text>
       </view>
       <text class="card__meta">{{ subtitle || (kind === 'store' ? '店家资料待补充' : 'DM资料待补充') }}</text>
@@ -37,7 +40,9 @@ const subtitle = computed(() => [props.item.city, props.item.affiliation?.store_
 .card__avatar { display: flex; align-items: center; justify-content: center; color: #9a651e; font-family: serif; font-size: 46rpx; font-weight: 800; }
 .card__body { flex: 1; min-width: 0; }
 .card__top { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; }
+.card__name-line { min-width: 0; display: flex; align-items: center; gap: 9rpx; }
 .card__name { overflow: hidden; color: #1f2937; font-size: 28rpx; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.card__chanto { flex: 0 0 auto; color: #925f18; font-size: 19rpx; font-weight: 800; }
 .card__score { color: #9a651e; font-size: 27rpx; font-weight: 900; }
 .card__meta, .card__summary, .card__count { display: block; }
 .card__meta { margin-top: 6rpx; overflow: hidden; color: #64748b; font-size: 23rpx; text-overflow: ellipsis; white-space: nowrap; }

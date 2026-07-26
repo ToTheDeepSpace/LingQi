@@ -81,6 +81,11 @@ export type Dossier = {
   dm_started_month?: string | null
   created_at?: string | null
   rating_summary?: RatingSummary
+  chanto_summary?: {
+    total: number
+    gift_count: number
+    supporter_count: number
+  } | null
 }
 
 export type NewDossierDraft = {

@@ -69,8 +69,22 @@ test('renders public dossier directories in bounded batches', () => {
     assert.match(source, /const PAGE_SIZE = 20/);
     assert.match(source, /\.slice\(0, displayLimit\.value\)/);
     assert.match(source, /继续加载/);
-    assert.match(source, /watch\(\[query, city\]/);
+    assert.match(source, /watch\(\[query,\s*city/);
   }
+});
+
+test('keeps the miniapp DM directory sorting aligned with the website without mixing chanto into default reputation', () => {
+  const source = read('miniapp/jumulu/src/pages/dm/index.vue');
+  const sorter = read('miniapp/jumulu/src/utils/dossierSort.ts');
+
+  assert.match(source, /sortDossiers\(filtered,\s*sortMode\.value,\s*chantoFirst\.value\)/);
+  assert.match(source, /综合排序/);
+  assert.match(source, /缠头优先/);
+  assert.match(sorter, /if \(chantoFirst\)/);
+  assert.match(sorter, /comprehensiveComparator/);
+  assert.match(sorter, /Number\(hasRating\(left\)\).*Number\(hasRating\(right\)\)/);
+  assert.match(sorter, /Number\(isVerified\(left\)\).*Number\(isVerified\(right\)\)/);
+  assert.match(sorter, /Number\(hasPhoto\(left\)\).*Number\(hasPhoto\(right\)\)/);
 });
 
 test('keeps the ranking feed bounded and moves persistent notices behind an explicit action', () => {
