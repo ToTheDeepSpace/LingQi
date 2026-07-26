@@ -51,7 +51,7 @@ onShow(() => {
 <style>
 page {
   min-height: 100%;
-  background: #f5f6f8;
+  background: #fffdf8;
   color: #1f2937;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 28rpx;
@@ -97,15 +97,15 @@ button::after { border: 0; }
   line-height: 76rpx;
 }
 
-.primary-button { background: #b9781f; color: #ffffff; }
-.secondary-button { background: #ffffff; color: #334155; border: 1rpx solid #d9dde4; }
+.primary-button { background: #275389; color: #ffffff; }
+.secondary-button { background: #ffffff; color: #275389; border: 1rpx solid #cfd8e4; }
 .danger-button { background: #fff6f5; color: #a53232; border: 1rpx solid #efc9c5; }
 
 .input,
 .textarea,
 .picker-field {
   width: 100%;
-  border: 1rpx solid #d9dde4;
+  border: 1rpx solid #cfd8e4;
   border-radius: 10rpx;
   background: #ffffff;
   color: #1f2937;
@@ -161,7 +161,7 @@ button::after { border: 0; }
   padding: 12rpx 0;
   border: 0;
   border-radius: 0;
-  background: #ffffff;
+  background: transparent;
 }
 
 .page-actions {

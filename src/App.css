@@ -5,8 +5,8 @@ body {
   font-family: "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #faf8f5;
-  color: #0F1117;
+  background: var(--jumulu-page);
+  color: var(--jumulu-text);
 }
 
 /* ============ 波浪装饰 ============ */
@@ -483,12 +483,12 @@ body {
   top: 52%;
   right: 14px;
   z-index: 55;
-  width: 40px;
-  min-height: 68px;
+  width: 44px;
+  min-height: 34px;
   box-sizing: border-box;
-  display: grid;
-  place-content: center;
-  gap: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(181, 123, 33, 0.34);
   border-radius: 7px;
   background: rgba(255, 253, 248, 0.96);
@@ -518,12 +518,12 @@ body {
 @media (max-width: 720px) {
   .jumulu-compact-header {
     display: grid;
-    gap: 8px;
-    padding: 8px 10px;
+    gap: 6px;
+    padding: 7px 9px;
   }
 
   .jumulu-compact-header-title {
-    font-size: 21px;
+    font-size: 19px;
   }
 
   .jumulu-compact-header-actions {
@@ -557,8 +557,8 @@ body {
     top: auto;
     right: 8px;
     bottom: calc(72px + env(safe-area-inset-bottom));
-    width: 36px;
-    min-height: 62px;
+    width: 42px;
+    min-height: 32px;
     font-size: 11px;
     transform: none;
   }

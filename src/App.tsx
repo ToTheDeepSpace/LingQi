@@ -148,7 +148,6 @@ function FeedbackFloat() {
       onMouseEnter={() => preloadRoute('/contact')}
       onFocus={() => preloadRoute('/contact')}
     >
-      <span>建议</span>
       <span>反馈</span>
     </Link>
   );

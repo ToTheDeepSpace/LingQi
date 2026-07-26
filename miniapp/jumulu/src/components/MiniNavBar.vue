@@ -90,7 +90,7 @@ function goBack() {
 </template>
 
 <style scoped>
-.mini-nav { position: sticky; z-index: 700; top: 0; margin: 0 -24rpx; border-bottom: 1rpx solid #e8ebef; background: rgba(255, 255, 255, 0.98); }
+.mini-nav { position: sticky; z-index: 700; top: 0; margin: 0 -24rpx; border-bottom: 1rpx solid #e8e4dc; background: rgba(255, 253, 248, 0.98); }
 .mini-nav__inner { position: relative; display: flex; align-items: center; min-height: 44px; padding-left: 12rpx; }
 .mini-nav__back, .mini-nav__back-spacer { width: 124rpx; height: 68rpx; flex: 0 0 124rpx; margin: 0; padding: 0; }
 .mini-nav__back { display: flex; align-items: center; border: 0; background: transparent; color: #275389; font-size: 26rpx; line-height: 68rpx; }
@@ -100,7 +100,7 @@ function goBack() {
 .mini-nav__brand { position: absolute; left: 24rpx; display: flex; align-items: baseline; min-width: 0; gap: 12rpx; overflow: hidden; }
 .mini-nav__brand-name { flex: 0 0 auto; color: #172033; font-family: serif; font-size: 38rpx; font-weight: 900; line-height: 1; }
 .mini-nav__brand-subtitle { min-width: 0; overflow: hidden; color: #596579; font-size: 21rpx; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.mini-nav__message { position: absolute; top: 50%; display: flex; width: 34px; height: 32px; align-items: center; justify-content: center; margin: 0 4px 0 0; padding: 0; transform: translateY(-50%); border: 1rpx solid #dfe4ea; border-radius: 8px; background: #fff; line-height: 32px; }
+.mini-nav__message { position: absolute; top: 50%; display: flex; width: 34px; height: 32px; align-items: center; justify-content: center; margin: 0 4px 0 0; padding: 0; transform: translateY(-50%); border: 1rpx solid #d8dee8; border-radius: 8px; background: #fff; line-height: 32px; }
 .mini-nav__message image { width: 18px; height: 18px; }
 .mini-nav__badge { position: absolute; top: -5px; right: -6px; min-width: 17px; height: 17px; padding: 0 4px; border: 1px solid #fff; border-radius: 9px; background: #c83939; color: #fff; font-size: 9px; font-weight: 850; line-height: 15px; text-align: center; }
 </style>

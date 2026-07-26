@@ -32,13 +32,13 @@ const subtitle = computed(() => [props.item.city, props.item.affiliation?.store_
 </template>
 
 <style scoped>
-.card { display: flex; gap: 18rpx; min-height: 156rpx; padding: 18rpx 4rpx; border-bottom: 1rpx solid #eceff2; }
-.card__image, .card__avatar { width: 124rpx; height: 142rpx; flex: 0 0 124rpx; border-radius: 8rpx; background: #f2ece4; }
-.card__avatar { display: flex; align-items: center; justify-content: center; color: #9a651e; font-family: serif; font-size: 52rpx; font-weight: 800; }
+.card { display: flex; gap: 16rpx; min-height: 142rpx; padding: 15rpx 4rpx; border-bottom: 1rpx solid #eceff2; }
+.card__image, .card__avatar { width: 110rpx; height: 128rpx; flex: 0 0 110rpx; border-radius: 8rpx; background: #f2ece4; }
+.card__avatar { display: flex; align-items: center; justify-content: center; color: #9a651e; font-family: serif; font-size: 46rpx; font-weight: 800; }
 .card__body { flex: 1; min-width: 0; }
 .card__top { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; }
-.card__name { overflow: hidden; color: #1f2937; font-size: 30rpx; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-.card__score { color: #9a651e; font-size: 29rpx; font-weight: 900; }
+.card__name { overflow: hidden; color: #1f2937; font-size: 28rpx; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.card__score { color: #9a651e; font-size: 27rpx; font-weight: 900; }
 .card__meta, .card__summary, .card__count { display: block; }
 .card__meta { margin-top: 6rpx; overflow: hidden; color: #64748b; font-size: 23rpx; text-overflow: ellipsis; white-space: nowrap; }
 .card__summary { display: -webkit-box; overflow: hidden; margin-top: 8rpx; color: #475569; font-size: 22rpx; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
