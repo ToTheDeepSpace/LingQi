@@ -663,6 +663,13 @@ body {
   white-space: nowrap;
 }
 
+.follow-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 12px;
+  align-items: start;
+}
+
 .site-feedback-float {
   position: fixed;
   top: auto;
@@ -702,6 +709,10 @@ body {
 }
 
 @media (max-width: 720px) {
+  .follow-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .jumulu-compact-header {
     gap: 8px;
     padding: 6px 8px;

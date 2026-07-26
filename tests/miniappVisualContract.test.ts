@@ -192,6 +192,20 @@ test('keeps rating publishers on one page-level back action and the compact head
   assert.match(role, /JumuluCompactHeader/);
 });
 
+test('keeps follow settings compact and searchable across website and miniapp', () => {
+  const website = read('src/pages/FollowSettings.tsx');
+  const miniapp = read('miniapp/jumulu/src/pages/follows/index.vue');
+
+  assert.match(website, /JumuluPageFrame currentLabel="关注设置"/);
+  assert.match(website, /JumuluCompactHeader/);
+  assert.match(website, /CitySearchSelect/);
+  assert.match(website, /className="follow-settings-grid"/);
+  assert.doesNotMatch(website, /返回我的主页/);
+  assert.doesNotMatch(website, /CITIES\.map|matched\.map/);
+  assert.match(miniapp, /CitySearchPicker/);
+  assert.match(miniapp, /搜索并添加城市/);
+});
+
 test('keeps the website carpool workbench message-first and compact', () => {
   const page = read('src/pages/CreateCarpool.tsx');
   const miniPage = read('miniapp/jumulu/src/pages/carpools/create.vue');

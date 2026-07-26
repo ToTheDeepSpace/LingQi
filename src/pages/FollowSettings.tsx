@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CITIES } from '../constants/cities';
+import CitySearchSelect from '../components/CitySearchSelect';
+import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import {
+  jumuluCardStyle,
+  jumuluPrimaryLinkStyle,
+  jumuluSecondaryLinkStyle,
+} from '../styles/jumuluPageStyles';
 
 const API = '/api';
 
@@ -16,7 +23,7 @@ export default function FollowSettings() {
   const navigate = useNavigate();
   const [selected, setSelected] = useState<string[]>([]);
   const [stores, setStores] = useState<FollowedStore[]>([]);
-  const [query, setQuery] = useState('');
+  const [candidate, setCandidate] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -41,11 +48,6 @@ export default function FollowSettings() {
     return () => controller.abort();
   }, [navigate]);
 
-  const matched = useMemo(() => {
-    const keyword = query.trim();
-    return (keyword ? CITIES.filter(city => city.includes(keyword)) : CITIES).slice(0, 180);
-  }, [query]);
-
   const toggleCity = (city: string) => {
     setError('');
     setSelected(current => {
@@ -56,6 +58,12 @@ export default function FollowSettings() {
       }
       return [...current, city];
     });
+  };
+
+  const addCity = (city: string) => {
+    setCandidate('');
+    if (!city || selected.includes(city)) return;
+    toggleCity(city);
   };
 
   const save = async () => {
@@ -94,37 +102,101 @@ export default function FollowSettings() {
   };
 
   return (
-    <main style={{ minHeight: '72vh', background: '#fffdf8', color: '#1f2937', padding: '28px 20px 64px' }}>
-      <div style={{ maxWidth: 860, margin: '0 auto' }}>
-        <Link to="/dashboard" style={{ color: '#275389', fontSize: 13, fontWeight: 800, textDecoration: 'none' }}>返回我的主页</Link>
-        <header style={{ margin: '18px 0 22px' }}>
-          <h1 style={{ margin: 0, fontSize: 30, fontWeight: 900 }}>关注设置</h1>
-          <p style={{ margin: '8px 0 0', color: '#64748b', lineHeight: 1.65 }}>城市决定首页和同城内容的默认范围；店家可以在其档案页关注或取消。</p>
-        </header>
-        {loading ? <p style={{ color: '#64748b' }}>正在读取关注设置...</p> : <>
-          <section style={{ padding: '18px 0 24px', borderTop: '1px solid rgba(31,41,55,0.1)' }}>
-            <h2 style={{ margin: '0 0 12px', fontSize: 17 }}>关注城市 <span style={{ color: '#64748b', fontSize: 12 }}>最多 5 个</span></h2>
-            <input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索城市" style={{ width: '100%', minHeight: 42, padding: '9px 11px', borderRadius: 7, border: '1px solid rgba(31,41,55,0.14)' }} />
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 12 }}>
-              {selected.map(city => <button key={city} type="button" onClick={() => toggleCity(city)} style={{ border: '1px solid rgba(185,120,31,0.35)', borderRadius: 7, background: '#fff5df', color: '#8b5919', padding: '7px 9px', fontWeight: 800 }}>{city} ×</button>)}
-            </div>
-            <div style={{ maxHeight: 270, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: 6, marginTop: 12 }}>
-              {matched.map(city => <button key={city} type="button" onClick={() => toggleCity(city)} style={{ minHeight: 38, borderRadius: 7, border: '1px solid rgba(31,41,55,0.1)', background: selected.includes(city) ? '#fff5df' : '#fff', color: selected.includes(city) ? '#8b5919' : '#475569', fontWeight: selected.includes(city) ? 800 : 600 }}>{city}</button>)}
-            </div>
-            <button type="button" onClick={() => void save()} disabled={saving || selected.length === 0} style={{ marginTop: 16, minHeight: 42, padding: '9px 18px', border: 0, borderRadius: 7, background: '#b9781f', color: '#fff', fontWeight: 900 }}>{saving ? '保存中...' : '保存城市'}</button>
-          </section>
-          <section style={{ padding: '18px 0 0', borderTop: '1px solid rgba(31,41,55,0.1)' }}>
-            <h2 style={{ margin: '0 0 12px', fontSize: 17 }}>关注店家</h2>
-            {stores.length === 0 ? <p style={{ color: '#64748b' }}>还没有关注店家，可以去店家档案页添加。</p> : stores.map(store => (
-              <div key={store.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 0', borderBottom: '1px solid rgba(31,41,55,0.08)' }}>
-                <Link to={`/stores/${store.id}`} style={{ color: '#27364a', textDecoration: 'none', fontWeight: 850 }}>{store.dm_name}<span style={{ marginLeft: 8, color: '#64748b', fontSize: 12, fontWeight: 600 }}>{store.city || '城市待补'}</span></Link>
-                <button type="button" onClick={() => void unfollowStore(store)} style={{ border: '1px solid rgba(31,41,55,0.14)', borderRadius: 7, background: '#fff', color: '#64748b', padding: '7px 10px' }}>取消关注</button>
+    <JumuluPageFrame currentLabel="关注设置" maxWidth={980}>
+      <JumuluCompactHeader
+        eyebrow="我的内容范围"
+        title="关注设置"
+        description="关注城市决定首页和同城内容的默认范围；店家可在档案页随时关注或取消。"
+      />
+
+      {loading ? <p style={loadingStyle}>正在读取关注设置...</p> : (
+        <div className="follow-settings-grid">
+          <section style={panelStyle}>
+            <div style={sectionHeadingStyle}>
+              <div>
+                <h2 style={sectionTitleStyle}>关注城市</h2>
+                <p style={sectionNoteStyle}>至少 1 个，最多 5 个</p>
               </div>
-            ))}
+              <strong style={countStyle}>{selected.length}/5</strong>
+            </div>
+
+            <CitySearchSelect
+              value={candidate}
+              onChange={addCity}
+              allowAll={false}
+              placeholder="搜索并添加城市"
+            />
+
+            <div style={selectedCitiesStyle}>
+              {selected.length === 0 ? (
+                <span style={emptyInlineStyle}>还没有选择城市</span>
+              ) : selected.map(city => (
+                <button key={city} type="button" onClick={() => toggleCity(city)} style={selectedCityStyle}>
+                  {city}<span aria-hidden="true">×</span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving || selected.length === 0}
+              style={{ ...jumuluPrimaryLinkStyle, width: '100%', opacity: saving || selected.length === 0 ? 0.52 : 1 }}
+            >
+              {saving ? '保存中...' : '保存城市'}
+            </button>
           </section>
-        </>}
-        {error && <p style={{ color: '#b42318', fontSize: 13 }}>{error}</p>}
-      </div>
-    </main>
+
+          <section style={panelStyle}>
+            <div style={sectionHeadingStyle}>
+              <div>
+                <h2 style={sectionTitleStyle}>关注店家</h2>
+                <p style={sectionNoteStyle}>从店家档案页添加</p>
+              </div>
+              <strong style={countStyle}>{stores.length}</strong>
+            </div>
+
+            {stores.length === 0 ? (
+              <div style={emptyStyle}>还没有关注店家。</div>
+            ) : (
+              <div style={storeListStyle}>
+                {stores.map(store => (
+                  <div key={store.id} style={storeRowStyle}>
+                    <Link to={`/stores/${store.id}`} style={storeLinkStyle}>
+                      <strong>{store.dm_name}</strong>
+                      <span>{store.city || '城市待补'}{store.workplace ? ` · ${store.workplace}` : ''}</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => void unfollowStore(store)}
+                      style={{ ...jumuluSecondaryLinkStyle, minHeight: 32, padding: '0 10px', flex: '0 0 auto' }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {error && <p role="alert" style={errorStyle}>{error}</p>}
+    </JumuluPageFrame>
   );
 }
+
+const panelStyle: React.CSSProperties = { ...jumuluCardStyle, minWidth: 0, padding: 16 };
+const loadingStyle: React.CSSProperties = { color: '#64748b', padding: '24px 0' };
+const sectionHeadingStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 };
+const sectionTitleStyle: React.CSSProperties = { margin: 0, color: '#27364a', fontSize: 17, fontWeight: 900 };
+const sectionNoteStyle: React.CSSProperties = { margin: '3px 0 0', color: '#64748b', fontSize: 12 };
+const countStyle: React.CSSProperties = { color: '#a66a1f', fontSize: 13 };
+const selectedCitiesStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', alignContent: 'flex-start', gap: 7, minHeight: 72, margin: '12px 0' };
+const selectedCityStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 32, margin: 0, padding: '0 10px', border: '1px solid rgba(166,106,31,0.26)', borderRadius: 7, background: '#fff5df', color: '#8b5919', fontSize: 13, fontWeight: 800 };
+const emptyInlineStyle: React.CSSProperties = { color: '#94a3b8', fontSize: 13, alignSelf: 'center' };
+const emptyStyle: React.CSSProperties = { padding: '24px 0', color: '#64748b', fontSize: 13 };
+const storeListStyle: React.CSSProperties = { display: 'grid' };
+const storeRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 58, borderBottom: '1px solid rgba(31,41,55,0.08)' };
+const storeLinkStyle: React.CSSProperties = { display: 'grid', gap: 3, minWidth: 0, color: '#27364a', textDecoration: 'none' };
+const errorStyle: React.CSSProperties = { margin: 0, padding: '10px 12px', border: '1px solid rgba(180,35,24,0.18)', borderRadius: 7, background: '#fff6f5', color: '#b42318', fontSize: 13 };
