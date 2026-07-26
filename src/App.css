@@ -117,6 +117,38 @@ body {
   gap: 8px;
 }
 
+.commission-create-identity {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border: 1px solid rgba(166, 106, 31, 0.18);
+  border-radius: 8px;
+  background: #fffaf2;
+  color: #65401c;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.commission-create-identity strong {
+  color: #925f18;
+}
+
+.commission-create-form {
+  padding: 16px;
+  border: 1px solid rgba(31, 41, 55, 0.1);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.commission-create-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
 .reputation-dossier-card,
 .reputation-dossier-event,
 .reputation-dossier-side {
@@ -154,6 +186,20 @@ body {
 
   .reputation-dossier-card {
     padding: 14px !important;
+  }
+
+  .commission-create-identity {
+    max-width: 48vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .commission-create-form {
+    padding: 12px;
+  }
+
+  .commission-create-actions {
+    justify-content: flex-end;
   }
 }
 

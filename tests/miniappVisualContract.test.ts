@@ -156,6 +156,16 @@ test('keeps the website reputation dossier on the shared compact content shell',
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]*\.reputation-dossier-metrics\s*\{[\s\S]*repeat\(2, minmax\(0, 1fr\)\)/);
 });
 
+test('keeps the website commission publisher on the compact cross-platform task shell', () => {
+  const publisher = read('src/pages/CreateCommission.tsx');
+
+  assert.match(publisher, /JumuluPageFrame currentLabel="发布委托"/);
+  assert.match(publisher, /JumuluCompactHeader/);
+  assert.match(publisher, /ResponsibilityNotice compact/);
+  assert.match(publisher, /className="commission-create-form"/);
+  assert.doesNotMatch(publisher, /← 返回委托需求墙|linear-gradient/);
+});
+
 test('exposes public provider availability without turning the miniapp profile into a calendar', () => {
   const source = read('miniapp/jumulu/src/pages/profile/detail.vue');
 

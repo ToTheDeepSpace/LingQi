@@ -6,13 +6,12 @@ import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import InfoTip from '../components/InfoTip';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import MobileTaskAction from '../components/MobileTaskAction';
+import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
 const C = '#fffdf8';
-const C2 = '#fffaf2';
-const GOLD = '#d9a857';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 
@@ -221,35 +220,30 @@ export default function CreateCommission() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: C, color: INK }}>
-      <div style={{ maxWidth: 780, margin: '0 auto', padding: '28px 20px 80px' }}>
-        <Link to="/commissions" style={{ color: 'rgba(39,83,137,0.78)', textDecoration: 'none', fontSize: '0.88rem' }}>← 返回委托需求墙</Link>
-        <div style={{ marginTop: 24, padding: '28px', borderRadius: 16, background: C2, border: '1px solid rgba(217,168,87,0.22)', boxShadow: '0 18px 48px rgba(31,41,55,0.08)' }}>
-          <div className="gold-line" style={{ marginBottom: 16 }} />
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.6rem, 4vw, 2.3rem)', marginBottom: 12, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            发布委托需求
-            <InfoTip>你可以写得很具体，也可以只留一段愿望。内容会先进入人工审核。</InfoTip>
-          </h1>
-
-          <div style={{ padding: '10px 12px', borderRadius: 12, background: 'rgba(217,168,87,0.1)', border: '1px solid rgba(217,168,87,0.24)', color: '#65401c', fontSize: '0.84rem', marginBottom: 18, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            以 <strong style={{ color: '#925f18' }}>{auth.display_name}</strong> 的身份发布
+    <JumuluPageFrame currentLabel="发布委托" maxWidth={860}>
+      <JumuluCompactHeader
+        eyebrow="委托需求"
+        title="发布委托需求"
+        description="可以写得具体，也可以只留一段愿望；提交后先进入审核。"
+        aside={(
+          <div className="commission-create-identity">
+            <span>以 <strong>{auth.display_name}</strong> 发布</span>
             <InfoTip>AI 填表助手接口已预留，当前先由你手动填写。</InfoTip>
           </div>
+        )}
+      />
 
-          <div style={{ marginBottom: 18 }}>
-            <DraftAutosaveNotice
-              savedAt={commissionDraft.savedAt}
-              restoredAt={commissionDraft.restoredAt}
-              error={commissionDraft.error}
-              note="未提交的委托需求会自动保存到当前浏览器。"
-            />
-          </div>
+      <DraftAutosaveNotice
+        savedAt={commissionDraft.savedAt}
+        restoredAt={commissionDraft.restoredAt}
+        error={commissionDraft.error}
+        note="未提交的委托需求会自动保存到当前浏览器。"
+      />
 
-          <div style={{ marginBottom: 22 }}>
-            <ResponsibilityNotice />
-          </div>
+      <ResponsibilityNotice compact />
 
-          <div style={{ display: 'grid', gap: 16 }}>
+      <section className="commission-create-form">
+          <div style={{ display: 'grid', gap: 12 }}>
             <div>
               <label style={labelStyle}>标题</label>
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="例如：6月1日想约一位能出芙莉莲的服务者" style={inputStyle} />
@@ -257,7 +251,7 @@ export default function CreateCommission() {
 
             <div>
               <label style={labelStyle}>需求内容</label>
-              <textarea value={content} onChange={e => setContent(e.target.value)} rows={7} placeholder="写下你想要的角色、陪伴场景、时间长度、氛围偏好。也可以只写一段愿望。" style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.7 }} />
+              <textarea value={content} onChange={e => setContent(e.target.value)} rows={5} placeholder="写下你想要的角色、陪伴场景、时间长度、氛围偏好。也可以只写一段愿望。" style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.7 }} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
@@ -350,20 +344,19 @@ export default function CreateCommission() {
 
           {error && <p style={{ color: '#b91c1c', fontSize: '0.86rem', marginTop: 18 }}>{error}</p>}
 
-          <div style={{ display: 'flex', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
+          <div className="commission-create-actions">
             <button onClick={submit} disabled={submitting}
-              style={{ padding: '12px 28px', borderRadius: 10, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: submitting ? 'rgba(241,245,249,0.88)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`, color: submitting ? 'rgba(71,85,105,0.55)' : INK, fontWeight: 900 }}>
+              style={{ padding: '11px 24px', borderRadius: 8, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: submitting ? 'rgba(241,245,249,0.88)' : '#275389', color: submitting ? 'rgba(71,85,105,0.55)' : '#fff', fontWeight: 900 }}>
               {submitting ? '提交中...' : '提交审核'}
             </button>
-            <Link to="/commissions" style={{ padding: '12px 18px', borderRadius: 10, border: '1px solid rgba(217,168,87,0.28)', color: MUTED, textDecoration: 'none', fontWeight: 700 }}>取消</Link>
+            <Link to="/commissions" style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid rgba(31,41,55,0.14)', color: MUTED, textDecoration: 'none', fontWeight: 700 }}>取消</Link>
           </div>
-        </div>
-      </div>
+      </section>
       <MobileTaskAction
         label={submitting ? '提交中...' : '提交审核'}
         disabled={submitting}
         onClick={() => void submit()}
       />
-    </div>
+    </JumuluPageFrame>
   );
 }
