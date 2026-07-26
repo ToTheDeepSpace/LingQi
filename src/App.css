@@ -517,21 +517,117 @@ body {
 
 @media (max-width: 720px) {
   .jumulu-compact-header {
-    display: grid;
-    gap: 6px;
-    padding: 7px 9px;
+    gap: 8px;
+    padding: 6px 8px;
+  }
+
+  .jumulu-compact-header-copy {
+    flex: 0 0 auto;
+  }
+
+  .jumulu-compact-header-eyebrow,
+  .jumulu-compact-header-description {
+    display: none;
   }
 
   .jumulu-compact-header-title {
-    font-size: 19px;
+    font-size: 18px;
+    white-space: nowrap;
   }
 
   .jumulu-compact-header-actions {
-    width: 100%;
+    flex: 1 1 auto;
+    width: auto;
   }
 
   .jumulu-compact-header-actions > div {
-    justify-content: flex-start !important;
+    justify-content: flex-end !important;
+    gap: 5px !important;
+  }
+
+  .ranking-header-actions button,
+  .ranking-header-actions a {
+    min-height: 30px !important;
+    padding-right: 9px !important;
+    padding-left: 9px !important;
+    font-size: 11px !important;
+  }
+
+  .ranking-filter-bar {
+    min-height: 0 !important;
+    display: grid !important;
+    gap: 6px !important;
+    padding: 7px 8px !important;
+    overflow: hidden;
+  }
+
+  .ranking-filter-types,
+  .ranking-filter-subjects {
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .ranking-filter-types::-webkit-scrollbar,
+  .ranking-filter-subjects::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ranking-filter-types button,
+  .ranking-filter-subjects button {
+    flex: 0 0 auto;
+    min-height: 30px !important;
+    padding: 5px 10px !important;
+    font-size: 11px !important;
+  }
+
+  .ranking-feed-context {
+    min-width: 0;
+    gap: 5px !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .ranking-feed-explanation {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px !important;
+  }
+
+  .ranking-feed-context details {
+    flex: 0 0 auto;
+    font-size: 11px !important;
+  }
+
+  .ranking-card {
+    padding: 10px 11px 9px !important;
+  }
+
+  .ranking-card-body {
+    margin-bottom: 5px !important;
+  }
+
+  .ranking-card-summary--with-media {
+    grid-template-columns: minmax(0, 1fr) 72px !important;
+    gap: 8px !important;
+  }
+
+  .ranking-card-thumb {
+    width: 72px !important;
+  }
+
+  .ranking-card-votes {
+    justify-content: space-between;
+    gap: 5px !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .ranking-card-votes button {
+    font-size: 11px !important;
   }
 
   .ranking-city-panel {

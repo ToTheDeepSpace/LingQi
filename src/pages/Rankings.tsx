@@ -203,7 +203,7 @@ const filterBarStyle: React.CSSProperties = {
 
 const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 10, alignItems: 'start' };
-const rankingThumbLinkStyle: React.CSSProperties = { position: 'relative', display: 'block', width: 82, maxWidth: '28%', marginTop: 7, textDecoration: 'none' };
+const rankingThumbLinkStyle: React.CSSProperties = { position: 'relative', display: 'block', width: 82, textDecoration: 'none' };
 const rankingThumbStyle: React.CSSProperties = { display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: '1px solid rgba(31,41,55,0.1)', background: '#f8fafc' };
 const rankingThumbCountStyle: React.CSSProperties = { position: 'absolute', right: 5, bottom: 5, padding: '2px 5px', borderRadius: 5, background: 'rgba(17,24,39,0.72)', color: '#fff', fontSize: 10, fontWeight: 800 };
 const compactActionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 7, borderTop: '1px solid rgba(31,41,55,0.06)' };
@@ -1165,20 +1165,20 @@ export default function Rankings() {
           eyebrow="沉浸式娱乐事件口碑"
           title="红黑榜"
           description="看最近发生的事，也把每条事件沉淀进对象档案。帖子不再接受付费打榜。"
-          aside={<div style={filterGroupStyle}>
+          aside={<div className="ranking-header-actions" style={filterGroupStyle}>
             <button onClick={() => setFeedMode('latest')} style={hubToggleStyle(feedMode === 'latest', '#275389')}>最新动态</button>
             <button onClick={() => setFeedMode('discussed')} style={hubToggleStyle(feedMode === 'discussed', GOLD)}>近期热议</button>
             <Link to="/rankings/new" style={jumuluPrimaryLinkStyle}>发布评价</Link>
           </div>}
         />
 
-        <section style={filterBarStyle}>
-          <div style={filterGroupStyle}>
+        <section className="ranking-filter-bar" style={filterBarStyle}>
+          <div className="ranking-filter-types" style={filterGroupStyle}>
             {tabBtn('red', '红', '#9a3412')}
             {tabBtn('white', '白', '#d9a857')}
             {tabBtn('black', '黑', '#1f2937')}
           </div>
-          <div style={filterGroupStyle}>
+          <div className="ranking-filter-subjects" style={filterGroupStyle}>
             <CityFilter
               city={city}
               preferredCities={preferredCities}
@@ -1200,11 +1200,11 @@ export default function Rankings() {
         </section>
 
         <div style={{ display: 'grid', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.7 }}>
+        <div className="ranking-feed-context" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="ranking-feed-explanation" style={{ color: 'rgba(71,85,105,0.62)', fontSize: '0.76rem', lineHeight: 1.7 }}>
             {TAB_HINT[tab]} {feedMode === 'latest'
-              ? '按审核通过的新进展排序，普通评论和投票不会把旧帖顶回来。'
-              : '按近期独立参与人数与时间衰减排序，只反映最近讨论热度。'}
+              ? '按审核通过的新进展排序。'
+              : '按近期独立参与人数与时间衰减排序。'}
           </span>
           {tab === 'black' && (
             <span style={{ display: 'inline-flex', gap: 6 }}>
@@ -1278,7 +1278,7 @@ export default function Rankings() {
               return (
                 <div key={item.id}
                   id={`ranking-${item.id}`}
-                  className="content-card"
+                  className="content-card ranking-card"
                   role="link"
                   tabIndex={0}
                   aria-label={`查看${heading}详情`}
@@ -1322,7 +1322,7 @@ export default function Rankings() {
                       background: '#626b78',
                     }} />
                   )}
-                  <div style={{ marginBottom: 8 }}>
+                  <div className="ranking-card-body" style={{ marginBottom: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 8 }}>
                       <span style={{
                         padding: '2px 8px',
@@ -1342,33 +1342,45 @@ export default function Rankings() {
                         {feedMode === 'latest' ? `动态 ${idx + 1}` : `热议 ${idx + 1}`}
                       </span>
                     </div>
-                    <h2 style={{ margin: 0, color: '#111827', fontSize: '1rem', lineHeight: 1.45, fontWeight: 900, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{renderContent(heading)}</h2>
-                    {summary && (
-                      <div style={{ margin: '5px 0 0' }}>
-                        <p style={{
-                          fontSize: '0.82rem',
-                          color: 'rgba(71,85,105,0.76)',
-                          lineHeight: 1.5,
-                          margin: '0',
-                          fontWeight: 600,
-                          display: '-webkit-box',
-                          WebkitBoxOrient: 'vertical',
-                          WebkitLineClamp: 2,
-                          overflow: 'hidden',
-                        }}>
-                          {renderContent(summary)}
-                        </p>
+                    <div
+                      className={item.display_files?.[0]?.url ? 'ranking-card-summary ranking-card-summary--with-media' : 'ranking-card-summary'}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: item.display_files?.[0]?.url ? 'minmax(0, 1fr) 82px' : 'minmax(0, 1fr)',
+                        gap: 10,
+                        alignItems: 'start',
+                      }}
+                    >
+                      <div className="ranking-card-copy">
+                        <h2 style={{ margin: 0, color: '#111827', fontSize: '1rem', lineHeight: 1.45, fontWeight: 900, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{renderContent(heading)}</h2>
+                        {summary && (
+                          <div style={{ margin: '5px 0 0' }}>
+                            <p style={{
+                              fontSize: '0.82rem',
+                              color: 'rgba(71,85,105,0.76)',
+                              lineHeight: 1.5,
+                              margin: '0',
+                              fontWeight: 600,
+                              display: '-webkit-box',
+                              WebkitBoxOrient: 'vertical',
+                              WebkitLineClamp: 2,
+                              overflow: 'hidden',
+                            }}>
+                              {renderContent(summary)}
+                            </p>
+                          </div>
+                        )}
+                        <div style={{ marginTop: 6, color: 'rgba(71,85,105,0.58)', fontSize: '0.68rem', fontWeight: 760 }}>
+                          {SUBJECT_LABEL[item.subject_type] || item.subject_type}{item.subject_city ? ` · ${item.subject_city}` : ''}
+                        </div>
                       </div>
-                    )}
-                    <div style={{ marginTop: 6, color: 'rgba(71,85,105,0.58)', fontSize: '0.68rem', fontWeight: 760 }}>
-                      {SUBJECT_LABEL[item.subject_type] || item.subject_type}{item.subject_city ? ` · ${item.subject_city}` : ''}
+                      {!!item.display_files?.[0]?.url && (
+                        <Link className="ranking-card-thumb" to={`/rankings/${encodeURIComponent(item.id)}`} style={rankingThumbLinkStyle} aria-label="查看正文配图">
+                          <img src={item.display_files[0].url} alt={item.display_files[0].name || '榜单正文配图'} style={rankingThumbStyle} />
+                          {item.display_files.length > 1 && <span style={rankingThumbCountStyle}>共 {item.display_files.length} 张</span>}
+                        </Link>
+                      )}
                     </div>
-                    {!!item.display_files?.[0]?.url && (
-                      <Link to={`/rankings/${encodeURIComponent(item.id)}`} style={rankingThumbLinkStyle} aria-label="查看正文配图">
-                        <img src={item.display_files[0].url} alt={item.display_files[0].name || '榜单正文配图'} style={rankingThumbStyle} />
-                        {item.display_files.length > 1 && <span style={rankingThumbCountStyle}>共 {item.display_files.length} 张</span>}
-                      </Link>
-                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                       <span style={{
                         display: 'inline-flex',
@@ -1403,7 +1415,7 @@ export default function Rankings() {
                     </div>
                   </div>
 
-                  <div style={freeVoteZoneStyle}>
+                  <div className="ranking-card-votes" style={freeVoteZoneStyle}>
                     <button onClick={() => openVoteModal(item.id, 'like')}
                       style={{ ...compactActionButtonStyle, color: myVote?.vote_type === 'like' ? '#8f3732' : 'rgba(71,85,105,0.66)' }}>
                       {myVote?.vote_type === 'like' ? '已同意' : '同意'} {agreeCount(item)}

@@ -521,19 +521,21 @@ export default function DmWall() {
             style={{ minWidth: 0 }}
           />
           <input className="dm-filter-query" value={query} onChange={event => { setQuery(event.target.value); resetDirectoryPage(); }} placeholder="搜索名称、标签或常开剧本" style={{ ...inputStyle, minWidth: 0, width: '100%' }} />
-          <Link className="dm-filter-city-link" to="/reputation/city" style={ghostButton}>看城市口碑</Link>
-          <select aria-label="按标签筛选" value={tagFilter} onChange={event => { setTagFilter(event.target.value); resetDirectoryPage(); }} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
-            <option value="all">全部标签</option>
-            {availableTags.map(tag => <option key={tag.value} value={tag.value}>{tag.label}（{tag.count}）</option>)}
-          </select>
-          <select aria-label="按评价筛选" value={ratingFilter} onChange={event => { setRatingFilter(event.target.value as RatingFilter); resetDirectoryPage(); }} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
-            {RATING_FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-          <select aria-label="选择排序方式" value={sortMode} onChange={event => changeSortMode(event.target.value as DmDossierSortMode)} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
-            {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-          <ChantoSortSwitch checked={chantoFirst} onChange={changeChantoFirst} />
-          <ViewModeSwitch value={viewMode} onChange={value => { setViewMode(value); setSelectedId(''); setDetailDismissed(false); }} />
+          <div className="dm-filter-advanced" aria-label="更多筛选">
+            <Link className="dm-filter-city-link" to="/reputation/city" style={ghostButton}>看城市口碑</Link>
+            <select aria-label="按标签筛选" value={tagFilter} onChange={event => { setTagFilter(event.target.value); resetDirectoryPage(); }} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
+              <option value="all">全部标签</option>
+              {availableTags.map(tag => <option key={tag.value} value={tag.value}>{tag.label}（{tag.count}）</option>)}
+            </select>
+            <select aria-label="按评价筛选" value={ratingFilter} onChange={event => { setRatingFilter(event.target.value as RatingFilter); resetDirectoryPage(); }} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
+              {RATING_FILTERS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <select aria-label="选择排序方式" value={sortMode} onChange={event => changeSortMode(event.target.value as DmDossierSortMode)} style={{ ...inputStyle, minWidth: 0, width: '100%' }}>
+              {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <ChantoSortSwitch checked={chantoFirst} onChange={changeChantoFirst} />
+            <ViewModeSwitch value={viewMode} onChange={value => { setViewMode(value); setSelectedId(''); setDetailDismissed(false); }} />
+          </div>
           <span className="dm-filter-count" style={{ color: MUTED, fontSize: 12, marginLeft: 'auto' }}>共 {visibleItems.length} 个档案</span>
         </div>
       </section>

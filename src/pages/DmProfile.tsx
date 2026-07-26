@@ -201,7 +201,7 @@ export default function DmProfile() {
       </section>
 
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '22px 20px 72px', display: 'grid', gap: 16 }}>
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 10 }}>
+        <section className="dm-profile-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 10 }}>
           <Stat label="综合评分" value={scoreText} />
           <Stat label="体验评价" value={`${summary.review_count} 条`} />
           <Stat label="独立玩家" value={`${summary.player_count} 人`} />
@@ -433,6 +433,25 @@ export default function DmProfile() {
             padding-right: 9px !important;
             font-size: 13px !important;
           }
+          .dm-profile-stats {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 7px !important;
+          }
+          .dm-profile-stat {
+            min-width: 0;
+            padding: 9px 8px !important;
+          }
+          .dm-profile-stat-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 10px !important;
+          }
+          .dm-profile-stat-value {
+            margin-top: 3px !important;
+            font-size: 15px !important;
+            white-space: nowrap;
+          }
           .dm-wiki-layout {
             grid-template-columns: 1fr !important;
           }
@@ -509,7 +528,7 @@ function formatCareerRange(start?: string | null, end?: string | null) {
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
-  return <div style={{ padding: 14, border: '1px solid rgba(31,41,55,0.09)', borderRadius: 8, background: '#fff' }}><div style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{label}</div><div style={{ marginTop: 6, fontSize: 20, fontWeight: 900 }}>{value}</div></div>;
+  return <div className="dm-profile-stat" style={{ padding: 14, border: '1px solid rgba(31,41,55,0.09)', borderRadius: 8, background: '#fff' }}><div className="dm-profile-stat-label" style={{ color: MUTED, fontSize: 12, fontWeight: 800 }}>{label}</div><div className="dm-profile-stat-value" style={{ marginTop: 6, fontSize: 20, fontWeight: 900 }}>{value}</div></div>;
 }
 
 function affiliationBadgeStyle(status: 'approved' | 'pending' | 'legacy_unverified' | 'freelance' | 'unknown') {
