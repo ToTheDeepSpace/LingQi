@@ -39,7 +39,7 @@
     "react-calendar": "^6.0.1",
     "react-dom": "^19.2.5",
     "react-force-graph-2d": "^1.29.1",
-    "react-router-dom": "^7.14.2",
+    "react-router-dom": "^7.18.1",
     "sharp": "^0.35.2",
     "tailwindcss": "^4.2.4",
     "tencentcloud-sdk-nodejs": "^4.1.242"
