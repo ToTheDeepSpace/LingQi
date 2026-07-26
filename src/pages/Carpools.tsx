@@ -15,6 +15,7 @@ import {
 } from '../components/JumuluPageChrome';
 import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
+import './Carpools.css';
 
 const API = '/api';
 const GOLD = '#d9a857';
@@ -129,7 +130,7 @@ export default function Carpools() {
   }, [city, date, script]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadPublic(), 0);
+    const timer = window.setTimeout(() => void loadPublic(), 250);
     return () => window.clearTimeout(timer);
   }, [loadPublic]);
 
@@ -332,17 +333,17 @@ export default function Carpools() {
           </section>
         )}
 
-        <section style={jumuluFilterPanelStyle}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignItems: 'end' }}>
-            <div>
+        <section className="carpool-filter-panel" style={jumuluFilterPanelStyle}>
+          <div className="carpool-filter-grid">
+            <div className="carpool-filter-field carpool-filter-field--date">
               <Label>日期</Label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
             </div>
-            <div>
+            <div className="carpool-filter-field carpool-filter-field--script">
               <Label>剧本</Label>
               <input value={script} onChange={e => setScript(e.target.value)} placeholder="搜剧本名" style={inputStyle} />
             </div>
-            <div style={{ position: 'relative' }}>
+            <div className="carpool-filter-field carpool-filter-field--city">
               <Label>城市</Label>
               <button onClick={() => setCityOpen(!cityOpen)} style={{ ...inputStyle, textAlign: 'left', cursor: 'pointer' }}>
                 📍 {city === 'all' ? '全部城市' : city}
@@ -354,14 +355,13 @@ export default function Carpools() {
                 </div>
               )}
             </div>
-            <div>
+            <div className="carpool-filter-field carpool-filter-field--status">
               <Label>状态</Label>
               <div style={viewSwitchStyle} role="group" aria-label="拼车状态">
                 <ViewButton active={view === 'active'} onClick={() => setView('active')}>招募中 {activeItems.length}</ViewButton>
                 <ViewButton active={view === 'expired'} onClick={() => setView('expired')}>已过期 {expiredItems.length}</ViewButton>
               </div>
             </div>
-            <button onClick={() => void loadPublic()} style={{ ...jumuluPrimaryLinkStyle, width: '100%', minHeight: 44 }}>筛选</button>
           </div>
         </section>
 

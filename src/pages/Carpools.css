@@ -1,0 +1,41 @@
+.carpool-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.carpool-filter-field--city {
+  position: relative;
+}
+
+@media (max-width: 720px) {
+  .carpool-filter-panel {
+    padding: 12px !important;
+  }
+
+  .carpool-filter-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .carpool-filter-field--date {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .carpool-filter-field--city {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .carpool-filter-field--script {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .carpool-filter-field--status {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+}

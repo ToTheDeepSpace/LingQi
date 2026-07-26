@@ -18,6 +18,7 @@ const received = ref<CarpoolApplication[]>([])
 const loading = ref(false)
 const error = ref('')
 const query = ref('')
+const filterDate = ref('')
 const city = ref(String(uni.getStorageSync(CITY_KEY) || '全部城市'))
 const expandedIds = ref<string[]>([])
 const authId = computed(() => readAuth()?.id || '')
@@ -25,6 +26,7 @@ const authId = computed(() => readAuth()?.id || '')
 const visibleItems = computed(() => carpools.value.filter(item =>
   !item.is_expired
   && (city.value === '全部城市' || item.city === city.value)
+  && (!filterDate.value || String(item.event_date || '').slice(0, 10) === filterDate.value)
   && (!query.value.trim() || [item.title, item.script_name, item.role_name, item.content]
     .join(' ')
     .toLocaleLowerCase('zh-CN')
@@ -57,6 +59,12 @@ async function load() {
 function selectCity(value: string) {
   city.value = value || '全部城市'
   uni.setStorageSync(CITY_KEY, city.value)
+}
+function selectDate(event: { detail: { value: string } }) {
+  filterDate.value = String(event.detail.value || '')
+}
+function clearDate() {
+  filterDate.value = ''
 }
 function isExpanded(id: string) { return expandedIds.value.includes(id) }
 function hasLongDetails(item: Carpool) {
@@ -125,7 +133,13 @@ onPullDownRefresh(load)
     <template v-if="view === 'discover'">
       <view class="filter page-tools">
         <CitySearchPicker :value="city" @change="selectCity" />
-        <input v-model="query" class="input" placeholder="搜索剧本或角色" />
+        <view class="date-control">
+          <picker mode="date" :value="filterDate" @change="selectDate">
+            <view class="input date-picker">{{ filterDate || '全部日期' }}</view>
+          </picker>
+          <text v-if="filterDate" class="date-clear" @tap.stop="clearDate">×</text>
+        </view>
+        <input v-model="query" class="input filter-search" placeholder="搜索剧本或角色" />
       </view>
       <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visibleItems.length" empty-text="暂时没有符合条件的拼车" @retry="load" />
       <view v-for="item in visibleItems" :key="item.id" class="listing surface">
@@ -159,7 +173,11 @@ onPullDownRefresh(load)
 .view-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8rpx; margin: 0 0 14rpx; }
 .view-tabs button { min-height: 64rpx; margin: 0; border: 0; border-radius: 8rpx; background: #f4f5f7; color: #64748b; font-size: 24rpx; line-height: 64rpx; }
 .view-tabs button.active { background: #fff1d5; color: #8b5919; font-weight: 850; }
-.filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
+.filter { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; }
+.date-control { position: relative; min-width: 0; }
+.date-picker { overflow: hidden; padding-right: 50rpx; color: #475569; text-overflow: ellipsis; white-space: nowrap; }
+.date-clear { position: absolute; z-index: 2; top: 0; right: 0; display: flex; width: 52rpx; height: 100%; align-items: center; justify-content: center; color: #64748b; font-size: 30rpx; }
+.filter-search { grid-column: 1 / -1; }
 .listing, .inbox { margin-bottom: 14rpx; padding: 20rpx; border: 1rpx solid #e5e8ed; }
 .listing__top { display: flex; justify-content: space-between; gap: 14rpx; }
 .listing__top-actions { display: flex; align-items: center; gap: 4rpx; }
