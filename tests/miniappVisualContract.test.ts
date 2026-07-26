@@ -72,3 +72,13 @@ test('renders public dossier directories in bounded batches', () => {
     assert.match(source, /watch\(\[query, city\]/);
   }
 });
+
+test('keeps the ranking feed bounded and moves persistent notices behind an explicit action', () => {
+  const source = read('miniapp/jumulu/src/pages/rankings/index.vue');
+
+  assert.match(source, /const PAGE_SIZE = 12/);
+  assert.match(source, /\.slice\(0, displayLimit\.value\)/);
+  assert.match(source, /继续加载/);
+  assert.match(source, /ⓘ 发布须知/);
+  assert.doesNotMatch(source, /class="responsibility"/);
+});

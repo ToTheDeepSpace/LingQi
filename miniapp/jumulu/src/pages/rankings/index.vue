@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
@@ -15,11 +15,16 @@ const error = ref('')
 const type = ref<'all' | 'red' | 'black' | 'white'>('all')
 const city = ref(String(uni.getStorageSync(CITY_KEY) || '全部城市'))
 const query = ref('')
+const PAGE_SIZE = 12
+const displayLimit = ref(PAGE_SIZE)
 const typeOptions: Array<{ v: 'all' | 'red' | 'black' | 'white'; l: string }> = [{ v: 'all', l: '全部' }, { v: 'red', l: '红榜' }, { v: 'black', l: '黑榜' }, { v: 'white', l: '白榜' }]
 const visible = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   return items.value.filter(item => (type.value === 'all' || item.type === type.value) && (city.value === '全部城市' || item.subject_city === city.value) && (!keyword || [item.subject_name, item.content, item.event_script_name, item.event_store_name].join(' ').toLocaleLowerCase('zh-CN').includes(keyword)))
 })
+const displayedItems = computed(() => visible.value.slice(0, displayLimit.value))
+
+watch([type, city, query], () => { displayLimit.value = PAGE_SIZE })
 
 async function load() {
   loading.value = true; error.value = ''
@@ -31,6 +36,15 @@ function selectCity(value: string) { city.value = value || '全部城市'; uni.s
 function selectType(value: 'all' | 'red' | 'black' | 'white') { type.value = value }
 function openRanking(id: string) { uni.navigateTo({ url: `/pages/rankings/detail?id=${encoded(id)}` }) }
 function createRanking() { uni.navigateTo({ url: '/pages/rankings/create' }) }
+function loadMore() { displayLimit.value += PAGE_SIZE }
+function showRules() {
+  uni.showModal({
+    title: '发布须知',
+    content: '互联网不是法外之地。请基于真实体验发布，对事实、证据、第三方隐私打码和言论后果负责。公开内容会进入平台审核，并保留举报和追溯机制。',
+    showCancel: false,
+    confirmText: '我知道了',
+  })
+}
 onShow(() => { void load() })
 onPullDownRefresh(load)
 </script>
@@ -48,9 +62,13 @@ onPullDownRefresh(load)
       </view>
       <button class="primary-button publish" @tap="createRanking">发布红黑榜</button>
     </view>
-    <view class="responsibility">互联网不是法外之地。发布者对事实、证据、隐私打码和言论后果负责。</view>
+    <view v-if="!loading && !error" class="result-row">
+      <text>共 {{ visible.length }} 条</text>
+      <text class="rules-entry" @tap="showRules">ⓘ 发布须知</text>
+    </view>
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visible.length" empty-text="当前筛选下没有口碑事件" @retry="load" />
-    <RankingCard v-for="item in visible" :key="item.id" :item="item" @open="openRanking(item.id)" />
+    <RankingCard v-for="item in displayedItems" :key="item.id" :item="item" @open="openRanking(item.id)" />
+    <button v-if="displayedItems.length < visible.length" class="secondary-button load-more" @tap="loadMore">继续加载 {{ Math.min(PAGE_SIZE, visible.length - displayedItems.length) }} 条</button>
   </view>
 </template>
 
@@ -60,5 +78,7 @@ onPullDownRefresh(load)
 .type-tab.active { background: #f3e4c9; color: #8b5919; }
 .filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
 .publish { width: 100%; margin: 12rpx 0 0; }
-.responsibility { margin: 0 2rpx 14rpx; color: #7f1d1d; font-size: 22rpx; line-height: 1.5; }
+.result-row { display: flex; align-items: center; justify-content: space-between; margin: 0 4rpx 14rpx; color: #7b8492; font-size: 22rpx; }
+.rules-entry { color: #275389; font-weight: 750; }
+.load-more { width: 100%; margin: 4rpx 0 18rpx; }
 </style>
