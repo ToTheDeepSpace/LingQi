@@ -223,7 +223,7 @@ export default function StoreRating() {
         </label>
 
         <div style={submitRowStyle}>
-          <Link to="/stores" style={jumuluSecondaryLinkStyle}>返回店家列表</Link>
+          <Link to="/stores" style={jumuluSecondaryLinkStyle}>取消评分</Link>
           <button type="submit" disabled={submitting || loading || rating === 0 || (!createNewStore && !storeId)} style={{ ...jumuluPrimaryLinkStyle, opacity: submitting || loading || rating === 0 || (!createNewStore && !storeId) ? 0.5 : 1 }}>
             {submitting ? '提交中...' : auth?.token ? '提交审核' : '登录后提交'}
           </button>

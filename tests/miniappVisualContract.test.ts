@@ -186,6 +186,7 @@ test('keeps rating publishers on one page-level back action and the compact head
   const role = read('src/pages/RateScriptRole.tsx');
 
   assert.doesNotMatch(store, />返回店家评分<\/Link>/);
+  assert.match(store, />取消评分<\/Link>/);
   assert.doesNotMatch(role, />返回角色评分<\/Link>/);
   assert.match(store, /JumuluCompactHeader/);
   assert.match(role, /JumuluCompactHeader/);
