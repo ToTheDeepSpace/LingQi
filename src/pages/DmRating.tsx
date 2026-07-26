@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type React from 'react';
 import CitySearchSelect from '../components/CitySearchSelect';
 import ImageUpload from '../components/ImageUpload';
+import MobileTaskAction from '../components/MobileTaskAction';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { CHANTO_FREEZE_DAYS, CHANTO_MAX_AMOUNT } from '../lib/chanto';
 
@@ -209,7 +210,7 @@ export default function DmRating() {
         </div>
       </section>
 
-      <form onSubmit={submit} style={{ maxWidth: 940, margin: '0 auto', padding: '24px 20px 72px', display: 'grid', gap: 16 }}>
+      <form id="dm-rating-form" onSubmit={submit} style={{ maxWidth: 940, margin: '0 auto', padding: '24px 20px 72px', display: 'grid', gap: 16 }}>
         {message && <Notice value={message} />}
         <Section title="1. 选择 DM" description="优先关联库里已有的DM；没找到时直接创建待审档案。">
           <div style={switchStyle}>
@@ -324,6 +325,11 @@ export default function DmRating() {
           </button>
         </div>
       </form>
+      <MobileTaskAction
+        form="dm-rating-form"
+        label={submitting ? '提交中...' : auth ? '提交审核' : '登录后提交'}
+        disabled={submitting || loading || rating === 0}
+      />
     </main>
   );
 }

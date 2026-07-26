@@ -3,6 +3,7 @@ import type React from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import CitySearchSelect from '../components/CitySearchSelect';
 import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
+import MobileTaskAction from '../components/MobileTaskAction';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { jumuluCardStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 
@@ -146,7 +147,7 @@ export default function StoreRating() {
         description="日期、剧本和体验理由用于说明这次真实到店；综合分按独立玩家计算，多次到店不会重复增加个人权重。"
       />
 
-      <form onSubmit={submit} style={formStyle}>
+      <form id="store-rating-form" onSubmit={submit} style={formStyle}>
         {message && <Notice value={message} />}
 
         <Section title="1. 选择店家" description="优先关联已有店家；库里没有时直接提交待审店家档案。">
@@ -229,6 +230,11 @@ export default function StoreRating() {
           </button>
         </div>
       </form>
+      <MobileTaskAction
+        form="store-rating-form"
+        label={submitting ? '提交中...' : auth?.token ? '提交审核' : '登录后提交'}
+        disabled={submitting || loading || rating === 0 || (!createNewStore && !storeId)}
+      />
     </JumuluPageFrame>
   );
 }

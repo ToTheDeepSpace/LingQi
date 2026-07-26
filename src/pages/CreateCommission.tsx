@@ -5,6 +5,7 @@ import type { AuthData, ScriptCatalogItem } from '../types';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import InfoTip from '../components/InfoTip';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
+import MobileTaskAction from '../components/MobileTaskAction';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
@@ -358,6 +359,11 @@ export default function CreateCommission() {
           </div>
         </div>
       </div>
+      <MobileTaskAction
+        label={submitting ? '提交中...' : '提交审核'}
+        disabled={submitting}
+        onClick={() => void submit()}
+      />
     </div>
   );
 }

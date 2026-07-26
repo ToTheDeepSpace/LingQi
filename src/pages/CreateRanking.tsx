@@ -3,6 +3,7 @@ import type React from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PROVINCE_CITIES } from '../constants/cities';
 import { RESPONSIBILITY_TEXT } from '../components/ResponsibilityNotice';
+import MobileTaskAction from '../components/MobileTaskAction';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import './CreateRanking.css';
@@ -603,6 +604,13 @@ export default function CreateRanking() {
           </div>
         )}
       </section>
+      {!done && (
+        <MobileTaskAction
+          label={submitting ? '提交中...' : !rulesAccepted ? '请先确认发布规则' : resubmitId ? '重新提交审核' : `免费发布${type === 'red' ? '红榜' : type === 'black' ? '黑榜' : '白榜'}`}
+          disabled={submitting || !rulesAccepted}
+          onClick={() => void submit()}
+        />
+      )}
     </main>
   );
 }

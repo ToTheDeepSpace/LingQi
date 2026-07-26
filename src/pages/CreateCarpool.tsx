@@ -6,6 +6,7 @@ import { formatDetailedSubsidy, generateCarpoolMessage, parseCarpoolMessage } fr
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
 import InfoTip from '../components/InfoTip';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
+import MobileTaskAction from '../components/MobileTaskAction';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
@@ -834,6 +835,11 @@ export default function CreateCarpool() {
           </button>
         </div>
       </div>
+      <MobileTaskAction
+        label={submitting ? '发布中...' : boostAmount > 0 ? `发布拼车 · 扣 ${boostAmount} 榜金` : '发布拼车'}
+        disabled={submitting}
+        onClick={() => void submit()}
+      />
     </div>
   );
 }
