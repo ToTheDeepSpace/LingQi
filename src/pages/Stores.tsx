@@ -68,6 +68,8 @@ export default function Stores() {
   const sortedItems = useMemo(() => [...items].sort((left, right) => {
     const players = Number(right.rating_summary?.player_count || 0) - Number(left.rating_summary?.player_count || 0);
     if (players) return players;
+    const reviews = Number(right.rating_summary?.review_count || 0) - Number(left.rating_summary?.review_count || 0);
+    if (reviews) return reviews;
     const score = Number(right.rating_summary?.avg || 0) - Number(left.rating_summary?.avg || 0);
     if (score) return score;
     return left.dm_name.localeCompare(right.dm_name, 'zh-CN');

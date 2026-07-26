@@ -21,7 +21,17 @@ const PAGE_SIZE = 20
 const displayLimit = ref(PAGE_SIZE)
 const visible = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
-  return items.value.filter(item => (city.value === '全部城市' || item.city === city.value) && (!keyword || [item.dm_name, item.city, item.workplace, item.note, ...(item.tags || [])].join(' ').toLocaleLowerCase('zh-CN').includes(keyword)))
+  return items.value
+    .filter(item => (city.value === '全部城市' || item.city === city.value) && (!keyword || [item.dm_name, item.city, item.workplace, item.note, ...(item.tags || [])].join(' ').toLocaleLowerCase('zh-CN').includes(keyword)))
+    .sort((left, right) => {
+      const players = Number(right.rating_summary?.player_count || 0) - Number(left.rating_summary?.player_count || 0)
+      if (players) return players
+      const reviews = Number(right.rating_summary?.review_count || 0) - Number(left.rating_summary?.review_count || 0)
+      if (reviews) return reviews
+      const score = Number(right.rating_summary?.avg || 0) - Number(left.rating_summary?.avg || 0)
+      if (score) return score
+      return left.dm_name.localeCompare(right.dm_name, 'zh-CN')
+    })
 })
 const displayedItems = computed(() => visible.value.slice(0, displayLimit.value))
 
