@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ProfileNameLink from '../components/ProfileNameLink';
+import ReportFlagButton from '../components/ReportFlagButton';
 import { ReputationHubShell } from '../components/ReputationHubChrome';
 import { readStoredCreatorAuth } from '../lib/authSession';
 
@@ -98,17 +99,23 @@ export default function RankingDetail() {
 
   return (
     <ReputationHubShell active="rankings" currentLabel="榜单详情">
-      <Link to="/rankings" style={backLinkStyle}>返回红黑榜</Link>
-
       {loading && <StatePanel>正在加载完整内容...</StatePanel>}
       {!loading && error && <StatePanel tone="error">{error}</StatePanel>}
 
       {!loading && !error && ranking && (
         <div className="ranking-detail-layout" style={layoutStyle}>
-          <article style={{ ...articleStyle, borderColor: kind.border }}>
+          <article className="ranking-detail-article" style={{ ...articleStyle, borderColor: kind.border }}>
             <div style={articleHeaderStyle}>
               <span style={{ ...kindBadgeStyle, color: kind.color, background: kind.background, borderColor: kind.border }}>{kind.label}</span>
-              <span style={dateStyle}>更新于 {formatDate(ranking.last_activity_at || ranking.created_at)}</span>
+              <div style={articleMetaActionsStyle}>
+                <span style={dateStyle}>更新于 {formatDate(ranking.last_activity_at || ranking.created_at)}</span>
+                <ReportFlagButton
+                  targetType="ranking"
+                  targetId={ranking.id}
+                  targetTitle={ranking.subject_name}
+                  ownerId={ranking.poster_id}
+                />
+              </div>
             </div>
 
             <div style={subjectLineStyle}>
@@ -164,8 +171,8 @@ export default function RankingDetail() {
             )}
           </article>
 
-          <aside style={sideStyle}>
-            <section style={statsStyle}>
+          <aside className="ranking-detail-side" style={sideStyle}>
+            <section className="ranking-detail-stats" style={statsStyle}>
               <h2 style={sideTitleStyle}>公开反馈</h2>
               <div style={statGridStyle}>
                 <Stat label="同意" value={ranking.agree_count || 0} />
@@ -178,7 +185,7 @@ export default function RankingDetail() {
             </section>
           </aside>
 
-          <section style={commentsStyle}>
+          <section className="ranking-detail-comments" style={commentsStyle}>
             <div style={commentsHeaderStyle}>
               <h2 style={sideTitleStyle}>公开评论</h2>
               <span style={dateStyle}>{comments.length} 条</span>
@@ -204,6 +211,21 @@ export default function RankingDetail() {
         @media (max-width: 760px) {
           .ranking-detail-layout {
             grid-template-columns: minmax(0, 1fr) !important;
+            gap: 8px !important;
+          }
+          .ranking-detail-article {
+            border-right: 0 !important;
+            border-left: 0 !important;
+            border-radius: 0 !important;
+            padding: 12px 4px !important;
+          }
+          .ranking-detail-stats,
+          .ranking-detail-comments {
+            border-right: 0 !important;
+            border-left: 0 !important;
+            border-radius: 0 !important;
+            padding-right: 4px !important;
+            padding-left: 4px !important;
           }
           .ranking-version-diff {
             grid-template-columns: minmax(0, 1fr) !important;
@@ -257,10 +279,10 @@ function StatePanel({ children, tone = 'normal' }: { children: React.ReactNode; 
   return <section style={{ ...stateStyle, color: tone === 'error' ? '#b91c1c' : INK }}>{children}</section>;
 }
 
-const backLinkStyle: React.CSSProperties = { width: 'fit-content', color: BLUE, fontSize: 13, fontWeight: 900, textDecoration: 'none' };
 const layoutStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(220px, 300px)', gap: 12, alignItems: 'start' };
 const articleStyle: React.CSSProperties = { minWidth: 0, border: '1px solid', borderRadius: 8, padding: 18, background: '#fff' };
 const articleHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 };
+const articleMetaActionsStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 };
 const kindBadgeStyle: React.CSSProperties = { display: 'inline-flex', border: '1px solid', borderRadius: 999, padding: '3px 9px', fontSize: 11, fontWeight: 950 };
 const dateStyle: React.CSSProperties = { color: MUTED, fontSize: 12 };
 const subjectLineStyle: React.CSSProperties = { display: 'flex', gap: 7, alignItems: 'baseline', flexWrap: 'wrap', marginTop: 14, color: MUTED, fontSize: 12, fontWeight: 750 };
