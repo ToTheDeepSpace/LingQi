@@ -87,6 +87,18 @@ test('keeps the miniapp DM directory sorting aligned with the website without mi
   assert.match(sorter, /Number\(hasPhoto\(left\)\).*Number\(hasPhoto\(right\)\)/);
 });
 
+test('shows the same DM identity and affiliation trust semantics on the miniapp detail', () => {
+  const detail = read('miniapp/jumulu/src/pages/dm/detail.vue');
+  const presentation = read('miniapp/jumulu/src/utils/dossierPresentation.ts');
+
+  assert.match(detail, /dossierClaimLabel/);
+  assert.match(detail, /dossierAffiliationLabel/);
+  assert.match(detail, /class="status-row"/);
+  assert.match(presentation, /DM 身份已认证/);
+  assert.match(presentation, /暂无已确认店家/);
+  assert.match(presentation, /社区提供：任职于/);
+});
+
 test('keeps the ranking feed bounded and moves persistent notices behind an explicit action', () => {
   const source = read('miniapp/jumulu/src/pages/rankings/index.vue');
 

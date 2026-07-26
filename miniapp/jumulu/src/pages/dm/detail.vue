@@ -6,6 +6,7 @@ import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { DossierDetail } from '../../types'
 import { apiRequest, encoded, readAuth } from '../../utils/api'
+import { dossierAffiliationLabel, dossierClaimLabel } from '../../utils/dossierPresentation'
 import { dateText, ratingText } from '../../utils/format'
 
 const id = ref('')
@@ -22,6 +23,8 @@ const photos = computed(() => {
 const activePhoto = computed(() => photos.value[Math.min(selectedPhoto.value, photos.value.length - 1)] || null)
 const age = computed(() => data.value?.dossier.birth_year ? new Date().getFullYear() - Number(data.value.dossier.birth_year) : null)
 const tags = computed(() => Array.from(new Set([...(data.value?.dossier.tags || []), ...(data.value?.dossier.rating_tags || [])])))
+const claimLabel = computed(() => dossierClaimLabel(data.value?.dossier.claim_status))
+const affiliationLabel = computed(() => data.value ? dossierAffiliationLabel(data.value.dossier) : '')
 
 async function load() {
   if (!id.value) return
@@ -63,10 +66,13 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
         </scroll-view>
         <view v-if="activePhoto" class="media-report"><ReportFlag target-type="dossier_image" :target-id="data.dossier.id" :target-sub-id="`photo:${selectedPhoto}`" :title="`${data.dossier.dm_name}的第 ${selectedPhoto + 1} 张图片`" :own="data.dossier.claimed_by === readAuth()?.id" /></view>
         <view class="hero__info">
+          <view class="status-row">
+            <text class="status-badge" :class="{ verified: data.dossier.claim_status === 'approved' }">{{ claimLabel }}</text>
+            <text class="affiliation-badge">{{ affiliationLabel }}</text>
+          </view>
           <view class="hero__title-row"><text class="hero__name">{{ data.dossier.dm_name }}</text><ReportFlag target-type="dossier" :target-id="data.dossier.id" :title="`${data.dossier.dm_name}的 DM 档案`" :own="data.dossier.claimed_by === readAuth()?.id" /></view>
           <text class="hero__meta">{{ data.dossier.city || '城市待补充' }}</text>
-          <text v-if="data.dossier.affiliation?.store_name" class="hero__store" @tap="goStore">{{ data.dossier.affiliation.store_name }} ›</text>
-          <text v-else class="hero__meta">{{ data.dossier.employment_status === 'freelance' ? '自由 DM' : data.dossier.workplace || '任职资料待补充' }}</text>
+          <text v-if="data.dossier.affiliation?.store_dossier_id" class="hero__store" @tap="goStore">查看任职店家 ›</text>
           <view class="score-row">
             <text class="score">{{ ratingText(data.summary.avg) }}</text>
             <text class="score-meta">{{ data.summary.player_count }} 位玩家 · {{ data.summary.review_count }} 次体验</text>
@@ -126,6 +132,11 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 .thumb.active { border-color: #b9781f; }
 .media-report { display: flex; justify-content: flex-end; padding: 0 14rpx; }
 .hero__info { padding: 22rpx; }
+.status-row { display: flex; align-items: center; gap: 10rpx; margin-bottom: 13rpx; overflow: hidden; }
+.status-badge, .affiliation-badge { min-width: 0; overflow: hidden; border: 1rpx solid #dce3ec; border-radius: 7rpx; padding: 7rpx 11rpx; color: #526174; font-size: 20rpx; font-weight: 800; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.status-badge { flex: 0 0 auto; }
+.status-badge.verified { border-color: #ead8ad; background: #fff8e8; color: #8a5a19; }
+.affiliation-badge { background: #f8fafc; }
 .hero__title-row, .review__head-actions { display: flex; align-items: center; justify-content: space-between; gap: 10rpx; }
 .hero__name, .hero__meta, .hero__store { display: block; }
 .hero__name { color: #1f2937; font-family: serif; font-size: 46rpx; font-weight: 900; }
