@@ -480,8 +480,9 @@ body {
 
 .site-feedback-float {
   position: fixed;
-  top: 52%;
+  top: auto;
   right: 14px;
+  bottom: 18px;
   z-index: 55;
   width: 44px;
   min-height: 34px;
@@ -499,7 +500,7 @@ body {
   font-size: 12px;
   font-weight: 850;
   line-height: 1.25;
-  transform: translateY(-50%);
+  transform: none;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
