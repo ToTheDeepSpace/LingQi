@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
@@ -7,13 +7,21 @@ import StatePanel from '../../components/StatePanel.vue'
 import type { ProviderListing } from '../../types'
 import { apiRequest, encoded, readAuth, requestServicePayment, requireLogin, type ServicePurchase } from '../../utils/api'
 
-type Profile = { id: string; display_name: string; avatar?: string | null; avatar_focus_x?: number | null; avatar_focus_y?: number | null; city?: string | null; bio?: string | null; tags?: string[]; identity_roles?: string[]; services?: Array<{ id: string; service_type?: string; price?: number; description?: string }>; portfolio?: Array<{ id: string; image_url: string; caption?: string }>; provider_listing?: ProviderListing | null }
+type SocialPlatform = 'douyin' | 'xiaohongshu'
+type Profile = { id: string; display_name: string; avatar?: string | null; avatar_focus_x?: number | null; avatar_focus_y?: number | null; city?: string | null; bio?: string | null; tags?: string[]; identity_roles?: string[]; social_links?: Partial<Record<SocialPlatform, string>>; services?: Array<{ id: string; service_type?: string; price?: number; description?: string }>; portfolio?: Array<{ id: string; image_url: string; caption?: string }>; provider_listing?: ProviderListing | null }
 const id = ref('')
 const profile = ref<Profile | null>(null)
 const loading = ref(false)
 const error = ref('')
 const inquiryBusy = ref(false)
 const roleText: Record<string, string> = { player: '玩家', dm: 'DM', shop: '店家', store: '店家', creator: '服务者', photographer: '摄影师', makeup: '妆造师', costume: '服装商', prop: '道具师' }
+const socialVisual: Record<SocialPlatform, { label: string; glyph: string }> = {
+  douyin: { label: '抖音', glyph: '♪' },
+  xiaohongshu: { label: '小红书', glyph: '书' },
+}
+const socialEntries = computed(() => (Object.entries(profile.value?.social_links || {}) as Array<[SocialPlatform, string]>)
+  .filter(([platform, url]) => platform in socialVisual && typeof url === 'string' && url.trim())
+  .map(([platform, url]) => ({ platform, url: url.trim(), ...socialVisual[platform] })))
 async function load() {
   loading.value = true; error.value = ''
   try { profile.value = await apiRequest<Profile>(`/lc/creators/${encoded(id.value)}`) }
@@ -24,6 +32,12 @@ function previewAvatar() { if (profile.value?.avatar) uni.previewImage({ urls: [
 function previewPortfolio(current: string) { uni.previewImage({ current, urls: (profile.value?.portfolio || []).map(item => item.image_url) }) }
 function previewListing() { if (profile.value?.provider_listing?.poster_url) uni.previewImage({ urls: [profile.value.provider_listing.poster_url] }) }
 function editListing() { uni.navigateTo({ url: '/pages/commissions/provider-edit' }) }
+function openSocial(url: string, label: string) {
+  uni.setClipboardData({
+    data: url,
+    success: () => uni.showToast({ title: `已复制${label}链接，请前往${label}打开`, icon: 'none' }),
+  })
+}
 async function openInquiry() {
   if (readAuth()?.id === id.value) return editListing()
   if (inquiryBusy.value) return
@@ -84,6 +98,15 @@ onShareAppMessage(() => ({ title: `${profile.value?.display_name || '用户'}｜
         <view class="name-row"><text class="name">{{ profile.display_name }}</text><ReportFlag target-type="profile" :target-id="profile.id" :title="`${profile.display_name}的主页`" :own="readAuth()?.id === profile.id" /></view>
         <text class="city">{{ profile.city || '城市未设置' }}</text>
         <view v-if="profile.identity_roles?.length" class="chip-row roles"><text v-for="role in profile.identity_roles" :key="role" class="chip">{{ roleText[role] || role }}</text></view>
+        <view v-if="socialEntries.length" class="social-row" aria-label="社交主页">
+          <button
+            v-for="item in socialEntries"
+            :key="item.platform"
+            :class="['social-link', `social-link--${item.platform}`]"
+            :aria-label="`${item.label}主页，点击复制链接`"
+            @tap="openSocial(item.url, item.label)"
+          >{{ item.glyph }}</button>
+        </view>
       </view>
       <view v-if="profile.bio || profile.tags?.length" class="section surface">
         <text class="section__title">个人简介</text>
@@ -119,6 +142,11 @@ onShareAppMessage(() => ({ title: `${profile.value?.display_name || '用户'}｜
 .name { font-family: serif; font-size: 42rpx; font-weight: 900; }
 .city { margin-top: 7rpx; color: #64748b; font-size: 24rpx; }
 .roles { justify-content: center; margin-top: 14rpx; }
+.social-row { display: flex; justify-content: center; gap: 10rpx; margin-top: 12rpx; }
+.social-link { display: flex; align-items: center; justify-content: center; width: 58rpx; min-width: 58rpx; height: 58rpx; margin: 0; padding: 0; border: 0; border-radius: 8rpx; color: #fff; font-size: 25rpx; font-weight: 900; line-height: 1; }
+.social-link::after { display: none; }
+.social-link--douyin { background: #151515; }
+.social-link--xiaohongshu { background: #ff2442; }
 .section { margin-top: 14rpx; padding: 20rpx; }
 .section__title, .bio { display: block; }
 .section__title { margin-bottom: 10rpx; font-size: 28rpx; font-weight: 850; }

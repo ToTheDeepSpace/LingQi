@@ -110,6 +110,16 @@ test('keeps stores without a photo compact and exposes claim trust status', () =
   assert.match(presentation, /未认领店家档案/);
 });
 
+test('keeps public social profiles available as compact miniapp actions', () => {
+  const source = read('miniapp/jumulu/src/pages/profile/detail.vue');
+
+  assert.match(source, /social_links/);
+  assert.match(source, /socialEntries/);
+  assert.match(source, /social-link--douyin/);
+  assert.match(source, /social-link--xiaohongshu/);
+  assert.match(source, /setClipboardData/);
+});
+
 test('keeps the ranking feed bounded and moves persistent notices behind an explicit action', () => {
   const source = read('miniapp/jumulu/src/pages/rankings/index.vue');
 
