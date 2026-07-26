@@ -59,3 +59,16 @@ test('keeps long carpool copy compact without discarding the original text', () 
   assert.match(source, /\.listing__content\.collapsed/);
   assert.match(source, /-webkit-line-clamp:\s*3/);
 });
+
+test('renders public dossier directories in bounded batches', () => {
+  for (const path of [
+    'miniapp/jumulu/src/pages/dm/index.vue',
+    'miniapp/jumulu/src/pages/stores/index.vue',
+  ]) {
+    const source = read(path);
+    assert.match(source, /const PAGE_SIZE = 20/);
+    assert.match(source, /\.slice\(0, displayLimit\.value\)/);
+    assert.match(source, /继续加载/);
+    assert.match(source, /watch\(\[query, city\]/);
+  }
+});

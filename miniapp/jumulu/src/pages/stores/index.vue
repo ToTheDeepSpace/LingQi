@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
@@ -17,10 +17,15 @@ const query = ref('')
 const city = ref(String(uni.getStorageSync(CITY_KEY) || '全部城市'))
 const createOpen = ref(false)
 const createInitialName = ref('')
+const PAGE_SIZE = 20
+const displayLimit = ref(PAGE_SIZE)
 const visible = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   return items.value.filter(item => (city.value === '全部城市' || item.city === city.value) && (!keyword || [item.dm_name, item.city, item.workplace, item.note, ...(item.tags || [])].join(' ').toLocaleLowerCase('zh-CN').includes(keyword)))
 })
+const displayedItems = computed(() => visible.value.slice(0, displayLimit.value))
+
+watch([query, city], () => { displayLimit.value = PAGE_SIZE })
 
 async function load() {
   loading.value = true; error.value = ''
@@ -35,6 +40,7 @@ function create(initialName = '') { createInitialName.value = initialName; creat
 function created() {
   uni.showModal({ title: '档案已提交', content: '这份资料已标注为社区提供，后台审核通过后会出现在店家列表。', showCancel: false })
 }
+function loadMore() { displayLimit.value += PAGE_SIZE }
 onShow(() => { if (!items.value.length) void load() })
 onPullDownRefresh(load)
 </script>
@@ -52,20 +58,27 @@ onPullDownRefresh(load)
         <button class="secondary-button" @tap="create(query.trim())">新建店家档案</button>
       </view>
     </view>
+    <view v-if="!loading && !error" class="result-count">
+      <text>{{ visible.length }} 份公开档案</text>
+      <text v-if="displayedItems.length < visible.length">已显示 {{ displayedItems.length }}</text>
+    </view>
     <StatePanel :loading="loading" :error="error" :empty="false" @retry="load" />
     <view v-if="!loading && !error && !visible.length" class="empty">
       <text>没有找到符合条件的店家</text>
       <button class="secondary-button" @tap="create(query.trim())">新建{{ query.trim() ? `“${query.trim()}”` : '' }}档案</button>
     </view>
-    <DossierCard v-for="item in visible" :key="item.id" :item="item" kind="store" @open="openStore(item.id)" />
+    <DossierCard v-for="item in displayedItems" :key="item.id" :item="item" kind="store" @open="openStore(item.id)" />
+    <button v-if="displayedItems.length < visible.length" class="secondary-button load-more" @tap="loadMore">继续加载 {{ Math.min(PAGE_SIZE, visible.length - displayedItems.length) }} 份</button>
     <DossierCreateSheet :open="createOpen" entity-type="store" :initial-name="createInitialName" @close="createOpen = false" @created="created" />
   </view>
 </template>
 
 <style scoped>
 .filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
+.result-count { display: flex; justify-content: space-between; margin: 4rpx 4rpx 14rpx; color: #7b8492; font-size: 22rpx; }
 .empty { margin-bottom: 14rpx; padding: 34rpx 22rpx; color: #7b8492; text-align: center; }
 .empty text { display: block; font-size: 25rpx; }
 .empty button { width: 360rpx; margin: 20rpx auto 0; }
+.load-more { width: 100%; margin: 4rpx 0 18rpx; }
 @media (max-width: 360px) { .filter { grid-template-columns: 1fr; } }
 </style>
