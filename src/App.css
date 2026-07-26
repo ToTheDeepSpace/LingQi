@@ -679,6 +679,26 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
 }
 
+.contact-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  gap: 12px;
+  align-items: start;
+}
+
+.contact-short-fields {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.4fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.contact-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .follow-settings-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
@@ -745,8 +765,14 @@ body {
 
 @media (max-width: 720px) {
   .boundary-topic-grid,
-  .roadmap-note-grid {
+  .roadmap-note-grid,
+  .contact-page-grid,
+  .contact-short-fields {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .contact-form-actions {
+    display: none;
   }
 
   .follow-settings-grid {

@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
+import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
+import MobileTaskAction from '../components/MobileTaskAction';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
+import {
+  jumuluCardStyle,
+  jumuluPrimaryLinkStyle,
+  jumuluSecondaryLinkStyle,
+} from '../styles/jumuluPageStyles';
 
 const API = '/api';
-const GOLD = '#d9a857';
-const BG = '#fffdf8';
-const PANEL = '#fffaf2';
 const TEXT = '#1f2937';
-const MUTED = 'rgba(71,85,105,0.76)';
+const MUTED = '#64748b';
 
 function getAuth(): { token: string; displayName: string } | null {
   const data = readStoredCreatorAuth();
@@ -20,8 +24,8 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
   padding: '12px 14px',
-  borderRadius: 10,
-  border: '1px solid rgba(217,168,87,0.24)',
+  borderRadius: 7,
+  border: '1px solid rgba(31,41,55,0.12)',
   background: '#fff',
   color: TEXT,
   outline: 'none',
@@ -102,26 +106,17 @@ export default function Contact() {
   };
 
   return (
-    <main style={{ minHeight: '100vh', background: BG, color: TEXT }}>
-      <section style={{ background: `linear-gradient(135deg, ${PANEL} 0%, #eef6ff 100%)`, borderBottom: '1px solid rgba(217,168,87,0.18)', padding: '54px 20px 38px' }}>
-        <div style={{ maxWidth: 860, margin: '0 auto' }}>
-          <span style={{ color: GOLD, fontSize: '0.84rem', fontWeight: 900 }}>建议、纠错与申诉</span>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 2.7rem)', margin: '18px 0 12px' }}>建议反馈</h1>
-          <p style={{ color: MUTED, lineHeight: 1.8, maxWidth: 680 }}>
-            功能建议、DM资料纠错、照片或身份申诉、账号问题，都可以在这里提交。
-          </p>
-        </div>
-      </section>
+    <JumuluPageFrame currentLabel="建议反馈" maxWidth={980}>
+      <JumuluCompactHeader
+        eyebrow="建议、纠错与申诉"
+        title="建议反馈"
+        description="提交功能建议、资料纠错、内容申诉、账号问题或合作需求。"
+      />
 
-      <section style={{ maxWidth: 860, margin: '0 auto', padding: '28px 20px 72px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 18 }}>
-        <form onSubmit={submit} style={{ background: '#fff', border: '1px solid rgba(217,168,87,0.22)', borderRadius: 16, padding: 22, boxShadow: '0 14px 34px rgba(31,41,55,0.06)' }}>
-          <h2 style={{ fontSize: '1.05rem', fontWeight: 900, marginBottom: 14 }}>提交反馈</h2>
-          {!auth && (
-            <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(239,246,255,0.92)', color: '#275389', fontSize: '0.86rem', lineHeight: 1.7, marginBottom: 16 }}>
-              站内信需要登录账号。未登录时也可以直接发送邮件到 basara-twenty@foxmail.com。
-            </div>
-          )}
-          <div style={{ marginBottom: 14 }}>
+      <section className="contact-page-grid">
+        <form id="contact-feedback-form" onSubmit={submit} style={formStyle}>
+          <div style={formHeadingStyle}>
+            <h2 style={{ fontSize: 17, fontWeight: 900, margin: 0 }}>提交反馈</h2>
             <DraftAutosaveNotice
               savedAt={contactDraft.savedAt}
               restoredAt={contactDraft.restoredAt}
@@ -129,59 +124,74 @@ export default function Contact() {
               note="未发送的站内信会自动保存到当前浏览器。"
             />
           </div>
-          <div style={{ display: 'grid', gap: 14 }}>
-            <div>
-              <label style={{ display: 'block', color: MUTED, fontSize: '0.78rem', fontWeight: 800, marginBottom: 7 }}>类型</label>
-              <select value={category} onChange={e => setCategory(e.target.value)} style={inputStyle}>
-                <option value="suggestion">功能建议</option>
-                <option value="dm_correction">DM资料纠错</option>
-                <option value="appeal">照片 / 身份 / 内容申诉</option>
-                <option value="bug">故障反馈</option>
-                <option value="account">账号问题</option>
-                <option value="cooperation">合作与共建</option>
-                <option value="general">其他</option>
-              </select>
+          {!auth && (
+            <div style={{ padding: '9px 10px', borderRadius: 7, background: '#eef6ff', color: '#275389', fontSize: 12, lineHeight: 1.55, marginBottom: 12 }}>
+              站内信需要登录账号。未登录时也可以直接发送邮件到 basara-twenty@foxmail.com。
+            </div>
+          )}
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div className="contact-short-fields">
+              <div>
+                <label style={labelStyle}>类型</label>
+                <select value={category} onChange={e => setCategory(e.target.value)} style={inputStyle}>
+                  <option value="suggestion">功能建议</option>
+                  <option value="dm_correction">DM资料纠错</option>
+                  <option value="appeal">照片 / 身份 / 内容申诉</option>
+                  <option value="bug">故障反馈</option>
+                  <option value="account">账号问题</option>
+                  <option value="cooperation">合作与共建</option>
+                  <option value="general">其他</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>标题</label>
+                <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="一句话说明问题" maxLength={80} style={inputStyle} />
+              </div>
             </div>
             <div>
-              <label style={{ display: 'block', color: MUTED, fontSize: '0.78rem', fontWeight: 800, marginBottom: 7 }}>标题</label>
-              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="例如：DM资料重复 / 照片需要隐藏 / 评分页建议" maxLength={80} style={inputStyle} />
+              <label style={labelStyle}>内容</label>
+              <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="写清页面、时间、发生了什么，以及你希望怎么处理。" rows={5} maxLength={2000} style={{ ...inputStyle, resize: 'vertical' }} />
             </div>
             <div>
-              <label style={{ display: 'block', color: MUTED, fontSize: '0.78rem', fontWeight: 800, marginBottom: 7 }}>内容</label>
-              <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="写清楚账号、页面链接、订单号、发生时间和你希望我们怎么处理。" rows={7} maxLength={2000} style={{ ...inputStyle, resize: 'vertical' }} />
-            </div>
-            <div>
-              <label style={{ display: 'block', color: MUTED, fontSize: '0.78rem', fontWeight: 800, marginBottom: 7 }}>补充联系方式（可选）</label>
-              <input value={contact} onChange={e => setContact(e.target.value)} placeholder="邮箱、抖音主页、小红书主页或其他你愿意留下的联系方式" maxLength={300} style={inputStyle} />
+              <label style={labelStyle}>补充联系方式（可选）</label>
+              <input value={contact} onChange={e => setContact(e.target.value)} placeholder="邮箱或社交主页" maxLength={300} style={inputStyle} />
             </div>
           </div>
-          {error && <p style={{ color: '#b91c1c', fontSize: '0.84rem', marginTop: 14 }}>{error}</p>}
-          {msg && <p style={{ color: '#15803d', fontSize: '0.84rem', marginTop: 14 }}>{msg}</p>}
-          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-            <Link to="/" style={{ flex: 1, textAlign: 'center', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(71,85,105,0.16)', color: MUTED, textDecoration: 'none', fontWeight: 800 }}>取消</Link>
+          {error && <p style={{ color: '#b91c1c', fontSize: 13, margin: '10px 0 0' }}>{error}</p>}
+          {msg && <p style={{ color: '#15803d', fontSize: 13, margin: '10px 0 0' }}>{msg}</p>}
+          <div className="contact-form-actions">
+            <Link to="/" style={jumuluSecondaryLinkStyle}>取消</Link>
             <button type="submit" disabled={loading || !subject.trim() || !content.trim()} style={{
-              flex: 2,
-              padding: '12px 14px',
-              borderRadius: 10,
-              border: 'none',
-              background: loading || !subject.trim() || !content.trim() ? 'rgba(71,85,105,0.12)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-              color: loading || !subject.trim() || !content.trim() ? 'rgba(71,85,105,0.52)' : BG,
-              fontWeight: 900,
+              ...jumuluPrimaryLinkStyle,
+              minWidth: 150,
+              opacity: loading || !subject.trim() || !content.trim() ? 0.5 : 1,
               cursor: loading || !subject.trim() || !content.trim() ? 'not-allowed' : 'pointer',
             }}>{loading ? '发送中...' : auth ? '发送站内信' : '登录后发送'}</button>
           </div>
         </form>
 
-        <aside style={{ background: '#fff', border: '1px solid rgba(217,168,87,0.18)', borderRadius: 16, padding: 20, alignSelf: 'start' }}>
-          <h2 style={{ fontSize: '0.98rem', fontWeight: 900, marginBottom: 12 }}>其他方式</h2>
-          <div style={{ display: 'grid', gap: 12, color: MUTED, fontSize: '0.86rem', lineHeight: 1.75 }}>
-            <p style={{ margin: 0 }}>客服邮箱：<a href="mailto:basara-twenty@foxmail.com" style={{ color: '#275389', fontWeight: 800, textDecoration: 'none' }}>basara-twenty@foxmail.com</a></p>
-            <p style={{ margin: 0 }}>经营主体：<Link to="/business-license" style={{ color: '#275389', fontWeight: 800, textDecoration: 'none' }}>查看营业执照与主体信息</Link></p>
-            <p style={{ margin: 0 }}>举报公开内容时，优先使用对应卡片上的“举报”按钮，系统会自动保存目标快照。</p>
-            <p style={{ margin: 0 }}>涉及充值、发票、申诉时，请尽量写清楚账号手机号后四位、订单金额、页面链接和时间。</p>
+        <aside style={asideStyle}>
+          <h2 style={{ fontSize: 16, fontWeight: 900, margin: '0 0 10px' }}>其他方式</h2>
+          <div style={{ display: 'grid', gap: 10, color: MUTED, fontSize: 13, lineHeight: 1.6 }}>
+            <p style={{ margin: 0 }}>客服邮箱<br /><a href="mailto:basara-twenty@foxmail.com" style={textLinkStyle}>basara-twenty@foxmail.com</a></p>
+            <p style={{ margin: 0 }}>经营主体<br /><Link to="/business-license" style={textLinkStyle}>查看营业执照与主体信息</Link></p>
+            <p style={{ margin: 0 }}>举报公开内容请优先使用对应卡片上的“举报”，系统会自动保存目标快照。</p>
+            <p style={{ margin: 0 }}>充值、发票或申诉请写明账号后四位、订单金额、页面链接和时间。</p>
           </div>
         </aside>
       </section>
-    </main>
+
+      <MobileTaskAction
+        form="contact-feedback-form"
+        label={loading ? '发送中...' : auth ? '发送站内信' : '登录后发送'}
+        disabled={loading || !subject.trim() || !content.trim()}
+      />
+    </JumuluPageFrame>
   );
 }
+
+const formStyle: React.CSSProperties = { ...jumuluCardStyle, minWidth: 0, padding: 16 };
+const asideStyle: React.CSSProperties = { ...jumuluCardStyle, minWidth: 0, padding: 14, alignSelf: 'start' };
+const formHeadingStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 };
+const labelStyle: React.CSSProperties = { display: 'block', color: MUTED, fontSize: 12, fontWeight: 800, marginBottom: 5 };
+const textLinkStyle: React.CSSProperties = { color: '#275389', fontWeight: 800, textDecoration: 'none' };

@@ -238,6 +238,22 @@ test('keeps footer roadmap and boundary voting on the shared compact shell', () 
   assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.boundary-topic-grid[\s\S]*minmax\(0, 1fr\)/);
 });
 
+test('keeps website feedback aligned with the compact miniapp task flow', () => {
+  const website = read('src/pages/Contact.tsx');
+  const autosave = read('src/components/DraftAutosaveNotice.tsx');
+  const miniapp = read('miniapp/jumulu/src/pages/feedback/index.vue');
+
+  assert.match(website, /JumuluPageFrame currentLabel="建议反馈"/);
+  assert.match(website, /JumuluCompactHeader/);
+  assert.match(website, /className="contact-page-grid"/);
+  assert.match(website, /MobileTaskAction/);
+  assert.doesNotMatch(website, /linear-gradient|borderRadius: 16/);
+  assert.match(autosave, /InfoTip/);
+  assert.match(autosave, /自动保存/);
+  assert.match(miniapp, /问题说明/);
+  assert.match(miniapp, /提交反馈/);
+});
+
 test('keeps the website carpool workbench message-first and compact', () => {
   const page = read('src/pages/CreateCarpool.tsx');
   const miniPage = read('miniapp/jumulu/src/pages/carpools/create.vue');
