@@ -10,6 +10,7 @@ const GOLD = '#a66a1f';
 const INK = '#1f2937';
 const BLUE = '#275389';
 const MUTED = 'rgba(71,85,105,0.76)';
+const CITY_REPUTATION_BATCH = 20;
 
 const SUBJECT_LABEL: Record<string, string> = {
   creator: '服务者',
@@ -82,6 +83,7 @@ export default function CityReputation() {
   const [subjectType, setSubjectType] = useState('all');
   const [sort, setSort] = useState<SortKey>('composite');
   const [items, setItems] = useState<ReputationItem[]>([]);
+  const [visibleCount, setVisibleCount] = useState(CITY_REPUTATION_BATCH);
   const [loadedKey, setLoadedKey] = useState('');
   const [error, setError] = useState('');
 
@@ -100,6 +102,7 @@ export default function CityReputation() {
       .then(r => r.json())
       .then(d => {
         if (d.success) {
+          setVisibleCount(CITY_REPUTATION_BATCH);
           setItems(d.data?.items || []);
           setError('');
         } else {
@@ -118,6 +121,9 @@ export default function CityReputation() {
       });
     return () => controller.abort();
   }, [city, subjectType, sort, requestKey]);
+  const displayedItems = items.slice(0, visibleCount);
+  const remainingCount = Math.max(0, items.length - displayedItems.length);
+  const nextBatchCount = Math.min(CITY_REPUTATION_BATCH, remainingCount);
 
   return (
     <ReputationHubShell
@@ -176,9 +182,10 @@ export default function CityReputation() {
         ) : items.length === 0 ? (
           <div style={emptyStyle}>当前城市暂无可聚合的对象档案。先去红黑榜发布事件，或去卡司评分创建 DM / 店家档案。</div>
         ) : (
-          <div style={cityGridStyle}>
-            {items.map((item, index) => (
-              <article key={item.key} className="content-card" style={cardStyle}>
+          <>
+            <div style={cityGridStyle}>
+              {displayedItems.map((item, index) => (
+                <article key={item.key} className="content-card" style={cardStyle}>
                 <div style={cardHeaderStyle}>
                   <div style={{ minWidth: 0 }}>
                     <span style={rankBadgeStyle}>#{index + 1}</span>
@@ -231,9 +238,20 @@ export default function CityReputation() {
                     </Link>
                   </div>
                 </div>
-              </article>
-            ))}
-          </div>
+                </article>
+              ))}
+            </div>
+            {remainingCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setVisibleCount(current => current + CITY_REPUTATION_BATCH)}
+                style={loadMoreStyle}
+              >
+                <strong>继续加载 {nextBatchCount} 个对象</strong>
+                <span>已显示 {displayedItems.length} / {items.length}</span>
+              </button>
+            )}
+          </>
         )}
       </section>
     </ReputationHubShell>
@@ -301,4 +319,5 @@ const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, b
 const cardFooterStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', paddingTop: 8, borderTop: '1px solid rgba(31,41,55,0.06)' };
 const primaryButtonStyle: React.CSSProperties = { minHeight: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, background: BLUE, color: '#fff', padding: '0 12px', fontWeight: 900, cursor: 'pointer', textDecoration: 'none', fontSize: 12 };
 const secondaryButtonStyle: React.CSSProperties = { ...primaryButtonStyle, background: '#fff', color: GOLD, border: '1px solid rgba(166,106,31,0.22)' };
+const loadMoreStyle: React.CSSProperties = { width: '100%', minHeight: 42, borderRadius: 8, border: '1px solid rgba(39,83,137,0.14)', background: '#fff', color: BLUE, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, cursor: 'pointer' };
 const emptyStyle: React.CSSProperties = { padding: 28, borderRadius: 12, border: '1px dashed rgba(31,41,55,0.14)', background: '#fff', color: MUTED, textAlign: 'center', lineHeight: 1.8 };

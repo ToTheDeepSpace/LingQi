@@ -23,6 +23,7 @@ const API = '/api';
 const C = '#f6efe4';
 const GOLD = '#a66a1f';
 const RED = '#f87171';
+const RANKING_LIST_BATCH = 12;
 
 const SUBJECT_LABEL: Record<string, string> = {
   creator: '委托师',
@@ -203,6 +204,7 @@ const filterBarStyle: React.CSSProperties = {
 
 const filterGroupStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
 const rankingGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: 10, alignItems: 'start' };
+const feedLoadMoreStyle: React.CSSProperties = { width: '100%', minHeight: 42, borderRadius: 8, border: '1px solid rgba(39,83,137,0.14)', background: '#fff', color: '#275389', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, cursor: 'pointer' };
 const rankingThumbLinkStyle: React.CSSProperties = { position: 'relative', display: 'block', width: 82, textDecoration: 'none' };
 const rankingThumbStyle: React.CSSProperties = { display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 7, border: '1px solid rgba(31,41,55,0.1)', background: '#f8fafc' };
 const rankingThumbCountStyle: React.CSSProperties = { position: 'absolute', right: 5, bottom: 5, padding: '2px 5px', borderRadius: 5, background: 'rgba(17,24,39,0.72)', color: '#fff', fontSize: 10, fontWeight: 800 };
@@ -528,6 +530,7 @@ export default function Rankings() {
   const [cityOpen, setCityOpen] = useState(false);
   const [cityQuery, setCityQuery] = useState('');
   const [items, setItems] = useState<Ranking[]>([]);
+  const [visibleCount, setVisibleCount] = useState(RANKING_LIST_BATCH);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [mentionMap, setMentionMap] = useState<Record<string, string>>({});
@@ -677,6 +680,7 @@ export default function Rankings() {
         const d = await r.json();
         if (alive && d.success) {
           const list = d.data || [];
+          setVisibleCount(RANKING_LIST_BATCH);
           setItems(list);
           void fetchMentions(list);
         } else if (alive) {
@@ -707,6 +711,9 @@ export default function Rankings() {
   }, [cityQuery]);
 
   const rankedItems = items;
+  const displayedRankings = rankedItems.slice(0, visibleCount);
+  const remainingRankings = Math.max(0, rankedItems.length - displayedRankings.length);
+  const nextRankingBatch = Math.min(RANKING_LIST_BATCH, remainingRankings);
 
   const daysLeft = (item: Ranking) => {
     if (item.type !== 'black' || !item.expires_at) return null;
@@ -1263,8 +1270,9 @@ export default function Rankings() {
         )}
 
         {!loading && !error && rankedItems.length > 0 && (
+          <>
           <div style={rankingGridStyle}>
-            {rankedItems.map((item, idx) => {
+            {displayedRankings.map((item, idx) => {
               const subtleAccentBorder = item.type === 'red' ? 'rgba(185,28,28,0.16)' : item.type === 'black' ? 'rgba(148,163,184,0.20)' : 'rgba(166,106,31,0.24)';
               const pinnedComment = (item.pinned_comments || []).find(comment => comment.is_pinned);
               const left = daysLeft(item);
@@ -1453,6 +1461,17 @@ export default function Rankings() {
               );
             })}
           </div>
+          {remainingRankings > 0 && (
+            <button
+              type="button"
+              onClick={() => setVisibleCount(current => current + RANKING_LIST_BATCH)}
+              style={feedLoadMoreStyle}
+            >
+              <strong>继续加载 {nextRankingBatch} 条</strong>
+              <span>已显示 {displayedRankings.length} / {rankedItems.length}</span>
+            </button>
+          )}
+          </>
         )}
         </div>
       </ReputationHubShell>
