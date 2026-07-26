@@ -37,7 +37,7 @@
       { "pagePath": "pages/index/index", "text": "百科", "iconPath": "static/icons/tab-books.png", "selectedIconPath": "static/icons/tab-books-active.png" },
       { "pagePath": "pages/rankings/index", "text": "红黑榜", "iconPath": "static/icons/tab-message-star.png", "selectedIconPath": "static/icons/tab-message-star-active.png" },
       { "pagePath": "pages/commissions/index", "text": "委托", "iconPath": "static/icons/tab-briefcase.png", "selectedIconPath": "static/icons/tab-briefcase-active.png" },
-      { "pagePath": "pages/carpools/index", "text": "社区", "iconPath": "static/icons/tab-car.png", "selectedIconPath": "static/icons/tab-car-active.png" },
+      { "pagePath": "pages/carpools/index", "text": "拼车", "iconPath": "static/icons/tab-car.png", "selectedIconPath": "static/icons/tab-car-active.png" },
       { "pagePath": "pages/mine/index", "text": "我的", "iconPath": "static/icons/tab-user-circle.png", "selectedIconPath": "static/icons/tab-user-circle-active.png" }
     ]
   },

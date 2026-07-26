@@ -19,6 +19,7 @@ const loading = ref(false)
 const error = ref('')
 const query = ref('')
 const city = ref(String(uni.getStorageSync(CITY_KEY) || '全部城市'))
+const expandedIds = ref<string[]>([])
 const authId = computed(() => readAuth()?.id || '')
 
 const visibleItems = computed(() => carpools.value.filter(item =>
@@ -36,7 +37,10 @@ async function load() {
   try {
     if (!uni.getStorageSync(CITY_KEY) && readAuth()?.token) {
       const follows = await apiRequest<{ cities: string[] }>('/lc/follows')
-      if (follows.cities?.[0]) city.value = follows.cities[0]
+      if (follows.cities?.[0]) {
+        city.value = follows.cities[0]
+        uni.setStorageSync(CITY_KEY, city.value)
+      }
     }
     carpools.value = await apiRequest<Carpool[]>('/lc/carpools')
     received.value = readAuth()?.token
@@ -53,6 +57,16 @@ async function load() {
 function selectCity(value: string) {
   city.value = value || '全部城市'
   uni.setStorageSync(CITY_KEY, city.value)
+}
+function isExpanded(id: string) { return expandedIds.value.includes(id) }
+function hasLongDetails(item: Carpool) {
+  const details = [item.role_name, item.content].filter(Boolean).join('\n')
+  return details.length > 44 || details.includes('\n')
+}
+function toggleExpanded(id: string) {
+  expandedIds.value = isExpanded(id)
+    ? expandedIds.value.filter(item => item !== id)
+    : [...expandedIds.value, id]
 }
 function openProfile(id?: string) { if (id) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(id)}` }) }
 function create() { void requireLogin().then(() => uni.navigateTo({ url: '/pages/carpools/create' })).catch(() => undefined) }
@@ -118,8 +132,9 @@ onPullDownRefresh(load)
         <view class="listing__top"><text class="listing__title">{{ item.script_name || item.title }}</text><view class="listing__top-actions"><text class="listing__date">{{ dateText(item.event_date) }}</text><ReportFlag target-type="carpool" :target-id="item.id" :title="item.title" :own="item.poster_id === authId" /></view></view>
         <text class="listing__meta">{{ item.city }}<template v-if="item.start_time"> · {{ item.start_time }}</template> · 已上 {{ item.joined_count || 0 }}/{{ item.needed_count || '?' }}</text>
         <text v-if="item.poster_name" class="poster" @tap="openProfile(item.poster_id)">车头 {{ item.poster_name }}</text>
-        <text v-if="item.role_name" class="listing__roles">缺：{{ item.role_name }}</text>
-        <text v-if="item.content" class="listing__content">{{ item.content }}</text>
+        <text v-if="item.role_name" class="listing__roles" :class="{ collapsed: !isExpanded(item.id) }">缺：{{ item.role_name }}</text>
+        <text v-if="item.content" class="listing__content" :class="{ collapsed: !isExpanded(item.id) }">{{ item.content }}</text>
+        <text v-if="hasLongDetails(item)" class="listing__expand" @tap="toggleExpanded(item.id)">{{ isExpanded(item.id) ? '收起说明' : '展开全部' }}</text>
         <view class="action-row"><button class="secondary-button" @tap="showContact(item)">联系方式</button><button v-if="item.poster_id !== authId" class="primary-button" @tap="apply(item)">申请上车</button></view>
       </view>
     </template>
@@ -145,7 +160,7 @@ onPullDownRefresh(load)
 .view-tabs button { min-height: 64rpx; margin: 0; border: 0; border-radius: 8rpx; background: #f4f5f7; color: #64748b; font-size: 24rpx; line-height: 64rpx; }
 .view-tabs button.active { background: #fff1d5; color: #8b5919; font-weight: 850; }
 .filter { display: grid; grid-template-columns: 210rpx 1fr; gap: 12rpx; }
-.listing, .inbox { margin-bottom: 14rpx; padding: 20rpx; }
+.listing, .inbox { margin-bottom: 14rpx; padding: 20rpx; border: 1rpx solid #e5e8ed; }
 .listing__top { display: flex; justify-content: space-between; gap: 14rpx; }
 .listing__top-actions { display: flex; align-items: center; gap: 4rpx; }
 .listing__title, .inbox__title { color: #27364a; font-size: 29rpx; font-weight: 850; }
@@ -155,5 +170,9 @@ onPullDownRefresh(load)
 .poster { color: #275389; font-size: 23rpx; font-weight: 750; }
 .listing__roles { color: #275389; font-size: 25rpx; font-weight: 700; }
 .listing__content, .inbox__body { color: #475569; font-size: 24rpx; line-height: 1.6; }
+.listing__roles.collapsed,
+.listing__content.collapsed { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.listing__roles.collapsed { -webkit-line-clamp: 2; }
+.listing__expand { display: block; margin-top: 7rpx; color: #275389; font-size: 22rpx; font-weight: 750; }
 .action-row { margin-top: 16rpx; }
 </style>
