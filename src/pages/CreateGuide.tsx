@@ -94,7 +94,7 @@ export default function CreateGuide() {
     <main style={{ minHeight: '100vh', background: BG, color: INK }}>
       <section style={{ maxWidth: 920, margin: '0 auto', padding: '22px 18px 60px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 16 }}>
-          <Link to="/guides" style={{ color: '#275389', textDecoration: 'none', fontWeight: 850 }}>‹ 返回攻略交易</Link>
+          <span />
           <Link to="/guides/income" style={ghostButton}>创作者收入</Link>
         </div>
         <div style={{ border: '1px solid rgba(201,146,46,0.18)', borderRadius: 18, background: '#fff', padding: 18, boxShadow: '0 18px 48px rgba(31,41,55,0.06)' }}>

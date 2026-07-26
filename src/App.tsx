@@ -62,7 +62,7 @@ const MPS_RECORD_URL = 'https://beian.mps.gov.cn/#/query/webSearch?code=13310202
 function AppLayout() {
   const { pathname } = useLocation();
   const isDashboardRoute = pathname === '/dashboard' || pathname.startsWith('/dashboard/');
-  const showNavbar = pathname !== '/login' && pathname !== '/rankings/new' && pathname !== '/commissions/new' && pathname !== '/carpools/new' && pathname !== '/guides/new';
+  const showNavbar = pathname !== '/login';
   const showAccountBanner = pathname !== '/account-status';
   const showFooter = pathname !== '/login' && !isDashboardRoute;
   const showFeedback = pathname !== '/contact';

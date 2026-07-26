@@ -403,7 +403,6 @@ export default function CreateRanking() {
     <main className="ranking-new-page">
       <header className="ranking-new-header">
         <div className="ranking-new-header-inner">
-          <Link to="/rankings" className="ranking-new-back">← 返回红黑榜</Link>
           <div className="ranking-new-title-row">
             <h1 className="ranking-new-title">{resubmitId ? '修改并重新提交' : '发布红黑榜'}</h1>
             <span className="ranking-new-coin"><span>✓</span> 免费发布</span>

@@ -166,6 +166,21 @@ test('keeps the website commission publisher on the compact cross-platform task 
   assert.doesNotMatch(publisher, /← 返回委托需求墙|linear-gradient/);
 });
 
+test('keeps publishing responsibility notices compact and uses the shared page back action', () => {
+  const app = read('src/App.tsx');
+  const notice = read('src/components/ResponsibilityNotice.tsx');
+  const ranking = read('src/pages/CreateRanking.tsx');
+  const carpool = read('src/pages/CreateCarpool.tsx');
+  const guide = read('src/pages/CreateGuide.tsx');
+
+  assert.match(app, /const showNavbar = pathname !== '\/login'/);
+  assert.match(notice, /<details className=/);
+  assert.match(notice, /查看责任说明/);
+  assert.doesNotMatch(ranking, /← 返回红黑榜/);
+  assert.doesNotMatch(carpool, /← 返回拼车区/);
+  assert.doesNotMatch(guide, /‹ 返回攻略交易/);
+});
+
 test('exposes public provider availability without turning the miniapp profile into a calendar', () => {
   const source = read('miniapp/jumulu/src/pages/profile/detail.vue');
 

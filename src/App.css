@@ -149,6 +149,62 @@ body {
   flex-wrap: wrap;
 }
 
+.responsibility-notice {
+  border: 1px solid rgba(154, 52, 18, 0.18);
+  border-radius: 8px;
+  background: #fffaf3;
+  color: #7c2d12;
+  font-size: 12px;
+}
+
+.responsibility-notice summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.responsibility-notice summary::-webkit-details-marker {
+  display: none;
+}
+
+.responsibility-notice summary strong {
+  color: #9a3412;
+}
+
+.responsibility-notice summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(124, 45, 18, 0.72);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.responsibility-notice summary i {
+  width: 17px;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(154, 52, 18, 0.22);
+  border-radius: 50%;
+  background: #fff;
+  font-style: normal;
+  font-size: 11px;
+}
+
+.responsibility-notice p {
+  margin: 0;
+  border-top: 1px solid rgba(154, 52, 18, 0.12);
+  padding: 10px 12px 12px;
+  line-height: 1.72;
+}
+
 .reputation-dossier-card,
 .reputation-dossier-event,
 .reputation-dossier-side {

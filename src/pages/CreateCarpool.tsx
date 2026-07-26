@@ -63,13 +63,6 @@ type CarpoolDraft = {
 const roleGenderOptions = ['', '男', '女', '可男可女', '其他'];
 const playerGenderOptions = ['', '男', '女', '其他', '不公开'];
 
-const backLinkStyle: React.CSSProperties = {
-  color: 'rgba(39,83,137,0.82)',
-  textDecoration: 'none',
-  fontSize: '0.86rem',
-  fontWeight: 800,
-};
-
 function getAuth(): AuthData | null {
   const data = readStoredCreatorAuth();
   return data?.token ? data as AuthData : null;
@@ -567,7 +560,6 @@ export default function CreateCarpool() {
       <div style={{ background: 'linear-gradient(135deg, #eef6ff, #fffaf2)', borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '32px 20px' }}>
         <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'grid', gap: 6 }}>
-            <Link to="/carpools" style={backLinkStyle}>← 返回拼车区</Link>
             <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.55rem', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               发布拼车
               <InfoTip>先把群消息解析成车次，也可以直接填车次，再单独生成可粘贴文案。</InfoTip>
