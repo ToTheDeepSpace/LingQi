@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { AuthData, Commission, CommissionApplication, ProviderInquiry, ScriptCatalogItem } from '../types';
+import type { AuthData, Commission, CommissionApplication, ProviderInquiry } from '../types';
 import { CITIES } from '../constants/cities';
 import { getJsonCached } from '../lib/apiCache';
 import { readStoredCreatorAuth } from '../lib/authSession';
@@ -13,6 +13,7 @@ import {
 } from '../components/JumuluPageChrome';
 import { jumuluCardStyle, jumuluFilterPanelStyle, jumuluPrimaryLinkStyle, jumuluSecondaryLinkStyle } from '../styles/jumuluPageStyles';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
+import './Commissions.css';
 
 const API = '/api';
 const GOLD = '#d9a857';
@@ -59,7 +60,6 @@ export default function Commissions() {
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState<Commission[]>([]);
   const [myItems, setMyItems] = useState<Commission[]>([]);
-  const [scripts, setScripts] = useState<ScriptCatalogItem[]>([]);
   const [receivedApplications, setReceivedApplications] = useState<CommissionApplication[]>([]);
   const [sentApplications, setSentApplications] = useState<CommissionApplication[]>([]);
   const [providerReceived, setProviderReceived] = useState<ProviderInquiry[]>([]);
@@ -70,7 +70,9 @@ export default function Commissions() {
     try { return localStorage.getItem('lc:commissions:last-city') || 'all'; } catch { return 'all'; }
   });
   const [targetType, setTargetType] = useState('all');
-  const [scriptId, setScriptId] = useState('all');
+  const [query, setQuery] = useState('');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
   const [view, setView] = useState<'active' | 'expired'>('active');
   const [cityOpen, setCityOpen] = useState(false);
   const [applicationModal, setApplicationModal] = useState<Commission | null>(null);
@@ -107,24 +109,6 @@ export default function Commissions() {
 
   useEffect(() => {
     let alive = true;
-    const loadScripts = async () => {
-      try {
-        const { data: d } = await getJsonCached<{ success: boolean; data?: ScriptCatalogItem[] }>(
-          `${API}/lc/scripts`,
-          undefined,
-          60_000,
-        );
-        if (alive && d.success) setScripts(d.data || []);
-      } catch {
-        if (alive) setScripts([]);
-      }
-    };
-    void loadScripts();
-    return () => { alive = false; };
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
     const load = async () => {
       setLoading(true);
       setError('');
@@ -132,7 +116,6 @@ export default function Commissions() {
         const qs = new URLSearchParams();
         if (city !== 'all') qs.set('city', city);
         if (targetType !== 'all') qs.set('targetType', targetType);
-        if (scriptId !== 'all') qs.set('scriptId', scriptId);
         const { data: d } = await getJsonCached<{ success: boolean; data?: Commission[]; error?: string }>(
           `${API}/lc/commissions?${qs.toString()}`,
           undefined,
@@ -149,7 +132,7 @@ export default function Commissions() {
     };
     void load();
     return () => { alive = false; };
-  }, [city, targetType, scriptId]);
+  }, [city, targetType]);
 
   useEffect(() => {
     let alive = true;
@@ -210,8 +193,22 @@ export default function Commissions() {
 
   const privateItems = myItems.filter(item => item.status !== 'approved');
   const sentApplicationIds = useMemo(() => new Set(sentApplications.map(item => item.commission_id)), [sentApplications]);
-  const activeItems = useMemo(() => items.filter(item => !item.is_expired), [items]);
-  const expiredItems = useMemo(() => items.filter(item => item.is_expired), [items]);
+  const filteredItems = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase('zh-CN');
+    return items.filter(item => {
+      const itemStart = String(item.needed_date || '').slice(0, 10);
+      const itemEnd = String(item.needed_end_date || item.needed_date || '').slice(0, 10);
+      if (dateStart && (!itemEnd || itemEnd < dateStart)) return false;
+      if (dateEnd && (!itemStart || itemStart > dateEnd)) return false;
+      if (!needle) return true;
+      return [item.title, item.content, item.script_name, item.desired_role]
+        .join(' ')
+        .toLocaleLowerCase('zh-CN')
+        .includes(needle);
+    });
+  }, [dateEnd, dateStart, items, query]);
+  const activeItems = useMemo(() => filteredItems.filter(item => !item.is_expired), [filteredItems]);
+  const expiredItems = useMemo(() => filteredItems.filter(item => item.is_expired), [filteredItems]);
   const visibleItems = view === 'active' ? activeItems : expiredItems;
 
   const openApplicationModal = (item: Commission) => {
@@ -541,30 +538,32 @@ export default function Commissions() {
           </section>
         )}
 
-        <section style={jumuluFilterPanelStyle}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {[
-            ['all', '全部'],
-            ['creator', '服务者'],
-            ['photographer', '摄影师'],
-            ['makeup', '妆造师'],
-            ['costume', '服装商'],
-            ['prop', '道具师'],
-          ].map(([key, label]) => {
-            const active = targetType === key;
-            return (
-              <button key={key} onClick={() => setTargetType(key)}
-                style={{
-                  padding: '8px 15px', borderRadius: 999, border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.16)',
-                  background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.86)',
-                  color: active ? '#925f18' : 'rgba(71,85,105,0.78)', cursor: 'pointer', fontWeight: active ? 800 : 500,
-                }}>
-                {label}
-              </button>
-            );
-          })}
-
-          <div style={{ position: 'relative', marginLeft: 'auto' }}>
+        <section className="commission-filter-panel" style={jumuluFilterPanelStyle}>
+        <div className="commission-filter-top">
+          <div className="commission-target-scroll">
+            {[
+              ['all', '全部'],
+              ['creator', '服务者'],
+              ['photographer', '摄影师'],
+              ['makeup', '妆造师'],
+              ['costume', '服装商'],
+              ['prop', '道具师'],
+            ].map(([key, label]) => {
+              const active = targetType === key;
+              return (
+                <button key={key} onClick={() => setTargetType(key)}
+                  style={{
+                    padding: '8px 15px', borderRadius: 999, border: active ? `1px solid ${GOLD}` : '1px solid rgba(217,168,87,0.16)',
+                    background: active ? 'rgba(217,168,87,0.16)' : 'rgba(255,255,255,0.86)',
+                    color: active ? '#925f18' : 'rgba(71,85,105,0.78)', cursor: 'pointer', fontWeight: active ? 800 : 500,
+                    whiteSpace: 'nowrap',
+                  }}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="commission-city-filter">
             <button onClick={() => setCityOpen(!cityOpen)}
               style={{ padding: '8px 15px', borderRadius: 999, border: '1px solid rgba(217,168,87,0.24)', background: 'rgba(255,255,255,0.86)', color: city === 'all' ? 'rgba(71,85,105,0.78)' : '#925f18', cursor: 'pointer', fontWeight: 700 }}>
               📍 {city === 'all' ? '全部城市' : city}
@@ -582,17 +581,34 @@ export default function Commissions() {
         </div>
 
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.08)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, alignItems: 'end' }}>
-            <div>
-              <Label>剧本选单</Label>
-              <select value={scriptId} onChange={e => setScriptId(e.target.value)} style={inputStyle}>
-                <option value="all">全部剧本</option>
-                {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
-              </select>
+          <div className="commission-filter-grid">
+            <div className="commission-filter-field commission-filter-field--query">
+              <Label>搜索</Label>
+              <input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索剧本或角色" style={inputStyle} />
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <div className="commission-filter-field commission-filter-field--start">
+              <Label>开始日期</Label>
+              <input
+                type="date"
+                value={dateStart}
+                onChange={event => {
+                  const next = event.target.value;
+                  setDateStart(next);
+                  if (dateEnd && dateEnd < next) setDateEnd(next);
+                }}
+                style={inputStyle}
+              />
+            </div>
+            <div className="commission-filter-field commission-filter-field--end">
+              <Label>结束日期</Label>
+              <input type="date" min={dateStart || undefined} value={dateEnd} onChange={event => setDateEnd(event.target.value)} style={inputStyle} />
+            </div>
+            <div className="commission-filter-field commission-filter-field--status">
+              <Label>状态</Label>
+              <div className="commission-status-switch">
               <ViewButton active={view === 'active'} onClick={() => setView('active')}>进行中 {activeItems.length}</ViewButton>
               <ViewButton active={view === 'expired'} onClick={() => setView('expired')}>已过期 {expiredItems.length}</ViewButton>
+              </div>
             </div>
           </div>
         </div>

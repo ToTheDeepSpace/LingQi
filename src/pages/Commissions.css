@@ -1,0 +1,75 @@
+.commission-filter-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.commission-target-scroll,
+.commission-status-switch {
+  display: flex;
+  gap: 8px;
+}
+
+.commission-target-scroll {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.commission-city-filter {
+  position: relative;
+}
+
+.commission-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.commission-status-switch {
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .commission-filter-panel {
+    padding: 12px !important;
+  }
+
+  .commission-target-scroll {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .commission-target-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .commission-filter-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .commission-filter-field--query,
+  .commission-filter-field--status {
+    grid-column: 1 / -1;
+  }
+
+  .commission-filter-field--start {
+    grid-column: 1;
+  }
+
+  .commission-filter-field--end {
+    grid-column: 2;
+  }
+
+  .commission-status-switch {
+    justify-content: stretch;
+  }
+
+  .commission-status-switch > button {
+    flex: 1;
+  }
+}
