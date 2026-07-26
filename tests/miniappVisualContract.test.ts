@@ -204,6 +204,8 @@ test('keeps follow settings compact and searchable across website and miniapp', 
   assert.doesNotMatch(website, /CITIES\.map|matched\.map/);
   assert.match(miniapp, /CitySearchPicker/);
   assert.match(miniapp, /搜索并添加城市/);
+  assert.match(miniapp, /class="settings-panel surface"/);
+  assert.match(miniapp, /\{\{ cities\.length \}\}\/5/);
 });
 
 test('keeps the website carpool workbench message-first and compact', () => {
