@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import type React from 'react';
-import { Link } from 'react-router-dom';
+import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
+import { jumuluCardStyle } from '../styles/jumuluPageStyles';
 
-const BG = '#fffdf8';
 const GOLD = '#a66a1f';
-const INK = '#1f2937';
-const MUTED = 'rgba(71,85,105,0.76)';
+const INK = '#27364a';
+const MUTED = '#64748b';
 
 type Choice = { id: string; label: string; note: string };
 type Topic = { id: string; title: string; scope: string; choices: Choice[] };
@@ -71,68 +71,63 @@ export default function BoundaryVotes() {
   };
 
   return (
-    <main style={{ minHeight: '100vh', background: BG, color: INK }}>
-      <section style={{ background: 'linear-gradient(135deg, #fffaf2 0%, #eef6ff 100%)', borderBottom: '1px solid rgba(166,106,31,0.16)', padding: '44px 20px 30px' }}>
-        <div style={{ maxWidth: 1040, margin: '0 auto' }}>
-          <Link to="/roadmap" style={topLink}>返回口碑路线图</Link>
-          <p style={{ margin: '18px 0 8px', color: '#92400e', fontWeight: 900, fontSize: 13 }}>实验议题 · 暂不作为主入口</p>
-          <h1 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 'clamp(1.9rem, 5vw, 2.9rem)', lineHeight: 1.15 }}>社交边界共识草稿</h1>
-          <p style={{ margin: '14px 0 0', color: MUTED, lineHeight: 1.8, maxWidth: 780 }}>
-            这里先收纳剧本杀礼仪和互动边界的议题草稿，不替代任何人的个人同意。涉及肢体接触、亲密互动、强情绪加戏时，底线是事前明确、当场可拒绝、随时可撤回。
-          </p>
-        </div>
-      </section>
+    <JumuluPageFrame currentLabel="边界投票" maxWidth={1040}>
+      <JumuluCompactHeader
+        eyebrow="实验议题"
+        title="社交边界共识"
+        description="收纳剧本杀礼仪与互动边界的讨论。任何投票结果都不能替代个人同意。"
+        aside={<strong style={progressStyle}>已选 {votedCount}/{topics.length}</strong>}
+      />
 
-      <section style={{ maxWidth: 1040, margin: '0 auto', padding: '24px 20px 82px' }}>
-        <div style={noticeStyle}>
-          当前是第一版议题骨架，本页投票先保存在本机浏览器中。正式计票版本会绑定登录账号、防刷和城市维度，并把结果沉淀为共识报告。
-          <strong style={{ color: GOLD }}> 已选择 {votedCount}/{topics.length} 个议题。</strong>
-        </div>
+      <div style={noticeStyle}>
+        <strong style={{ color: INK }}>底线：</strong>事前明确、当场可拒绝、随时可撤回。
+        <span> 本页目前只保存到当前浏览器，不计入正式平台票数。</span>
+      </div>
 
-        <div style={{ display: 'grid', gap: 14 }}>
-          {topics.map(topic => (
-            <article key={topic.id} style={cardStyle}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-                <div>
-                  <p style={{ margin: '0 0 6px', color: GOLD, fontSize: 13, fontWeight: 900 }}>{topic.scope}</p>
-                  <h2 style={{ margin: 0, fontSize: 20 }}>{topic.title}</h2>
-                </div>
-                {votes[topic.id] && <span style={pillStyle}>已选择</span>}
+      <div className="boundary-topic-grid">
+        {topics.map(topic => (
+          <article key={topic.id} style={cardStyle}>
+            <div style={topicHeaderStyle}>
+              <div style={{ minWidth: 0 }}>
+                <p style={scopeStyle}>{topic.scope}</p>
+                <h2 style={topicTitleStyle}>{topic.title}</h2>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 10 }}>
-                {topic.choices.map(choice => {
-                  const active = votes[topic.id] === choice.id;
-                  return (
-                    <button key={choice.id} onClick={() => vote(topic.id, choice.id)} style={{
-                      textAlign: 'left',
-                      borderRadius: 12,
-                      border: active ? '1px solid rgba(166,106,31,0.48)' : '1px solid rgba(166,106,31,0.14)',
-                      background: active ? 'rgba(166,106,31,0.12)' : '#fffaf2',
-                      padding: 13,
-                      cursor: 'pointer',
-                    }}>
-                      <strong style={{ color: active ? GOLD : INK, display: 'block', marginBottom: 6 }}>{choice.label}</strong>
-                      <span style={{ color: MUTED, lineHeight: 1.65, fontSize: 14 }}>{choice.note}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </article>
-          ))}
-        </div>
+              {votes[topic.id] && <span style={pillStyle}>已选择</span>}
+            </div>
+            <div style={choiceListStyle}>
+              {topic.choices.map(choice => {
+                const active = votes[topic.id] === choice.id;
+                return (
+                  <button key={choice.id} onClick={() => vote(topic.id, choice.id)} style={{
+                    ...choiceStyle,
+                    borderColor: active ? 'rgba(166,106,31,0.48)' : 'rgba(31,41,55,0.10)',
+                    background: active ? '#fff5df' : '#fff',
+                  }}>
+                    <strong style={{ color: active ? GOLD : INK, display: 'block' }}>{choice.label}</strong>
+                    <span style={{ color: MUTED, lineHeight: 1.5, fontSize: 12 }}>{choice.note}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </article>
+        ))}
+      </div>
 
-        <section style={{ marginTop: 16, ...cardStyle }}>
-          <h2 style={{ margin: '0 0 10px', fontFamily: 'var(--font-serif)', fontSize: '1.25rem' }}>边界不是多数暴政</h2>
-          <p style={{ margin: 0, color: MUTED, lineHeight: 1.8 }}>
-            投票结果只能说明圈内倾向，不能要求某个玩家接受不舒服的互动。个体边界高于平均偏好，平台后续会把结果写成“沟通建议”和“开场确认清单”，而不是拿来审判单个玩家。
-          </p>
-        </section>
+      <section style={footerNoteStyle}>
+        <strong>个体边界高于平均偏好。</strong>
+        <span> 结果只用于整理沟通建议，不用于要求任何人接受不舒服的互动。</span>
       </section>
-    </main>
+    </JumuluPageFrame>
   );
 }
 
-const topLink: React.CSSProperties = { color: '#275389', textDecoration: 'none', fontSize: 14, fontWeight: 800 };
-const noticeStyle: React.CSSProperties = { marginBottom: 16, padding: 14, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', color: MUTED, lineHeight: 1.8, boxShadow: '0 10px 26px rgba(102,70,30,0.05)' };
-const cardStyle: React.CSSProperties = { padding: 16, borderRadius: 14, border: '1px solid rgba(166,106,31,0.16)', background: '#fff', boxShadow: '0 10px 26px rgba(102,70,30,0.06)' };
-const pillStyle: React.CSSProperties = { display: 'inline-flex', height: 26, alignItems: 'center', borderRadius: 999, padding: '0 9px', background: 'rgba(166,106,31,0.10)', color: GOLD, fontSize: 12, fontWeight: 900 };
+const progressStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', minHeight: 34, padding: '0 11px', border: '1px solid rgba(166,106,31,0.22)', borderRadius: 7, background: '#fff5df', color: '#8b5919', fontSize: 13 };
+const noticeStyle: React.CSSProperties = { padding: '10px 12px', borderRadius: 7, border: '1px solid rgba(166,106,31,0.16)', background: '#fffaf0', color: MUTED, lineHeight: 1.55, fontSize: 13 };
+const cardStyle: React.CSSProperties = { ...jumuluCardStyle, minWidth: 0, padding: 14 };
+const topicHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 };
+const scopeStyle: React.CSSProperties = { margin: '0 0 4px', color: GOLD, fontSize: 11, fontWeight: 900 };
+const topicTitleStyle: React.CSSProperties = { margin: 0, color: INK, fontSize: 16, lineHeight: 1.4 };
+const choiceListStyle: React.CSSProperties = { display: 'grid', gap: 7 };
+const choiceStyle: React.CSSProperties = { minHeight: 58, textAlign: 'left', borderRadius: 7, border: '1px solid rgba(31,41,55,0.10)', padding: '8px 10px', cursor: 'pointer', display: 'grid', gap: 3 };
+const pillStyle: React.CSSProperties = { display: 'inline-flex', minHeight: 24, alignItems: 'center', borderRadius: 6, padding: '0 7px', background: '#fff5df', color: GOLD, fontSize: 11, fontWeight: 900, flex: '0 0 auto' };
+const footerNoteStyle: React.CSSProperties = { padding: '10px 12px', borderTop: '1px solid rgba(31,41,55,0.08)', color: MUTED, lineHeight: 1.55, fontSize: 13 };

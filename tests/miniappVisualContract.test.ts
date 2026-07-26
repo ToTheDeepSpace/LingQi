@@ -223,6 +223,21 @@ test('keeps creator income on the compact shell without a duplicate page return'
   assert.doesNotMatch(source, /返回我的主页|linear-gradient/);
 });
 
+test('keeps footer roadmap and boundary voting on the shared compact shell', () => {
+  const roadmap = read('src/pages/Roadmap.tsx');
+  const boundaryVotes = read('src/pages/BoundaryVotes.tsx');
+  const styles = read('src/App.css');
+
+  assert.match(roadmap, /JumuluPageFrame currentLabel="口碑路线图"/);
+  assert.match(roadmap, /JumuluCompactHeader/);
+  assert.doesNotMatch(roadmap, /返回红黑白榜|linear-gradient/);
+  assert.match(boundaryVotes, /JumuluPageFrame currentLabel="边界投票"/);
+  assert.match(boundaryVotes, /JumuluCompactHeader/);
+  assert.doesNotMatch(boundaryVotes, /返回口碑路线图|linear-gradient/);
+  assert.match(styles, /\.boundary-topic-grid[\s\S]*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.boundary-topic-grid[\s\S]*minmax\(0, 1fr\)/);
+});
+
 test('keeps the website carpool workbench message-first and compact', () => {
   const page = read('src/pages/CreateCarpool.tsx');
   const miniPage = read('miniapp/jumulu/src/pages/carpools/create.vue');
