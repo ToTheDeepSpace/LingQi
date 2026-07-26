@@ -24,6 +24,7 @@ const activeLane = ref<'experience' | 'deep_spoiler'>('experience')
 const revealed = ref(false)
 const rating = ref(5)
 const content = ref('')
+const composerOpen = ref(false)
 const submitting = ref(false)
 const role = computed(() => flattenRoles(scripts.value).find(item => item.target_id === id.value) || null)
 const laneRatings = computed(() => (payload.value?.ratings || []).filter(item => activeLane.value === 'deep_spoiler' ? item.review_lane === 'deep_spoiler' : item.review_lane !== 'deep_spoiler'))
@@ -47,6 +48,7 @@ async function submit() {
     await checkMiniContent(content.value, activeLane.value === 'deep_spoiler' ? 'role_spoiler_review' : 'role_review')
     const result = await apiRequest<{ message?: string }>('/lc/entity-ratings', { method: 'POST', data: { targetType: 'script_role', targetId: id.value, rating: rating.value, content: content.value.trim(), reviewLane: activeLane.value } })
     content.value = ''
+    composerOpen.value = false
     uni.showModal({ title: '评价已提交', content: result.message || '审核通过后会公开展示。', showCancel: false })
   } catch (err) {
     if ((err as Error).message === '发言前请先完成手机号或邮箱验证') uni.showModal({ title: '先完成账号验证', content: '评价前需要绑定手机号。', confirmText: '去绑定', success: result => { if (result.confirm) uni.navigateTo({ url: '/pages/mine/account' }) } })
@@ -85,11 +87,17 @@ onShareAppMessage(() => ({ title: role.value ? `${role.value.role_name}《${role
           <text class="review__date">{{ dateText(item.created_at) }}</text>
         </view>
       </template>
-      <view class="composer surface">
+      <button v-if="!composerOpen" class="secondary-button write-review" @tap="composerOpen = true">
+        写{{ activeLane === 'deep_spoiler' ? '剧透深评' : '无剧透体验' }}
+      </button>
+      <view v-else class="composer surface">
         <text class="composer__title">写{{ activeLane === 'deep_spoiler' ? '剧透深评' : '无剧透体验' }}</text>
         <view class="stars"><text v-for="star in 5" :key="star" :class="{ active: rating >= star }" @tap="rating = star">★</text></view>
         <textarea v-model="content" class="textarea" maxlength="1200" :placeholder="activeLane === 'deep_spoiler' ? '可讨论角色内核、关键剧情和深度体验。' : '不要写关键剧情，只谈体验和角色感受。'" />
-        <button class="primary-button" :loading="submitting" :disabled="submitting" @tap="submit">提交审核</button>
+        <view class="composer__actions">
+          <button class="secondary-button" :disabled="submitting" @tap="composerOpen = false">取消</button>
+          <button class="primary-button" :loading="submitting" :disabled="submitting" @tap="submit">提交审核</button>
+        </view>
       </view>
     </template>
   </view>
@@ -122,10 +130,12 @@ onShareAppMessage(() => ({ title: role.value ? `${role.value.role_name}《${role
 .review__content, .review__date { display: block; margin-top: 10rpx; }
 .review__content { color: #374151; line-height: 1.65; white-space: pre-wrap; }
 .review__date { color: #94a3b8; font-size: 21rpx; }
+.write-review { width: 100%; margin-top: 16rpx; color: #275389; }
 .composer__title { display: block; margin-bottom: 12rpx; font-size: 28rpx; font-weight: 850; }
 .stars { display: flex; justify-content: space-between; padding: 10rpx 20rpx; border: 1rpx solid #d9dde4; border-radius: 10rpx; }
 .stars text { color: #d5d9df; font-size: 48rpx; }
 .stars text.active { color: #c88b31; }
 .composer textarea { margin-top: 12rpx; }
-.composer button { width: 100%; margin-top: 14rpx; }
+.composer__actions { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: 12rpx; margin-top: 14rpx; }
+.composer__actions button { width: 100%; margin: 0; }
 </style>

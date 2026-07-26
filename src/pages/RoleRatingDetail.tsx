@@ -90,8 +90,6 @@ export default function RoleRatingDetail() {
       active="roles"
       currentLabel="角色评分详情"
     >
-      <Link to="/scripts" style={backLinkStyle}>返回全部角色</Link>
-
       {loading && <StatePanel>正在加载角色评价...</StatePanel>}
       {!loading && loadError && <StatePanel tone="error">{loadError}</StatePanel>}
       {!loading && !loadError && !role && <StatePanel tone="error">没有找到这个角色，资料可能已更新。</StatePanel>}
@@ -186,7 +184,6 @@ function StatePanel({ children, tone = 'normal' }: { children: React.ReactNode; 
   return <section style={{ ...statePanelStyle, color: tone === 'error' ? '#b91c1c' : INK }}>{children}</section>;
 }
 
-const backLinkStyle: React.CSSProperties = { width: 'fit-content', color: BLUE, fontSize: 13, fontWeight: 900, textDecoration: 'none' };
 const summaryStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 24, padding: '22px 4px', borderBottom: '1px solid rgba(31,41,55,0.09)' };
 const metaStyle: React.CSSProperties = { color: '#657383', fontSize: 12, fontWeight: 900 };
 const titleStyle: React.CSSProperties = { margin: '8px 0 0', fontFamily: 'var(--font-serif)', fontSize: 'clamp(2rem, 5vw, 3rem)', lineHeight: 1.05, overflowWrap: 'anywhere' };
