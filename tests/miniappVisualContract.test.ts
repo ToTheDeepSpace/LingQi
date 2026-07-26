@@ -179,6 +179,11 @@ test('keeps publishing responsibility notices compact and uses the shared page b
   assert.doesNotMatch(ranking, /← 返回红黑榜/);
   assert.doesNotMatch(carpool, /← 返回拼车区/);
   assert.doesNotMatch(guide, /‹ 返回攻略交易/);
+  assert.match(guide, /JumuluPageFrame currentLabel="发布攻略"/);
+  assert.match(guide, /JumuluCompactHeader/);
+  assert.match(guide, /className="guide-create-grid"/);
+  assert.match(guide, /MobileTaskAction/);
+  assert.doesNotMatch(guide, /linear-gradient/);
 });
 
 test('keeps rating publishers on one page-level back action and the compact header', () => {

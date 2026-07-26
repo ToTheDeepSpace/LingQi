@@ -670,6 +670,12 @@ body {
   align-items: start;
 }
 
+.guide-create-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 12px;
+}
+
 .site-feedback-float {
   position: fixed;
   top: auto;
@@ -711,6 +717,14 @@ body {
 @media (max-width: 720px) {
   .follow-settings-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .guide-create-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .guide-create-form {
+    padding: 10px !important;
   }
 
   .jumulu-compact-header {

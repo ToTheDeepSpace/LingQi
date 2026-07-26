@@ -2,12 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import InfoTip from '../components/InfoTip';
+import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
+import MobileTaskAction from '../components/MobileTaskAction';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import {
+  jumuluCardStyle,
+  jumuluPrimaryLinkStyle,
+  jumuluSecondaryLinkStyle,
+} from '../styles/jumuluPageStyles';
 
 const API = '/api';
-const BG = '#fffdf8';
 const INK = '#1f2937';
-const GOLD = '#d9a857';
 const MUTED = 'rgba(71,85,105,0.76)';
 
 const guideTypes = [
@@ -91,30 +96,31 @@ export default function CreateGuide() {
   };
 
   return (
-    <main style={{ minHeight: '100vh', background: BG, color: INK }}>
-      <section style={{ maxWidth: 920, margin: '0 auto', padding: '22px 18px 60px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 16 }}>
-          <span />
-          <Link to="/guides/income" style={ghostButton}>创作者收入</Link>
-        </div>
-        <div style={{ border: '1px solid rgba(201,146,46,0.18)', borderRadius: 18, background: '#fff', padding: 18, boxShadow: '0 18px 48px rgba(31,41,55,0.06)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
-            <div>
-              <p style={{ color: '#925f18', fontWeight: 900, fontSize: '0.76rem', marginBottom: 6 }}>发布攻略</p>
-              <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.55rem', marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                把经验写成可购买内容
-                <InfoTip>不能上传盗版剧本文本、线索卡、谜底、核心机制复刻或未授权素材。提交后先审核。</InfoTip>
-              </h1>
-            </div>
-            <div style={{ color: '#925f18', fontWeight: 900 }}>作者：{auth.display_name || auth.phone || auth.email || '已登录用户'}</div>
-          </div>
+    <JumuluPageFrame currentLabel="发布攻略" maxWidth={980}>
+      <JumuluCompactHeader
+        eyebrow="经验内容交易"
+        title={<>发布攻略 <InfoTip>不能上传盗版剧本文本、线索卡、谜底、核心机制复刻或未授权素材。提交后先审核。</InfoTip></>}
+        description="写清可公开摘要与完整正文，选择绑定对象、剧透范围和解锁价格。"
+        aside={<Link to="/guides/income" style={jumuluSecondaryLinkStyle}>创作者收入</Link>}
+      />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(220px, 0.8fr)', gap: 12 }}>
+      <form
+        id="guide-create-form"
+        className="guide-create-form"
+        onSubmit={event => { event.preventDefault(); void submit(); }}
+        style={formStyle}
+      >
+        <div style={authorStyle}>作者：{auth.display_name || auth.phone || auth.email || '已登录用户'}</div>
+        <div className="guide-create-grid">
+          <section style={editorStyle}>
             <div style={{ display: 'grid', gap: 10 }}>
               <input value={form.title} onChange={e => update('title', e.target.value)} placeholder="标题，例如：《琳琅》祝历线不剧透体验建议" style={inputStyle} />
               <textarea value={form.summary} onChange={e => update('summary', e.target.value)} placeholder="摘要：给未购买用户看的介绍，不要在摘要里剧透" style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }} />
               <textarea value={form.content} onChange={e => update('content', e.target.value)} placeholder="正文：至少 80 字。可以写体验建议、妆造清单、出片点、城市路线、成车话术等" style={{ ...inputStyle, minHeight: 220, resize: 'vertical' }} />
             </div>
+          </section>
+
+          <section style={settingsStyle}>
             <div style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
               <select value={form.guideType} onChange={e => update('guideType', e.target.value)} style={inputStyle}>
                 {guideTypes.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
@@ -136,49 +142,30 @@ export default function CreateGuide() {
                 <InfoTip>礼物赞赏不是解锁条件。攻略正文只能通过购买或免费解锁查看。</InfoTip>
               </p>
               {message && <p style={{ color: message.includes('失败') || message.includes('错误') ? '#b91c1c' : '#166534', margin: 0 }}>{message}</p>}
-              <button type="button" onClick={() => void submit()} disabled={submitting} style={goldButton}>
+              <button type="submit" disabled={submitting} style={{ ...jumuluPrimaryLinkStyle, width: '100%' }}>
                 {submitting ? '提交中...' : '提交审核'}
               </button>
             </div>
-          </div>
+          </section>
         </div>
-      </section>
-    </main>
+      </form>
+
+      <MobileTaskAction label={submitting ? '提交中...' : '提交审核'} form="guide-create-form" disabled={submitting} />
+    </JumuluPageFrame>
   );
 }
 
+const formStyle: React.CSSProperties = { ...jumuluCardStyle, display: 'grid', gap: 12, padding: 14 };
+const authorStyle: React.CSSProperties = { color: '#925f18', fontSize: 12, fontWeight: 850 };
+const editorStyle: React.CSSProperties = { minWidth: 0 };
+const settingsStyle: React.CSSProperties = { minWidth: 0 };
 const inputStyle: React.CSSProperties = {
-  border: '1px solid rgba(201,146,46,0.22)',
-  borderRadius: 12,
+  boxSizing: 'border-box',
+  width: '100%',
+  border: '1px solid rgba(31,41,55,0.14)',
+  borderRadius: 8,
   padding: '11px 13px',
-  background: 'rgba(255,250,242,0.72)',
+  background: '#fff',
   color: INK,
   fontSize: '0.92rem',
-};
-
-const goldButton: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '11px 16px',
-  borderRadius: 12,
-  border: 'none',
-  background: `linear-gradient(135deg, ${GOLD}, #c9922e)`,
-  color: INK,
-  fontWeight: 900,
-  textDecoration: 'none',
-  cursor: 'pointer',
-};
-
-const ghostButton: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '9px 13px',
-  borderRadius: 12,
-  border: '1px solid rgba(201,146,46,0.24)',
-  background: 'rgba(255,255,255,0.72)',
-  color: '#925f18',
-  fontWeight: 850,
-  textDecoration: 'none',
 };
