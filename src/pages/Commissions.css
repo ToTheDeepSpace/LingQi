@@ -6,6 +6,7 @@
 }
 
 .commission-target-scroll,
+.commission-scope-switch,
 .commission-status-switch {
   display: flex;
   gap: 8px;
@@ -22,11 +23,12 @@
 
 .commission-filter-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
   gap: 12px;
   align-items: end;
 }
 
+.commission-scope-switch,
 .commission-status-switch {
   justify-content: flex-end;
 }
@@ -52,8 +54,7 @@
     gap: 8px;
   }
 
-  .commission-filter-field--query,
-  .commission-filter-field--status {
+  .commission-filter-field--query {
     grid-column: 1 / -1;
   }
 
@@ -65,11 +66,24 @@
     grid-column: 2;
   }
 
+  .commission-filter-field--scope {
+    grid-column: 1;
+  }
+
+  .commission-filter-field--status {
+    grid-column: 2;
+  }
+
+  .commission-scope-switch,
   .commission-status-switch {
     justify-content: stretch;
   }
 
+  .commission-scope-switch > button,
   .commission-status-switch > button {
     flex: 1;
+    min-width: 0;
+    padding-right: 8px !important;
+    padding-left: 8px !important;
   }
 }

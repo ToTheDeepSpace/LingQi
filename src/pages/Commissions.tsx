@@ -73,6 +73,7 @@ export default function Commissions() {
   const [query, setQuery] = useState('');
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
+  const [discoverScope, setDiscoverScope] = useState<'local' | 'expedition'>('local');
   const [view, setView] = useState<'active' | 'expired'>('active');
   const [cityOpen, setCityOpen] = useState(false);
   const [applicationModal, setApplicationModal] = useState<Commission | null>(null);
@@ -196,6 +197,7 @@ export default function Commissions() {
   const filteredItems = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('zh-CN');
     return items.filter(item => {
+      if (discoverScope === 'expedition' && !item.accept_expedition) return false;
       const itemStart = String(item.needed_date || '').slice(0, 10);
       const itemEnd = String(item.needed_end_date || item.needed_date || '').slice(0, 10);
       if (dateStart && (!itemEnd || itemEnd < dateStart)) return false;
@@ -206,7 +208,7 @@ export default function Commissions() {
         .toLocaleLowerCase('zh-CN')
         .includes(needle);
     });
-  }, [dateEnd, dateStart, items, query]);
+  }, [dateEnd, dateStart, discoverScope, items, query]);
   const activeItems = useMemo(() => filteredItems.filter(item => !item.is_expired), [filteredItems]);
   const expiredItems = useMemo(() => filteredItems.filter(item => item.is_expired), [filteredItems]);
   const visibleItems = view === 'active' ? activeItems : expiredItems;
@@ -602,6 +604,13 @@ export default function Commissions() {
             <div className="commission-filter-field commission-filter-field--end">
               <Label>结束日期</Label>
               <input type="date" min={dateStart || undefined} value={dateEnd} onChange={event => setDateEnd(event.target.value)} style={inputStyle} />
+            </div>
+            <div className="commission-filter-field commission-filter-field--scope">
+              <Label>接单范围</Label>
+              <div className="commission-scope-switch">
+                <ViewButton active={discoverScope === 'local'} onClick={() => setDiscoverScope('local')}>本地需求</ViewButton>
+                <ViewButton active={discoverScope === 'expedition'} onClick={() => setDiscoverScope('expedition')}>接受远征</ViewButton>
+              </div>
             </div>
             <div className="commission-filter-field commission-filter-field--status">
               <Label>状态</Label>

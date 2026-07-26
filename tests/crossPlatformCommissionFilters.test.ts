@@ -10,6 +10,9 @@ test('website commission filters use compact date and text discovery controls', 
   assert.match(source, /type="date"/);
   assert.match(source, /itemEnd < dateStart/);
   assert.match(source, /itemStart > dateEnd/);
+  assert.match(source, /discoverScope === 'expedition' && !item\.accept_expedition/);
+  assert.match(source, />本地需求<\/ViewButton>/);
+  assert.match(source, />接受远征<\/ViewButton>/);
   assert.doesNotMatch(source, /剧本选单/);
   assert.match(styles, /@media \(max-width: 720px\)/);
   assert.match(styles, /commission-target-scroll/);
