@@ -10,6 +10,7 @@ const INK = '#1f2937';
 const GOLD = '#a66a1f';
 const BLUE = '#275389';
 const MUTED = 'rgba(71,85,105,0.72)';
+const STORE_LIST_BATCH = 20;
 
 type RatingSummary = {
   avg: number | null;
@@ -36,6 +37,7 @@ export default function Stores() {
   const [query, setQuery] = useState('');
   const [loadedKey, setLoadedKey] = useState('');
   const [error, setError] = useState('');
+  const [visibleCount, setVisibleCount] = useState(STORE_LIST_BATCH);
   const requestKey = useMemo(() => `${city}|${query.trim()}`, [city, query]);
   const loading = loadedKey !== requestKey;
 
@@ -48,6 +50,7 @@ export default function Stores() {
       .then(response => response.json().then(payload => ({ response, payload })))
       .then(({ response, payload }) => {
         if (!response.ok || !payload.success) throw new Error(payload.error || '店家评分加载失败');
+        setVisibleCount(STORE_LIST_BATCH);
         setItems(payload.data || []);
         setError('');
       })
@@ -69,6 +72,9 @@ export default function Stores() {
     if (score) return score;
     return left.dm_name.localeCompare(right.dm_name, 'zh-CN');
   }), [items]);
+  const displayedItems = sortedItems.slice(0, visibleCount);
+  const remainingCount = Math.max(0, sortedItems.length - displayedItems.length);
+  const nextBatchCount = Math.min(STORE_LIST_BATCH, remainingCount);
 
   return (
     <JumuluPageFrame
@@ -104,34 +110,46 @@ export default function Stores() {
       )}
 
       {!loading && !error && sortedItems.length > 0 && (
-        <section style={gridStyle} aria-label="店家评分列表">
-          {sortedItems.map(item => {
-            const summary = item.rating_summary || { avg: null, review_count: 0, player_count: 0, sample_status: 'insufficient' as const };
-            return (
-              <article key={item.id} style={cardStyle}>
-                <Link to={`/stores/${encodeURIComponent(item.id)}`} aria-label={`查看${item.dm_name}店家专属页`} style={cardOverlayLinkStyle} />
-                <div style={cardHeadStyle}>
-                  <div style={{ minWidth: 0 }}>
-                    <h2 style={nameStyle}>{item.dm_name}</h2>
-                    <p style={metaStyle}>{item.city || '城市待补'}{item.workplace ? ` · ${item.workplace}` : ''}</p>
+        <>
+          <section style={gridStyle} aria-label="店家评分列表">
+            {displayedItems.map(item => {
+              const summary = item.rating_summary || { avg: null, review_count: 0, player_count: 0, sample_status: 'insufficient' as const };
+              return (
+                <article key={item.id} style={cardStyle}>
+                  <Link to={`/stores/${encodeURIComponent(item.id)}`} aria-label={`查看${item.dm_name}店家专属页`} style={cardOverlayLinkStyle} />
+                  <div style={cardHeadStyle}>
+                    <div style={{ minWidth: 0 }}>
+                      <h2 style={nameStyle}>{item.dm_name}</h2>
+                      <p style={metaStyle}>{item.city || '城市待补'}{item.workplace ? ` · ${item.workplace}` : ''}</p>
+                    </div>
+                    <div style={scoreStyle}>
+                      {summary.avg ? <><strong>{summary.avg.toFixed(1)}</strong><span>★</span></> : <strong style={{ fontSize: 13 }}>暂无评分</strong>}
+                      <small>{summary.player_count || 0} 人评分</small>
+                    </div>
                   </div>
-                  <div style={scoreStyle}>
-                    {summary.avg ? <><strong>{summary.avg.toFixed(1)}</strong><span>★</span></> : <strong style={{ fontSize: 13 }}>暂无评分</strong>}
-                    <small>{summary.player_count || 0} 人评分</small>
+                  {item.tags && item.tags.length > 0 && <div style={tagRowStyle}>{item.tags.slice(0, 4).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}</div>}
+                  <div style={{ ...cardFooterStyle, position: 'relative', zIndex: 2 }}>
+                    <span style={{ color: MUTED, fontSize: 12 }}>{summary.review_count || 0} 条到店记录{summary.sample_status === 'insufficient' && summary.player_count > 0 ? ' · 样本较少' : ''}</span>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <Link to={`/stores/rate?storeId=${encodeURIComponent(item.id)}`} style={smallSecondaryStyle}>评分</Link>
+                      <Link to={`/stores/${encodeURIComponent(item.id)}`} style={smallPrimaryStyle}>查看店家</Link>
+                    </div>
                   </div>
-                </div>
-                {item.tags && item.tags.length > 0 && <div style={tagRowStyle}>{item.tags.slice(0, 4).map(tag => <span key={tag} style={tagStyle}>{tag}</span>)}</div>}
-                <div style={{ ...cardFooterStyle, position: 'relative', zIndex: 2 }}>
-                  <span style={{ color: MUTED, fontSize: 12 }}>{summary.review_count || 0} 条到店记录{summary.sample_status === 'insufficient' && summary.player_count > 0 ? ' · 样本较少' : ''}</span>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <Link to={`/stores/rate?storeId=${encodeURIComponent(item.id)}`} style={smallSecondaryStyle}>评分</Link>
-                    <Link to={`/stores/${encodeURIComponent(item.id)}`} style={smallPrimaryStyle}>查看店家</Link>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </section>
+                </article>
+              );
+            })}
+          </section>
+          {remainingCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setVisibleCount(current => current + STORE_LIST_BATCH)}
+              style={loadMoreStyle}
+            >
+              <strong>继续加载 {nextBatchCount} 家</strong>
+              <span>已显示 {displayedItems.length} / {sortedItems.length}</span>
+            </button>
+          )}
+        </>
       )}
     </JumuluPageFrame>
   );
@@ -155,4 +173,5 @@ const tagStyle: React.CSSProperties = { padding: '3px 8px', borderRadius: 999, b
 const cardFooterStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 12, borderTop: '1px solid rgba(31,41,55,0.07)' };
 const smallPrimaryStyle: React.CSSProperties = { minHeight: 34, display: 'inline-flex', alignItems: 'center', borderRadius: 7, padding: '0 11px', background: BLUE, color: '#fff', fontSize: 12, fontWeight: 900, textDecoration: 'none' };
 const smallSecondaryStyle: React.CSSProperties = { ...smallPrimaryStyle, background: '#fff', color: GOLD, border: '1px solid rgba(166,106,31,0.22)' };
+const loadMoreStyle: React.CSSProperties = { width: '100%', minHeight: 42, marginTop: 2, border: '1px solid rgba(39,83,137,0.14)', borderRadius: 8, background: '#fff', color: BLUE, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13, cursor: 'pointer' };
 const stateStyle: React.CSSProperties = { minHeight: 170, display: 'grid', placeContent: 'center', justifyItems: 'center', gap: 10, border: '1px dashed rgba(39,83,137,0.22)', borderRadius: 8, background: '#fff', padding: 24, textAlign: 'center' };
