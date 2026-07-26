@@ -81,7 +81,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
           <view class="page-actions hero-actions">
             <button class="primary-button" @tap="openRate">评价这家店</button>
             <button class="secondary-button" @tap="createRanking">发布红黑榜</button>
-            <button v-if="data.dossier.claim_status !== 'approved'" class="secondary-button" @tap="openClaim">经营者认领</button>
+            <button v-if="data.dossier.claim_status !== 'approved'" class="secondary-button claim-action" @tap="openClaim">经营者认领</button>
           </view>
         </view>
       </view>
@@ -127,6 +127,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
 .score { color: #9a651e; font-size: 42rpx; font-weight: 900; }
 .score-meta { color: #7b8492; font-size: 22rpx; }
 .hero-actions { margin-top: 16rpx; }
+.hero-actions .claim-action { width: auto; min-width: 176rpx; min-height: 60rpx; justify-self: start; padding: 0 18rpx; font-size: 23rpx; line-height: 60rpx; }
 .section { margin-top: 14rpx; padding: 20rpx; }
 .section__title, .section__content { display: block; }
 .section__title { margin-bottom: 10rpx; font-size: 28rpx; font-weight: 850; }

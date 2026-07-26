@@ -111,6 +111,8 @@ test('keeps stores without a photo compact and exposes claim trust status', () =
   assert.match(detail, /v-if="!data\.dossier\.photo_url" class="hero__avatar"/);
   assert.match(detail, /storeClaimLabel/);
   assert.match(detail, /\.hero__avatar\s*\{[\s\S]*width:\s*112rpx;[\s\S]*height:\s*112rpx/);
+  assert.match(detail, /class="secondary-button claim-action"/);
+  assert.match(detail, /\.hero-actions \.claim-action\s*\{[\s\S]*width:\s*auto/);
   assert.match(presentation, /店家已认领/);
   assert.match(presentation, /未认领店家档案/);
 });
