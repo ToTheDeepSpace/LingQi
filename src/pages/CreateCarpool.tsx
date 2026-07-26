@@ -4,14 +4,13 @@ import type { AuthData, CarpoolRole, CarpoolSubsidyType, ScriptCatalogItem, Stor
 import { CITIES } from '../constants/cities';
 import { formatDetailedSubsidy, generateCarpoolMessage, parseCarpoolMessage } from '../lib/carpoolMessage';
 import DraftAutosaveNotice from '../components/DraftAutosaveNotice';
-import InfoTip from '../components/InfoTip';
 import ResponsibilityNotice from '../components/ResponsibilityNotice';
 import MobileTaskAction from '../components/MobileTaskAction';
+import { JumuluCompactHeader, JumuluPageFrame } from '../components/JumuluPageChrome';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 
 const API = '/api';
-const C = '#fffdf8';
 const GOLD = '#d9a857';
 const INK = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
@@ -556,42 +555,39 @@ export default function CreateCarpool() {
   if (!auth) return null;
 
   return (
-    <div style={{ backgroundColor: C, minHeight: '100vh', color: INK }}>
-      <div style={{ background: 'linear-gradient(135deg, #eef6ff, #fffaf2)', borderBottom: '1px solid rgba(201,146,46,0.2)', padding: '32px 20px' }}>
-        <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ display: 'grid', gap: 6 }}>
-            <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: '1.55rem', marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              发布拼车
-              <InfoTip>先把群消息解析成车次，也可以直接填车次，再单独生成可粘贴文案。</InfoTip>
-            </h1>
-          </div>
-          <Link to="/wallet" style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(201,146,46,0.25)', background: 'rgba(255,255,255,0.78)', color: '#925f18', textDecoration: 'none', fontWeight: 700, fontSize: '0.85rem' }}>
+    <JumuluPageFrame currentLabel="发布拼车" maxWidth={1060}>
+      <JumuluCompactHeader
+        eyebrow="同城拼车"
+        title="拼车工作台"
+        description="粘贴群消息，解析后核对车次，再生成可以继续转发的完整文案。"
+        aside={(
+          <Link to="/wallet" className="carpool-create-balance">
             榜金 {balance ?? '...'}
           </Link>
-        </div>
-      </div>
+        )}
+      />
+      <DraftAutosaveNotice
+        savedAt={carpoolDraft.savedAt}
+        restoredAt={carpoolDraft.restoredAt}
+        error={carpoolDraft.error}
+        note="未发布的拼车会自动保存到当前浏览器，包含车次、角色座位和店家线索。"
+      />
+      <ResponsibilityNotice compact />
 
-      <div style={{ maxWidth: 860, margin: '0 auto', padding: '30px 20px 80px' }}>
-        <div style={{ display: 'grid', gap: 18 }}>
-          <DraftAutosaveNotice
-            savedAt={carpoolDraft.savedAt}
-            restoredAt={carpoolDraft.restoredAt}
-            error={carpoolDraft.error}
-            note="未发布的拼车会自动保存到当前浏览器，包含车次、角色座位和店家线索。"
-          />
+      <div className="carpool-create-primary-grid">
           <section style={heroCardStyle}>
-            <h2 style={sectionTitleStyle}>粘贴消息解析车次</h2>
-            <Field label="原始群消息">
+            <h2 style={sectionTitleStyle}>粘贴车头消息</h2>
+            <Field label="原始消息">
               <textarea
                 value={rawMessage}
                 onChange={e => setRawMessage(e.target.value)}
-                rows={7}
+                rows={6}
                 placeholder={'例：🚗6.14 晚场 无限x琳琅=祝魇cp（各半价）\n也可以直接写你想发到群里的拼车消息。'}
-                style={{ ...inputStyle, resize: 'vertical', minHeight: 150, lineHeight: 1.75 }}
+                style={{ ...inputStyle, resize: 'vertical', minHeight: 140, lineHeight: 1.7 }}
               />
             </Field>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button onClick={applyParsed} style={secondaryButtonStyle}>解析为车次字段</button>
+              <button onClick={applyParsed} style={secondaryButtonStyle}>解析拼车消息</button>
             </div>
             {parseWarnings.length > 0 && (
               <div style={{ display: 'grid', gap: 6 }}>
@@ -599,8 +595,6 @@ export default function CreateCarpool() {
               </div>
             )}
           </section>
-
-          <ResponsibilityNotice />
 
           <section style={heroCardStyle}>
             <h2 style={sectionTitleStyle}>确认四个关键信息</h2>
@@ -638,6 +632,7 @@ export default function CreateCarpool() {
             )}
             {dateExpired && <p style={warningStyle}>这条消息里的日期已经过了。请确认它仍有效，并手动选择新的有效日期。</p>}
           </section>
+      </div>
 
           <section style={heroCardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -817,28 +812,26 @@ export default function CreateCarpool() {
 
           <button onClick={submit} disabled={submitting}
             style={{
-              width: '100%', padding: '16px', borderRadius: 14, fontWeight: 900, fontSize: '1rem',
+              width: '100%', padding: '13px', borderRadius: 8, fontWeight: 900, fontSize: '0.94rem',
               cursor: submitting ? 'not-allowed' : 'pointer',
-              background: submitting ? 'rgba(201,146,46,0.15)' : `linear-gradient(135deg, ${GOLD} 0%, #c9922e 100%)`,
-              color: submitting ? 'rgba(201,146,46,0.4)' : INK,
+              background: submitting ? 'rgba(39,83,137,0.12)' : '#275389',
+              color: submitting ? 'rgba(39,83,137,0.42)' : '#fff',
               border: 'none',
             }}>
             {submitting ? '发布中...' : (boostAmount > 0 ? `发布拼车 · 扣 ${boostAmount} 榜金` : '发布拼车')}
           </button>
-        </div>
-      </div>
       <MobileTaskAction
         label={submitting ? '发布中...' : boostAmount > 0 ? `发布拼车 · 扣 ${boostAmount} 榜金` : '发布拼车'}
         disabled={submitting}
         onClick={() => void submit()}
       />
-    </div>
+    </JumuluPageFrame>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section style={{ display: 'grid', gap: 14, borderRadius: 16, border: '1px solid rgba(217,168,87,0.2)', background: 'rgba(255,255,255,0.78)', padding: 18, boxShadow: '0 12px 30px rgba(31,41,55,0.05)' }}>
+    <section style={{ display: 'grid', gap: 14, borderRadius: 8, border: '1px solid rgba(31,41,55,0.1)', background: '#fff', padding: 16 }}>
       <h2 style={sectionTitleStyle}>{title}</h2>
       {children}
     </section>
@@ -865,11 +858,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const heroCardStyle: React.CSSProperties = {
   display: 'grid',
   gap: 14,
-  borderRadius: 18,
-  border: '1px solid rgba(217,168,87,0.22)',
-  background: 'rgba(255,255,255,0.82)',
-  padding: 18,
-  boxShadow: '0 14px 36px rgba(31,41,55,0.06)',
+  borderRadius: 8,
+  border: '1px solid rgba(31,41,55,0.1)',
+  background: '#fff',
+  padding: 16,
 };
 
 const sectionTitleStyle: React.CSSProperties = {
@@ -881,10 +873,10 @@ const sectionTitleStyle: React.CSSProperties = {
 
 const secondaryButtonStyle: React.CSSProperties = {
   padding: '10px 16px',
-  borderRadius: 10,
-  border: '1px solid rgba(217,168,87,0.28)',
+  borderRadius: 8,
+  border: '1px solid rgba(39,83,137,0.2)',
   background: '#fff',
-  color: '#925f18',
+  color: '#275389',
   cursor: 'pointer',
   fontWeight: 900,
 };
@@ -902,8 +894,8 @@ const warningStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
-  borderRadius: 11,
-  border: '1px solid rgba(217,168,87,0.25)',
+  borderRadius: 8,
+  border: '1px solid rgba(31,41,55,0.14)',
   background: '#fff',
   color: INK,
   padding: '10px 12px',

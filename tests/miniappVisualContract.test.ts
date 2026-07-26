@@ -181,6 +181,22 @@ test('keeps publishing responsibility notices compact and uses the shared page b
   assert.doesNotMatch(guide, /‹ 返回攻略交易/);
 });
 
+test('keeps the website carpool workbench message-first and compact', () => {
+  const page = read('src/pages/CreateCarpool.tsx');
+  const miniPage = read('miniapp/jumulu/src/pages/carpools/create.vue');
+
+  assert.match(page, /JumuluPageFrame currentLabel="发布拼车"/);
+  assert.match(page, /title="拼车工作台"/);
+  assert.match(page, /className="carpool-create-primary-grid"/);
+  assert.match(page, /<ResponsibilityNotice compact \/>/);
+  assert.doesNotMatch(page, /linear-gradient\(135deg, #eef6ff, #fffaf2\)/);
+  assert.match(miniPage, /title="拼车工作台"/);
+  assert.match(miniPage, /parseCarpoolMessage/);
+  assert.match(miniPage, /粘贴车头消息/);
+  assert.match(miniPage, /生成转发消息/);
+  assert.match(miniPage, /subsidyType/);
+});
+
 test('exposes public provider availability without turning the miniapp profile into a calendar', () => {
   const source = read('miniapp/jumulu/src/pages/profile/detail.vue');
 
