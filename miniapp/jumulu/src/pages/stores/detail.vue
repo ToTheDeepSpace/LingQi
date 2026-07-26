@@ -6,6 +6,7 @@ import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { DossierRating, RatingSummary, Ranking } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
+import { storeClaimLabel } from '../../utils/dossierPresentation'
 import { dateText, ratingText } from '../../utils/format'
 
 type StoreDetail = {
@@ -66,11 +67,16 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
     <template v-if="data">
       <view class="hero surface">
         <image v-if="data.dossier.photo_url" class="hero__image" :src="data.dossier.photo_url" mode="aspectFill" @tap="previewPhoto" />
-        <view v-else class="hero__avatar">{{ data.dossier.name.slice(0, 1) }}</view>
         <view v-if="data.dossier.photo_url" class="media-report"><ReportFlag target-type="dossier_image" :target-id="data.dossier.id" target-sub-id="photo:0" :title="`${data.dossier.name}的图片`" :own="data.dossier.claimed_by === readAuth()?.id" /></view>
         <view class="hero__body">
-          <view class="name-row"><text class="hero__name">{{ data.dossier.name }}</text><view class="name-actions"><button class="follow-button" @tap="toggleFollow">{{ following ? '已关注' : '关注' }}</button><ReportFlag target-type="dossier" :target-id="data.dossier.id" :title="`${data.dossier.name}的店家档案`" :own="data.dossier.claimed_by === readAuth()?.id" /></view></view>
-          <text class="hero__meta">{{ data.dossier.city || '城市待补充' }}<template v-if="data.dossier.address"> · {{ data.dossier.address }}</template></text>
+          <view class="identity-row">
+            <view v-if="!data.dossier.photo_url" class="hero__avatar">{{ data.dossier.name.slice(0, 1) }}</view>
+            <view class="identity-copy">
+              <view class="name-row"><text class="hero__name">{{ data.dossier.name }}</text><view class="name-actions"><button class="follow-button" @tap="toggleFollow">{{ following ? '已关注' : '关注' }}</button><ReportFlag target-type="dossier" :target-id="data.dossier.id" :title="`${data.dossier.name}的店家档案`" :own="data.dossier.claimed_by === readAuth()?.id" /></view></view>
+              <text class="claim-badge" :class="{ verified: data.dossier.claim_status === 'approved' }">{{ storeClaimLabel(data.dossier.claim_status) }}</text>
+              <text class="hero__meta">{{ data.dossier.city || '城市待补充' }}<template v-if="data.dossier.address"> · {{ data.dossier.address }}</template></text>
+            </view>
+          </view>
           <view class="score-row"><text class="score">{{ ratingText(data.summary.avg) }}</text><text class="score-meta">{{ data.summary.player_count }} 位玩家 · {{ data.summary.review_count }} 次到店</text></view>
           <view class="page-actions hero-actions">
             <button class="primary-button" @tap="openRate">评价这家店</button>
@@ -103,15 +109,19 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.name || '店家'}｜剧
 
 <style scoped>
 .hero { overflow: hidden; }
-.hero__image, .hero__avatar { width: 100%; height: 430rpx; background: #f2ece4; }
-.hero__avatar { display: flex; align-items: center; justify-content: center; color: #9a651e; font-family: serif; font-size: 96rpx; font-weight: 900; }
+.hero__image { width: 100%; height: 430rpx; background: #f2ece4; }
+.hero__avatar { display: flex; width: 112rpx; height: 112rpx; flex: 0 0 112rpx; align-items: center; justify-content: center; border-radius: 8rpx; background: #f2ece4; color: #9a651e; font-family: serif; font-size: 48rpx; font-weight: 900; }
 .hero__body { padding: 22rpx; }
 .media-report { display: flex; justify-content: flex-end; padding: 8rpx 14rpx 0; }
+.identity-row { display: flex; align-items: center; gap: 16rpx; }
+.identity-copy { min-width: 0; flex: 1; }
 .hero__name, .hero__meta { display: block; }
 .name-row { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; }
 .name-actions, .review__head-actions { display: flex; align-items: center; gap: 6rpx; }
 .follow-button { width: auto; min-height: 56rpx; margin: 0; padding: 0 16rpx; border: 1rpx solid #d9a857; border-radius: 8rpx; background: #fffaf0; color: #925f18; font-size: 22rpx; font-weight: 800; line-height: 56rpx; }
 .hero__name { font-family: serif; font-size: 42rpx; font-weight: 900; }
+.claim-badge { display: inline-flex; max-width: 100%; margin-top: 7rpx; overflow: hidden; border: 1rpx solid #dce3ec; border-radius: 7rpx; background: #f8fafc; padding: 6rpx 10rpx; color: #526174; font-size: 20rpx; font-weight: 800; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.claim-badge.verified { border-color: #ead8ad; background: #fff8e8; color: #8a5a19; }
 .hero__meta { margin-top: 8rpx; color: #64748b; font-size: 24rpx; line-height: 1.5; }
 .score-row { display: flex; align-items: baseline; gap: 12rpx; margin-top: 16rpx; }
 .score { color: #9a651e; font-size: 42rpx; font-weight: 900; }

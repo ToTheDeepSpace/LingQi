@@ -7,6 +7,13 @@ export function dossierClaimLabel(status?: string | null) {
   return '未认领 DM 档案'
 }
 
+export function storeClaimLabel(status?: string | null) {
+  if (status === 'approved') return '店家已认领'
+  if (status === 'pending') return '经营者认领审核中'
+  if (status === 'withdrawn') return '原经营者认领已撤销'
+  return '未认领店家档案'
+}
+
 export function dossierAffiliationLabel(dossier: Dossier) {
   const affiliation = dossier.affiliation
   const storeName = affiliation?.store_name || '店家'

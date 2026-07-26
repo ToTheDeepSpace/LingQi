@@ -99,6 +99,17 @@ test('shows the same DM identity and affiliation trust semantics on the miniapp 
   assert.match(presentation, /社区提供：任职于/);
 });
 
+test('keeps stores without a photo compact and exposes claim trust status', () => {
+  const detail = read('miniapp/jumulu/src/pages/stores/detail.vue');
+  const presentation = read('miniapp/jumulu/src/utils/dossierPresentation.ts');
+
+  assert.match(detail, /v-if="!data\.dossier\.photo_url" class="hero__avatar"/);
+  assert.match(detail, /storeClaimLabel/);
+  assert.match(detail, /\.hero__avatar\s*\{[\s\S]*width:\s*112rpx;[\s\S]*height:\s*112rpx/);
+  assert.match(presentation, /店家已认领/);
+  assert.match(presentation, /未认领店家档案/);
+});
+
 test('keeps the ranking feed bounded and moves persistent notices behind an explicit action', () => {
   const source = read('miniapp/jumulu/src/pages/rankings/index.vue');
 
