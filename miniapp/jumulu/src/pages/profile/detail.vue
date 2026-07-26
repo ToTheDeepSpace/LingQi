@@ -8,9 +8,11 @@ import type { ProviderListing } from '../../types'
 import { apiRequest, encoded, readAuth, requestServicePayment, requireLogin, type ServicePurchase } from '../../utils/api'
 
 type SocialPlatform = 'douyin' | 'xiaohongshu'
+type Availability = { id: string; date: string; start_time?: string | null; end_time?: string | null; city?: string | null; location?: string | null; is_booked?: boolean }
 type Profile = { id: string; display_name: string; avatar?: string | null; avatar_focus_x?: number | null; avatar_focus_y?: number | null; city?: string | null; bio?: string | null; tags?: string[]; identity_roles?: string[]; social_links?: Partial<Record<SocialPlatform, string>>; services?: Array<{ id: string; service_type?: string; price?: number; description?: string }>; portfolio?: Array<{ id: string; image_url: string; caption?: string }>; provider_listing?: ProviderListing | null }
 const id = ref('')
 const profile = ref<Profile | null>(null)
+const availability = ref<Availability[]>([])
 const loading = ref(false)
 const error = ref('')
 const inquiryBusy = ref(false)
@@ -22,9 +24,18 @@ const socialVisual: Record<SocialPlatform, { label: string; glyph: string }> = {
 const socialEntries = computed(() => (Object.entries(profile.value?.social_links || {}) as Array<[SocialPlatform, string]>)
   .filter(([platform, url]) => platform in socialVisual && typeof url === 'string' && url.trim())
   .map(([platform, url]) => ({ platform, url: url.trim(), ...socialVisual[platform] })))
+const availableSlots = computed(() => availability.value.filter(item => !item.is_booked))
+const visibleSlots = computed(() => availableSlots.value.slice(0, 20))
 async function load() {
   loading.value = true; error.value = ''
-  try { profile.value = await apiRequest<Profile>(`/lc/creators/${encoded(id.value)}`) }
+  try {
+    const [profileData, slots] = await Promise.all([
+      apiRequest<Profile>(`/lc/creators/${encoded(id.value)}`),
+      apiRequest<Availability[]>(`/lc/creators/${encoded(id.value)}/availability`).catch(() => []),
+    ])
+    profile.value = profileData
+    availability.value = slots
+  }
   catch (err) { error.value = err instanceof Error ? err.message : '用户主页加载失败' }
   finally { loading.value = false }
 }
@@ -38,6 +49,9 @@ function openSocial(url: string, label: string) {
     success: () => uni.showToast({ title: `已复制${label}链接，请前往${label}打开`, icon: 'none' }),
   })
 }
+function slotDate(value: string) { return value.slice(5).replace('-', '.') }
+function slotTime(slot: Availability) { return [slot.start_time?.slice(0, 5), slot.end_time?.slice(0, 5)].filter(Boolean).join('-') }
+function slotPlace(slot: Availability) { return [slot.city || profile.value?.city || '地点可议', slot.location].filter(Boolean).join(' · ') }
 async function openInquiry() {
   if (readAuth()?.id === id.value) return editListing()
   if (inquiryBusy.value) return
@@ -113,6 +127,20 @@ onShareAppMessage(() => ({ title: `${profile.value?.display_name || '用户'}｜
         <text v-if="profile.bio" class="bio">{{ profile.bio }}</text>
         <view v-if="profile.tags?.length" class="chip-row"><text v-for="tag in profile.tags" :key="tag" class="chip">{{ tag }}</text></view>
       </view>
+      <view v-if="availableSlots.length" class="section availability-section surface">
+        <view class="section-heading"><text class="section__title">近期可约</text><text>{{ availableSlots.length }} 天</text></view>
+        <scroll-view class="availability" scroll-x :show-scrollbar="false">
+          <view v-for="slot in visibleSlots" :key="slot.id" class="availability__slot">
+            <strong>{{ slotDate(slot.date) }}</strong>
+            <text v-if="slotTime(slot)">{{ slotTime(slot) }}</text>
+            <text>{{ slotPlace(slot) }}</text>
+          </view>
+          <view v-if="availableSlots.length > visibleSlots.length" class="availability__slot availability__more">
+            <strong>+{{ availableSlots.length - visibleSlots.length }}</strong>
+            <text>更多日期</text>
+          </view>
+        </scroll-view>
+      </view>
       <view v-if="profile.provider_listing" class="provider-listing surface">
         <image :src="profile.provider_listing.poster_url" mode="aspectFill" @tap="previewListing" />
         <view class="provider-listing__body">
@@ -151,6 +179,16 @@ onShareAppMessage(() => ({ title: `${profile.value?.display_name || '用户'}｜
 .section__title, .bio { display: block; }
 .section__title { margin-bottom: 10rpx; font-size: 28rpx; font-weight: 850; }
 .bio { margin-bottom: 12rpx; color: #475569; line-height: 1.65; white-space: pre-wrap; }
+.availability-section { overflow: hidden; }
+.section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12rpx; }
+.section-heading .section__title { margin-bottom: 10rpx; }
+.section-heading > text:last-child { color: #7b8492; font-size: 21rpx; }
+.availability { width: 100%; white-space: nowrap; }
+.availability__slot { display: inline-flex; min-width: 164rpx; min-height: 104rpx; box-sizing: border-box; flex-direction: column; justify-content: center; margin-right: 10rpx; padding: 12rpx 14rpx; border: 1rpx solid #ead8ad; border-radius: 8rpx; background: #fff8e8; vertical-align: top; }
+.availability__slot strong, .availability__slot text { display: block; }
+.availability__slot strong { color: #8a5a19; font-size: 26rpx; }
+.availability__slot text { max-width: 220rpx; margin-top: 4rpx; overflow: hidden; color: #64748b; font-size: 20rpx; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.availability__more { align-items: center; min-width: 130rpx; border-color: #dce3ec; background: #f8fafc; text-align: center; }
 .service { display: flex; justify-content: space-between; gap: 18rpx; margin-bottom: 12rpx; padding: 18rpx; }
 .service strong, .service text { display: block; }
 .service text { margin-top: 6rpx; color: #64748b; font-size: 23rpx; }

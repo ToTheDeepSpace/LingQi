@@ -127,6 +127,16 @@ test('keeps public social profiles available as compact miniapp actions', () => 
   assert.match(source, /setClipboardData/);
 });
 
+test('exposes public provider availability without turning the miniapp profile into a calendar', () => {
+  const source = read('miniapp/jumulu/src/pages/profile/detail.vue');
+
+  assert.match(source, /\/availability/);
+  assert.match(source, /近期可约/);
+  assert.match(source, /availableSlots\.value\.slice\(0, 20\)/);
+  assert.match(source, /class="availability" scroll-x/);
+  assert.match(source, /v-if="availableSlots\.length"/);
+});
+
 test('keeps the ranking feed bounded and moves persistent notices behind an explicit action', () => {
   const source = read('miniapp/jumulu/src/pages/rankings/index.vue');
 
