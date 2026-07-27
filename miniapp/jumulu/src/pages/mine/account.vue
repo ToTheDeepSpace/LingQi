@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import type { AuthSession } from '../../types'
 import { apiRequest, readAuth, writeAuth } from '../../utils/api'
@@ -48,6 +49,7 @@ function openLegal(type: 'terms' | 'privacy') { uni.navigateTo({ url: `/pages/le
 <template>
   <view class="page">
     <PageIntro eyebrow="账号与安全" title="账号设置" description="小程序和网站使用同一个剧幕录账号。" fallback="/pages/mine/index" />
+    <AuthFormGate message="登录后才能管理账号">
     <view class="status surface">
       <view><text>微信身份</text><strong>已绑定</strong></view>
       <view><text>手机号</text><strong>{{ auth?.phone_verified_at ? auth.phone : '未验证' }}</strong></view>
@@ -70,6 +72,7 @@ function openLegal(type: 'terms' | 'privacy') { uni.navigateTo({ url: `/pages/le
         <button class="secondary-button" @tap="openLegal('privacy')">隐私政策</button>
       </view>
     </view>
+    </AuthFormGate>
   </view>
 </template>
 

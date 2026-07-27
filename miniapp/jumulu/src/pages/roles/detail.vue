@@ -54,6 +54,12 @@ async function submit() {
     else if ((err as Error).message !== '请先登录') uni.showToast({ title: (err as Error).message, icon: 'none' })
   } finally { submitting.value = false }
 }
+async function openComposer() {
+  try {
+    await requireLogin()
+    composerOpen.value = true
+  } catch { /* login page is opened by requireLogin */ }
+}
 function openProfile(profileId?: string) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 onLoad(options => { id.value = String(options?.id || ''); void load() })
 onShareAppMessage(() => ({ title: role.value ? `${role.value.role_name}《${role.value.script_name}》角色点评` : '剧幕录角色点评', path: `/pages/roles/detail?id=${encoded(id.value)}` }))
@@ -86,7 +92,7 @@ onShareAppMessage(() => ({ title: role.value ? `${role.value.role_name}《${role
           <text class="review__date">{{ dateText(item.created_at) }}</text>
         </view>
       </template>
-      <button v-if="!composerOpen" class="secondary-button write-review" @tap="composerOpen = true">
+      <button v-if="!composerOpen" class="secondary-button write-review" @tap="openComposer">
         写{{ activeLane === 'deep_spoiler' ? '剧透深评' : '无剧透体验' }}
       </button>
       <view v-else class="composer surface">

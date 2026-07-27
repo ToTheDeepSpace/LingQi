@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import { apiRequest, readAuth, requireLogin } from '../../utils/api'
@@ -59,6 +60,7 @@ async function submit() {
 <template>
   <view class="page">
     <PageIntro eyebrow="委托需求" title="发布委托" description="选择执行城市，并决定是否接受异地委托师远征。" fallback="/pages/commissions/index" />
+    <AuthFormGate message="登录后才能发布委托">
     <view class="form-surface">
       <text class="field-label first">标题 *</text><input v-model="title" class="input" maxlength="80" placeholder="一句话说清想找什么人" />
       <text class="field-label">需求内容 *</text><textarea v-model="content" class="textarea" maxlength="2000" placeholder="说明角色、时间、体验偏好或其他要求" />
@@ -73,6 +75,7 @@ async function submit() {
       <text class="privacy">委托审核和管理员查看申请时不会展示这里的联系方式。只有你同意某条申请后，才会立即向双方展示。</text>
       <view class="sticky-submit"><button class="primary-button" :loading="submitting" :disabled="submitting" @tap="submit">提交审核</button></view>
     </view>
+    </AuthFormGate>
   </view>
 </template>
 

@@ -34,17 +34,17 @@ async function load() {
   finally { loading.value = false; uni.stopPullDownRefresh() }
 }
 function previewPhoto() { if (data.value?.dossier.photo_url) uni.previewImage({ urls: [data.value.dossier.photo_url] }) }
-function openRate() { uni.navigateTo({ url: `/pages/stores/rate?storeId=${encoded(id.value)}` }) }
+function openRate() { void requireLogin().then(() => uni.navigateTo({ url: `/pages/stores/rate?storeId=${encoded(id.value)}` })).catch(() => undefined) }
 function openRanking(rankingId: string) { uni.navigateTo({ url: `/pages/rankings/detail?id=${encoded(rankingId)}` }) }
 function createRanking() {
   const dossier = data.value?.dossier
   if (!dossier) return
-  uni.navigateTo({ url: `/pages/rankings/create?subjectType=store&subjectDossierId=${encoded(dossier.id)}&subjectName=${encoded(dossier.name)}&subjectCity=${encoded(dossier.city)}` })
+  void requireLogin().then(() => uni.navigateTo({ url: `/pages/rankings/create?subjectType=store&subjectDossierId=${encoded(dossier.id)}&subjectName=${encoded(dossier.name)}&subjectCity=${encoded(dossier.city)}` })).catch(() => undefined)
 }
 function openClaim() {
   const dossier = data.value?.dossier
   if (!dossier) return
-  uni.navigateTo({ url: `/pages/dm/claim?id=${encoded(dossier.id)}&name=${encoded(dossier.name)}&entityType=store` })
+  void requireLogin().then(() => uni.navigateTo({ url: `/pages/dm/claim?id=${encoded(dossier.id)}&name=${encoded(dossier.name)}&entityType=store` })).catch(() => undefined)
 }
 function openProfile(profileId?: string | null) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 async function toggleFollow() {

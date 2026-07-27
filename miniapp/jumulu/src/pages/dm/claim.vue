@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import PageIntro from '../../components/PageIntro.vue'
-import { apiRequest, decoded, encoded, requestServicePayment, submitDossierClaim } from '../../utils/api'
+import { apiRequest, decoded, encoded, readAuth, requestServicePayment, submitDossierClaim } from '../../utils/api'
 
 type EntityType = 'dm' | 'store'
 type ClaimState = {
@@ -113,13 +114,14 @@ onLoad(optionsValue => {
   name.value = decoded(optionsValue?.name || '相关档案')
   entityType.value = optionsValue?.entityType === 'store' ? 'store' : 'dm'
   proofType.value = options.value[0].value
-  void load()
+  if (readAuth()?.token) void load()
 })
 </script>
 
 <template>
   <view class="page">
     <PageIntro eyebrow="本人认证" nav-title="认领档案" :title="`认领「${name}」`" description="认领费 8.88 元用于资料真实性核验。认领成功后可以持续修改资料，修改免费但仍需审核。" />
+    <AuthFormGate message="登录后才能认领档案">
     <view v-if="loading" class="surface loading">正在读取认领状态…</view>
     <view v-else class="form-surface">
       <view v-if="state?.claim?.status === 'pending'" class="status">这份认领申请正在审核，无需重复提交。</view>
@@ -149,6 +151,7 @@ onLoad(optionsValue => {
         </view>
       </template>
     </view>
+    </AuthFormGate>
   </view>
 </template>
 

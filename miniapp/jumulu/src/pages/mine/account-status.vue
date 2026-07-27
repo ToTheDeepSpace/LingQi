@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { AccountStatus } from '../../types'
@@ -285,6 +286,7 @@ onPullDownRefresh(load)
 <template>
   <view class="page">
     <MiniNavBar title="消息中心" fallback="/pages/mine/index" />
+    <AuthFormGate message="登录后才能查看消息和提交记录">
     <StatePanel :loading="loading" :error="error" :empty="false" @retry="load" />
 
     <view v-if="status && status.state !== 'merged'" class="status-strip" :class="{ restricted: status.state === 'restricted' }">
@@ -366,6 +368,7 @@ onPullDownRefresh(load)
         </button>
       </template>
     </view>
+    </AuthFormGate>
   </view>
 </template>
 

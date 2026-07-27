@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
 import DossierSearchPicker from '../../components/DossierSearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
@@ -79,6 +80,7 @@ onLoad(options => { void load(String(options?.storeId || '')) })
 <template>
   <view class="page">
     <PageIntro eyebrow="到店体验" title="评价店家" description="记录环境、服务、组织和实际开本体验。" fallback="/pages/stores/index" />
+    <AuthFormGate message="登录后才能评价店家">
     <view v-if="loading" class="loading">正在加载...</view>
     <view v-else class="form-surface">
       <text class="field-label">店家</text>
@@ -96,6 +98,7 @@ onLoad(options => { void load(String(options?.storeId || '')) })
       <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting" @tap="submit">提交审核</button></view>
     </view>
     <DossierCreateSheet :open="createOpen" entity-type="store" :initial-name="createInitialName" mode="draft" @close="createOpen = false" @created="acceptDraft" />
+    </AuthFormGate>
   </view>
 </template>
 

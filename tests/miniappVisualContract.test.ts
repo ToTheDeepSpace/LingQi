@@ -326,16 +326,19 @@ test('keeps long-lived account histories bounded in the miniapp', () => {
 test('miniapp report entry requires login before opening or editing the form', () => {
   const flag = readFileSync('miniapp/jumulu/src/components/ReportFlag.vue', 'utf8');
   const report = readFileSync('miniapp/jumulu/src/pages/report/index.vue', 'utf8');
+  const gate = readFileSync('miniapp/jumulu/src/components/AuthFormGate.vue', 'utf8');
   const claim = readFileSync('miniapp/jumulu/src/pages/dm/claim.vue', 'utf8');
   const api = readFileSync('miniapp/jumulu/src/utils/api.ts', 'utf8');
 
   assert.match(flag, /import \{ encoded, requireLogin \}/);
   assert.match(flag, /await requireLogin\(\)/);
   assert.ok(flag.indexOf('await requireLogin()') < flag.indexOf('uni.navigateTo'));
-  assert.match(report, /const authenticated = ref\(Boolean\(readAuth\(\)\?\.token\)\)/);
-  assert.match(report, /onMounted\([\s\S]*?setTimeout\([\s\S]*?void requireLogin\(\)\.catch/);
-  assert.match(report, /v-if="!authenticated" class="login-gate"/);
-  assert.match(report, /v-else class="form-surface"/);
+  assert.match(report, /import AuthFormGate/);
+  assert.match(report, /<AuthFormGate message="登录后才能提交举报">/);
+  assert.match(gate, /const authenticated = ref\(Boolean\(readAuth\(\)\?\.token\)\)/);
+  assert.match(gate, /onMounted\([\s\S]*?setTimeout\([\s\S]*?void requireLogin\(\)\.catch/);
+  assert.match(gate, /<slot v-if="authenticated" \/>/);
+  assert.match(gate, /v-else class="auth-form-gate"/);
   assert.match(report, /title\.value = decoded\(/);
   assert.match(claim, /name\.value = decoded\(/);
   assert.match(api, /export function decoded[\s\S]*?try \{[\s\S]*?decodeURIComponent[\s\S]*?catch \{[\s\S]*?return text/);

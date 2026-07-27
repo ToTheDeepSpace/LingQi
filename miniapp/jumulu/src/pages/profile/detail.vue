@@ -42,7 +42,9 @@ async function load() {
 function previewAvatar() { if (profile.value?.avatar) uni.previewImage({ urls: [profile.value.avatar] }) }
 function previewPortfolio(current: string) { uni.previewImage({ current, urls: (profile.value?.portfolio || []).map(item => item.image_url) }) }
 function previewListing() { if (profile.value?.provider_listing?.poster_url) uni.previewImage({ urls: [profile.value.provider_listing.poster_url] }) }
-function editListing() { uni.navigateTo({ url: '/pages/commissions/provider-edit' }) }
+function editListing() {
+  void requireLogin().then(() => uni.navigateTo({ url: '/pages/commissions/provider-edit' })).catch(() => undefined)
+}
 function openSocial(url: string, label: string) {
   uni.setClipboardData({
     data: url,

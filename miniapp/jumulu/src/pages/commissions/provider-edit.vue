@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { ProviderListing } from '../../types'
@@ -252,12 +253,15 @@ async function toggleContactAvailable() {
   }
 }
 
-onShow(() => void load())
+onShow(() => {
+  if (readAuth()?.token) void load()
+})
 </script>
 
 <template>
   <view class="page">
     <PageIntro eyebrow="委托师资料" nav-title="我的委托条" title="我的委托条" description="一张主图加必要资料，审核通过后出现在委托师列表。" fallback="/pages/commissions/index" />
+    <AuthFormGate message="登录后才能管理委托条">
     <StatePanel :loading="loading" :error="error && !state ? error : ''" :empty="false" @retry="load" />
     <template v-if="state && !loading">
       <view v-if="pending" class="review-status pending">新版本正在人工审核</view>
@@ -314,6 +318,7 @@ onShow(() => void load())
       <text v-if="error" class="form-error">{{ error }}</text>
       <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting || pending" @tap="submit">{{ pending ? '等待审核' : !state.listing && !state.initial_fee_paid ? '支付 8.88 元并提交' : '提交审核' }}</button></view>
     </template>
+    </AuthFormGate>
   </view>
 </template>
 

@@ -86,9 +86,10 @@ async function submitComment() {
   finally { submitting.value = false }
 }
 
-function report(targetType: 'ranking' | 'comment', targetId: string, title: string) {
-  uni.navigateTo({ url: `/pages/report/index?targetType=${targetType}&targetId=${encoded(targetId)}&title=${encoded(title)}` })
+function loginToComment() {
+  void requireLogin().catch(() => undefined)
 }
+
 function openProfile(profileId?: string | null) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 function previewImages(index: number) { uni.previewImage({ current: index, urls: images.value }) }
 
@@ -107,7 +108,7 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
           <text class="article__type">{{ RANKING_TYPE_TEXT[item.type] }}</text>
           <view class="article__tools">
             <text class="article__city">{{ item.subject_city || '城市待补充' }}</text>
-            <button v-if="item.poster_id !== readAuth()?.id" class="report-icon" aria-label="举报这条内容" @tap="report('ranking', item.id, item.subject_name)">⚑</button>
+            <ReportFlag target-type="ranking" :target-id="item.id" :title="`${item.subject_name}的口碑事件`" :own="item.poster_id === readAuth()?.id" />
           </view>
         </view>
         <text class="article__subject">{{ item.subject_name }}</text>
@@ -132,17 +133,18 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
       </view>
 
       <text class="section-title">评论</text>
-      <view class="composer surface">
+      <view v-if="readAuth()?.token" class="composer surface">
         <textarea v-model="commentText" class="textarea" maxlength="600" placeholder="补充事实、体验或不同意见。请勿公开他人隐私。" />
         <button class="primary-button" :loading="submitting" :disabled="submitting || !commentText.trim()" @tap="submitComment">提交评论</button>
       </view>
+      <button v-else class="secondary-button login-comment" @tap="loginToComment">登录后评论</button>
       <view v-if="!comments.length" class="surface empty">暂无公开评论。</view>
       <view v-for="comment in comments" :key="comment.id" class="comment surface">
         <view class="comment__head"><text :class="{ link: comment.author_id }" @tap="openProfile(comment.author_id)">{{ comment.author_name || '用户' }}</text><text>{{ dateText(comment.created_at) }}</text></view>
         <text class="comment__content">{{ comment.content }}</text>
         <view class="comment__bottom">
           <text v-if="comment.is_pinned" class="pinned">相关方回应</text>
-          <button v-if="comment.author_id !== readAuth()?.id" class="report-icon report-icon--comment" aria-label="举报这条评论" @tap="report('comment', comment.id, '榜单评论')">⚑</button>
+          <ReportFlag target-type="comment" :target-id="comment.id" title="榜单评论" :own="comment.author_id === readAuth()?.id" />
         </view>
       </view>
     </template>
@@ -172,13 +174,12 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
 .vote.active { background: #f3e4c9; color: #8b5919; font-weight: 850; }
 .composer { margin-top: 14rpx; padding: 18rpx; }
 .composer button { width: 100%; margin-top: 14rpx; }
+.login-comment { width: 100%; margin: 14rpx 0 0; }
 .empty { padding: 36rpx; color: #64748b; text-align: center; }
 .comment { margin-top: 12rpx; padding: 18rpx; }
 .comment__head { color: #7b8492; font-size: 22rpx; }
 .comment__content { display: block; margin-top: 12rpx; color: #374151; font-size: 26rpx; line-height: 1.65; white-space: pre-wrap; }
 .comment__bottom { margin-top: 14rpx; color: #7b8492; font-size: 22rpx; }
-.report-icon { display: flex; align-items: center; justify-content: center; width: 48rpx; min-width: 48rpx; height: 48rpx; margin: 0; padding: 0; border: 0; border-radius: 6rpx; background: transparent; color: #7b8492; font-size: 28rpx; line-height: 1; }
-.report-icon::after { border: 0; }
-.report-icon--comment { margin-left: auto; }
+.comment__bottom :deep(.report-flag) { margin-left: auto; }
 .pinned { color: #9a651e; font-weight: 800; }
 </style>

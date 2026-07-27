@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import PageIntro from '../../components/PageIntro.vue'
-import { apiRequest, decoded, readAuth, requireLogin, uploadPrivateEvidence } from '../../utils/api'
+import { apiRequest, decoded, requireLogin, uploadPrivateEvidence } from '../../utils/api'
 
 const targetType = ref('')
 const targetId = ref('')
@@ -13,7 +14,6 @@ const description = ref('')
 const evidencePaths = ref<string[]>([])
 const uploading = ref(false)
 const submitting = ref(false)
-const authenticated = ref(Boolean(readAuth()?.token))
 const reasons = ['侵犯隐私', '虚假信息', '辱骂攻击', '诈骗或导流', '色情或未成年人', '侵权或盗图', '其他问题']
 
 onLoad(options => {
@@ -22,15 +22,6 @@ onLoad(options => {
   targetSubId.value = String(options?.targetSubId || '')
   title.value = decoded(options?.title || '相关内容')
 })
-onMounted(() => {
-  if (!authenticated.value) {
-    setTimeout(() => { void requireLogin().catch(() => undefined) }, 80)
-  }
-})
-
-function goLogin() {
-  void requireLogin().catch(() => undefined)
-}
 
 async function addEvidence() {
   if (uploading.value || evidencePaths.value.length >= 3) return
@@ -92,11 +83,8 @@ function previewEvidence(current: string) {
 <template>
   <view class="page">
     <PageIntro eyebrow="内容治理" title="提交举报" :description="`举报对象：${title}`" />
-    <view v-if="!authenticated" class="login-gate">
-      <text>登录后才能提交举报</text>
-      <button class="primary-button" @tap="goLogin">去登录</button>
-    </view>
-    <view v-else class="form-surface">
+    <AuthFormGate message="登录后才能提交举报">
+    <view class="form-surface">
       <text class="field-label">举报原因</text>
       <view class="reason-grid">
         <text v-for="option in reasons" :key="option" class="reason" :class="{ active: reason === option }" @tap="reason = option">{{ option }}</text>
@@ -113,12 +101,11 @@ function previewEvidence(current: string) {
       <text class="privacy">举报会进入管理员队列，不会因为单次举报自动删除内容。请勿上传未遮挡的身份证、手机号或无关聊天隐私。</text>
       <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting || uploading" @tap="submit">提交举报</button></view>
     </view>
+    </AuthFormGate>
   </view>
 </template>
 
 <style scoped>
-.login-gate { display: grid; gap: 18rpx; margin-top: 24rpx; padding: 32rpx 24rpx; border: 1rpx solid #e2e5e9; border-radius: 8rpx; background: #fff; color: #475569; text-align: center; }
-.login-gate button { width: 100%; margin: 0; }
 .reason-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10rpx; }
 .reason { padding: 16rpx 8rpx; border: 1rpx solid #d9dde4; border-radius: 8rpx; color: #64748b; text-align: center; font-size: 23rpx; }
 .reason.active { border-color: #c68a36; background: #fff4df; color: #8b5919; font-weight: 800; }

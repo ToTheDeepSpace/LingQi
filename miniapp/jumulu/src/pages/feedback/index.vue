@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
-import { apiRequest, uploadPrivateEvidence } from '../../utils/api'
+import { apiRequest, readAuth, uploadPrivateEvidence } from '../../utils/api'
 import { dateText } from '../../utils/format'
 
 type FeedbackCategory = 'bug' | 'dossier_correction' | 'invalid_contact' | 'payment_refund' | 'report_abuse' | 'other'
@@ -115,14 +116,19 @@ onLoad(options => {
   const requested = String(options?.category || '')
   if (categories.some(item => item.value === requested)) category.value = requested as FeedbackCategory
   paymentPurchaseId.value = String(options?.purchaseId || '')
-  void load()
+  if (readAuth()?.token) void load()
+  else loading.value = false
 })
-onPullDownRefresh(load)
+onPullDownRefresh(() => {
+  if (readAuth()?.token) void load()
+  else uni.stopPullDownRefresh()
+})
 </script>
 
 <template>
   <view class="page">
     <PageIntro eyebrow="帮助与治理" nav-title="问题反馈" title="问题反馈" description="功能故障、资料纠错、无效联系方式和支付问题都可以在这里提交，管理员回复后会进入消息通知。" fallback="/pages/mine/index" />
+    <AuthFormGate message="登录后才能提交和查看反馈">
     <view class="form-surface">
       <text class="field-label">问题类型</text>
       <view class="category-grid">
@@ -151,6 +157,7 @@ onPullDownRefresh(load)
       <view v-if="item.admin_reply" class="reply"><strong>管理员回复</strong><text>{{ item.admin_reply }}</text></view>
       <text class="feedback__date">{{ dateText(item.created_at) }}</text>
     </view>
+    </AuthFormGate>
   </view>
 </template>
 

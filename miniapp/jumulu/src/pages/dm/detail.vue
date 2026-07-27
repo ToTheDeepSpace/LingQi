@@ -5,7 +5,7 @@ import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { DossierDetail } from '../../types'
-import { apiRequest, encoded, readAuth } from '../../utils/api'
+import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dossierAffiliationLabel, dossierClaimLabel } from '../../utils/dossierPresentation'
 import { dateText, ratingText } from '../../utils/format'
 
@@ -34,17 +34,17 @@ async function load() {
   finally { loading.value = false; uni.stopPullDownRefresh() }
 }
 function preview(index = selectedPhoto.value) { if (photos.value.length) uni.previewImage({ current: index, urls: photos.value.map(photo => photo.url) }) }
-function goRate() { uni.navigateTo({ url: `/pages/dm/rate?dmId=${encoded(id.value)}` }) }
+function goRate() { void requireLogin().then(() => uni.navigateTo({ url: `/pages/dm/rate?dmId=${encoded(id.value)}` })).catch(() => undefined) }
 function goStore() { const storeId = data.value?.dossier.affiliation?.store_dossier_id; if (storeId) uni.navigateTo({ url: `/pages/stores/detail?id=${encoded(storeId)}` }) }
 function goRanking() {
   const dossier = data.value?.dossier
   if (!dossier) return
-  uni.navigateTo({ url: `/pages/rankings/create?subjectType=dm&subjectDossierId=${encoded(dossier.id)}&subjectName=${encoded(dossier.dm_name)}&subjectCity=${encoded(dossier.city)}` })
+  void requireLogin().then(() => uni.navigateTo({ url: `/pages/rankings/create?subjectType=dm&subjectDossierId=${encoded(dossier.id)}&subjectName=${encoded(dossier.dm_name)}&subjectCity=${encoded(dossier.city)}` })).catch(() => undefined)
 }
 function goClaim() {
   const dossier = data.value?.dossier
   if (!dossier) return
-  uni.navigateTo({ url: `/pages/dm/claim?id=${encoded(dossier.id)}&name=${encoded(dossier.dm_name)}&entityType=dm` })
+  void requireLogin().then(() => uni.navigateTo({ url: `/pages/dm/claim?id=${encoded(dossier.id)}&name=${encoded(dossier.dm_name)}&entityType=dm` })).catch(() => undefined)
 }
 function openProfile(profileId?: string | null) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 

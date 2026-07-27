@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
 import DossierSearchPicker from '../../components/DossierSearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
@@ -110,6 +111,7 @@ onLoad(options => { void load(String(options?.dmId || '')) })
 <template>
   <view class="page">
     <PageIntro eyebrow="体验记录" title="评价 DM" description="每一场体验都单独记录，同一玩家不会重复增加综合分权重。" fallback="/pages/dm/index" />
+    <AuthFormGate message="登录后才能评价 DM">
     <view v-if="loading" class="loading">正在加载...</view>
     <view v-else class="form-surface">
       <text class="field-label">DM</text>
@@ -131,6 +133,7 @@ onLoad(options => { void load(String(options?.dmId || '')) })
       <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting" @tap="submit">提交审核</button></view>
     </view>
     <DossierCreateSheet :open="createOpen" :entity-type="createKind" :initial-name="createInitialName" mode="draft" @close="createOpen = false" @created="acceptDraft" />
+    </AuthFormGate>
   </view>
 </template>
 

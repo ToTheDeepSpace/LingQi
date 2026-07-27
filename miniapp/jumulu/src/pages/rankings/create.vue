@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
 import DossierSearchPicker from '../../components/DossierSearchPicker.vue'
@@ -177,6 +178,7 @@ onLoad(options => {
 <template>
   <view class="page">
     <PageIntro eyebrow="口碑事件" title="发布红黑榜" description="免费发布，黑榜需人工审核；请写清事实并为公开图片做好隐私打码。" fallback="/pages/rankings/index" />
+    <AuthFormGate message="登录后才能发布口碑事件">
     <view v-if="loading" class="loading">正在加载档案和剧本资料...</view>
     <view v-else class="form-surface">
       <text class="field-label first-label">榜单类型 *</text>
@@ -236,6 +238,7 @@ onLoad(options => {
       <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting || uploading" @tap="submit">提交审核</button></view>
     </view>
     <DossierCreateSheet :open="createOpen" :entity-type="subjectType === 'store' ? 'store' : 'dm'" :initial-name="createInitialName" mode="draft" @close="createOpen = false" @created="acceptDraft" />
+    </AuthFormGate>
   </view>
 </template>
 

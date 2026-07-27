@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import AuthFormGate from '../../components/AuthFormGate.vue'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import { apiRequest, requireLogin } from '../../utils/api'
@@ -142,6 +143,7 @@ async function submit() {
 <template>
   <view class="page">
     <PageIntro eyebrow="同城拼车" title="拼车工作台" description="粘贴消息，核对车次，再生成可继续转发的文案。" fallback="/pages/carpools/index" />
+    <AuthFormGate message="登录后才能发布拼车">
     <view class="form-surface">
       <text class="field-label first">粘贴车头消息</text>
       <textarea v-model="rawMessage" class="textarea source-message" maxlength="2000" placeholder="例：🚗6.14 晚场 无限x琳琅=祝魇cp（各半价）" />
@@ -185,6 +187,7 @@ async function submit() {
       <textarea v-if="generatedMessage" v-model="generatedMessage" class="textarea generated-message" maxlength="2000" />
       <view class="sticky-submit"><button class="primary-button" :loading="submitting" :disabled="submitting" @tap="submit">发布拼车</button></view>
     </view>
+    </AuthFormGate>
   </view>
 </template>
 

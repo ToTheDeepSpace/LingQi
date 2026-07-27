@@ -50,6 +50,14 @@ test('miniapp reusable report flags identify and hide owner content', () => {
   }
 });
 
+test('miniapp ranking detail uses the guarded report control for posts and comments', () => {
+  const source = readFileSync('miniapp/jumulu/src/pages/rankings/detail.vue', 'utf8');
+  assert.match(source, /<ReportFlag target-type="ranking"/);
+  assert.match(source, /<ReportFlag target-type="comment"/);
+  assert.doesNotMatch(source, /function report\(/);
+  assert.doesNotMatch(source, /\/pages\/report\/index\?/);
+});
+
 test('the report API rate limits abuse and rejects reporting your own content', () => {
   const server = readFileSync('api/index.ts', 'utf8');
   assert.match(server, /path === '\/api\/lc\/reports'[\s\S]*?reportRateLimit/);

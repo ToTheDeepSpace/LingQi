@@ -6,7 +6,7 @@ import PageIntro from '../../components/PageIntro.vue'
 import RankingCard from '../../components/RankingCard.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Ranking } from '../../types'
-import { apiRequest, encoded, readAuth } from '../../utils/api'
+import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 
 const CITY_KEY = 'jumulu:ranking:last-city'
 const items = ref<Ranking[]>([])
@@ -36,7 +36,7 @@ async function load() {
 function selectCity(value: string) { city.value = value || '全部城市'; uni.setStorageSync(CITY_KEY, city.value) }
 function selectType(value: 'all' | 'red' | 'black' | 'white') { type.value = value }
 function openRanking(id: string) { uni.navigateTo({ url: `/pages/rankings/detail?id=${encoded(id)}` }) }
-function createRanking() { uni.navigateTo({ url: '/pages/rankings/create' }) }
+function createRanking() { void requireLogin().then(() => uni.navigateTo({ url: '/pages/rankings/create' })).catch(() => undefined) }
 function loadMore() { displayLimit.value += PAGE_SIZE }
 function showRules() {
   uni.showModal({

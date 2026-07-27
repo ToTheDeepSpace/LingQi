@@ -7,7 +7,7 @@ import DossierCard from '../../components/DossierCard.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Dossier } from '../../types'
-import { apiRequest, encoded } from '../../utils/api'
+import { apiRequest, encoded, requireLogin } from '../../utils/api'
 
 const CITY_KEY = 'jumulu:store:last-city'
 const items = ref<Dossier[]>([])
@@ -44,9 +44,11 @@ async function load() {
   finally { loading.value = false; uni.stopPullDownRefresh() }
 }
 function selectCity(value: string) { city.value = value || '全部城市'; uni.setStorageSync(CITY_KEY, city.value) }
-function openRate() { uni.navigateTo({ url: '/pages/stores/rate' }) }
+function openRate() { void requireLogin().then(() => uni.navigateTo({ url: '/pages/stores/rate' })).catch(() => undefined) }
 function openStore(id: string) { uni.navigateTo({ url: `/pages/stores/detail?id=${encoded(id)}` }) }
-function create(initialName = '') { createInitialName.value = initialName; createOpen.value = true }
+function create(initialName = '') {
+  void requireLogin().then(() => { createInitialName.value = initialName; createOpen.value = true }).catch(() => undefined)
+}
 function created() {
   uni.showModal({ title: '档案已提交', content: '这份资料已标注为社区提供，后台审核通过后会出现在店家列表。', showCancel: false })
 }

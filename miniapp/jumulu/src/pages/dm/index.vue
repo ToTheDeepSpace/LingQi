@@ -7,7 +7,7 @@ import DossierCard from '../../components/DossierCard.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Dossier } from '../../types'
-import { apiRequest, encoded } from '../../utils/api'
+import { apiRequest, encoded, requireLogin } from '../../utils/api'
 import { sortDossiers, type DossierSortMode } from '../../utils/dossierSort'
 
 const CITY_KEY = 'jumulu:dm:last-city'
@@ -74,8 +74,10 @@ function toggleChanto() {
 }
 
 function open(item: Dossier) { uni.navigateTo({ url: `/pages/dm/detail?id=${encoded(item.id)}` }) }
-function rate() { uni.navigateTo({ url: '/pages/dm/rate' }) }
-function create(initialName = '') { createInitialName.value = initialName; createOpen.value = true }
+function rate() { void requireLogin().then(() => uni.navigateTo({ url: '/pages/dm/rate' })).catch(() => undefined) }
+function create(initialName = '') {
+  void requireLogin().then(() => { createInitialName.value = initialName; createOpen.value = true }).catch(() => undefined)
+}
 function created() {
   uni.showModal({ title: '档案已提交', content: '这份资料已标注为社区提供，后台审核通过后会出现在 DM 列表。', showCancel: false })
 }
