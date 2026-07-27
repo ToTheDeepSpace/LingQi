@@ -138,6 +138,12 @@ test('all WeChat safety network calls have a bounded timeout', () => {
   );
 });
 
+test('production acceptance content checks are rate limited', () => {
+  const source = readFileSync('api/index.ts', 'utf8');
+  assert.match(source, /miniappContentCheckRateLimit = createRateLimiter\('miniapp-content-check', 10 \* 60 \* 1000, 12\)/);
+  assert.match(source, /path === '\/api\/lc\/miniapp\/content-check'\) return miniappContentCheckRateLimit\(req, res, next\)/);
+});
+
 test('server checks every content chunk before allowing publication', () => {
   const source = readFileSync('api/index.ts', 'utf8');
   assert.match(source, /for \(const chunk of chunks\)/);

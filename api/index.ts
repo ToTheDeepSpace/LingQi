@@ -367,6 +367,7 @@ const uploadRateLimit = createRateLimiter('upload', 10 * 60 * 1000, 30);
 const contactRateLimit = createRateLimiter('contact', 60 * 60 * 1000, 10);
 const reportRateLimit = createRateLimiter('report', 60 * 60 * 1000, 20);
 const paymentRateLimit = createRateLimiter('payment', 15 * 60 * 1000, 20);
+const miniappContentCheckRateLimit = createRateLimiter('miniapp-content-check', 10 * 60 * 1000, 12);
 
 const app = express();
 app.disable('x-powered-by');
@@ -392,6 +393,7 @@ app.use((req, res, next) => {
   if (path === '/api/lc/upload') return uploadRateLimit(req, res, next);
   if (path === '/api/lc/contact-request') return contactRateLimit(req, res, next);
   if (path === '/api/lc/reports' || path === '/api/lc/site-messages') return reportRateLimit(req, res, next);
+  if (path === '/api/lc/miniapp/content-check') return miniappContentCheckRateLimit(req, res, next);
   if (req.method === 'POST' && (
     path.includes('/purchase')
     || path === '/api/lc/service-payments/create'

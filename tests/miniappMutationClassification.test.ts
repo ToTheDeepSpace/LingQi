@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-type MutationClass = 'public-ugc' | 'private-content' | 'state-only';
+type MutationClass = 'public-ugc' | 'private-content' | 'private-contact' | 'state-only';
 
 type MutationPolicy = {
   method: 'POST' | 'PUT' | 'DELETE';
@@ -40,7 +40,7 @@ const MUTATION_POLICIES: MutationPolicy[] = [
   { method: 'POST', route: '/lc/provider-listings/mine', class: 'public-ugc', serverRoute: '/api/lc/provider-listings/mine' },
   { method: 'PUT', route: '/lc/provider-listings/mine/active', class: 'state-only' },
   { method: 'PUT', route: '/lc/provider-listings/mine/contact-available', class: 'state-only' },
-  { method: 'PUT', route: '/lc/provider-inquiries/:param/decision', class: 'private-content' },
+  { method: 'PUT', route: '/lc/provider-inquiries/:param/decision', class: 'private-contact' },
   { method: 'DELETE', route: '/lc/rankings/:param/comments/:param', class: 'state-only' },
   { method: 'POST', route: '/lc/rankings', class: 'public-ugc', serverRoute: '/api/lc/rankings' },
   { method: 'POST', route: '/lc/rankings/:param/comments', class: 'public-ugc', serverRoute: '/api/lc/rankings/:id/comments' },
@@ -156,20 +156,29 @@ test('every miniapp API mutation has an explicit content classification', () => 
   assert.deepEqual(stale, [], `remove or update stale miniapp mutation policies:\n${stale.join('\n')}`);
 });
 
-test('every public miniapp UGC mutation is protected by a server-side WeChat check', () => {
+test('every miniapp text UGC mutation is protected by a server-side WeChat check', () => {
   const serverSource = readFileSync('api/index.ts', 'utf8');
-  const publicPolicies = MUTATION_POLICIES.filter(policy => policy.class === 'public-ugc');
-  assert.ok(publicPolicies.length > 0);
+  const textPolicies = MUTATION_POLICIES.filter(
+    policy => policy.class === 'public-ugc' || policy.class === 'private-content',
+  );
+  assert.ok(textPolicies.length > 0);
 
-  for (const policy of publicPolicies) {
+  for (const policy of textPolicies) {
     assert.ok(policy.serverRoute, `missing server route mapping for ${mutationKey(policy.method, policy.route)}`);
     const escapedRoute = policy.serverRoute!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     assert.match(
       serverSource,
       new RegExp(`app\\.(?:post|put)\\(\\s*'${escapedRoute}'[\\s\\S]{0,2000}?wechatMiniTextSafetyMiddleware\\s*\\(\\s*\\{`),
-      `public miniapp UGC is not protected on the server: ${mutationKey(policy.method, policy.route)}`,
+      `miniapp text UGC is not protected on the server: ${mutationKey(policy.method, policy.route)}`,
     );
   }
+});
+
+test('private contact exchange stays explicitly classified without sending credentials to WeChat', () => {
+  const contactPolicies = MUTATION_POLICIES.filter(policy => policy.class === 'private-contact');
+  assert.deepEqual(contactPolicies.map(policy => mutationKey(policy.method, policy.route)), [
+    'PUT /lc/provider-inquiries/:param/decision',
+  ]);
 });
 
 test('miniapp relies on enforced business-route checks instead of duplicate preflight calls', () => {
