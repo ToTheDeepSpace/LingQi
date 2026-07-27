@@ -238,6 +238,23 @@ test('keeps footer roadmap and boundary voting on the shared compact shell', () 
   assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.boundary-topic-grid[\s\S]*minmax\(0, 1fr\)/);
 });
 
+test('keeps legal pages compact and visually aligned with the public shell', () => {
+  const legal = read('src/pages/Legal.tsx');
+  const styles = read('src/pages/Legal.css');
+
+  assert.match(legal, /import '\.\/Legal\.css'/);
+  assert.match(legal, /className="legal-header"/);
+  assert.match(legal, /className="legal-content"/);
+  assert.match(legal, /className="legal-section"/);
+  assert.match(legal, /className="legal-license-frame"/);
+  assert.doesNotMatch(`${legal}\n${styles}`, /linear-gradient/);
+  assert.match(styles, /\.legal-header\s*\{[\s\S]*padding:\s*30px 20px 22px/);
+  assert.match(styles, /\.legal-section\s*\{[\s\S]*border-radius:\s*8px/);
+  assert.match(styles, /\.legal-license-frame\s*\{[\s\S]*border-radius:\s*8px/);
+  assert.match(styles, /@media \(max-width:\s*720px\)[\s\S]*\.legal-header\s*\{[\s\S]*padding:\s*20px 14px 15px/);
+  assert.match(styles, /@media \(max-width:\s*720px\)[\s\S]*\.legal-content\s*\{[\s\S]*padding:\s*12px 12px 40px/);
+});
+
 test('keeps website feedback aligned with the compact miniapp task flow', () => {
   const website = read('src/pages/Contact.tsx');
   const autosave = read('src/components/DraftAutosaveNotice.tsx');

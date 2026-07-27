@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom';
 import type React from 'react';
+import './Legal.css';
 
 const GOLD = '#d9a857';
 const BG = '#fffdf8';
-const PANEL = '#fffaf2';
 const TEXT = '#1f2937';
 const MUTED = 'rgba(71,85,105,0.76)';
 const CONTACT_EMAIL = 'basara-twenty@foxmail.com';
@@ -11,14 +11,6 @@ const ICP_RECORD_NO = '冀ICP备2026019163号-1';
 const MPS_RECORD_NO = '冀公网安备13310202000316号';
 const MPS_RECORD_URL = 'https://beian.mps.gov.cn/#/query/webSearch?code=13310202000316';
 const BUSINESS_LICENSE_IMAGE = '/legal/business-license-huilan.jpg';
-
-const sectionStyle: React.CSSProperties = {
-  border: '1px solid rgba(217,168,87,0.22)',
-  background: 'rgba(255,255,255,0.86)',
-  borderRadius: 14,
-  padding: '20px 22px',
-  boxShadow: '0 12px 32px rgba(31,41,55,0.06)',
-};
 
 const h2Style: React.CSSProperties = {
   color: '#1f2937',
@@ -61,16 +53,16 @@ function LegalLayout({
   versionLabel?: string;
 }) {
   return (
-    <main style={{ background: BG, minHeight: '100vh', color: TEXT }}>
-      <section style={{ background: `linear-gradient(135deg, ${PANEL} 0%, #eef6ff 100%)`, borderBottom: '1px solid rgba(217,168,87,0.18)', padding: '54px 20px 38px' }}>
-        <div style={{ maxWidth: 920, margin: '0 auto' }}>
-          <span style={{ color: GOLD, fontSize: '0.84rem', fontWeight: 900 }}>规则与合规</span>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontWeight: 900, fontSize: 'clamp(1.8rem, 5vw, 2.8rem)', margin: '18px 0 12px' }}>{title}</h1>
-          <p style={{ ...pStyle, color: MUTED, maxWidth: 760 }}>{intro}</p>
-          <p style={{ color: 'rgba(71,85,105,0.56)', fontSize: '0.78rem', marginTop: 14 }}>更新时间：{updatedAt} · {versionLabel}</p>
+    <main className="legal-page" style={{ background: BG, color: TEXT }}>
+      <section className="legal-header">
+        <div className="legal-header-inner">
+          <span className="legal-eyebrow" style={{ color: GOLD }}>规则与合规</span>
+          <h1 className="legal-title">{title}</h1>
+          <p className="legal-intro" style={{ color: MUTED }}>{intro}</p>
+          <p className="legal-version">更新时间：{updatedAt} · {versionLabel}</p>
         </div>
       </section>
-      <section style={{ maxWidth: 920, margin: '0 auto', padding: '30px 20px 70px', display: 'grid', gap: 16 }}>
+      <section className="legal-content">
         {children}
       </section>
     </main>
@@ -79,7 +71,7 @@ function LegalLayout({
 
 function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
   return (
-    <section id={id} style={sectionStyle}>
+    <section id={id} className="legal-section">
       <h2 style={h2Style}>{title}</h2>
       {children}
     </section>
@@ -88,14 +80,7 @@ function Section({ title, children, id }: { title: string; children: React.React
 
 function ImportantNotice({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <aside style={{
-      border: '2px solid rgba(146,95,24,0.52)',
-      background: '#fff8e8',
-      borderRadius: 10,
-      padding: '18px 20px',
-      color: '#5f3b0d',
-      boxShadow: '0 10px 26px rgba(146,95,24,0.08)',
-    }}>
+    <aside className="legal-important-notice">
       <strong style={{ display: 'block', color: '#7a4a0b', fontSize: '0.98rem', marginBottom: 8 }}>{title}</strong>
       <div style={{ fontSize: '0.9rem', lineHeight: 1.85, fontWeight: 650 }}>{children}</div>
     </aside>
@@ -112,16 +97,9 @@ function List({ items }: { items: string[] }) {
 
 function InfoRows({ rows }: { rows: Array<[string, React.ReactNode]> }) {
   return (
-    <div style={{ display: 'grid', gap: 10 }}>
+    <div className="legal-info-rows">
       {rows.map(([label, value]) => (
-        <div key={label} style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(110px, 160px) 1fr',
-          gap: 12,
-          alignItems: 'baseline',
-          padding: '10px 0',
-          borderBottom: '1px solid rgba(217,168,87,0.12)',
-        }}>
+        <div key={label} className="legal-info-row">
           <span style={{ color: 'rgba(71,85,105,0.68)', fontSize: '0.82rem', fontWeight: 850 }}>{label}</span>
           <span style={{ color: TEXT, fontSize: '0.92rem', lineHeight: 1.75, fontWeight: 650 }}>{value}</span>
         </div>
@@ -155,17 +133,11 @@ export function BusinessLicense() {
       </Section>
 
       <Section title="二、营业执照">
-        <div style={{
-          border: '1px solid rgba(217,168,87,0.18)',
-          borderRadius: 14,
-          padding: 12,
-          background: '#fff',
-          boxShadow: '0 12px 28px rgba(31,41,55,0.05)',
-        }}>
+        <div className="legal-license-frame">
           <img
             src={BUSINESS_LICENSE_IMAGE}
             alt="河北雄安澜洄娱乐有限公司营业执照"
-            style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 10 }}
+            style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 6 }}
           />
         </div>
       </Section>

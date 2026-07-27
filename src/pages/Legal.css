@@ -1,0 +1,135 @@
+.legal-page {
+  min-height: 100vh;
+}
+
+.legal-header {
+  border-bottom: 1px solid rgba(39, 83, 137, 0.14);
+  background: #f5f8fc;
+  padding: 30px 20px 22px;
+}
+
+.legal-header-inner,
+.legal-content {
+  width: min(920px, 100%);
+  margin: 0 auto;
+}
+
+.legal-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.legal-title {
+  margin: 8px 0 6px;
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.legal-intro {
+  max-width: 760px;
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.legal-version {
+  margin: 8px 0 0;
+  color: rgba(71, 85, 105, 0.58);
+  font-size: 0.75rem;
+}
+
+.legal-content {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px 56px;
+}
+
+.legal-section {
+  padding: 16px 18px;
+  border: 1px solid rgba(217, 168, 87, 0.22);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.legal-section > :first-child {
+  margin-top: 0;
+}
+
+.legal-section > :last-child {
+  margin-bottom: 0;
+}
+
+.legal-important-notice {
+  padding: 14px 16px;
+  border: 1px solid rgba(146, 95, 24, 0.52);
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #5f3b0d;
+}
+
+.legal-info-rows {
+  display: grid;
+}
+
+.legal-info-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 160px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(217, 168, 87, 0.12);
+}
+
+.legal-info-row:last-child {
+  border-bottom: 0;
+}
+
+.legal-info-row > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.legal-license-frame {
+  padding: 10px;
+  border: 1px solid rgba(217, 168, 87, 0.18);
+  border-radius: 8px;
+  background: #fff;
+}
+
+@media (max-width: 720px) {
+  .legal-header {
+    padding: 20px 14px 15px;
+  }
+
+  .legal-title {
+    margin-top: 5px;
+    font-size: 1.62rem;
+  }
+
+  .legal-intro {
+    font-size: 0.86rem;
+    line-height: 1.55;
+  }
+
+  .legal-content {
+    gap: 10px;
+    padding: 12px 12px 40px;
+  }
+
+  .legal-section,
+  .legal-important-notice {
+    padding: 13px 14px;
+  }
+
+  .legal-info-row {
+    grid-template-columns: 108px minmax(0, 1fr);
+    gap: 9px;
+    padding: 8px 0;
+  }
+
+  .legal-license-frame {
+    padding: 8px;
+  }
+}
