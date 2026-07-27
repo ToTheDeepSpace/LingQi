@@ -25,7 +25,7 @@ test('reuses fresh image checks and retries stale pending checks', () => {
 
 test('requires every image in a miniapp batch to pass before approval', () => {
   const hashes = ['a', 'b'];
-  assert.equal(wechatImageApprovalIssue(hashes, []), null);
+  assert.equal(wechatImageApprovalIssue(hashes, []), 'incomplete');
   assert.equal(wechatImageApprovalIssue(hashes, [
     { resource_hash: 'a', status: 'pass' },
   ]), 'incomplete');

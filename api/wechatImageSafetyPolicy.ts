@@ -36,9 +36,6 @@ export function wechatImageApprovalIssue(
     }
   }
 
-  // No tracked image means the review came from the website and remains on the
-  // platform's ordinary manual-review path.
-  if (latest.size === 0) return null;
   if (latest.size !== hashes.length) return 'incomplete';
   if ([...latest.values()].some(status => status === 'review' || status === 'risky')) return 'unsafe';
   if ([...latest.values()].some(status => status !== 'pass')) return 'incomplete';

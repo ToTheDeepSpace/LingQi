@@ -831,7 +831,8 @@ async function ensureWechatMiniImageSafetyChecks(req: express.Request, input: {
   }
 }
 
-async function assertWechatImageChecksAllowApproval(urls: unknown[]) {
+async function assertWechatImageChecksAllowApproval(urls: unknown[], required: boolean) {
+  if (!required) return;
   const hashes = Array.from(new Set(urls.map(url => cleanText(url, 2000)).filter(Boolean).map(url => sha256(url))));
   if (hashes.length === 0) return;
   const result = await supabase.from('lc_wechat_content_checks')
@@ -3103,7 +3104,9 @@ type PublicReviewRecord = {
   summary?: string | null;
   payload?: Record<string, unknown> | null;
   status?: 'pending' | 'approved' | 'rejected';
-  moderation_precheck?: ReturnType<typeof runLocalModerationPrecheck> | null;
+  moderation_precheck?: (ReturnType<typeof runLocalModerationPrecheck> & {
+    wechat_image_safety_required?: boolean;
+  }) | null;
   created_at?: string | null;
 };
 
@@ -3114,7 +3117,12 @@ async function createPublicReview(input: {
   summary?: string;
   payload: Record<string, unknown>;
   moderationPrecheck?: ReturnType<typeof runLocalModerationPrecheck> | null;
+  wechatImageSafetyRequired: boolean;
 }) {
+  const moderationPrecheck = {
+    ...(input.moderationPrecheck || {}),
+    wechat_image_safety_required: input.wechatImageSafetyRequired,
+  };
   const { data, error: insertErr } = await supabase.from('lc_public_reviews').insert({
     target_type: input.targetType,
     profile_id: input.profile.id,
@@ -3123,7 +3131,7 @@ async function createPublicReview(input: {
     summary: cleanText(input.summary, 1000) || null,
     payload: input.payload,
     status: 'pending',
-    moderation_precheck: input.moderationPrecheck || null,
+    moderation_precheck: moderationPrecheck,
   }).select('*').single();
   if (insertErr && isMissingRelation(insertErr, 'lc_public_reviews')) {
     throw new Error('公开内容审核表尚未初始化');
@@ -7960,6 +7968,7 @@ app.post(
         is_active: true,
       },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'provider_listing_submitted_for_review',
@@ -8550,6 +8559,7 @@ app.put(
         before_role_preferences: beforeRolePreferences,
       },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'profile_update_submitted_for_review',
@@ -8649,6 +8659,7 @@ app.post('/api/lc/availability', authMiddleware, async (req, res) => {
       summary: `${cleanText(city, 80) || '未填城市'} ${cleanText(location, 120) || ''}`.trim(),
       payload: { items },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'availability_submitted_for_review',
@@ -8812,6 +8823,7 @@ app.post('/api/lc/availability/import-text', authMiddleware, async (req, res) =>
       summary: `${city || '未填城市'} ${location || ''}`.trim(),
       payload: { items: imported },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'availability_screenshot_submitted_for_review',
@@ -8899,6 +8911,7 @@ app.post(
       summary: items.map(item => `${item.service_type}${item.duration ? ` · ${item.duration}` : ''}`).join('；'),
       payload: { creator_id: creatorId, items },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'service_submitted_for_review',
@@ -8965,6 +8978,7 @@ app.post(
       summary: caption || '作品集图片',
       payload: { creator_id: creatorId, image_url: imageUrl, caption: caption || null },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'portfolio_submitted_for_review',
@@ -9370,6 +9384,7 @@ app.post('/api/lc/tags', authMiddleware, async (req, res) => {
         creator_name: profile.display_name || '用户',
       },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'tag_submitted_for_review',
@@ -9469,6 +9484,7 @@ app.post(
       summary: `${rating} 分${content ? ` · ${content.slice(0, 80)}` : ''}`,
       payload,
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'script_rating_submitted_for_review',
@@ -9578,6 +9594,7 @@ app.post(
       summary: `${rating} 分 · ${content.slice(0, 80)}`,
       payload,
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'entity_rating_submitted_for_review',
@@ -11863,6 +11880,7 @@ app.post('/api/lc/admin/service-purchases/:id/provider-recovery', authMiddleware
         recovered_poster_uploaded_at: recovery.poster.uploaded_at,
       },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     await logSecurityEvent(req, {
       action: 'admin_provider_listing_submission_recovered',
@@ -12369,7 +12387,10 @@ app.put('/api/lc/admin/public-reviews/:id/approve', authMiddleware, adminMiddlew
     if (findErr) throw findErr;
     if (!review) return res.status(404).json(err(new Error('审核记录不存在')));
     if (review.status !== 'pending') return res.status(400).json(err(new Error('这条审核记录已经处理过了')));
-    await assertWechatImageChecksAllowApproval(collectPotentialPublicImageUrls(review.payload));
+    await assertWechatImageChecksAllowApproval(
+      collectPotentialPublicImageUrls(review.payload),
+      objectPayload(review.moderation_precheck).wechat_image_safety_required === true,
+    );
     if (review.target_type === 'dossier_update') {
       const payload = objectPayload(review.payload);
       if (cleanText(payload.review_mode, 30) === 'owner') {
@@ -12493,10 +12514,13 @@ app.put('/api/lc/admin/dm-dossiers/:id/approve', authMiddleware, adminMiddleware
       return res.json(ok(reviewed.dossier));
     }
     if (dossier.status !== 'pending') return res.status(400).json(err(new Error('这条档案审核已经处理过了')));
-    await assertWechatImageChecksAllowApproval(collectPotentialPublicImageUrls({
-      photo_url: dossier.photo_url,
-      photo_files: dossier.photo_files,
-    }));
+    await assertWechatImageChecksAllowApproval(
+      collectPotentialPublicImageUrls({
+        photo_url: dossier.photo_url,
+        photo_files: dossier.photo_files,
+      }),
+      objectPayload(dossier.moderation_precheck).wechat_image_safety_required === true,
+    );
 
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
     patch.status = 'approved';
@@ -14400,6 +14424,7 @@ async function createRatingDiscussionNode(req: express.Request, res: express.Res
         content,
       },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     return res.status(202).json(ok(publicReviewAcceptedResponse(review)));
   } catch (reviewError) {
@@ -15121,7 +15146,10 @@ app.post(
       submitted_by_name: profile.display_name,
       status: 'pending',
       claim_status: 'unclaimed',
-      moderation_precheck: moderationPrecheck,
+      moderation_precheck: {
+        ...moderationPrecheck,
+        wechat_image_safety_required: isWechatMiniClient(req),
+      },
     }).select('id').single();
     if (insErr) {
       if (isMissingRelation(insErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('卡司评分数据表尚未初始化')));
@@ -15600,6 +15628,7 @@ app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) =>
         owner_responded_at: null,
       },
       moderationPrecheck,
+      wechatImageSafetyRequired: isWechatMiniClient(req),
     });
     let directResult: Awaited<ReturnType<typeof advanceDossierReviewAfterOwner>> | null = null;
     if (reviewMode === 'direct') {
@@ -17578,7 +17607,10 @@ app.post(
       files: legacyEvidenceFiles,
       display_files: displayFiles,
       private_evidence_files: savedEvidenceFiles,
-      moderation_precheck: moderationPrecheck,
+      moderation_precheck: {
+        ...moderationPrecheck,
+        wechat_image_safety_required: isWechatMiniClient(req),
+      },
       boost_amount: 0,
       negative_boost_amount: 0,
       agree_count: 0,
@@ -18522,7 +18554,10 @@ app.put('/api/lc/admin/rankings/batch-approve', authMiddleware, adminMiddleware,
         continue;
       }
       try {
-        await assertWechatImageChecksAllowApproval(collectPotentialPublicImageUrls(row.display_files));
+        await assertWechatImageChecksAllowApproval(
+          collectPotentialPublicImageUrls(row.display_files),
+          precheck.wechat_image_safety_required === true,
+        );
         if (['dm', 'store'].includes(cleanText(row.subject_type, 40))) {
           if (!row.subject_dossier_id) throw new Error('尚未关联公开档案');
           await findRankingDossier(row.subject_dossier_id, row.subject_type as 'dm' | 'store');
@@ -18568,9 +18603,12 @@ app.put('/api/lc/admin/rankings/batch-approve', authMiddleware, adminMiddleware,
 app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const targetType = ['red', 'black', 'white'].includes(req.body?.targetType) ? req.body.targetType : null;
-    const { data: r } = await supabase.from('lc_rankings').select('type, initial_amount, subject_type, subject_dossier_id, dm_employment_status_suggestion, dm_employer_store_id_suggestion, display_files').eq('id', req.params.id).single();
+    const { data: r } = await supabase.from('lc_rankings').select('type, initial_amount, subject_type, subject_dossier_id, dm_employment_status_suggestion, dm_employer_store_id_suggestion, display_files, moderation_precheck').eq('id', req.params.id).single();
     if (!r) return res.status(404).json(err(new Error('帖子不存在')));
-    await assertWechatImageChecksAllowApproval(collectPotentialPublicImageUrls(r.display_files));
+    await assertWechatImageChecksAllowApproval(
+      collectPotentialPublicImageUrls(r.display_files),
+      objectPayload(r.moderation_precheck).wechat_image_safety_required === true,
+    );
     if (['dm', 'store'].includes(String(r.subject_type || '')) && r.subject_dossier_id) {
       await findRankingDossier(r.subject_dossier_id, r.subject_type as 'dm' | 'store');
     }

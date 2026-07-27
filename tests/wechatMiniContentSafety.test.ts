@@ -140,8 +140,15 @@ test('public images use async WeChat checks and approval gates', () => {
   assert.match(source, /businessScene:\s*'provider_listing_image_submit'/);
   assert.match(source, /businessScene:\s*'ranking_display_image_submit'/);
   assert.match(source, /businessScene:\s*entityType === 'store' \? 'store_dossier_image_submit' : 'dm_dossier_image_submit'/);
-  assert.match(source, /assertWechatImageChecksAllowApproval\(collectPotentialPublicImageUrls\(review\.payload\)\)/);
-  assert.match(source, /assertWechatImageChecksAllowApproval\(collectPotentialPublicImageUrls\(r\.display_files\)\)/);
+  assert.match(source, /objectPayload\(review\.moderation_precheck\)\.wechat_image_safety_required === true/);
+  assert.match(source, /objectPayload\(dossier\.moderation_precheck\)\.wechat_image_safety_required === true/);
+  assert.match(source, /objectPayload\(r\.moderation_precheck\)\.wechat_image_safety_required === true/);
+  assert.match(source, /precheck\.wechat_image_safety_required === true/);
+  const publicReviewCalls = source.match(/createPublicReview\(\{[\s\S]*?\n\s{4}\}\);/g) || [];
+  assert.equal(publicReviewCalls.length, 12);
+  for (const call of publicReviewCalls) {
+    assert.match(call, /wechatImageSafetyRequired:\s*isWechatMiniClient\(req\)/);
+  }
 });
 
 test('all WeChat safety network calls have a bounded timeout', () => {
