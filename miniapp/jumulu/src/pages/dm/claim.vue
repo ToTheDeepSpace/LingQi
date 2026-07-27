@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import PageIntro from '../../components/PageIntro.vue'
-import { apiRequest, encoded, requestServicePayment, submitDossierClaim } from '../../utils/api'
+import { apiRequest, decoded, encoded, requestServicePayment, submitDossierClaim } from '../../utils/api'
 
 type EntityType = 'dm' | 'store'
 type ClaimState = {
@@ -110,7 +110,7 @@ async function submit() {
 
 onLoad(optionsValue => {
   id.value = String(optionsValue?.id || '')
-  name.value = decodeURIComponent(String(optionsValue?.name || '相关档案'))
+  name.value = decoded(optionsValue?.name || '相关档案')
   entityType.value = optionsValue?.entityType === 'store' ? 'store' : 'dm'
   proofType.value = options.value[0].value
   void load()

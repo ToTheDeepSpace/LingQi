@@ -71,6 +71,15 @@ export function encoded(value: string | number | null | undefined) {
   return encodeURIComponent(String(value ?? ''))
 }
 
+export function decoded(value: string | number | null | undefined) {
+  const text = String(value ?? '')
+  try {
+    return decodeURIComponent(text)
+  } catch {
+    return text
+  }
+}
+
 export async function requireLogin(): Promise<AuthSession> {
   const auth = readAuth()
   if (auth?.token) return auth

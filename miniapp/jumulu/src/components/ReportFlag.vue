@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { encoded } from '../utils/api'
+import { encoded, requireLogin } from '../utils/api'
 
 const props = withDefaults(defineProps<{
   targetType: string
@@ -12,8 +12,13 @@ const props = withDefaults(defineProps<{
   own: false,
 })
 
-function open() {
+async function open() {
   if (props.own) return
+  try {
+    await requireLogin()
+  } catch {
+    return
+  }
   const sub = props.targetSubId ? `&targetSubId=${encoded(props.targetSubId)}` : ''
   uni.navigateTo({
     url: `/pages/report/index?targetType=${encoded(props.targetType)}&targetId=${encoded(props.targetId)}&title=${encoded(props.title)}${sub}`,
