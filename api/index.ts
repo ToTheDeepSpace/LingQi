@@ -114,7 +114,7 @@ import {
   interpretWechatContentCheck,
   interpretWechatMediaCallback,
   interpretWechatMediaSubmission,
-  joinWechatSafetyText,
+  splitWechatSafetyText,
   wechatSafetySceneNumber,
   type WechatContentCheckPayload,
   type WechatMediaCallbackPayload,
@@ -654,15 +654,24 @@ async function runWechatMiniTextSafetyCheck(req: express.Request, input: {
   const profile = await getAuthedProfile(req);
   if (!profile) throw new Error('用户不存在');
   if (!profile.wechat_mini_openid) throw new Error('请先使用微信小程序重新登录');
-  const content = joinWechatSafetyText([input.content]);
-  if (!content) throw new Error('缺少待检查内容');
+  const chunks = splitWechatSafetyText([input.content]);
+  if (chunks.length === 0) throw new Error('缺少待检查内容');
+  const content = chunks.join('');
   const resourceHash = sha256(content);
   try {
-    const verdict = await checkWechatMiniText(
-      content,
-      profile.wechat_mini_openid,
-      wechatSafetySceneNumber(input.businessScene),
-    );
+    let verdict: Awaited<ReturnType<typeof checkWechatMiniText>> | null = null;
+    const traceIds: string[] = [];
+    for (const chunk of chunks) {
+      verdict = await checkWechatMiniText(
+        chunk,
+        profile.wechat_mini_openid,
+        wechatSafetySceneNumber(input.businessScene),
+      );
+      if (verdict.traceId) traceIds.push(verdict.traceId);
+      if (!verdict.allowed) break;
+    }
+    if (!verdict) throw new Error('微信内容安全服务未返回检查结果');
+    if (traceIds.length > 1) verdict = { ...verdict, traceId: traceIds.join(',') };
     const row = await insertWechatContentCheck({
       profileId: profile.id,
       checkType: 'text',
@@ -701,7 +710,7 @@ function wechatMiniTextSafetyMiddleware(input: {
 }) {
   return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (!isWechatMiniClient(req)) return next();
-    const content = joinWechatSafetyText(input.content(req));
+    const content = splitWechatSafetyText(input.content(req)).join('');
     if (!content) return next();
     try {
       const result = await runWechatMiniTextSafetyCheck(req, {
@@ -6702,7 +6711,7 @@ app.post('/api/lc/miniapp/auth/refresh', authMiddleware, async (req, res) => {
 app.post('/api/lc/miniapp/content-check', authMiddleware, async (req, res) => {
   try {
     if (!isWechatMiniClient(req)) return res.status(403).json(err(new Error('该接口仅供微信小程序使用')));
-    const content = joinWechatSafetyText([req.body?.content]);
+    const content = splitWechatSafetyText([req.body?.content]).join('');
     const scene = cleanText(req.body?.scene, 80) || 'ugc';
     if (!content) return res.status(400).json(err(new Error('缺少待检查内容')));
     const result = await runWechatMiniTextSafetyCheck(req, {

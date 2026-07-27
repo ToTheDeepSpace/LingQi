@@ -172,10 +172,22 @@ export function wechatSafetySceneNumber(scene: string): 1 | 2 | 3 | 4 {
 }
 
 export function joinWechatSafetyText(values: unknown[], maxLength = 2500) {
-  return values
+  const combined = values
     .flatMap(value => Array.isArray(value) ? value : [value])
     .map(value => typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '')
     .filter(Boolean)
     .join('\n')
-    .slice(0, maxLength);
+  return Array.from(combined).slice(0, Math.max(0, maxLength)).join('');
+}
+
+export function splitWechatSafetyText(values: unknown[], maxLength = 2500) {
+  const combined = joinWechatSafetyText(values, Number.MAX_SAFE_INTEGER);
+  if (!combined) return [];
+  const safeLength = Number.isSafeInteger(maxLength) && maxLength > 0 ? maxLength : 2500;
+  const characters = Array.from(combined);
+  const chunks: string[] = [];
+  for (let offset = 0; offset < characters.length; offset += safeLength) {
+    chunks.push(characters.slice(offset, offset + safeLength).join(''));
+  }
+  return chunks;
 }

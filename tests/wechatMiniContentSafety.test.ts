@@ -6,6 +6,7 @@ import {
   interpretWechatMediaCallback,
   interpretWechatMediaSubmission,
   joinWechatSafetyText,
+  splitWechatSafetyText,
   wechatSafetySceneNumber,
 } from '../api/wechatMiniContentSafety.js';
 
@@ -70,6 +71,14 @@ test('maps business scenes and truncates combined content to WeChat limits', () 
   assert.equal(joinWechatSafetyText([' a ', '', ['b', 'c']], 3), 'a\nb');
 });
 
+test('splits long content without leaving an unchecked tail', () => {
+  const content = `${'前'.repeat(2500)}违规尾部`;
+  const chunks = splitWechatSafetyText([content]);
+  assert.equal(chunks.length, 2);
+  assert.equal(chunks[0]?.length, 2500);
+  assert.equal(chunks.join(''), content);
+});
+
 test('server business routes enforce miniapp text checks instead of trusting client preflight', () => {
   const source = readFileSync('api/index.ts', 'utf8');
   assert.match(source, /signProfileAuthToken\(profile,\s*'wechat-miniapp'\)/);
@@ -117,4 +126,11 @@ test('all WeChat safety network calls have a bounded timeout', () => {
     source.match(/signal: wechatMiniApiSignal\(\)/g)?.length,
     3,
   );
+});
+
+test('server checks every content chunk before allowing publication', () => {
+  const source = readFileSync('api/index.ts', 'utf8');
+  assert.match(source, /for \(const chunk of chunks\)/);
+  assert.match(source, /checkWechatMiniText\(\s*chunk,/);
+  assert.match(source, /if \(!verdict\.allowed\) break/);
 });
