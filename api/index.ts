@@ -120,6 +120,7 @@ import {
   type WechatMediaCallbackPayload,
   type WechatMediaCheckSubmissionPayload,
 } from './wechatMiniContentSafety.js';
+import { WechatAccessTokenCache } from './wechatAccessTokenCache.js';
 import {
   miniappAccountMergeErrorMessage,
   miniappAccountMergePreflight,
@@ -524,8 +525,7 @@ function isWechatMiniLoginConfigured() {
   return Boolean(LINGQI_WECHAT_MINI_APP_ID && LINGQI_WECHAT_MINI_APP_SECRET);
 }
 
-let wechatMiniAccessToken = '';
-let wechatMiniAccessTokenExpiresAt = 0;
+const wechatMiniAccessTokenCache = new WechatAccessTokenCache();
 const WECHAT_MINI_API_TIMEOUT_MS = 8_000;
 
 function wechatMiniApiSignal() {
@@ -533,56 +533,57 @@ function wechatMiniApiSignal() {
 }
 
 async function getWechatMiniAccessToken() {
-  if (wechatMiniAccessToken && Date.now() < wechatMiniAccessTokenExpiresAt) return wechatMiniAccessToken;
   if (!isWechatMiniLoginConfigured()) throw new Error('微信小程序服务尚未配置');
-  const tokenUrl = new URL('https://api.weixin.qq.com/cgi-bin/token');
-  tokenUrl.search = new URLSearchParams({
-    grant_type: 'client_credential',
-    appid: LINGQI_WECHAT_MINI_APP_ID,
-    secret: LINGQI_WECHAT_MINI_APP_SECRET,
-  }).toString();
-  const response = await fetch(tokenUrl, { signal: wechatMiniApiSignal() });
-  const payload = await response.json() as { access_token?: string; expires_in?: number; errcode?: number; errmsg?: string };
-  if (!response.ok || !payload.access_token) throw new Error(payload.errmsg || '微信内容安全服务授权失败');
-  wechatMiniAccessToken = payload.access_token;
-  wechatMiniAccessTokenExpiresAt = Date.now() + Math.max(60, Number(payload.expires_in || 7200) - 300) * 1000;
-  return wechatMiniAccessToken;
+  return wechatMiniAccessTokenCache.get(async () => {
+    const tokenUrl = new URL('https://api.weixin.qq.com/cgi-bin/token');
+    tokenUrl.search = new URLSearchParams({
+      grant_type: 'client_credential',
+      appid: LINGQI_WECHAT_MINI_APP_ID,
+      secret: LINGQI_WECHAT_MINI_APP_SECRET,
+    }).toString();
+    const response = await fetch(tokenUrl, { signal: wechatMiniApiSignal() });
+    const payload = await response.json() as { access_token?: string; expires_in?: number; errcode?: number; errmsg?: string };
+    if (!response.ok || !payload.access_token) throw new Error(payload.errmsg || '微信内容安全服务授权失败');
+    return { token: payload.access_token, expiresInSeconds: Number(payload.expires_in || 7200) };
+  });
 }
 
 async function checkWechatMiniText(content: string, openid: string, scene: 1 | 2 | 3 | 4) {
-  const token = await getWechatMiniAccessToken();
-  const response = await fetch(`https://api.weixin.qq.com/wxa/msg_sec_check?access_token=${encodeURIComponent(token)}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ content, version: 2, scene, openid }),
-    signal: wechatMiniApiSignal(),
-  });
-  const payload = await response.json() as WechatContentCheckPayload;
-  if (payload.errcode === 40014 || payload.errcode === 42001) {
-    wechatMiniAccessToken = '';
-    wechatMiniAccessTokenExpiresAt = 0;
+  let payload: WechatContentCheckPayload = {};
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const token = await getWechatMiniAccessToken();
+    const response = await fetch(`https://api.weixin.qq.com/wxa/msg_sec_check?access_token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content, version: 2, scene, openid }),
+      signal: wechatMiniApiSignal(),
+    });
+    payload = await response.json() as WechatContentCheckPayload;
+    if (payload.errcode !== 40014 && payload.errcode !== 42001) break;
+    wechatMiniAccessTokenCache.invalidate(token);
   }
   return interpretWechatContentCheck(payload);
 }
 
 async function submitWechatMiniMediaCheck(mediaUrl: string, openid: string, scene: 1 | 2 | 3 | 4) {
-  const token = await getWechatMiniAccessToken();
-  const response = await fetch(`https://api.weixin.qq.com/wxa/media_check_async?access_token=${encodeURIComponent(token)}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      media_url: mediaUrl,
-      media_type: 2,
-      version: 2,
-      scene,
-      openid,
-    }),
-    signal: wechatMiniApiSignal(),
-  });
-  const payload = await response.json() as WechatMediaCheckSubmissionPayload;
-  if (payload.errcode === 40014 || payload.errcode === 42001) {
-    wechatMiniAccessToken = '';
-    wechatMiniAccessTokenExpiresAt = 0;
+  let payload: WechatMediaCheckSubmissionPayload = {};
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const token = await getWechatMiniAccessToken();
+    const response = await fetch(`https://api.weixin.qq.com/wxa/media_check_async?access_token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        media_url: mediaUrl,
+        media_type: 2,
+        version: 2,
+        scene,
+        openid,
+      }),
+      signal: wechatMiniApiSignal(),
+    });
+    payload = await response.json() as WechatMediaCheckSubmissionPayload;
+    if (payload.errcode !== 40014 && payload.errcode !== 42001) break;
+    wechatMiniAccessTokenCache.invalidate(token);
   }
   return interpretWechatMediaSubmission(payload);
 }
