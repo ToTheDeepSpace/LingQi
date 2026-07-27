@@ -34,6 +34,7 @@ const inputStyle: CSSProperties = {
 };
 
 const REFERRAL_STORAGE_KEY = 'lc_referral_code';
+const pendingWechatExchanges = new Map<string, Promise<Record<string, unknown>>>();
 
 type SentCodeTarget = {
   kind: AuthAccountKind;
@@ -56,18 +57,20 @@ function normalizeReferralCode(input: string | null) {
   return (input || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
 }
 
-function decodeWechatPayload(payload: string) {
-  try {
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-    return JSON.parse(decodeURIComponent(escape(atob(padded))));
-  } catch {
-    try {
-      return JSON.parse(atob(payload));
-    } catch {
-      return null;
-    }
-  }
+function exchangeWechatLoginCode(code: string) {
+  const current = pendingWechatExchanges.get(code);
+  if (current) return current;
+  const request = fetch(`${API}/lc/auth/wechat/exchange`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  }).then(response => response.json() as Promise<Record<string, unknown>>);
+  pendingWechatExchanges.set(code, request);
+  const clearRequest = () => {
+    window.setTimeout(() => pendingWechatExchanges.delete(code), 5_000);
+  };
+  void request.then(clearRequest, clearRequest);
+  return request;
 }
 
 export default function Login() {
@@ -103,7 +106,7 @@ export default function Login() {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    if (params.get('wechat_login') || params.get('auth_error')) return;
+    if (params.get('wechat_code') || params.get('auth_error')) return;
     const current = readStoredCreatorAuth();
     if (!current) return;
     navigate(getPostLoginRedirect(params.get('redirect')), { replace: true });
@@ -133,23 +136,41 @@ export default function Login() {
       localStorage.removeItem(REFERRAL_STORAGE_KEY);
       window.setTimeout(() => setReferralCode(''), 0);
     }
-    const wechatLogin = params.get('wechat_login');
+    const wechatCode = params.get('wechat_code');
     const authError = params.get('auth_error');
     if (authError) {
       window.setTimeout(() => setMessage(authError), 0);
       window.history.replaceState(null, '', '/login');
       return;
     }
-    if (!wechatLogin) return;
-    const data = decodeWechatPayload(wechatLogin);
-    if (data?.token) {
-      storeLogin(data);
-      localStorage.removeItem(REFERRAL_STORAGE_KEY);
-      navigate(getPostLoginRedirect(params.get('redirect')), { replace: true });
-    } else {
-      window.setTimeout(() => setMessage('微信登录结果无效，请重试'), 0);
-      window.history.replaceState(null, '', '/login');
-    }
+    if (!wechatCode) return;
+
+    let alive = true;
+    const redirect = getPostLoginRedirect(params.get('redirect'));
+    window.history.replaceState(null, '', '/login');
+    window.setTimeout(() => setLoading(true), 0);
+    exchangeWechatLoginCode(wechatCode)
+      .then(result => {
+        if (!alive) return;
+        const data = result.data && typeof result.data === 'object'
+          ? result.data as Record<string, unknown>
+          : null;
+        if (!result.success || !data?.token) {
+          setMessage(typeof result.error === 'string' ? result.error : '微信登录结果无效，请重新扫码');
+          return;
+        }
+        storeLogin(data);
+        localStorage.removeItem(REFERRAL_STORAGE_KEY);
+        navigate(redirect, { replace: true });
+      })
+      .catch(() => {
+        if (alive) setMessage('微信登录结果获取失败，请重新扫码');
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+
+    return () => { alive = false; };
   }, [location.search, navigate]);
 
   useEffect(() => {

@@ -18,6 +18,7 @@ type ServerWriteRoute = {
   authenticated: boolean;
   adminOnly: boolean;
   wechatTextChecked: boolean;
+  wechatImageChecked: boolean;
   acceptsInput: boolean;
 };
 
@@ -69,6 +70,7 @@ function discoverServerWriteRoutes(): ServerWriteRoute[] {
           authenticated: middleware.some(value => /\bauthMiddleware\b|\baccountStateMiddleware\b/.test(value)),
           adminOnly: middleware.some(value => /\badminMiddleware\b/.test(value)),
           wechatTextChecked: middleware.some(value => /\bwechatMiniTextSafetyMiddleware\b/.test(value)),
+          wechatImageChecked: /\b(?:start|ensure)WechatMiniImageSafetyCheck(?:s)?\s*\(/.test(handler),
           acceptsInput: /req\.body|rankingRequestBody\(req\)|req\.file|req\.files/.test(handler),
         });
       }
@@ -114,4 +116,18 @@ test('server write exemptions never use a generic UGC escape hatch', () => {
   for (const [route, classification] of EXEMPTIONS) {
     assert.ok(allowedClasses.has(classification), `${route} uses an invalid exemption class`);
   }
+});
+
+test('every public-media exemption performs a server-side WeChat image check', () => {
+  const routes = discoverServerWriteRoutes();
+  const missingImageChecks = routes.filter(route =>
+    EXEMPTIONS.get(route.key) === 'public-media' && !route.wechatImageChecked);
+
+  assert.deepEqual(
+    missingImageChecks,
+    [],
+    `public media writes need a server-side image check:\n${missingImageChecks
+      .map(route => `${route.key} at api/index.ts:${route.line}`)
+      .join('\n')}`,
+  );
 });

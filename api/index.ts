@@ -129,6 +129,7 @@ import {
   type WechatMediaCheckSubmissionPayload,
 } from './wechatMiniContentSafety.js';
 import { WechatAccessTokenCache } from './wechatAccessTokenCache.js';
+import { WechatWebLoginExchangeStore } from './wechatWebLoginExchange.js';
 import {
   wechatImageApprovalIssue,
   wechatImageSubmissionAction,
@@ -2238,6 +2239,19 @@ async function verifyEmailCode(project: 'lingqi' | 'juzhanggui', purpose: string
 function isWechatLoginConfigured() {
   return Boolean(WECHAT_OPEN_APP_ID && WECHAT_OPEN_APP_SECRET);
 }
+
+type WechatWebLoginPayload = {
+  id: string;
+  display_name: string;
+  phone: string;
+  city: string | null;
+  available_cities: unknown[];
+  role: string;
+  token: string;
+  auth_provider: 'wechat';
+};
+
+const wechatWebLoginExchangeStore = new WechatWebLoginExchangeStore<WechatWebLoginPayload>();
 
 function safeFrontendRedirect(input: unknown) {
   const raw = typeof input === 'string' ? input.trim() : '';
@@ -6673,6 +6687,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
         balance: 30,
         paid_balance: 0,
         bonus_balance: 30,
+        profile_setup_completed: false,
         auth_provider: 'wechat',
         wechat_openid: openid,
         wechat_unionid: unionid,
@@ -6710,7 +6725,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
       metadata: { has_unionid: Boolean(unionid), wechat_bound_at: nowIso },
     });
 
-    const payload = Buffer.from(JSON.stringify({
+    const exchangeCode = wechatWebLoginExchangeStore.issue({
       id: profile.id,
       display_name: profile.display_name || nickname,
       phone: profile.phone || '',
@@ -6719,11 +6734,24 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
       role: profile.role,
       token,
       auth_provider: 'wechat',
-    })).toString('base64url');
+    });
     const redirectPath = safeFrontendRedirect(statePayload.redirectPath);
-    res.redirect(`${LINGQI_SITE_URL}/login?wechat_login=${encodeURIComponent(payload)}&redirect=${encodeURIComponent(redirectPath)}`);
+    res.redirect(`${LINGQI_SITE_URL}/login?wechat_code=${encodeURIComponent(exchangeCode)}&redirect=${encodeURIComponent(redirectPath)}`);
   } catch (e) {
     res.redirect(`${LINGQI_SITE_URL}/login?auth_error=${encodeURIComponent(err(e).error || '微信登录失败')}`);
+  }
+});
+
+app.post('/api/lc/auth/wechat/exchange', async (req, res) => {
+  try {
+    const code = cleanText(req.body?.code, 200);
+    if (!code) return res.status(400).json(err(new Error('微信登录临时凭证缺失')));
+    const payload = wechatWebLoginExchangeStore.consume(code);
+    if (!payload) return res.status(400).json(err(new Error('微信登录临时凭证已失效，请重新扫码')));
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(ok(payload));
+  } catch (e) {
+    res.status(400).json(err(e));
   }
 });
 
