@@ -108,7 +108,6 @@ import {
 } from './securityPolicy.js';
 import {
   authSessionMatches,
-  nextSessionVersion,
   sessionVersionOf,
 } from './authSessionPolicy.js';
 import {
@@ -6155,13 +6154,13 @@ app.post('/api/lc/auth/reset-password', async (req, res) => {
       if (!existing.display_name) patch.display_name = `用户${String(verifiedAccount).split('@')[0]?.slice(0, 24) || 'email'}`;
     }
 
-    await supabase.from('lc_profiles').update(patch).eq('id', existing.id);
-    const nextProfile = {
-      ...existing,
-      ...patch,
-      password_hash: patch.password_hash,
-      session_version: nextSessionVersion(existing.session_version),
-    };
+    const { data: nextProfile, error: updateError } = await supabase.from('lc_profiles')
+      .update(patch)
+      .eq('id', existing.id)
+      .select('*')
+      .single();
+    if (updateError) throw updateError;
+    if (!nextProfile) throw new Error('密码更新失败，请稍后重试');
     const token = signProfileAuthToken(nextProfile);
     await logSecurityEvent(req, {
       action: 'auth_password_reset',
@@ -6324,12 +6323,14 @@ app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    await supabase.from('lc_profiles').update({ password_hash: passwordHash }).eq('id', creatorId);
-    const token = signProfileAuthToken({
-      ...current,
-      password_hash: passwordHash,
-      session_version: nextSessionVersion(current.session_version),
-    }, authClientForToken(req));
+    const { data: updatedProfile, error: updateError } = await supabase.from('lc_profiles')
+      .update({ password_hash: passwordHash })
+      .eq('id', creatorId)
+      .select('*')
+      .single();
+    if (updateError) throw updateError;
+    if (!updatedProfile) throw new Error('密码更新失败，请稍后重试');
+    const token = signProfileAuthToken(updatedProfile, authClientForToken(req));
     await logSecurityEvent(req, {
       action: 'auth_password_set',
       targetType: 'profile',
