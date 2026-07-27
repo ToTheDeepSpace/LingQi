@@ -109,3 +109,12 @@ test('public images use async WeChat checks and approval gates', () => {
   assert.match(source, /assertWechatImageChecksAllowApproval\(collectPotentialPublicImageUrls\(review\.payload\)\)/);
   assert.match(source, /assertWechatImageChecksAllowApproval\(collectPotentialPublicImageUrls\(r\.display_files\)\)/);
 });
+
+test('all WeChat safety network calls have a bounded timeout', () => {
+  const source = readFileSync('api/index.ts', 'utf8');
+  assert.match(source, /const WECHAT_MINI_API_TIMEOUT_MS = 8_000/);
+  assert.equal(
+    source.match(/signal: wechatMiniApiSignal\(\)/g)?.length,
+    3,
+  );
+});

@@ -526,6 +526,11 @@ function isWechatMiniLoginConfigured() {
 
 let wechatMiniAccessToken = '';
 let wechatMiniAccessTokenExpiresAt = 0;
+const WECHAT_MINI_API_TIMEOUT_MS = 8_000;
+
+function wechatMiniApiSignal() {
+  return AbortSignal.timeout(WECHAT_MINI_API_TIMEOUT_MS);
+}
 
 async function getWechatMiniAccessToken() {
   if (wechatMiniAccessToken && Date.now() < wechatMiniAccessTokenExpiresAt) return wechatMiniAccessToken;
@@ -536,7 +541,7 @@ async function getWechatMiniAccessToken() {
     appid: LINGQI_WECHAT_MINI_APP_ID,
     secret: LINGQI_WECHAT_MINI_APP_SECRET,
   }).toString();
-  const response = await fetch(tokenUrl);
+  const response = await fetch(tokenUrl, { signal: wechatMiniApiSignal() });
   const payload = await response.json() as { access_token?: string; expires_in?: number; errcode?: number; errmsg?: string };
   if (!response.ok || !payload.access_token) throw new Error(payload.errmsg || '微信内容安全服务授权失败');
   wechatMiniAccessToken = payload.access_token;
@@ -550,6 +555,7 @@ async function checkWechatMiniText(content: string, openid: string, scene: 1 | 2
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ content, version: 2, scene, openid }),
+    signal: wechatMiniApiSignal(),
   });
   const payload = await response.json() as WechatContentCheckPayload;
   if (payload.errcode === 40014 || payload.errcode === 42001) {
@@ -571,6 +577,7 @@ async function submitWechatMiniMediaCheck(mediaUrl: string, openid: string, scen
       scene,
       openid,
     }),
+    signal: wechatMiniApiSignal(),
   });
   const payload = await response.json() as WechatMediaCheckSubmissionPayload;
   if (payload.errcode === 40014 || payload.errcode === 42001) {
