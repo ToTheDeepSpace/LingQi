@@ -3,7 +3,11 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import { isTokenExpired } from '../lib/authSession';
 import { ADMIN_REVIEW_ACTIONS, moderationHistoryMetadataLines, summarizeProfileReviewPayload } from '../lib/adminReviewPresentation';
-import { wechatSafetyStatusPresentation } from '../lib/wechatSafetyPresentation';
+import {
+  wechatSafetyMatchesFilter,
+  wechatSafetyStatusPresentation,
+  type WechatSafetyFilter,
+} from '../lib/wechatSafetyPresentation';
 import BrandLogo from '../components/BrandLogo';
 import RankingEvidenceEditor from '../components/RankingEvidenceEditor';
 
@@ -1117,6 +1121,7 @@ export default function Admin() {
   const [accountAppeals, setAccountAppeals] = useState<AccountAppeal[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [wechatContentChecks, setWechatContentChecks] = useState<WechatContentCheck[]>([]);
+  const [wechatSafetyFilter, setWechatSafetyFilter] = useState<WechatSafetyFilter>('attention');
   const [publicReviews, setPublicReviews] = useState<PublicReview[]>([]);
   const [reviewHistory, setReviewHistory] = useState<PublicReview[]>([]);
   const [guides, setGuides] = useState<GuideReview[]>([]);
@@ -1201,7 +1206,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         const [applicationResponse, providerInquiryResponse, wechatContentResponse] = await Promise.all([
           fetch(`${API}/lc/admin/commission-applications`, { headers: { Authorization: `Bearer ${t}` } }),
           fetch(`${API}/lc/admin/provider-inquiries`, { headers: { Authorization: `Bearer ${t}` } }),
-          fetch(`${API}/lc/admin/wechat-content-checks?limit=100`, { headers: { Authorization: `Bearer ${t}` } }),
+          fetch(`${API}/lc/admin/wechat-content-checks?limit=200`, { headers: { Authorization: `Bearer ${t}` } }),
         ]);
         const [applicationPayload, providerInquiryPayload, wechatContentPayload] = await Promise.all([
           applicationResponse.json(),
@@ -2328,6 +2333,30 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     { group: 'history', label: '审核历史', tab: 'reviewHistory' },
     { group: 'accounts', label: '账号与安全', tab: 'accounts', count: pendingProfiles.length + certs.filter(item => item.type === 'realname').length },
   ];
+  const wechatSafetyNow = Date.now();
+  const wechatSafetyFilters: Array<{ value: WechatSafetyFilter; label: string }> = [
+    { value: 'attention', label: '需处理' },
+    { value: 'pending', label: '检查中' },
+    { value: 'pass', label: '已通过' },
+    { value: 'all', label: '全部' },
+  ];
+  const wechatSafetyFilterCounts = new Map(wechatSafetyFilters.map(filter => [
+    filter.value,
+    wechatContentChecks.filter(item => wechatSafetyMatchesFilter(
+      item.status,
+      item.check_type,
+      item.created_at,
+      filter.value,
+      wechatSafetyNow,
+    )).length,
+  ]));
+  const visibleWechatContentChecks = wechatContentChecks.filter(item => wechatSafetyMatchesFilter(
+    item.status,
+    item.check_type,
+    item.created_at,
+    wechatSafetyFilter,
+    wechatSafetyNow,
+  ));
 
   if (!authed) return (
     <div style={{ backgroundColor: BG, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -3414,12 +3443,36 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             {tab === 'security' && (
               <div style={{ display: 'grid', gap: 14 }}>
                 <section>
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-                    <h2 style={{ margin: 0, fontSize: '0.98rem' }}>微信内容安全检查</h2>
-                    <Meta>仅保存检查结果和哈希，不在这里复制用户原文</Meta>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: '0.98rem' }}>微信内容安全检查</h2>
+                      <Meta>最近 200 条 · 仅保存检查结果和哈希，不复制用户原文</Meta>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                      {wechatSafetyFilters.map(filter => (
+                        <button
+                          key={filter.value}
+                          type="button"
+                          onClick={() => setWechatSafetyFilter(filter.value)}
+                          style={{
+                            minHeight: 28,
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            border: `1px solid ${wechatSafetyFilter === filter.value ? 'rgba(31,41,55,0.42)' : LINE}`,
+                            background: wechatSafetyFilter === filter.value ? INK : SURFACE,
+                            color: wechatSafetyFilter === filter.value ? BG : MUTED,
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {filter.label} {wechatSafetyFilterCounts.get(filter.value) || 0}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <ListEmpty empty={wechatContentChecks.length === 0} text="暂无微信内容安全检查记录">
-                    {wechatContentChecks.map(item => {
+                  <ListEmpty empty={visibleWechatContentChecks.length === 0} text={wechatSafetyFilter === 'attention' ? '暂无需要处理的微信安全记录' : '这个分类暂无检查记录'}>
+                    {visibleWechatContentChecks.map(item => {
                       const presentation = wechatSafetyStatusPresentation(
                         item.status,
                         item.check_type,

@@ -1,4 +1,5 @@
 export const WECHAT_IMAGE_CALLBACK_STALE_MS = 35 * 60 * 1000;
+export type WechatSafetyFilter = 'attention' | 'pending' | 'pass' | 'all';
 
 export function wechatSafetyStatusPresentation(
   status: 'pending' | 'pass' | 'review' | 'risky' | 'error',
@@ -23,4 +24,21 @@ export function wechatSafetyStatusPresentation(
   if (status === 'review') return { label: '需复核', accent: '#b91c1c', note: '' };
   if (status === 'risky') return { label: '风险', accent: '#b91c1c', note: '' };
   return { label: '调用异常', accent: '#b91c1c', note: '' };
+}
+
+export function wechatSafetyMatchesFilter(
+  status: 'pending' | 'pass' | 'review' | 'risky' | 'error',
+  checkType: 'text' | 'image',
+  createdAt: string | null | undefined,
+  filter: WechatSafetyFilter,
+  nowMs = Date.now(),
+) {
+  if (filter === 'all') return true;
+  if (filter === 'pass') return status === 'pass';
+  const presentation = wechatSafetyStatusPresentation(status, checkType, createdAt, nowMs);
+  if (filter === 'pending') return presentation.label === '检查中';
+  return presentation.label === '回调超时'
+    || status === 'review'
+    || status === 'risky'
+    || status === 'error';
 }
