@@ -210,8 +210,12 @@ export default function Home() {
           </form>
 
           <div className="home-discovery-actions">
-            <Link to="/dm">浏览 DM 百科</Link>
-            <Link to="/stores">查看店家口碑</Link>
+            <Link to="/dm"><strong>DM</strong><span>查档案</span></Link>
+            <Link to="/stores"><strong>店家</strong><span>看口碑</span></Link>
+            <Link to="/scripts"><strong>角色</strong><span>读点评</span></Link>
+            <Link to="/rankings"><strong>红黑榜</strong><span>看事件</span></Link>
+            <Link to="/commissions"><strong>委托</strong><span>找与接</span></Link>
+            <Link to="/carpools"><strong>拼车</strong><span>找搭子</span></Link>
           </div>
         </div>
 

@@ -3,6 +3,7 @@ import type React from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { JumuluCompactHeader } from '../components/JumuluPageChrome';
 import { ReputationHubShell } from '../components/ReputationHubChrome';
+import { readApiEnvelope } from '../lib/apiEnvelope';
 import { readStoredCreatorAuth } from '../lib/authSession';
 import { flattenScriptRoles, matchesRoleSearch, roleKindLabel } from '../lib/scriptRoleCatalog';
 import type { ScriptCatalogItem } from '../types';
@@ -36,9 +37,7 @@ export default function RateScriptRole() {
       setLoading(true);
       try {
         const response = await fetch(`${API}/lc/scripts`, { signal: controller.signal });
-        const payload = await response.json();
-        if (!response.ok || !payload.success) throw new Error(payload.error || '角色资料加载失败');
-        const nextScripts = (payload.data || []) as ScriptCatalogItem[];
+        const nextScripts = await readApiEnvelope<ScriptCatalogItem[]>(response, '角色资料加载失败，请稍后重试');
         setScripts(nextScripts);
         if (initialTargetId) {
           const initialRole = flattenScriptRoles(nextScripts).find(role => role.target_id === initialTargetId);
@@ -102,9 +101,8 @@ export default function RateScriptRole() {
           reviewLane,
         }),
       });
-      const payload = await response.json();
-      if (!response.ok || !payload.success) throw new Error(payload.error || '评分提交失败');
-      setMessage({ ok: true, text: payload.data?.message || '角色评分已提交审核，通过后会公开展示' });
+      const data = await readApiEnvelope<{ message?: string }>(response, '评分提交失败，请稍后重试');
+      setMessage({ ok: true, text: data?.message || '角色评分已提交审核，通过后会公开展示' });
     } catch (error) {
       setMessage({ ok: false, text: error instanceof Error ? error.message : '评分提交失败' });
     } finally {

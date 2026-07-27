@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { ReputationHubShell } from '../components/ReputationHubChrome';
 import { JumuluCompactHeader } from '../components/JumuluPageChrome';
 import { jumuluFilterPanelStyle, jumuluPrimaryLinkStyle } from '../styles/jumuluPageStyles';
+import { readApiEnvelope } from '../lib/apiEnvelope';
 import { flattenScriptRoles, matchesRoleSearch, roleKindLabel } from '../lib/scriptRoleCatalog';
 import type { ScriptCatalogItem } from '../types';
 
@@ -26,9 +27,8 @@ export default function Scripts() {
       setLoadError('');
       try {
         const response = await fetch(`${API}/lc/scripts`, { signal: controller.signal });
-        const payload = await response.json();
-        if (!response.ok || !payload.success) throw new Error(payload.error || '角色评分加载失败');
-        setScripts(payload.data || []);
+        const data = await readApiEnvelope<ScriptCatalogItem[]>(response, '角色评分加载失败，请稍后重试');
+        setScripts(data || []);
       } catch (error) {
         if (controller.signal.aborted) return;
         setLoadError(error instanceof Error ? error.message : '角色评分加载失败');

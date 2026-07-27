@@ -89,7 +89,7 @@ onPullDownRefresh(load)
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="剧本杀 DM 评分" title="查 DM，评体验" description="按姓名、城市、店家、标签或常开剧本查找 DM。" />
+    <PageIntro eyebrow="剧本杀 DM 评分" nav-title="DM 档案" title="查 DM，评体验" description="按姓名、城市、店家、标签或常开剧本查找 DM。" />
     <view class="page-tools">
       <view class="filter">
         <CitySearchPicker :value="city" @change="selectCity" />
