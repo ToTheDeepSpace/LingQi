@@ -30,7 +30,7 @@ import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import { createDecipheriv, createHash, createSign, createVerify, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { sanitizeUploadedImageFile } from './uploadSecurity.js';
+import { MAX_UPLOAD_BYTES, sanitizeUploadedImageFile, uploadImageValidationStatus } from './uploadSecurity.js';
 import {
   MAX_DOSSIER_CLAIM_PROOFS,
   privateClaimRootFromPublicUploadRoot,
@@ -263,7 +263,7 @@ const supabase = useTencentPg ? createTencentPgClient() : createClient(SUPABASE_
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: MAX_UPLOAD_BYTES,
     files: 1,
     fields: 8,
     parts: 10,
@@ -440,6 +440,13 @@ function ok(d?: unknown) { return { success: true, data: d }; }
 function err(e: unknown) {
   const message = publicApiErrorMessage(e, process.env.NODE_ENV === 'production').replaceAll('契约币', '榜金');
   return { success: false, error: message };
+}
+
+function sendUploadValidationError(res: express.Response, error: unknown) {
+  const status = uploadImageValidationStatus(error);
+  if (!status) return false;
+  res.status(status).json(err(error));
+  return true;
 }
 
 function codedErr(e: unknown, code: string, details?: Record<string, unknown>) {
@@ -9043,7 +9050,10 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
         trace_id: contentCheck.traceId,
       } : null,
     }));
-  } catch (e) { res.status(500).json(err(e)); }
+  } catch (e) {
+    if (sendUploadValidationError(res, e)) return;
+    res.status(500).json(err(e));
+  }
 });
 
 // ==================== 联系申请 ====================
@@ -10484,6 +10494,7 @@ app.post('/api/lc/reports/:id/evidence', authMiddleware, upload.single('file'), 
     res.json(ok({ file: publicModerationEvidenceMetadata([savedFile])[0] }));
   } catch (e) {
     if (savedFile && !evidenceCommitted) removeModerationEvidenceFile(PRIVATE_UPLOAD_ROOT, savedFile.relative_path);
+    if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
 });
@@ -10722,6 +10733,7 @@ app.post('/api/lc/site-messages/:id/evidence', authMiddleware, upload.single('fi
     res.json(ok({ file: publicModerationEvidenceMetadata([savedFile])[0] }));
   } catch (e) {
     if (savedFile && !evidenceCommitted) removeModerationEvidenceFile(PRIVATE_UPLOAD_ROOT, savedFile.relative_path);
+    if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
 });
@@ -16909,6 +16921,7 @@ app.post('/api/lc/dm-affiliations/:id/disputes', authMiddleware, upload.array('e
     if (!committed && reportId && savedProofs.length > 0) {
       try { removeDossierClaimProofs(PRIVATE_UPLOAD_ROOT, dmDossierId, reportId); } catch { /* cleanup best effort */ }
     }
+    if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
 });
@@ -17182,6 +17195,7 @@ app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, upload.array('proofFil
     if (!claimCommitted && claimId && savedProofs.length > 0) {
       try { removeDossierClaimProofs(PRIVATE_UPLOAD_ROOT, req.params.id, claimId); } catch { /* cleanup best effort */ }
     }
+    if (sendUploadValidationError(res, e)) return;
     const errorRecord = e && typeof e === 'object' ? e as { code?: string; message?: string } : {};
     if (errorRecord.code === '23505' || errorRecord.message?.includes('已经有认领申请')) {
       return res.status(409).json(err(new Error('这份档案已经有认领申请正在审核')));
@@ -17672,6 +17686,7 @@ app.post(
     res.json(ok({ id: ranking?.id }));
   } catch (e) {
     if (!rankingCommitted && savedEvidenceFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedEvidenceFiles);
+    if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
   },
@@ -17773,6 +17788,7 @@ app.put('/api/lc/rankings/:id/resubmit', authMiddleware, upload.array('evidenceF
     res.json(ok({ id: updated?.id, status: updated?.status, message: '已重新提交审核，发布评价不扣榜金' }));
   } catch (e) {
     if (!updateCommitted && savedEvidenceFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedEvidenceFiles);
+    if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
 });
@@ -18433,7 +18449,10 @@ app.post('/api/lc/admin/rankings/:id/evidence/:fileId/public-copy', authMiddlewa
       private_evidence_files: publicRankingEvidenceMetadata(nextPrivateFiles),
       audit,
     }));
-  } catch (e) { res.status(500).json(err(e)); }
+  } catch (e) {
+    if (sendUploadValidationError(res, e)) return;
+    res.status(500).json(err(e));
+  }
 });
 
 app.put('/api/lc/admin/rankings/:id/display-files/:index/private', authMiddleware, adminMiddleware, async (req, res) => {
@@ -20209,7 +20228,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, next: exp
   if (error instanceof multer.MulterError) {
     const multerError = error as multer.MulterError;
     const status = multerError.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-    return res.status(status).json(err(new Error(multerError.code === 'LIMIT_FILE_SIZE' ? '文件不能超过 10MB' : '上传内容不符合要求')));
+    return res.status(status).json(err(new Error(multerError.code === 'LIMIT_FILE_SIZE' ? '文件不能超过 8MB' : '上传内容不符合要求')));
   }
   if (/request entity too large/i.test(message)) {
     return res.status(413).json(err(new Error('提交内容过大')));

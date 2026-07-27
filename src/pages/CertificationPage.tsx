@@ -203,14 +203,14 @@ export default function CertificationPage() {
         setUploadError('只支持图片文件');
         continue;
       }
-      if (file.size > 10 * 1024 * 1024) {
-        setUploadError('文件大小不能超过 10MB');
+      if (file.size > 8 * 1024 * 1024) {
+        setUploadError('文件大小不能超过 8MB');
         continue;
       }
       try {
         const uploadFile = type === 'realname' ? await addRealnameWatermark(file) : file;
-        if (uploadFile.size > 10 * 1024 * 1024) {
-          setUploadError('水印处理后的图片仍超过 10MB，请换一张更小的图片');
+        if (uploadFile.size > 8 * 1024 * 1024) {
+          setUploadError('水印处理后的图片仍超过 8MB，请换一张更小的图片');
           continue;
         }
         const formData = new FormData();

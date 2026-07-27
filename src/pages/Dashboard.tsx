@@ -2848,7 +2848,7 @@ export default function Dashboard() {
                 <div style={{ ...card, border: '1px dashed rgba(201,146,46,0.25)' }}>
                   <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 16, color: INK, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     上传作品
-                    <InfoTip>支持 JPG、PNG、GIF，最大 10MB。上传后进入审核，通过后才会显示在公开页；请只上传你有权公开展示的图片。</InfoTip>
+                    <InfoTip>支持 JPG、PNG、WebP，最大 8MB。上传后进入审核，通过后才会显示在公开页；请只上传你有权公开展示的图片。</InfoTip>
                   </p>
                   <ImageUpload onUploaded={addPortfolio} token={token} api={API} scope="portfolio" label="上传作品并提交审核" />
                 </div>
