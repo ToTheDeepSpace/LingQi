@@ -106,11 +106,12 @@ export default function Login() {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    if (params.get('wechat_code') || params.get('auth_error')) return;
+    const fragmentParams = new URLSearchParams(location.hash.replace(/^#/, ''));
+    if (fragmentParams.get('wechat_code') || params.get('auth_error')) return;
     const current = readStoredCreatorAuth();
     if (!current) return;
     navigate(getPostLoginRedirect(params.get('redirect')), { replace: true });
-  }, [location.search, navigate]);
+  }, [location.hash, location.search, navigate]);
 
   useEffect(() => {
     let alive = true;
@@ -127,6 +128,7 @@ export default function Login() {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
+    const fragmentParams = new URLSearchParams(location.hash.replace(/^#/, ''));
     const rawRef = params.get('ref');
     const normalizedRef = normalizeReferralCode(rawRef);
     if (normalizedRef) {
@@ -136,7 +138,7 @@ export default function Login() {
       localStorage.removeItem(REFERRAL_STORAGE_KEY);
       window.setTimeout(() => setReferralCode(''), 0);
     }
-    const wechatCode = params.get('wechat_code');
+    const wechatCode = fragmentParams.get('wechat_code');
     const authError = params.get('auth_error');
     if (authError) {
       window.setTimeout(() => setMessage(authError), 0);
@@ -146,7 +148,7 @@ export default function Login() {
     if (!wechatCode) return;
 
     let alive = true;
-    const redirect = getPostLoginRedirect(params.get('redirect'));
+    const redirect = getPostLoginRedirect(fragmentParams.get('redirect'));
     window.history.replaceState(null, '', '/login');
     window.setTimeout(() => setLoading(true), 0);
     exchangeWechatLoginCode(wechatCode)
@@ -171,7 +173,7 @@ export default function Login() {
       });
 
     return () => { alive = false; };
-  }, [location.search, navigate]);
+  }, [location.hash, location.search, navigate]);
 
   useEffect(() => {
     if (!referralCode) {

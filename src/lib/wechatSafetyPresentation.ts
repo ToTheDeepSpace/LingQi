@@ -1,5 +1,12 @@
 export const WECHAT_IMAGE_CALLBACK_STALE_MS = 35 * 60 * 1000;
 export type WechatSafetyFilter = 'attention' | 'pending' | 'pass' | 'all';
+export type WechatSafetySummaryItem = {
+  status: 'pending' | 'pass' | 'review' | 'risky' | 'error';
+  check_type: 'text' | 'image';
+  created_at?: string | null;
+  checked_at?: string | null;
+  updated_at?: string | null;
+};
 
 export function wechatSafetyStatusPresentation(
   status: 'pending' | 'pass' | 'review' | 'risky' | 'error',
@@ -41,4 +48,38 @@ export function wechatSafetyMatchesFilter(
     || status === 'review'
     || status === 'risky'
     || status === 'error';
+}
+
+export function summarizeWechatSafety(
+  items: WechatSafetySummaryItem[],
+  nowMs = Date.now(),
+) {
+  let latestAt: string | null = null;
+  let latestAtMs = Number.NEGATIVE_INFINITY;
+  let textPassed = 0;
+  let imagePassed = 0;
+  let pending = 0;
+  let attention = 0;
+
+  for (const item of items) {
+    if (item.status === 'pass' && item.check_type === 'text') textPassed += 1;
+    if (item.status === 'pass' && item.check_type === 'image') imagePassed += 1;
+    if (wechatSafetyMatchesFilter(item.status, item.check_type, item.created_at, 'pending', nowMs)) pending += 1;
+    if (wechatSafetyMatchesFilter(item.status, item.check_type, item.created_at, 'attention', nowMs)) attention += 1;
+    const activityAt = item.checked_at || item.updated_at || item.created_at || null;
+    const activityAtMs = Date.parse(String(activityAt || ''));
+    if (Number.isFinite(activityAtMs) && activityAtMs > latestAtMs) {
+      latestAtMs = activityAtMs;
+      latestAt = activityAt;
+    }
+  }
+
+  return {
+    total: items.length,
+    textPassed,
+    imagePassed,
+    pending,
+    attention,
+    latestAt,
+  };
 }

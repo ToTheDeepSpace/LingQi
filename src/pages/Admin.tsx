@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { isTokenExpired } from '../lib/authSession';
 import { ADMIN_REVIEW_ACTIONS, moderationHistoryMetadataLines, summarizeProfileReviewPayload } from '../lib/adminReviewPresentation';
 import {
+  summarizeWechatSafety,
   wechatSafetyMatchesFilter,
   wechatSafetyStatusPresentation,
   type WechatSafetyFilter,
@@ -507,6 +508,7 @@ type WechatContentCheck = {
   error_message?: string | null;
   checked_at?: string | null;
   created_at: string;
+  updated_at?: string | null;
 };
 
 type SiteMessage = {
@@ -2390,6 +2392,19 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     wechatSafetyFilter,
     wechatSafetyClock,
   ));
+  const wechatSafetySummary = summarizeWechatSafety(wechatContentChecks, wechatSafetyClock);
+  const wechatSafetyMetrics = [
+    { label: '文字通过', value: wechatSafetySummary.textPassed, color: '#15803d' },
+    { label: '图片通过', value: wechatSafetySummary.imagePassed, color: '#15803d' },
+    { label: '检查中', value: wechatSafetySummary.pending, color: '#d97706' },
+    { label: '需处理', value: wechatSafetySummary.attention, color: wechatSafetySummary.attention > 0 ? '#b91c1c' : '#15803d' },
+  ];
+  const wechatSafetyLatestLabel = wechatSafetySummary.latestAt
+    ? new Date(wechatSafetySummary.latestAt).toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      hour12: false,
+    })
+    : '暂无记录';
 
   if (!authed) return (
     <div style={{ backgroundColor: BG, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -3476,6 +3491,25 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             {tab === 'security' && (
               <div style={{ display: 'grid', gap: 14 }}>
                 <section>
+                  <div className="wechat-safety-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 7, marginBottom: 9 }}>
+                    {wechatSafetyMetrics.map(metric => (
+                      <div key={metric.label} style={{
+                        minWidth: 0,
+                        border: `1px solid ${LINE}`,
+                        borderRadius: 8,
+                        background: SURFACE,
+                        padding: '8px 10px',
+                        display: 'flex',
+                        alignItems: 'baseline',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                      }}>
+                        <span style={{ color: MUTED, fontSize: '0.72rem', fontWeight: 700 }}>{metric.label}</span>
+                        <strong style={{ color: metric.color, fontSize: '1rem' }}>{metric.value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <Meta>最近更新：{wechatSafetyLatestLabel} · 最近 {wechatSafetySummary.total} 条检查记录</Meta>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
                     <div>
                       <h2 style={{ margin: 0, fontSize: '0.98rem' }}>微信内容安全检查</h2>
@@ -4022,6 +4056,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           }
           .admin-review-diff > :nth-child(4) {
             grid-column: 2 !important;
+          }
+          .wechat-safety-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
           }
         }
       `}</style>

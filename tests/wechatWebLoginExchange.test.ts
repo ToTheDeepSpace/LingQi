@@ -44,10 +44,14 @@ test('never transports the authenticated session token in the WeChat callback UR
   const login = readFileSync('src/pages/Login.tsx', 'utf8');
 
   assert.doesNotMatch(server, /login\?wechat_login=/);
+  assert.doesNotMatch(server, /login\?wechat_code=/);
   assert.doesNotMatch(login, /params\.get\(['"]wechat_login['"]\)/);
   assert.match(server, /wechatWebLoginExchangeStore\.issue\(/);
   assert.match(server, /\/api\/lc\/auth\/wechat\/exchange/);
-  assert.match(login, /params\.get\(['"]wechat_code['"]\)/);
+  assert.match(server, /\/login#wechat_code=/);
+  assert.match(login, /fragmentParams\.get\(['"]wechat_code['"]\)/);
+  assert.match(server, /res\.setHeader\('Referrer-Policy', 'no-referrer'\)/);
+  assert.equal((server.match(/res\.setHeader\('Cache-Control', 'no-store'\)/g) || []).length >= 2, true);
   assert.match(
     server,
     /profile_setup_completed:\s*false,\s*\n\s*auth_provider:\s*'wechat'/,

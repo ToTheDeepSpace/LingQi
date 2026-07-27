@@ -6570,6 +6570,9 @@ app.get('/api/lc/auth/wechat/bind-url', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/lc/auth/wechat/callback', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Referrer-Policy', 'no-referrer');
   try {
     if (!isWechatLoginConfigured()) throw new Error('微信扫码登录尚未配置');
     const code = typeof req.query.code === 'string' ? req.query.code : '';
@@ -6736,7 +6739,7 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
       auth_provider: 'wechat',
     });
     const redirectPath = safeFrontendRedirect(statePayload.redirectPath);
-    res.redirect(`${LINGQI_SITE_URL}/login?wechat_code=${encodeURIComponent(exchangeCode)}&redirect=${encodeURIComponent(redirectPath)}`);
+    res.redirect(`${LINGQI_SITE_URL}/login#wechat_code=${encodeURIComponent(exchangeCode)}&redirect=${encodeURIComponent(redirectPath)}`);
   } catch (e) {
     res.redirect(`${LINGQI_SITE_URL}/login?auth_error=${encodeURIComponent(err(e).error || '微信登录失败')}`);
   }
@@ -6749,6 +6752,7 @@ app.post('/api/lc/auth/wechat/exchange', async (req, res) => {
     const payload = wechatWebLoginExchangeStore.consume(code);
     if (!payload) return res.status(400).json(err(new Error('微信登录临时凭证已失效，请重新扫码')));
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
     res.json(ok(payload));
   } catch (e) {
     res.status(400).json(err(e));
