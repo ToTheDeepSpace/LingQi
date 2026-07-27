@@ -29,14 +29,25 @@ export type RankingEvidenceFile = {
   } | null;
 };
 
-export function resolveLegacyRankingEvidenceSourceUrl(rawUrl: unknown, siteUrl: string) {
+function resolveRankingEvidenceSourceUrl(rawUrl: unknown, siteUrl: string, includeLegacy: boolean) {
   const currentOrigin = new URL(siteUrl).origin;
-  const allowedOrigins = new Set([currentOrigin, ...LEGACY_RANKING_EVIDENCE_ORIGINS.map(value => new URL(value).origin)]);
+  const allowedOrigins = new Set([
+    currentOrigin,
+    ...(includeLegacy ? LEGACY_RANKING_EVIDENCE_ORIGINS.map(value => new URL(value).origin) : []),
+  ]);
   const sourceUrl = new URL(String(rawUrl || ''), siteUrl);
   if (sourceUrl.protocol !== 'https:' || !allowedOrigins.has(sourceUrl.origin) || !sourceUrl.pathname.startsWith('/uploads/')) {
     throw new Error('这份旧材料不是本站存储的图片，请下载后通过新版审核材料入口重新上传');
   }
   return sourceUrl;
+}
+
+export function resolveCurrentRankingEvidenceSourceUrl(rawUrl: unknown, siteUrl: string) {
+  return resolveRankingEvidenceSourceUrl(rawUrl, siteUrl, false);
+}
+
+export function resolveLegacyRankingEvidenceSourceUrl(rawUrl: unknown, siteUrl: string) {
+  return resolveRankingEvidenceSourceUrl(rawUrl, siteUrl, true);
 }
 
 type RankingEvidenceInput = {

@@ -227,6 +227,9 @@ test('keeps the review guide aligned with the enforced server-only flow', () => 
   assert.match(guide, /客户端不再先调用独立预检接口/);
   assert.match(guide, /private-contact/);
   assert.match(guide, /wechat_image_safety_required/);
+  assert.match(guide, /任务提交失败时，服务端会删除刚写入的本机文件或 COS 对象/);
+  assert.match(guide, /每次重定向都会重新验证来源，读取 8 秒超时/);
+  assert.match(guide, /单次请求合计最多 18MB/);
   assert.match(guide, /0\.1\.37/);
   assert.doesNotMatch(guide, /客户端的预检只改善反馈速度/);
   assert.match(readme, /当前 0\.1\.37 范围/);

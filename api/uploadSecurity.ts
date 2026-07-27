@@ -1,4 +1,6 @@
-export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+import { MAX_IMAGE_UPLOAD_BYTES } from '../src/lib/uploadLimits.js';
+
+export const MAX_UPLOAD_BYTES = MAX_IMAGE_UPLOAD_BYTES;
 const MAX_INPUT_PIXELS = 16_000_000;
 const MAX_OUTPUT_EDGE = 2400;
 

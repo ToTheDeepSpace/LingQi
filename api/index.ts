@@ -31,6 +31,7 @@ import multer from 'multer';
 import { createDecipheriv, createHash, createSign, createVerify, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { MAX_UPLOAD_BYTES, sanitizeUploadedImageFile, uploadImageValidationStatus } from './uploadSecurity.js';
+import { fetchBoundedTrustedImage, remoteImageFetchStatus } from './remoteImageFetch.js';
 import {
   MAX_DOSSIER_CLAIM_PROOFS,
   privateClaimRootFromPublicUploadRoot,
@@ -54,6 +55,7 @@ import {
   publicRankingEvidenceMetadata,
   readRankingEvidenceFile,
   removeRankingEvidenceFiles,
+  resolveCurrentRankingEvidenceSourceUrl,
   resolveLegacyRankingEvidenceSourceUrl,
   saveRankingEvidenceFiles,
   validateRankingEvidencePublicCopy,
@@ -72,7 +74,9 @@ import {
   createTencentCosUploadTransport,
   getLingqiCosUploadConfig,
   normalizeUploadRelativePath,
+  removeLingqiSavedUpload,
   saveLingqiSanitizedUploadImage,
+  type LingqiUploadSaveResult,
 } from './uploadStorage.js';
 import {
   identityRolesFromServices,
@@ -98,6 +102,7 @@ import {
 } from '../src/lib/dossierWiki.js';
 import { extractSharedUrl } from '../src/lib/socialLinks.js';
 import { CHANTO_MAX_AMOUNT, CHANTO_MIN_AMOUNT, isValidChantoAmount } from '../src/lib/chanto.js';
+import { MAX_MULTIPART_UPLOAD_BYTES } from '../src/lib/uploadLimits.js';
 import { CITIES } from '../src/constants/cities.js';
 import { adminPrivateAccountPayload, adminProfileListPayload } from './adminPrivacy.js';
 import {
@@ -264,7 +269,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: MAX_UPLOAD_BYTES,
-    files: 1,
+    files: MAX_RANKING_EVIDENCE_FILES,
     fields: 8,
     parts: 10,
     fieldSize: 64 * 1024,
@@ -443,10 +448,23 @@ function err(e: unknown) {
 }
 
 function sendUploadValidationError(res: express.Response, error: unknown) {
-  const status = uploadImageValidationStatus(error);
+  const status = uploadImageValidationStatus(error) || remoteImageFetchStatus(error);
   if (!status) return false;
   res.status(status).json(err(error));
   return true;
+}
+
+function enforceMultipartUploadTotal(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const files = Array.isArray(req.files)
+    ? req.files
+    : req.files && typeof req.files === 'object'
+      ? Object.values(req.files).flat()
+      : [];
+  const totalBytes = files.reduce((total, file) => total + Math.max(0, Number(file.size) || file.buffer?.length || 0), 0);
+  if (totalBytes > MAX_MULTIPART_UPLOAD_BYTES) {
+    return res.status(413).json(err(new Error('本次上传的图片合计不能超过 18MB')));
+  }
+  return next();
 }
 
 function codedErr(e: unknown, code: string, details?: Record<string, unknown>) {
@@ -9016,6 +9034,8 @@ app.delete('/api/lc/portfolio/:id', authMiddleware, async (req, res) => {
 // ==================== 本地上传（需登录） ====================
 
 app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  let savedUpload: LingqiUploadSaveResult | null = null;
+  let keepSavedUpload = false;
   try {
     const file = req.file;
     if (!file) return res.status(400).json(err(new Error('请选择文件')));
@@ -9030,11 +9050,13 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
       randomId: () => `${Date.now()}-${digest}`,
       cosTransport: LINGQI_COS_UPLOAD_TRANSPORT,
     });
+    savedUpload = result;
     const contentCheck = await startWechatMiniImageSafetyCheck(req, {
       mediaUrl: result.url,
       businessScene: `${scope}_image_upload`,
       targetType: scope,
     });
+    keepSavedUpload = true;
 
     res.json(ok({
       url: result.url,
@@ -9051,6 +9073,17 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
       } : null,
     }));
   } catch (e) {
+    if (savedUpload && !keepSavedUpload) {
+      try {
+        await removeLingqiSavedUpload(savedUpload, {
+          env: process.env,
+          localUploadRoot: LOCAL_UPLOAD_ROOT,
+          cosTransport: LINGQI_COS_UPLOAD_TRANSPORT,
+        });
+      } catch (cleanupError) {
+        console.error('[upload] failed to clean rejected image', getErrorText(cleanupError));
+      }
+    }
     if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
@@ -16839,7 +16872,7 @@ app.post('/api/lc/dm-dossiers/:id/affiliations', authMiddleware, async (req, res
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-affiliations/:id/disputes', authMiddleware, upload.array('evidenceFiles', MAX_DOSSIER_CLAIM_PROOFS), async (req, res) => {
+app.post('/api/lc/dm-affiliations/:id/disputes', authMiddleware, upload.array('evidenceFiles', MAX_DOSSIER_CLAIM_PROOFS), enforceMultipartUploadTotal, async (req, res) => {
   let savedProofs: DossierClaimProofFile[] = [];
   let reportId = '';
   let dmDossierId = '';
@@ -17114,7 +17147,7 @@ app.get('/api/lc/admin/dm-dossier-claims/:claimId/proofs/:fileId', authMiddlewar
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, upload.array('proofFiles', MAX_DOSSIER_CLAIM_PROOFS), async (req, res) => {
+app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, upload.array('proofFiles', MAX_DOSSIER_CLAIM_PROOFS), enforceMultipartUploadTotal, async (req, res) => {
   let savedProofs: DossierClaimProofFile[] = [];
   let claimId = '';
   let claimCommitted = false;
@@ -17535,6 +17568,7 @@ app.post(
   '/api/lc/rankings',
   authMiddleware,
   upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES),
+  enforceMultipartUploadTotal,
   wechatMiniTextSafetyMiddleware({
     businessScene: 'ranking_submit',
     targetType: 'ranking',
@@ -17692,7 +17726,7 @@ app.post(
   },
 );
 
-app.put('/api/lc/rankings/:id/resubmit', authMiddleware, upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES), async (req, res) => {
+app.put('/api/lc/rankings/:id/resubmit', authMiddleware, upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES), enforceMultipartUploadTotal, async (req, res) => {
   let savedEvidenceFiles: RankingEvidenceFile[] = [];
   let updateCommitted = false;
   try {
@@ -18473,13 +18507,15 @@ app.put('/api/lc/admin/rankings/:id/display-files/:index/private', authMiddlewar
     if (sourceEvidenceIndex < 0 && privateFiles.length >= MAX_RANKING_EVIDENCE_FILES) return res.status(400).json(err(new Error(`审核材料最多上传${MAX_RANKING_EVIDENCE_FILES}张`)));
 
     if (sourceEvidenceIndex < 0) {
-      const siteOrigin = new URL(LINGQI_SITE_URL).origin;
-      const sourceUrl = new URL(target.url, LINGQI_SITE_URL);
-      if (sourceUrl.origin !== siteOrigin) return res.status(400).json(err(new Error('只有本站上传的配图可以转为审核材料')));
-      const response = await fetch(sourceUrl);
-      if (!response.ok) throw new Error('正文配图读取失败');
-      const sourceBuffer = Buffer.from(await response.arrayBuffer());
-      const image = await sanitizeUploadedImageFile({ buffer: sourceBuffer, mimetype: response.headers.get('content-type') || target.type });
+      let sourceUrl: URL;
+      try { sourceUrl = resolveCurrentRankingEvidenceSourceUrl(target.url, LINGQI_SITE_URL); }
+      catch { return res.status(400).json(err(new Error('只有本站上传的配图可以转为审核材料'))); }
+      const source = await fetchBoundedTrustedImage({
+        sourceUrl,
+        fallbackType: target.type,
+        validateUrl: value => resolveCurrentRankingEvidenceSourceUrl(value, LINGQI_SITE_URL),
+      });
+      const image = await sanitizeUploadedImageFile(source);
       savedFiles = saveRankingEvidenceFiles({
         root: PRIVATE_UPLOAD_ROOT,
         rankingId: String(ranking.id),
@@ -18518,6 +18554,7 @@ app.put('/api/lc/admin/rankings/:id/display-files/:index/private', authMiddlewar
     }));
   } catch (e) {
     if (!committed && savedFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedFiles);
+    if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
 });
@@ -18542,10 +18579,12 @@ app.post('/api/lc/admin/rankings/:id/legacy-evidence/:index/adopt', authMiddlewa
     let sourceUrl: URL;
     try { sourceUrl = resolveLegacyRankingEvidenceSourceUrl(target.url, LINGQI_SITE_URL); }
     catch (sourceError) { return res.status(400).json(err(sourceError)); }
-    const response = await fetch(sourceUrl);
-    if (!response.ok) throw new Error('旧版审核材料读取失败');
-    const sourceBuffer = Buffer.from(await response.arrayBuffer());
-    const image = await sanitizeUploadedImageFile({ buffer: sourceBuffer, mimetype: response.headers.get('content-type') || target.type });
+    const source = await fetchBoundedTrustedImage({
+      sourceUrl,
+      fallbackType: target.type,
+      validateUrl: value => resolveLegacyRankingEvidenceSourceUrl(value, LINGQI_SITE_URL),
+    });
+    const image = await sanitizeUploadedImageFile(source);
     savedFiles = saveRankingEvidenceFiles({
       root: PRIVATE_UPLOAD_ROOT,
       rankingId: String(result.data.id),
@@ -18571,6 +18610,7 @@ app.post('/api/lc/admin/rankings/:id/legacy-evidence/:index/adopt', authMiddlewa
     res.json(ok({ file: publicRankingEvidenceMetadata([adopted])[0], private_evidence_files: publicRankingEvidenceMetadata(nextPrivateFiles), adopted: true }));
   } catch (e) {
     if (!committed && savedFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedFiles);
+    if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
 });

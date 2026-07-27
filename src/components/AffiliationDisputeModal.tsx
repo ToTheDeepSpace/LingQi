@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
+import { MAX_IMAGE_UPLOAD_BYTES, MAX_MULTIPART_UPLOAD_BYTES, totalFileBytes } from '../lib/uploadLimits';
 
 const API = '/api';
 const MAX_FILES = 3;
-const MAX_SIZE = 8 * 1024 * 1024;
 
 type SelectedFile = { file: File; previewUrl: string };
 
@@ -37,7 +37,10 @@ export default function AffiliationDisputeModal({
     if (!list) return;
     const incoming = Array.from(list);
     if (incoming.some(file => !file.type.startsWith('image/'))) return setError('证据只支持图片截图');
-    if (incoming.some(file => file.size > MAX_SIZE)) return setError('每张图片不能超过 8MB');
+    if (incoming.some(file => file.size > MAX_IMAGE_UPLOAD_BYTES)) return setError('每张图片不能超过 8MB');
+    if (totalFileBytes([...files.map(item => item.file), ...incoming]) > MAX_MULTIPART_UPLOAD_BYTES) {
+      return setError('本次上传的截图合计不能超过 18MB');
+    }
     const accepted = incoming.slice(0, Math.max(0, MAX_FILES - files.length)).map(file => {
       const previewUrl = URL.createObjectURL(file);
       previewUrls.current.add(previewUrl);

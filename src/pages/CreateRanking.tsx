@@ -5,6 +5,7 @@ import { PROVINCE_CITIES } from '../constants/cities';
 import { RESPONSIBILITY_TEXT } from '../components/ResponsibilityNotice';
 import MobileTaskAction from '../components/MobileTaskAction';
 import { readStoredCreatorAuth } from '../lib/authSession';
+import { MAX_IMAGE_UPLOAD_BYTES, MAX_MULTIPART_UPLOAD_BYTES, totalFileBytes } from '../lib/uploadLimits';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
 import './CreateRanking.css';
 
@@ -277,7 +278,7 @@ export default function CreateRanking() {
           alert(`${f.name} 不是支持的图片文件`);
           continue;
         }
-        if (f.size > 8 * 1024 * 1024) {
+        if (f.size > MAX_IMAGE_UPLOAD_BYTES) {
           alert(`${f.name} 超过 8MB 限制`);
           continue;
         }
@@ -320,8 +321,11 @@ export default function CreateRanking() {
     if (selected.length === 0) return;
     const existingCount = storedEvidenceFiles.length + legacyEvidenceFiles.length + evidenceFiles.length;
     if (existingCount + selected.length > 8) return setError('审核材料最多上传8张（含已保留材料）');
-    const invalid = selected.find(file => !file.type.startsWith('image/') || file.size > 8 * 1024 * 1024);
+    const invalid = selected.find(file => !file.type.startsWith('image/') || file.size > MAX_IMAGE_UPLOAD_BYTES);
     if (invalid) return setError(!invalid.type.startsWith('image/') ? `${invalid.name} 不是支持的图片文件` : `${invalid.name} 超过 8MB 限制`);
+    if (totalFileBytes([...evidenceFiles.map(item => item.file), ...selected]) > MAX_MULTIPART_UPLOAD_BYTES) {
+      return setError('本次新上传的审核材料合计不能超过 18MB');
+    }
     setError('');
     setEvidenceFiles(previous => [
       ...previous,

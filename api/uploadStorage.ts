@@ -33,6 +33,7 @@ export type LingqiUploadSaveResult = {
 export type CosUploadTransport = {
   putObject(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
   getObject?(key: string): Promise<CosGetObjectResult>;
+  deleteObject?(key: string): Promise<void>;
 };
 
 export type CosGetObjectResult = {
@@ -124,6 +125,35 @@ export async function saveLingqiSanitizedUploadImage(
   return { storage: 'local', url, relativePath, bucketPath };
 }
 
+export async function removeLingqiSavedUpload(
+  saved: LingqiUploadSaveResult,
+  options: Pick<SaveLingqiUploadOptions, 'env' | 'localUploadRoot' | 'cosTransport'>,
+) {
+  const bucketPath = normalizeUploadRelativePath(saved.bucketPath);
+  if (!bucketPath || !bucketPath.startsWith(`${LINGQI_UPLOAD_BUCKET_PATH}/`)) {
+    throw new Error('待清理图片路径不合法');
+  }
+
+  if (saved.storage === 'cos') {
+    const config = getLingqiCosUploadConfig(options.env);
+    const transport = options.cosTransport ?? (config ? createTencentCosUploadTransport(config) : null);
+    if (!config || !transport?.deleteObject || !saved.key) throw new Error('COS 图片清理能力未配置');
+    const expectedKey = buildLingqiCosObjectKey(config, bucketPath);
+    if (saved.key !== expectedKey) throw new Error('待清理 COS 图片路径不匹配');
+    await transport.deleteObject(saved.key);
+    return;
+  }
+
+  const root = path.resolve(options.localUploadRoot);
+  const localPath = path.resolve(root, bucketPath);
+  if (!localPath.startsWith(`${root}${path.sep}`)) throw new Error('待清理图片路径越界');
+  try {
+    fs.unlinkSync(localPath);
+  } catch (error) {
+    if (!error || typeof error !== 'object' || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
+
 function cosEncode(value: string) {
   return encodeURIComponent(value)
     .replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
@@ -211,6 +241,13 @@ export function createTencentCosUploadTransport(config: CosUploadConfig): CosUpl
     },
     async getObject(key) {
       return request('GET', key);
+    },
+    async deleteObject(key) {
+      const result = await request('DELETE', key);
+      if (!result.ok && result.status !== 404) {
+        const details = result.body.toString('utf8').slice(0, 300);
+        throw new Error(`COS 图片清理失败：${result.status} ${details}`);
+      }
     },
   };
 }

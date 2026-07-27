@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   internalRankingEvidenceFiles,
   publicRankingEvidenceMetadata,
+  resolveCurrentRankingEvidenceSourceUrl,
   resolveLegacyRankingEvidenceSourceUrl,
   readRankingEvidenceFile,
   removeRankingEvidenceFiles,
@@ -97,6 +98,14 @@ test('旧版材料来源只在后台内部保留，不进入公开元数据', ()
 });
 
 test('历史材料只允许新旧官方域名下的 uploads 图片', () => {
+  assert.equal(
+    resolveCurrentRankingEvidenceSourceUrl('/uploads/current-proof.jpg', 'https://jumulu.jusichen.com').origin,
+    'https://jumulu.jusichen.com',
+  );
+  assert.throws(
+    () => resolveCurrentRankingEvidenceSourceUrl('https://lingqi.jusichen.com/uploads/old-proof.jpg', 'https://jumulu.jusichen.com'),
+    /不是本站存储/,
+  );
   assert.equal(
     resolveLegacyRankingEvidenceSourceUrl('https://lingqi.jusichen.com/uploads/old-proof.jpg', 'https://jumulu.jusichen.com').origin,
     'https://lingqi.jusichen.com',

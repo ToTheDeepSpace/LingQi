@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { MAX_IMAGE_UPLOAD_BYTES, MAX_MULTIPART_UPLOAD_BYTES, totalFileBytes } from '../lib/uploadLimits';
 
 const API = '/api';
 const MAX_PROOF_FILES = 3;
-const MAX_FILE_SIZE = 8 * 1024 * 1024;
 
 type EntityType = 'dm' | 'store';
 type ProofType = 'social_account' | 'employment' | 'business_license' | 'store_backend' | 'other';
@@ -140,9 +140,13 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
       setError('认领材料只支持图片截图');
       return;
     }
-    const oversized = incoming.find(file => file.size > MAX_FILE_SIZE);
+    const oversized = incoming.find(file => file.size > MAX_IMAGE_UPLOAD_BYTES);
     if (oversized) {
       setError('每张图片不能超过 8MB');
+      return;
+    }
+    if (totalFileBytes([...files.map(item => item.file), ...incoming]) > MAX_MULTIPART_UPLOAD_BYTES) {
+      setError('本次上传的截图合计不能超过 18MB');
       return;
     }
     const availableSlots = Math.max(0, MAX_PROOF_FILES - files.length);
