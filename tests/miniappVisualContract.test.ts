@@ -298,3 +298,11 @@ test('keeps long-lived account histories bounded in the miniapp', () => {
   assert.match(source, /displayedSubmissions/);
   assert.match(source, /继续加载/);
 });
+
+test('keeps long admin safety identifiers inside narrow review cards', () => {
+  const source = read('src/pages/Admin.tsx');
+
+  assert.match(source, /function Meta[\s\S]*?overflowWrap: 'anywhere'/);
+  assert.match(source, /function ContentBox[\s\S]*?overflowWrap: 'anywhere'/);
+  assert.match(source, /function Proof[\s\S]*?overflowWrap: 'anywhere'/);
+});

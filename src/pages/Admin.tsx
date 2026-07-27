@@ -4364,11 +4364,11 @@ function TitleLine({ title, pill }: { title: string; pill: string }) {
 }
 
 function Meta({ children }: { children: React.ReactNode }) {
-  return <span className="admin-meta" style={{ display: 'inline', fontSize: '0.74rem', color: MUTED, marginRight: 10, lineHeight: 1.45 }}>{children}</span>;
+  return <span className="admin-meta" style={{ display: 'inline', maxWidth: '100%', fontSize: '0.74rem', color: MUTED, marginRight: 10, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{children}</span>;
 }
 
 function ContentBox({ children }: { children: React.ReactNode }) {
-  return <div style={{ padding: '7px 10px', backgroundColor: '#fffdf8', border: `1px solid ${LINE}`, borderRadius: 6, fontSize: '0.79rem', color: 'rgba(31,41,55,0.82)', lineHeight: 1.55, marginTop: 6 }}>{children}</div>;
+  return <div style={{ padding: '7px 10px', backgroundColor: '#fffdf8', border: `1px solid ${LINE}`, borderRadius: 6, fontSize: '0.79rem', color: 'rgba(31,41,55,0.82)', lineHeight: 1.55, marginTop: 6, overflowWrap: 'anywhere' }}>{children}</div>;
 }
 
 function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -4413,7 +4413,7 @@ function ReviewNotice({ children, tone }: { children: React.ReactNode; tone: 'go
 }
 
 function Proof({ children }: { children: React.ReactNode }) {
-  return <div style={{ marginTop: 6, padding: '6px 9px', backgroundColor: '#fff8e8', border: '1px solid rgba(217,168,87,0.28)', borderRadius: 6, fontSize: '0.76rem', color: '#8a5a19', fontWeight: 700, lineHeight: 1.45 }}>{children}</div>;
+  return <div style={{ marginTop: 6, padding: '6px 9px', backgroundColor: '#fff8e8', border: '1px solid rgba(217,168,87,0.28)', borderRadius: 6, fontSize: '0.76rem', color: '#8a5a19', fontWeight: 700, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{children}</div>;
 }
 
 function TagCloud({ tags }: { tags: string[] }) {
