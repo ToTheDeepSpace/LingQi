@@ -242,12 +242,14 @@ test('keeps website feedback aligned with the compact miniapp task flow', () => 
   const website = read('src/pages/Contact.tsx');
   const autosave = read('src/components/DraftAutosaveNotice.tsx');
   const miniapp = read('miniapp/jumulu/src/pages/feedback/index.vue');
+  const styles = read('src/App.css');
 
   assert.match(website, /JumuluPageFrame currentLabel="建议反馈"/);
   assert.match(website, /JumuluCompactHeader/);
   assert.match(website, /className="contact-page-grid"/);
   assert.match(website, /MobileTaskAction/);
   assert.doesNotMatch(website, /linear-gradient|borderRadius: 16/);
+  assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.site-feedback-float\s*\{\s*display:\s*none;/);
   assert.match(autosave, /InfoTip/);
   assert.match(autosave, /自动保存/);
   assert.match(miniapp, /问题说明/);
