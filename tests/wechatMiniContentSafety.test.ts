@@ -85,8 +85,10 @@ test('server business routes enforce miniapp text checks instead of trusting cli
   assert.match(source, /app\.post\('\/api\/lc\/miniapp\/auth\/refresh'/);
   assert.match(source, /authenticatedClient === 'wechat-miniapp' \|\| authenticatedClient === 'web'/);
   const criticalRoutes = [
+    '/api/lc/account/appeals',
     '/api/lc/provider-listings/mine',
     '/api/lc/commissions',
+    '/api/lc/scripts/:id/ratings',
     '/api/lc/entity-ratings',
     '/api/lc/carpools',
     '/api/lc/reports',
