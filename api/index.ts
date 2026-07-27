@@ -111,6 +111,7 @@ import {
   sessionVersionOf,
 } from './authSessionPolicy.js';
 import {
+  isWechatAccessTokenInvalid,
   isWechatEventTimestampFresh,
   interpretWechatContentCheck,
   interpretWechatMediaCallback,
@@ -568,7 +569,7 @@ async function checkWechatMiniText(content: string, openid: string, scene: 1 | 2
       signal: wechatMiniApiSignal(),
     });
     payload = await response.json() as WechatContentCheckPayload;
-    if (payload.errcode !== 40014 && payload.errcode !== 42001) break;
+    if (!isWechatAccessTokenInvalid(payload.errcode)) break;
     wechatMiniAccessTokenCache.invalidate(token);
   }
   return interpretWechatContentCheck(payload);
@@ -591,7 +592,7 @@ async function submitWechatMiniMediaCheck(mediaUrl: string, openid: string, scen
       signal: wechatMiniApiSignal(),
     });
     payload = await response.json() as WechatMediaCheckSubmissionPayload;
-    if (payload.errcode !== 40014 && payload.errcode !== 42001) break;
+    if (!isWechatAccessTokenInvalid(payload.errcode)) break;
     wechatMiniAccessTokenCache.invalidate(token);
   }
   return interpretWechatMediaSubmission(payload);

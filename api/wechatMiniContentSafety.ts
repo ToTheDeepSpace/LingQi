@@ -10,6 +10,10 @@ export type WechatContentCheckPayload = {
 
 export const WECHAT_EVENT_SIGNATURE_MAX_AGE_MS = 10 * 60 * 1000;
 
+export function isWechatAccessTokenInvalid(errcode: unknown) {
+  return [40001, 40014, 42001].includes(Number(errcode));
+}
+
 export function isWechatEventTimestampFresh(
   timestamp: string,
   nowMs = Date.now(),

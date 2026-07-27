@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  isWechatAccessTokenInvalid,
   isWechatEventTimestampFresh,
   interpretWechatContentCheck,
   interpretWechatMediaCallback,
@@ -10,6 +11,14 @@ import {
   splitWechatSafetyText,
   wechatSafetySceneNumber,
 } from '../api/wechatMiniContentSafety.js';
+
+test('retries every documented WeChat access-token invalidation code', () => {
+  assert.equal(isWechatAccessTokenInvalid(40001), true);
+  assert.equal(isWechatAccessTokenInvalid(40014), true);
+  assert.equal(isWechatAccessTokenInvalid(42001), true);
+  assert.equal(isWechatAccessTokenInvalid(43104), false);
+  assert.equal(isWechatAccessTokenInvalid(undefined), false);
+});
 
 test('rejects stale or malformed WeChat event timestamps', () => {
   const now = Date.UTC(2026, 6, 28, 0, 0, 0);
@@ -74,6 +83,20 @@ test('interprets asynchronous media callbacks without exposing media urls', () =
     errcode: 0,
   });
   assert.equal(interpretWechatMediaCallback({ Event: 'other', trace_id: 'media-2' }).valid, false);
+});
+
+test('accepts the official media callback payload shape', () => {
+  const verdict = interpretWechatMediaCallback({
+    Event: 'wxa_media_check',
+    appid: 'wx8f16a5be77871234',
+    trace_id: '60f96f1d-3845297a-1976a3ae',
+    errcode: 0,
+    errmsg: 'ok',
+    result: { suggest: 'pass', label: 100 },
+  });
+  assert.equal(verdict.valid, true);
+  assert.equal(verdict.status, 'pass');
+  assert.equal(verdict.traceId, '60f96f1d-3845297a-1976a3ae');
 });
 
 test('maps business scenes and truncates combined content to WeChat limits', () => {
@@ -164,6 +187,10 @@ test('all WeChat safety network calls have a bounded timeout', () => {
   assert.equal(
     source.match(/signal: wechatMiniApiSignal\(\)/g)?.length,
     3,
+  );
+  assert.equal(
+    source.match(/if \(!isWechatAccessTokenInvalid\(payload\.errcode\)\) break;/g)?.length,
+    2,
   );
 });
 
