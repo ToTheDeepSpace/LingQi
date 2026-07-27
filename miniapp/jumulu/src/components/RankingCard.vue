@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import ReportFlag from './ReportFlag.vue'
 import type { Ranking } from '../types'
 import { compactText, dateText, RANKING_TYPE_TEXT } from '../utils/format'
 
-defineProps<{ item: Ranking }>()
+defineProps<{ item: Ranking; viewerId?: string }>()
 defineEmits<{ open: [item: Ranking] }>()
 
 function eventTitle(content: string) {
@@ -22,7 +23,10 @@ function eventSummary(content: string) {
   <view class="ranking" :class="`ranking--${item.type}`" @tap="$emit('open', item)">
     <view class="ranking__top">
       <view class="ranking__identity"><text class="ranking__type">{{ RANKING_TYPE_TEXT[item.type] }}</text><text class="ranking__subject">{{ item.subject_name }}</text></view>
-      <text class="ranking__city">{{ item.subject_city || '城市待补充' }}</text>
+      <view class="ranking__top-actions">
+        <text class="ranking__city">{{ item.subject_city || '城市待补充' }}</text>
+        <ReportFlag target-type="ranking" :target-id="item.id" :title="`${item.subject_name}的口碑事件`" :own="item.poster_id === viewerId" />
+      </view>
     </view>
     <view class="ranking__body">
       <view class="ranking__copy"><text class="ranking__title">{{ eventTitle(item.content) }}</text><text v-if="eventSummary(item.content)" class="ranking__content">{{ eventSummary(item.content) }}</text></view>
@@ -43,6 +47,7 @@ function eventSummary(content: string) {
 .ranking--white::before { background: #b7bec8; }
 .ranking__top { display: flex; justify-content: space-between; align-items: center; }
 .ranking__identity { display: flex; align-items: center; min-width: 0; gap: 10rpx; }
+.ranking__top-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 3rpx; }
 .ranking__type { color: #b42318; font-size: 23rpx; font-weight: 900; }
 .ranking--black .ranking__type { color: #26303f; }
 .ranking--white .ranking__type { color: #64748b; }

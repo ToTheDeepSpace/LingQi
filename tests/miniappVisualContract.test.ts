@@ -301,12 +301,17 @@ test('exposes public provider availability without turning the miniapp profile i
 
 test('keeps the ranking feed bounded and moves persistent notices behind an explicit action', () => {
   const source = read('miniapp/jumulu/src/pages/rankings/index.vue');
+  const card = read('miniapp/jumulu/src/components/RankingCard.vue');
 
   assert.match(source, /const PAGE_SIZE = 12/);
   assert.match(source, /\.slice\(0, displayLimit\.value\)/);
   assert.match(source, /继续加载/);
   assert.match(source, /ⓘ 发布须知/);
   assert.doesNotMatch(source, /class="responsibility"/);
+  assert.match(source, /:viewer-id="authId"/);
+  assert.match(card, /ReportFlag/);
+  assert.match(card, /target-type="ranking"/);
+  assert.match(card, /item\.poster_id === viewerId/);
 });
 
 test('keeps long-lived account histories bounded in the miniapp', () => {

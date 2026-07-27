@@ -6,7 +6,7 @@ import PageIntro from '../../components/PageIntro.vue'
 import RankingCard from '../../components/RankingCard.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Ranking } from '../../types'
-import { apiRequest, encoded } from '../../utils/api'
+import { apiRequest, encoded, readAuth } from '../../utils/api'
 
 const CITY_KEY = 'jumulu:ranking:last-city'
 const items = ref<Ranking[]>([])
@@ -15,6 +15,7 @@ const error = ref('')
 const type = ref<'all' | 'red' | 'black' | 'white'>('all')
 const city = ref(String(uni.getStorageSync(CITY_KEY) || '全部城市'))
 const query = ref('')
+const authId = ref(readAuth()?.id || '')
 const PAGE_SIZE = 12
 const displayLimit = ref(PAGE_SIZE)
 const typeOptions: Array<{ v: 'all' | 'red' | 'black' | 'white'; l: string }> = [{ v: 'all', l: '全部' }, { v: 'red', l: '红榜' }, { v: 'black', l: '黑榜' }, { v: 'white', l: '白榜' }]
@@ -45,7 +46,7 @@ function showRules() {
     confirmText: '我知道了',
   })
 }
-onShow(() => { void load() })
+onShow(() => { authId.value = readAuth()?.id || ''; void load() })
 onPullDownRefresh(load)
 </script>
 
@@ -67,7 +68,7 @@ onPullDownRefresh(load)
       <text class="rules-entry" @tap="showRules">ⓘ 发布须知</text>
     </view>
     <StatePanel :loading="loading" :error="error" :empty="!loading && !error && !visible.length" empty-text="当前筛选下没有口碑事件" @retry="load" />
-    <RankingCard v-for="item in displayedItems" :key="item.id" :item="item" @open="openRanking(item.id)" />
+    <RankingCard v-for="item in displayedItems" :key="item.id" :item="item" :viewer-id="authId" @open="openRanking(item.id)" />
     <button v-if="displayedItems.length < visible.length" class="secondary-button load-more" @tap="loadMore">继续加载 {{ Math.min(PAGE_SIZE, visible.length - displayedItems.length) }} 条</button>
   </view>
 </template>
