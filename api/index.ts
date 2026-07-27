@@ -111,6 +111,7 @@ import {
   sessionVersionOf,
 } from './authSessionPolicy.js';
 import {
+  isWechatEventTimestampFresh,
   interpretWechatContentCheck,
   interpretWechatMediaCallback,
   interpretWechatMediaSubmission,
@@ -488,6 +489,7 @@ function verifyWechatMiniEventRequest(req: express.Request): boolean {
   const nonce = singleQueryValue(req.query.nonce);
   const signature = singleQueryValue(req.query.signature);
   if (!timestamp || !nonce || !signature) return false;
+  if (!isWechatEventTimestampFresh(timestamp)) return false;
   return safeEqualText(
     sha1Sorted([LINGQI_WECHAT_MINI_MSG_TOKEN, timestamp, nonce]),
     signature,
@@ -717,7 +719,15 @@ function wechatMiniTextSafetyMiddleware(input: {
   content: (req: express.Request) => unknown[];
 }) {
   return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (!isWechatMiniClient(req)) return next();
+    const authenticatedClient = (req as Record<string, unknown>).authClient;
+    if (authenticatedClient !== 'web' && authenticatedClient !== 'wechat-miniapp') {
+      return res.status(401).json(codedErr(
+        new Error('登录状态需要更新，请重新登录后发布'),
+        'AUTH_CHANNEL_REFRESH_REQUIRED',
+        { reauthenticate: true },
+      ));
+    }
+    if (authenticatedClient === 'web') return next();
     const content = splitWechatSafetyText(input.content(req)).join('');
     if (!content) return next();
     try {

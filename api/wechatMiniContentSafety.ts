@@ -8,6 +8,18 @@ export type WechatContentCheckPayload = {
   trace_id?: string;
 };
 
+export const WECHAT_EVENT_SIGNATURE_MAX_AGE_MS = 10 * 60 * 1000;
+
+export function isWechatEventTimestampFresh(
+  timestamp: string,
+  nowMs = Date.now(),
+  maxAgeMs = WECHAT_EVENT_SIGNATURE_MAX_AGE_MS,
+) {
+  const timestampSeconds = Number(timestamp);
+  if (!Number.isInteger(timestampSeconds) || timestampSeconds <= 0) return false;
+  return Math.abs(nowMs - timestampSeconds * 1000) <= maxAgeMs;
+}
+
 export type WechatContentSuggest = 'pass' | 'review' | 'risky' | 'unknown';
 
 export type WechatContentVerdict = {

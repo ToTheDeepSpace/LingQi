@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  isWechatEventTimestampFresh,
   interpretWechatContentCheck,
   interpretWechatMediaCallback,
   interpretWechatMediaSubmission,
@@ -9,6 +10,17 @@ import {
   splitWechatSafetyText,
   wechatSafetySceneNumber,
 } from '../api/wechatMiniContentSafety.js';
+
+test('rejects stale or malformed WeChat event timestamps', () => {
+  const now = Date.UTC(2026, 6, 28, 0, 0, 0);
+  const current = String(Math.floor(now / 1000));
+  const tenMinutesAgo = String(Math.floor((now - 10 * 60 * 1000) / 1000));
+  const tooOld = String(Math.floor((now - 10 * 60 * 1000 - 1000) / 1000));
+  assert.equal(isWechatEventTimestampFresh(current, now), true);
+  assert.equal(isWechatEventTimestampFresh(tenMinutesAgo, now), true);
+  assert.equal(isWechatEventTimestampFresh(tooOld, now), false);
+  assert.equal(isWechatEventTimestampFresh('not-a-time', now), false);
+});
 
 test('allows content explicitly passed by WeChat', () => {
   assert.deepEqual(interpretWechatContentCheck({ errcode: 0, trace_id: 'text-1', result: { suggest: 'pass', label: 100 } }), {
@@ -84,6 +96,8 @@ test('server business routes enforce miniapp text checks instead of trusting cli
   assert.match(source, /signProfileAuthToken\(profile,\s*'wechat-miniapp'\)/);
   assert.match(source, /app\.post\('\/api\/lc\/miniapp\/auth\/refresh'/);
   assert.match(source, /authenticatedClient === 'wechat-miniapp' \|\| authenticatedClient === 'web'/);
+  assert.match(source, /AUTH_CHANNEL_REFRESH_REQUIRED/);
+  assert.match(source, /authenticatedClient !== 'web' && authenticatedClient !== 'wechat-miniapp'/);
   const criticalRoutes = [
     '/api/lc/account/appeals',
     '/api/lc/provider-listings/mine',
@@ -119,6 +133,7 @@ test('public images use async WeChat checks and approval gates', () => {
   const source = readFileSync('api/index.ts', 'utf8');
   assert.match(source, /media_check_async/);
   assert.match(source, /app\.post\('\/api\/wechat\/mini\/events'/);
+  assert.match(source, /isWechatEventTimestampFresh\(timestamp\)/);
   assert.match(source, /startWechatMiniImageSafetyCheck\(req/);
   assert.match(source, /ensureWechatMiniImageSafetyChecks\(req/);
   assert.match(source, /businessScene:\s*'profile_avatar_submit'/);
