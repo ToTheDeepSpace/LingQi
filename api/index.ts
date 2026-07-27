@@ -15927,6 +15927,11 @@ app.post(
       if (!city) return res.status(400).json(err(new Error('请选择店家所在城市')));
       if (!workplace) return res.status(400).json(err(new Error('请填写店家地址、商圈或常驻位置')));
       if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) return res.status(400).json(err(new Error('店铺照片链接格式不正确，也可以直接留空')));
+      await ensureWechatMiniImageSafetyChecks(req, {
+        urls: photoFiles.map(file => file.url),
+        businessScene: 'store_dossier_image_submit_with_dm_rating',
+        targetType: 'dm_dossier',
+      });
       const storePrecheck = runLocalModerationPrecheck({
         scene: 'store_dossier_submit_with_dm_rating',
         targetType: 'dm_dossier',
@@ -15948,7 +15953,10 @@ app.post(
         submitted_by_name: profile.display_name,
         status: 'pending',
         claim_status: 'unclaimed',
-        moderation_precheck: storePrecheck,
+        moderation_precheck: {
+          ...storePrecheck,
+          wechat_image_safety_required: isWechatMiniClient(req),
+        },
       }).select('id').single();
       if (storeInsertErr) throw storeInsertErr;
       storeDossierId = cleanText(insertedStore.id, 120);
@@ -15986,6 +15994,11 @@ app.post(
       if (!city) return res.status(400).json(err(new Error('请填写DM所在城市')));
       if (!isOptionalUrlPlaceholder(rawProfileUrl) && !profileUrl) return res.status(400).json(err(new Error('个人主页链接格式不正确，不填写时请直接留空')));
       if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) return res.status(400).json(err(new Error('照片链接格式不正确，也可以直接使用上传按钮')));
+      await ensureWechatMiniImageSafetyChecks(req, {
+        urls: photoFiles.map(file => file.url),
+        businessScene: 'dm_dossier_image_submit_with_rating',
+        targetType: 'dm_dossier',
+      });
       const dmPrecheck = runLocalModerationPrecheck({
         scene: 'dm_dossier_submit_with_rating',
         targetType: 'dm_dossier',
@@ -16010,7 +16023,10 @@ app.post(
         submitted_by_name: profile.display_name,
         status: 'pending',
         claim_status: 'unclaimed',
-        moderation_precheck: dmPrecheck,
+        moderation_precheck: {
+          ...dmPrecheck,
+          wechat_image_safety_required: isWechatMiniClient(req),
+        },
       }).select('*').single();
       if (dmInsertErr) {
         if (isMissingRelation(dmInsertErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('DM档案表尚未初始化')));
@@ -16245,6 +16261,11 @@ app.post(
       if (!workplace) return res.status(400).json(err(new Error('请填写店家地址、商圈或常驻位置')));
       if (!isOptionalUrlPlaceholder(rawProfileUrl) && !profileUrl) return res.status(400).json(err(new Error('店铺主页链接格式不正确，不填写时请直接留空')));
       if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) return res.status(400).json(err(new Error('店铺照片链接格式不正确，也可以直接留空')));
+      await ensureWechatMiniImageSafetyChecks(req, {
+        urls: photoFiles.map(file => file.url),
+        businessScene: 'store_dossier_image_submit_with_rating',
+        targetType: 'dm_dossier',
+      });
       const storePrecheck = runLocalModerationPrecheck({
         scene: 'store_dossier_submit_with_rating',
         targetType: 'dm_dossier',
@@ -16269,7 +16290,10 @@ app.post(
         submitted_by_name: profile.display_name,
         status: 'pending',
         claim_status: 'unclaimed',
-        moderation_precheck: storePrecheck,
+        moderation_precheck: {
+          ...storePrecheck,
+          wechat_image_safety_required: isWechatMiniClient(req),
+        },
       }).select('*').single();
       if (storeInsertErr) {
         if (isMissingRelation(storeInsertErr, 'lc_dm_dossiers')) return res.status(503).json(err(new Error('店家档案表尚未初始化')));
