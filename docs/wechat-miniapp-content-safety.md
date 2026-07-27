@@ -72,7 +72,7 @@ Token 只保存在腾讯云服务端环境文件和微信公众平台，不写�
 6. 尝试在图片仍为 `pending` 时点击管理员通过，录制服务端拒绝公开；待 `pass` 后再次通过。
 7. 截图保留回调配置、业务接口、后台检查记录和审核闸门，遮住 Token、OpenID、手机号、邮箱和用户证据原图。
 
-运维可运行 `scripts/verify-wechat-mini-content-safety.mjs` 做重复验收。脚本只输出 HTTP 状态、审计记录 ID、状态和时间，不输出账号标识、OpenID、JWT 或密钥。
+运维可运行 `scripts/verify-wechat-mini-content-safety.mjs` 做重复验收。脚本会验证真实文字检查、从公网访问回调 URL 的签名握手，并可选验证图片异步回调；只输出 HTTP 状态、审计记录 ID、状态、时间和回调 URL，不输出账号标识、OpenID、JWT、签名或密钥。
 
 ## 2026-07-27 生产验收状态
 

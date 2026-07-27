@@ -9,6 +9,11 @@ const jwtSecret = process.env.JWT_SECRET;
 const imageUrl = String(process.env.WECHAT_TEST_IMAGE_URL || '').trim();
 const miniAppId = process.env.LINGQI_WECHAT_MINI_APP_ID;
 const miniAppSecret = process.env.LINGQI_WECHAT_MINI_APP_SECRET;
+const miniMessageToken = process.env.LINGQI_WECHAT_MINI_MSG_TOKEN;
+const miniEventUrl = String(
+  process.env.WECHAT_MINI_EVENT_URL
+  || `${String(process.env.LINGQI_SITE_URL || 'https://jumulu.jusichen.com').replace(/\/+$/, '')}/api/wechat/mini/events`,
+).trim();
 const imageCallbackWaitMs = Math.max(10_000, Number(process.env.WECHAT_IMAGE_CALLBACK_WAIT_MS || 31 * 60_000));
 
 if (!databaseUrl || !jwtSecret) {
@@ -19,6 +24,24 @@ const pool = new Pool({ connectionString: databaseUrl });
 
 async function sleep(ms) {
   await new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function verifyPublicCallbackHandshake() {
+  if (!miniMessageToken) throw new Error('LINGQI_WECHAT_MINI_MSG_TOKEN is required');
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const nonce = createHash('sha256').update(`${timestamp}:${process.pid}`).digest('hex').slice(0, 24);
+  const echo = createHash('sha256').update(`${nonce}:callback-probe`).digest('hex').slice(0, 32);
+  const signature = createHash('sha1')
+    .update([miniMessageToken, timestamp, nonce].sort().join(''))
+    .digest('hex');
+  const url = new URL(miniEventUrl);
+  url.search = new URLSearchParams({ timestamp, nonce, signature, echostr: echo }).toString();
+  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  const responseText = await response.text();
+  if (!response.ok || responseText !== echo) {
+    throw new Error(`Public WeChat callback handshake failed with HTTP ${response.status}`);
+  }
+  return { verified: true, url: miniEventUrl };
 }
 
 async function verifyImageCallback(profile) {
@@ -151,6 +174,7 @@ try {
   if (!audit || audit.status !== 'pass' || audit.check_type !== 'text') {
     throw new Error(`Expected a passed text audit row, received: ${JSON.stringify(audit || null)}`);
   }
+  const callback = await verifyPublicCallbackHandshake();
   const imageVerification = await verifyImageCallback(profile);
 
   process.stdout.write(`${JSON.stringify({
@@ -160,6 +184,7 @@ try {
     audit_status: audit.status,
     business_scene: audit.business_scene,
     checked_at: audit.checked_at,
+    callback,
     image: imageVerification,
   })}\n`);
 } finally {
