@@ -192,3 +192,16 @@ test('rating and ranking checks include nested dossier drafts', () => {
     assert.match(routeSection, /\.tags/);
   }
 });
+
+test('keeps the review guide aligned with the enforced server-only flow', () => {
+  const guide = readFileSync('docs/wechat-miniapp-content-safety.md', 'utf8');
+  const readme = readFileSync('miniapp/jumulu/README.md', 'utf8');
+
+  assert.match(guide, /客户端不再先调用独立预检接口/);
+  assert.match(guide, /private-contact/);
+  assert.match(guide, /wechat_image_safety_required/);
+  assert.match(guide, /0\.1\.37/);
+  assert.doesNotMatch(guide, /客户端的预检只改善反馈速度/);
+  assert.match(readme, /当前 0\.1\.37 范围/);
+  assert.match(readme, /客户端不再重复预检/);
+});
