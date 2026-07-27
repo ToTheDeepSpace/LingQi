@@ -122,6 +122,11 @@ import {
 } from './wechatMiniContentSafety.js';
 import { WechatAccessTokenCache } from './wechatAccessTokenCache.js';
 import {
+  wechatImageApprovalIssue,
+  wechatImageSubmissionAction,
+  type WechatImageCheckRow,
+} from './wechatImageSafetyPolicy.js';
+import {
   miniappAccountMergeErrorMessage,
   miniappAccountMergePreflight,
 } from './accountMergePolicy.js';
@@ -794,15 +799,15 @@ async function ensureWechatMiniImageSafetyChecks(req: express.Request, input: {
     .in('resource_hash', hashes)
     .order('created_at', { ascending: false });
   if (existingResult.error) throw existingResult.error;
-  const latest = new Map<string, string>();
-  for (const row of existingResult.data || []) {
-    if (!latest.has(row.resource_hash)) latest.set(row.resource_hash, row.status);
+  const latest = new Map<string, WechatImageCheckRow>();
+  for (const row of (existingResult.data || []) as WechatImageCheckRow[]) {
+    if (!latest.has(row.resource_hash)) latest.set(row.resource_hash, row);
   }
 
   for (const url of urls) {
-    const priorStatus = latest.get(sha256(url));
-    if (priorStatus === 'pass' || priorStatus === 'pending') continue;
-    if (priorStatus === 'review' || priorStatus === 'risky') {
+    const action = wechatImageSubmissionAction(latest.get(sha256(url)));
+    if (action === 'reuse') continue;
+    if (action === 'block') {
       throw new Error('图片未通过微信内容安全检查，请更换后重试');
     }
     await startWechatMiniImageSafetyCheck(req, {
@@ -823,16 +828,11 @@ async function assertWechatImageChecksAllowApproval(urls: unknown[]) {
     .in('resource_hash', hashes)
     .order('created_at', { ascending: false });
   if (result.error) throw result.error;
-  const latest = new Map<string, string>();
-  for (const row of result.data || []) {
-    if (!latest.has(row.resource_hash)) latest.set(row.resource_hash, row.status);
-  }
-  const tracked = hashes.filter(hash => latest.has(hash));
-  if (tracked.length === 0) return;
-  if (tracked.some(hash => latest.get(hash) === 'risky' || latest.get(hash) === 'review')) {
+  const issue = wechatImageApprovalIssue(hashes, (result.data || []) as WechatImageCheckRow[]);
+  if (issue === 'unsafe') {
     throw new Error('图片未通过微信内容安全检查，不能公开');
   }
-  if (tracked.some(hash => latest.get(hash) !== 'pass')) {
+  if (issue === 'incomplete') {
     throw new Error('图片仍在等待微信内容安全检查，请稍后再审核');
   }
 }
