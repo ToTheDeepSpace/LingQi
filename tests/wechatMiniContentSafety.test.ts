@@ -101,6 +101,7 @@ test('server business routes enforce miniapp text checks instead of trusting cli
     '/api/lc/dm-ratings',
     '/api/lc/store-ratings',
     '/api/lc/rankings',
+    '/api/lc/rankings/:id/vote',
     '/api/lc/rankings/:id/comments',
     '/api/lc/creators/:id',
   ];

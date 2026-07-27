@@ -35,7 +35,7 @@ Token 只保存在腾讯云服务端环境文件和微信公众平台，不写�
 | 拼车与上车申请 | `/api/lc/carpools`、`/api/lc/carpools/:id/applications` |
 | 举报与建议反馈 | `/api/lc/reports`、`/api/lc/site-messages` |
 | DM / 店家档案与评价 | `/api/lc/dm-dossiers`、`/api/lc/dm-ratings`、`/api/lc/store-ratings` |
-| 红黑白榜与评论 | `/api/lc/rankings`、`/api/lc/rankings/:id/comments` |
+| 红黑白榜、投票附言与评论 | `/api/lc/rankings`、`/api/lc/rankings/:id/vote`、`/api/lc/rankings/:id/comments` |
 
 头像、委托条主图、DM / 店家档案照片、红黑榜公开图和作品图在业务提交口强制确认图片检查记录。私密举报证据、认领材料和支付凭证不公开，不混入公开图片检查闸门，但仍执行文件清洗、权限隔离和人工审核。
 

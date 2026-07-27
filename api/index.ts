@@ -17808,7 +17808,15 @@ app.get('/api/lc/rankings/:id/boosts', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/rankings/:id/vote',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'ranking_vote_comment',
+    targetType: 'ranking_comment',
+    content: req => [req.body?.comment],
+  }),
+  async (req, res) => {
   try {
     const voteType = req.body.voteType as RankingVoteType;
     const attachedComment = cleanText(req.body?.comment, 600);
@@ -17929,7 +17937,8 @@ app.post('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
       commentError: attachedCommentError || null,
     }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.delete('/api/lc/rankings/:id/vote', authMiddleware, async (req, res) => {
   try {
