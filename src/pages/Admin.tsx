@@ -551,7 +551,7 @@ type AccountAppeal = {
 
 type PublicReview = {
   id: string;
-  target_type: 'profile_update' | 'dossier_update' | 'provider_listing_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert' | 'entity_rating_upsert' | 'rating_discussion_create';
+  target_type: 'profile_update' | 'dossier_update' | 'provider_listing_update' | 'service_create' | 'portfolio_create' | 'availability_create' | 'tag_create' | 'script_rating_upsert' | 'entity_rating_upsert' | 'rating_discussion_create' | 'shop_profile_update' | 'shop_reply_create';
   profile_id?: string | null;
   profile_name?: string | null;
   title?: string | null;
@@ -781,6 +781,8 @@ function publicReviewTypeLabel(type: string) {
   if (type === 'script_rating_upsert') return '剧本评分';
   if (type === 'entity_rating_upsert') return '角色评分';
   if (type === 'rating_discussion_create') return '评价回应';
+  if (type === 'shop_profile_update') return '店家公开资料';
+  if (type === 'shop_reply_create') return '店家回复';
   return '公开内容';
 }
 

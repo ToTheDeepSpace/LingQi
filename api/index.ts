@@ -105,6 +105,7 @@ import { CHANTO_MAX_AMOUNT, CHANTO_MIN_AMOUNT, isValidChantoAmount } from '../sr
 import { MAX_MULTIPART_UPLOAD_BYTES } from '../src/lib/uploadLimits.js';
 import { CITIES } from '../src/constants/cities.js';
 import { adminPrivateAccountPayload, adminProfileListPayload } from './adminPrivacy.js';
+import { shopCanManageRanking } from './shopReviewOwnership.js';
 import {
   allowedWebOrigin,
   publicApiErrorMessage,
@@ -338,7 +339,12 @@ async function submitSharedScriptContribution(contribution: Record<string, unkno
 
 type RateLimitEntry = { count: number; resetAt: number };
 
-function createRateLimiter(name: string, windowMs: number, max: number) {
+function createRateLimiter(
+  name: string,
+  windowMs: number,
+  max: number,
+  keyForRequest?: (req: express.Request) => string,
+) {
   const entries = new Map<string, RateLimitEntry>();
   let requestsSinceCleanup = 0;
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -350,7 +356,8 @@ function createRateLimiter(name: string, windowMs: number, max: number) {
         if (entry.resetAt <= now) entries.delete(key);
       }
     }
-    const key = `${name}:${req.ip || req.socket.remoteAddress || 'unknown'}`;
+    const identity = cleanText(keyForRequest?.(req), 200) || req.ip || req.socket.remoteAddress || 'unknown';
+    const key = `${name}:${identity}`;
     const current = entries.get(key);
     const entry = !current || current.resetAt <= now
       ? { count: 0, resetAt: now + windowMs }
@@ -375,6 +382,12 @@ const contactRateLimit = createRateLimiter('contact', 60 * 60 * 1000, 10);
 const reportRateLimit = createRateLimiter('report', 60 * 60 * 1000, 20);
 const paymentRateLimit = createRateLimiter('payment', 15 * 60 * 1000, 20);
 const miniappContentCheckRateLimit = createRateLimiter('miniapp-content-check', 10 * 60 * 1000, 12);
+const miniappBusinessContentRateLimit = createRateLimiter(
+  'miniapp-business-content',
+  10 * 60 * 1000,
+  80,
+  req => String((req as Record<string, unknown>).creatorId || ''),
+);
 
 const app = express();
 app.disable('x-powered-by');
@@ -754,7 +767,15 @@ function wechatMiniTextSafetyMiddleware(input: {
       ));
     }
     if (authenticatedClient === 'web') return next();
-    const content = splitWechatSafetyText(input.content(req)).join('');
+    let rateLimitPassed = false;
+    miniappBusinessContentRateLimit(req, res, () => { rateLimitPassed = true; });
+    if (!rateLimitPassed) return;
+    let content: string;
+    try {
+      content = splitWechatSafetyText(input.content(req)).join('');
+    } catch (error) {
+      return res.status(400).json(err(error));
+    }
     if (!content) return next();
     try {
       const result = await runWechatMiniTextSafetyCheck(req, {
@@ -3119,7 +3140,9 @@ type PublicReviewTargetType =
   | 'tag_create'
   | 'script_rating_upsert'
   | 'entity_rating_upsert'
-  | 'rating_discussion_create';
+  | 'rating_discussion_create'
+  | 'shop_profile_update'
+  | 'shop_reply_create';
 
 type PublicReviewRecord = {
   id: string;
@@ -4087,6 +4110,55 @@ async function applyPublicReview(review: PublicReviewRecord, reviewerId: string 
       updated_at: new Date().toISOString(),
     }).eq('id', nodeId).eq('status', 'pending');
     if (updateErr) throw updateErr;
+    return;
+  }
+  if (review.target_type === 'shop_profile_update') {
+    const profileId = cleanText(payload.profile_id || review.profile_id, 80);
+    const patch = objectPayload(payload.patch);
+    if (!profileId) throw new Error('审核记录缺少店家账号');
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (Object.prototype.hasOwnProperty.call(patch, 'shop_name')) update.shop_name = cleanText(patch.shop_name, 160) || null;
+    if (Object.prototype.hasOwnProperty.call(patch, 'shop_description')) update.shop_description = cleanText(patch.shop_description, 1200) || null;
+    if (Object.prototype.hasOwnProperty.call(patch, 'address')) update.address = cleanText(patch.address, 300) || null;
+    if (Object.prototype.hasOwnProperty.call(patch, 'juzhanggui_link')) {
+      update.juzhanggui_link = normalizeOptionalPublicUrl(patch.juzhanggui_link, 1000, true) || null;
+    }
+    if (Object.keys(update).length === 1) throw new Error('审核记录没有可应用的店家公开资料');
+    const result = await supabase.from('lc_profiles').update(update)
+      .eq('id', profileId)
+      .eq('verified_shop', true)
+      .select('id')
+      .single();
+    if (result.error) throw result.error;
+    return;
+  }
+  if (review.target_type === 'shop_reply_create') {
+    const rankingId = cleanText(payload.ranking_id, 80);
+    const replyText = cleanText(payload.reply_text, 1200);
+    const shopProfileId = cleanText(payload.shop_profile_id || review.profile_id, 80);
+    if (!rankingId || !replyText || !shopProfileId) throw new Error('审核记录缺少店家回复内容');
+    const rankingResult = await supabase.from('lc_rankings')
+      .select('id, subject_type, subject_name, subject_dossier_id, shop_reply')
+      .eq('id', rankingId)
+      .maybeSingle();
+    if (rankingResult.error) throw rankingResult.error;
+    if (!rankingResult.data || rankingResult.data.subject_type !== 'store') throw new Error('对应的店家评价不存在');
+    const shopProfileResult = await supabase.from('lc_profiles')
+      .select('id, verified_shop, shop_name, display_name')
+      .eq('id', shopProfileId)
+      .maybeSingle();
+    if (shopProfileResult.error) throw shopProfileResult.error;
+    if (!shopProfileResult.data?.verified_shop) throw new Error('提交回复的店家账号已失去认证');
+    const ownedStores = await findClaimedStoreDossiers(shopProfileId);
+    if (!shopCanManageRanking(shopProfileResult.data, rankingResult.data, ownedStores)) {
+      throw new Error('提交回复的店家账号不再拥有这条评价');
+    }
+    if (cleanText(rankingResult.data.shop_reply, 1200)) throw new Error('这条评价已经有店家回复');
+    const updateResult = await supabase.from('lc_rankings').update({
+      shop_reply: replyText,
+      last_activity_at: new Date().toISOString(),
+    }).eq('id', rankingId).select('id').single();
+    if (updateResult.error) throw updateResult.error;
     return;
   }
   throw new Error('未知公开审核类型');
@@ -7372,6 +7444,8 @@ app.get('/api/lc/account/submissions', accountStateMiddleware, async (req, res) 
       script_rating_upsert: { kind: 'script_rating', group: 'rating', typeLabel: '剧本评分', actionUrl: '/scripts' },
       entity_rating_upsert: { kind: 'role_rating', group: 'rating', typeLabel: '角色点评', actionUrl: '/scripts' },
       rating_discussion_create: { kind: 'rating_discussion', group: 'interaction', typeLabel: '评分讨论', actionUrl: '/scripts' },
+      shop_profile_update: { kind: 'shop_profile_update', group: 'profile', typeLabel: '店家公开资料', actionUrl: '/shop/dashboard' },
+      shop_reply_create: { kind: 'shop_reply', group: 'interaction', typeLabel: '店家回复', actionUrl: '/shop/dashboard' },
     };
     for (const row of rows(publicReviewsResult)) {
       const targetType = text(row.target_type, 80);
@@ -8083,64 +8157,8 @@ app.get('/api/lc/provider-listings/:id/contact-access', authMiddleware, async (r
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/provider-listings/:id/inquiries-legacy-disabled', authMiddleware, async (req, res) => {
-  try {
-    const profile = await getAuthedProfile(req);
-    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    const speakBlock = getSpeakBlockReason(profile);
-    if (speakBlock) return res.status(403).json(err(new Error(speakBlock)));
-    if (profile.id === req.params.id) return res.status(400).json(err(new Error('不能向自己发起联系申请')));
-    const message = cleanText(req.body?.message, 1200);
-    const privateContact = cleanText(req.body?.privateContact ?? req.body?.private_contact, 300);
-    if (!message) return res.status(400).json(err(new Error('请填写想咨询的内容')));
-    if (!privateContact) return res.status(400).json(err(new Error('请留下同意后用于联系的方式')));
-    const listingResult = await supabase.from('lc_provider_listings')
-      .select('profile_id, is_active')
-      .eq('profile_id', req.params.id)
-      .eq('is_active', true)
-      .maybeSingle();
-    if (listingResult.error && isMissingRelation(listingResult.error, 'lc_provider_listings')) return res.status(503).json(err(new Error('委托条数据表尚未初始化')));
-    if (listingResult.error) throw listingResult.error;
-    if (!listingResult.data) return res.status(404).json(err(new Error('这位委托师当前没有公开委托条')));
-    const moderationPrecheck = runLocalModerationPrecheck({
-      scene: 'provider_inquiry_send',
-      targetType: 'provider_inquiry',
-      texts: { message, private_contact: privateContact },
-      allowContact: true,
-    });
-    if (moderationPrecheck.decision === 'block') {
-      return res.status(400).json(err(new Error('申请内容包含不适合发送的信息，请修改后再试')));
-    }
-    const { data, error: insertErr } = await supabase.from('lc_provider_inquiries').insert({
-      provider_id: req.params.id,
-      requester_id: profile.id,
-      requester_name: cleanText(profile.display_name, 120) || '用户',
-      message,
-      requester_private_contact: privateContact,
-    }).select('*').single();
-    if (insertErr) {
-      if (insertErr.code === '23505') return res.status(409).json(err(new Error('你已有一条等待对方处理的联系申请')));
-      if (isMissingRelation(insertErr, 'lc_provider_inquiries')) return res.status(503).json(err(new Error('委托联系数据表尚未初始化')));
-      throw insertErr;
-    }
-    await notifyProfile({
-      profileId: req.params.id,
-      type: 'provider_inquiry_received',
-      title: '收到新的委托咨询',
-      content: `${cleanText(profile.display_name, 120) || '一位用户'}向你的委托条发起了联系申请。`,
-      relatedType: 'provider_inquiry',
-      relatedId: data?.id,
-    });
-    await logSecurityEvent(req, {
-      action: 'provider_inquiry_submitted',
-      actorId: profile.id,
-      actorRole: profileAuthRole(profile),
-      targetType: 'provider_inquiry',
-      targetId: data?.id,
-      metadata: { provider_id: req.params.id, moderation: moderationPrecheck.decision },
-    });
-    res.status(201).json(ok(providerInquiryPayload(data as Record<string, unknown>)));
-  } catch (e) { res.status(500).json(err(e)); }
+app.post('/api/lc/provider-listings/:id/inquiries-legacy-disabled', authMiddleware, (_req, res) => {
+  res.status(410).json(err(new Error('旧版联系申请入口已停用，请通过委托需求或付费解锁联系方式')));
 });
 
 app.get('/api/lc/provider-inquiries/received', authMiddleware, async (req, res) => {
@@ -8616,7 +8634,11 @@ app.get('/api/lc/creators/:id/availability', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/availability', authMiddleware, async (req, res) => {
+app.post('/api/lc/availability', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'availability_submit',
+  targetType: 'availability',
+  content: req => [req.body?.note, req.body?.city, req.body?.location],
+}), async (req, res) => {
   try {
     const { creatorId, date, dates: rawDates, startTime, endTime, note, city, location } = req.body;
     if (getReq(req, 'creatorId') !== creatorId) {
@@ -8796,7 +8818,11 @@ app.post('/api/lc/availability/sync-juzhanggui', authMiddleware, async (req, res
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/availability/import-text', authMiddleware, async (req, res) => {
+app.post('/api/lc/availability/import-text', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'availability_import',
+  targetType: 'availability',
+  content: req => [req.body?.city, req.body?.location],
+}), async (req, res) => {
   try {
     const creatorId = getReq(req, 'creatorId');
     const rawText = cleanText(req.body?.rawText, 6000);
@@ -9091,7 +9117,11 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
 
 // ==================== 联系申请 ====================
 
-app.post('/api/lc/contact-request', authMiddleware, async (req, res) => {
+app.post('/api/lc/contact-request', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'contact_request_message',
+  targetType: 'contact_request',
+  content: req => [req.body?.message],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -9390,7 +9420,11 @@ app.get('/api/lc/tags', async (req, res) => {
     res.json(ok((data || []).map((tag: Record<string, unknown>) => ({ ...tag, liked_by_me: liked.has(String(tag.id)) }))));
   } catch (e) { res.status(500).json(err(e)); }
 });
-app.post('/api/lc/tags', authMiddleware, async (req, res) => {
+app.post('/api/lc/tags', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'tag_submit',
+  targetType: 'tag',
+  content: req => [req.body?.tag],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     const blockReason = getSpeakBlockReason(profile);
@@ -9889,7 +9923,16 @@ app.get('/api/lc/scripts/contributions/mine', authMiddleware, async (req, res) =
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/scripts/contributions', authMiddleware, async (req, res) => {
+app.post('/api/lc/scripts/contributions', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'script_contribution_submit',
+  targetType: 'script_contribution',
+  content: req => [
+    req.body?.scriptName,
+    req.body?.note,
+    JSON.stringify(req.body?.playerRoles ?? req.body?.scriptRoles ?? []),
+    JSON.stringify(req.body?.creditsPatch ?? req.body?.credits ?? {}),
+  ],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -10591,7 +10634,11 @@ app.get('/api/lc/moderation/queue', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/moderation/reviews', authMiddleware, async (req, res) => {
+app.post('/api/lc/moderation/reviews', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'community_moderation_review',
+  targetType: 'moderation_review',
+  content: req => [req.body?.note, req.body?.riskLabels],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -10849,7 +10896,11 @@ app.get('/api/lc/carpools/applications/received', authMiddleware, async (req, re
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.put('/api/lc/carpools/applications/:id/accept', authMiddleware, async (req, res) => {
+app.put('/api/lc/carpools/applications/:id/accept', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'carpool_application_decision',
+  targetType: 'carpool_application',
+  content: req => [req.body?.reviewMessage],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -10912,7 +10963,11 @@ app.put('/api/lc/carpools/applications/:id/accept', authMiddleware, async (req, 
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.put('/api/lc/carpools/applications/:id/reject', authMiddleware, async (req, res) => {
+app.put('/api/lc/carpools/applications/:id/reject', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'carpool_application_decision',
+  targetType: 'carpool_application',
+  content: req => [req.body?.reviewMessage],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -11645,7 +11700,11 @@ app.get('/api/lc/guides/:id', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/guides', authMiddleware, async (req, res) => {
+app.post('/api/lc/guides', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'guide_publish',
+  targetType: 'guide',
+  content: req => [req.body?.title, req.body?.summary, req.body?.content, req.body?.targetName],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -14832,7 +14891,11 @@ app.get('/api/lc/dm-dossiers/:id', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-dossiers/:id/gifts', authMiddleware, async (req, res) => {
+app.post('/api/lc/dm-dossiers/:id/gifts', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'dm_gift_message',
+  targetType: 'dm_gift',
+  content: req => [req.body?.message],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -15053,13 +15116,21 @@ app.get('/api/lc/store-dossiers/:id', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/rating-discussions/:ratingType/:ratingId/official-response', authMiddleware, async (req, res) => {
+app.post('/api/lc/rating-discussions/:ratingType/:ratingId/official-response', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'rating_official_response',
+  targetType: 'rating_discussion',
+  content: req => [req.body?.content],
+}), async (req, res) => {
   try {
     await createRatingDiscussionNode(req, res, 'official_response');
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/rating-discussions/:ratingType/:ratingId/follow-up', authMiddleware, async (req, res) => {
+app.post('/api/lc/rating-discussions/:ratingType/:ratingId/follow-up', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'rating_reviewer_followup',
+  targetType: 'rating_discussion',
+  content: req => [req.body?.content],
+}), async (req, res) => {
   try {
     await createRatingDiscussionNode(req, res, 'reviewer_followup');
   } catch (e) { res.status(500).json(err(e)); }
@@ -15523,7 +15594,11 @@ async function createCommunityDmAffiliation(input: {
   return insertResult.data as Record<string, unknown>;
 }
 
-app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, async (req, res) => {
+app.post('/api/lc/dossier-edits/:dossierId', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'dossier_update_submit',
+  targetType: 'dossier_update',
+  content: req => [req.body?.editReason, req.body?.edit_reason, JSON.stringify(req.body || {})],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -15785,7 +15860,11 @@ app.delete('/api/lc/dossier-edits/:id', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.put('/api/lc/dossier-edits/:id/owner-response', authMiddleware, async (req, res) => {
+app.put('/api/lc/dossier-edits/:id/owner-response', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'dossier_owner_response',
+  targetType: 'dossier_update',
+  content: req => [req.body?.reason],
+}), async (req, res) => {
   try {
     await processDueDossierOwnerReviews();
     const profile = await getAuthedProfile(req);
@@ -16819,7 +16898,11 @@ app.get('/api/lc/dm/identity-management', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-dossiers/:id/affiliations', authMiddleware, async (req, res) => {
+app.post('/api/lc/dm-dossiers/:id/affiliations', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'dm_affiliation_request',
+  targetType: 'dm_affiliation',
+  content: req => [req.body?.requestNote, req.body?.request_note],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -16872,7 +16955,17 @@ app.post('/api/lc/dm-dossiers/:id/affiliations', authMiddleware, async (req, res
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-affiliations/:id/disputes', authMiddleware, upload.array('evidenceFiles', MAX_DOSSIER_CLAIM_PROOFS), enforceMultipartUploadTotal, async (req, res) => {
+app.post(
+  '/api/lc/dm-affiliations/:id/disputes',
+  authMiddleware,
+  upload.array('evidenceFiles', MAX_DOSSIER_CLAIM_PROOFS),
+  enforceMultipartUploadTotal,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'dm_affiliation_dispute',
+    targetType: 'dm_affiliation',
+    content: req => [req.body?.reason],
+  }),
+  async (req, res) => {
   let savedProofs: DossierClaimProofFile[] = [];
   let reportId = '';
   let dmDossierId = '';
@@ -16957,7 +17050,8 @@ app.post('/api/lc/dm-affiliations/:id/disputes', authMiddleware, upload.array('e
     if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
-});
+  },
+);
 
 app.get('/api/lc/admin/dm-affiliation-reports/:reportId/proofs/:fileId', authMiddleware, adminMiddleware, async (req, res) => {
   try {
@@ -16977,7 +17071,11 @@ app.get('/api/lc/admin/dm-affiliation-reports/:reportId/proofs/:fileId', authMid
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.put('/api/lc/dm-dossiers/:id/affiliations/freelance', authMiddleware, async (req, res) => {
+app.put('/api/lc/dm-dossiers/:id/affiliations/freelance', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'dm_affiliation_end',
+  targetType: 'dm_affiliation',
+  content: req => [req.body?.reason],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -17059,7 +17157,11 @@ app.put('/api/lc/dm-dossiers/:id/affiliations/:affiliationId/cancel', authMiddle
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-dossiers/:id/withdraw-certification', authMiddleware, async (req, res) => {
+app.post('/api/lc/dm-dossiers/:id/withdraw-certification', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'dm_identity_withdrawal',
+  targetType: 'dm_identity_withdrawal',
+  content: req => [req.body?.reason],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -17147,7 +17249,17 @@ app.get('/api/lc/admin/dm-dossier-claims/:claimId/proofs/:fileId', authMiddlewar
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, upload.array('proofFiles', MAX_DOSSIER_CLAIM_PROOFS), enforceMultipartUploadTotal, async (req, res) => {
+app.post(
+  '/api/lc/dm-dossiers/:id/claim',
+  authMiddleware,
+  upload.array('proofFiles', MAX_DOSSIER_CLAIM_PROOFS),
+  enforceMultipartUploadTotal,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'dossier_claim',
+    targetType: 'dossier_claim',
+    content: req => [req.body?.claimNote, req.body?.claim_note],
+  }),
+  async (req, res) => {
   let savedProofs: DossierClaimProofFile[] = [];
   let claimId = '';
   let claimCommitted = false;
@@ -17238,7 +17350,8 @@ app.post('/api/lc/dm-dossiers/:id/claim', authMiddleware, upload.array('proofFil
     }
     res.status(500).json(err(e));
   }
-});
+  },
+);
 
 app.get('/api/lc/rankings', async (req, res) => {
   try {
@@ -17454,7 +17567,19 @@ app.get('/api/lc/rankings/:id/versions', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/rankings/:id/edit-requests', authMiddleware, async (req, res) => {
+app.post('/api/lc/rankings/:id/edit-requests', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'ranking_edit_submit',
+  targetType: 'ranking_edit',
+  content: req => [
+    req.body?.content,
+    req.body?.subjectUrl,
+    req.body?.subject_url,
+    req.body?.eventScriptName,
+    req.body?.event_script_name,
+    req.body?.eventStoreName,
+    req.body?.event_store_name,
+  ],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -17726,7 +17851,40 @@ app.post(
   },
 );
 
-app.put('/api/lc/rankings/:id/resubmit', authMiddleware, upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES), enforceMultipartUploadTotal, async (req, res) => {
+app.put(
+  '/api/lc/rankings/:id/resubmit',
+  authMiddleware,
+  upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES),
+  enforceMultipartUploadTotal,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'ranking_resubmit',
+    targetType: 'ranking',
+    content: req => {
+      const body = rankingRequestBody(req);
+      const newSubject = objectPayload(body.newSubject ?? body.new_subject);
+      return [
+        body.subjectName,
+        body.subject_name,
+        body.subjectCity,
+        body.subject_city,
+        body.content,
+        body.eventScriptName,
+        body.event_script_name,
+        body.eventStoreName,
+        body.event_store_name,
+        newSubject.name,
+        newSubject.dmName,
+        newSubject.dm_name,
+        newSubject.storeName,
+        newSubject.store_name,
+        newSubject.city,
+        newSubject.workplace,
+        newSubject.note,
+        newSubject.tags,
+      ];
+    },
+  }),
+  async (req, res) => {
   let savedEvidenceFiles: RankingEvidenceFile[] = [];
   let updateCommitted = false;
   try {
@@ -17825,7 +17983,8 @@ app.put('/api/lc/rankings/:id/resubmit', authMiddleware, upload.array('evidenceF
     if (sendUploadValidationError(res, e)) return;
     res.status(500).json(err(e));
   }
-});
+  },
+);
 
 app.put('/api/lc/rankings/:id/withdraw', authMiddleware, async (req, res) => {
   try {
@@ -18213,7 +18372,11 @@ app.post(
   },
 );
 
-app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, async (req, res) => {
+app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'related_party_certification',
+  targetType: 'comment',
+  content: req => [req.body?.relatedNote],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -18351,7 +18514,11 @@ app.delete('/api/lc/rankings/:id/comments/:cid', authMiddleware, async (req, res
 
 // ── 我是相关方 ──
 
-app.post('/api/lc/rankings/:id/claim', authMiddleware, async (req, res) => {
+app.post('/api/lc/rankings/:id/claim', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'legacy_related_claim',
+  targetType: 'ranking_claim',
+  content: req => [req.body?.message],
+}), async (req, res) => {
   try {
     const { contact, message } = req.body;
     if (!contact) return res.status(400).json(err(new Error('请填写联系方式')));
@@ -19876,7 +20043,9 @@ app.get('/api/lc/shop/dashboard', authMiddleware, async (req, res) => {
     if (nameReviewResult.error) throw nameReviewResult.error;
     const reviewById = new Map<string, Record<string, unknown>>();
     [...(dossierReviewResult.data || []), ...(nameReviewResult.data || [])].forEach(review => reviewById.set(String(review.id), review as Record<string, unknown>));
-    const reviews = Array.from(reviewById.values()).sort((left, right) => new Date(String(right.created_at)).getTime() - new Date(String(left.created_at)).getTime());
+    const reviews = Array.from(reviewById.values())
+      .filter(review => shopCanManageRanking(profile as Record<string, unknown>, review, storeDossiers))
+      .sort((left, right) => new Date(String(right.created_at)).getTime() - new Date(String(left.created_at)).getTime());
     const reviewIds = (reviews || []).map((r: { id: string }) => r.id);
     let comments: Record<string, unknown>[] = [];
     if (reviewIds.length > 0) {
@@ -19886,6 +20055,19 @@ app.get('/api/lc/shop/dashboard', authMiddleware, async (req, res) => {
         .order('created_at', { ascending: true });
       comments = cmts || [];
     }
+    const pendingPublicReviewResult = await supabase.from('lc_public_reviews')
+      .select('id, target_type, payload')
+      .eq('profile_id', creatorId)
+      .eq('status', 'pending')
+      .in('target_type', ['shop_profile_update', 'shop_reply_create'])
+      .limit(200);
+    if (pendingPublicReviewResult.error) throw pendingPublicReviewResult.error;
+    const pendingPublicReviews = (pendingPublicReviewResult.data || []) as Record<string, unknown>[];
+    const pendingReplyRankingIds = pendingPublicReviews
+      .filter(item => item.target_type === 'shop_reply_create')
+      .map(item => cleanText(objectPayload(item.payload).ranking_id, 80))
+      .filter(Boolean);
+    const shopProfileReviewPending = pendingPublicReviews.some(item => item.target_type === 'shop_profile_update');
     let dmAffiliations: Record<string, unknown>[] = [];
     if (storeIds.length > 0) {
       const affiliationResult = await supabase.from('lc_dm_store_affiliations')
@@ -19908,7 +20090,15 @@ app.get('/api/lc/shop/dashboard', authMiddleware, async (req, res) => {
       }
       dmAffiliations = enrichAffiliations(affiliationRows, dmDossiers, storeDossiers);
     }
-    res.json(ok({ profile, reviews: reviews || [], comments, store_dossiers: storeDossiers, dm_affiliations: dmAffiliations }));
+    res.json(ok({
+      profile,
+      reviews: reviews || [],
+      comments,
+      store_dossiers: storeDossiers,
+      dm_affiliations: dmAffiliations,
+      pending_reply_ranking_ids: pendingReplyRankingIds,
+      shop_profile_review_pending: shopProfileReviewPending,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -20000,7 +20190,11 @@ app.put('/api/lc/shop/dm-affiliations/:id/approve', authMiddleware, async (req, 
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.put('/api/lc/shop/dm-affiliations/:id/reject', authMiddleware, async (req, res) => {
+app.put('/api/lc/shop/dm-affiliations/:id/reject', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'shop_affiliation_reject',
+  targetType: 'dm_affiliation',
+  content: req => [req.body?.reason],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
@@ -20021,7 +20215,11 @@ app.put('/api/lc/shop/dm-affiliations/:id/reject', authMiddleware, async (req, r
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.put('/api/lc/shop/dm-affiliations/:id/end', authMiddleware, async (req, res) => {
+app.put('/api/lc/shop/dm-affiliations/:id/end', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'shop_affiliation_end',
+  targetType: 'dm_affiliation',
+  content: req => [req.body?.reason],
+}), async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
@@ -20074,49 +20272,164 @@ app.put('/api/lc/shop/dm-affiliations/:id/end', authMiddleware, async (req, res)
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.put('/api/lc/shop/profile', authMiddleware, async (req, res) => {
+app.put('/api/lc/shop/profile', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'shop_profile_update',
+  targetType: 'shop_profile',
+  content: req => [req.body?.shop_name, req.body?.shop_description, req.body?.address],
+}), async (req, res) => {
   try {
     const creatorId = getReq(req, 'creatorId');
-    const { data: profile } = await supabase.from('lc_profiles').select('role, verified_shop').eq('id', creatorId).single();
+    const { data: profile } = await supabase.from('lc_profiles').select('*').eq('id', creatorId).single();
     if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
     const { shop_name, shop_description, contact_phone, contact_wechat, address, juzhanggui_link } = req.body;
-    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (shop_name !== undefined) update.shop_name = shop_name;
-    if (shop_description !== undefined) update.shop_description = shop_description;
-    if (contact_phone !== undefined) update.contact_phone = contact_phone;
-    if (contact_wechat !== undefined) update.contact_wechat = contact_wechat;
-    if (address !== undefined) update.address = address;
-    if (juzhanggui_link !== undefined) update.juzhanggui_link = juzhanggui_link;
-    await supabase.from('lc_profiles').update(update).eq('id', creatorId);
-    res.json(ok());
+    const publicPatch: Record<string, unknown> = {};
+    if (shop_name !== undefined && cleanText(shop_name, 160) !== cleanText(profile.shop_name, 160)) {
+      publicPatch.shop_name = cleanText(shop_name, 160) || null;
+    }
+    if (shop_description !== undefined && cleanText(shop_description, 1200) !== cleanText(profile.shop_description, 1200)) {
+      publicPatch.shop_description = cleanText(shop_description, 1200) || null;
+    }
+    if (address !== undefined && cleanText(address, 300) !== cleanText(profile.address, 300)) {
+      publicPatch.address = cleanText(address, 300) || null;
+    }
+    if (juzhanggui_link !== undefined) {
+      const nextLink = normalizeOptionalPublicUrl(juzhanggui_link, 1000, true);
+      const currentLink = normalizeOptionalPublicUrl(profile.juzhanggui_link, 1000, true);
+      if (nextLink !== currentLink) publicPatch.juzhanggui_link = nextLink || null;
+    }
+
+    if (Object.keys(publicPatch).length > 0) {
+      const pendingResult = await supabase.from('lc_public_reviews')
+        .select('id')
+        .eq('profile_id', creatorId)
+        .eq('target_type', 'shop_profile_update')
+        .eq('status', 'pending')
+        .limit(1);
+      if (pendingResult.error) throw pendingResult.error;
+      if (pendingResult.data?.length) return res.status(409).json(err(new Error('店家公开资料已有一条修改申请正在审核')));
+    }
+
+    const privateUpdate: Record<string, unknown> = {};
+    if (contact_phone !== undefined) privateUpdate.contact_phone = cleanText(contact_phone, 80) || null;
+    if (contact_wechat !== undefined) privateUpdate.contact_wechat = cleanText(contact_wechat, 160) || null;
+    if (Object.keys(privateUpdate).length > 0) {
+      privateUpdate.updated_at = new Date().toISOString();
+      const privateResult = await supabase.from('lc_profiles').update(privateUpdate).eq('id', creatorId);
+      if (privateResult.error) throw privateResult.error;
+    }
+
+    if (Object.keys(publicPatch).length === 0) {
+      return res.json(ok({ status: 'saved', message: '店家联系方式已保存' }));
+    }
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'shop_profile_update',
+      targetType: 'shop_profile',
+      texts: {
+        shopName: publicPatch.shop_name,
+        description: publicPatch.shop_description,
+        address: publicPatch.address,
+      },
+      allowContact: false,
+    });
+    const publicReview = await createPublicReview({
+      targetType: 'shop_profile_update',
+      profile,
+      title: `店家公开资料修改 · ${cleanText(publicPatch.shop_name || profile.shop_name || profile.display_name, 160) || '店家'}`,
+      summary: cleanText(publicPatch.shop_description || publicPatch.address, 1000) || '修改店家公开资料',
+      payload: { profile_id: creatorId, patch: publicPatch },
+      moderationPrecheck,
+      wechatImageSafetyRequired: false,
+    });
+    await logSecurityEvent(req, {
+      action: 'shop_profile_update_submitted_for_review',
+      targetType: 'public_review',
+      targetId: publicReview.id,
+      actorId: creatorId,
+      actorRole: profile.role || 'shop',
+      metadata: { changed_fields: Object.keys(publicPatch), moderation: moderationPrecheck },
+    });
+    res.status(202).json(ok({
+      ...publicReviewAcceptedResponse(publicReview),
+      private_fields_saved: Object.keys(privateUpdate).length > 0,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/shop/review/:id/reply', authMiddleware, async (req, res) => {
+app.post('/api/lc/shop/review/:id/reply', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'shop_review_reply',
+  targetType: 'shop_review_reply',
+  content: req => [req.body?.replyText],
+}), async (req, res) => {
   try {
     const creatorId = getReq(req, 'creatorId');
-    const { data: profile } = await supabase.from('lc_profiles').select('role, verified_shop, shop_name, display_name').eq('id', creatorId).single();
+    const { data: profile } = await supabase.from('lc_profiles').select('id, role, verified_shop, shop_name, display_name').eq('id', creatorId).single();
     if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
-    const { data: review } = await supabase.from('lc_rankings').select('*').eq('id', req.params.id).single();
+    const { data: review } = await supabase.from('lc_rankings')
+      .select('id, subject_type, subject_name, subject_dossier_id, shop_reply, status')
+      .eq('id', req.params.id)
+      .single();
     if (!review) return res.status(404).json(err(new Error('评价不存在')));
+    const ownedStores = await findClaimedStoreDossiers(String(creatorId));
+    if (!shopCanManageRanking(profile, review, ownedStores)) return res.status(403).json(err(new Error('无权回复此评价，请先完成对应店家档案认领')));
     const shopName = profile.shop_name || profile.display_name;
-    if (review.subject_type !== 'store' || review.subject_name !== shopName) return res.status(403).json(err(new Error('无权回复此评价')));
-    const { replyText } = req.body;
+    if (review.status !== 'approved') return res.status(400).json(err(new Error('只能回复已经公开的评价')));
+    if (cleanText(review.shop_reply, 1200)) return res.status(409).json(err(new Error('这条评价已经有店家回复')));
+    const replyText = cleanText(req.body?.replyText, 1200);
     if (!replyText) return res.status(400).json(err(new Error('请输入回复内容')));
-    await supabase.from('lc_rankings').update({ shop_reply: replyText }).eq('id', req.params.id);
-    res.json(ok());
+    const pendingResult = await supabase.from('lc_public_reviews')
+      .select('id, payload')
+      .eq('profile_id', creatorId)
+      .eq('target_type', 'shop_reply_create')
+      .eq('status', 'pending')
+      .limit(100);
+    if (pendingResult.error) throw pendingResult.error;
+    const existingPending = (pendingResult.data || []).some(item => cleanText(objectPayload(item.payload).ranking_id, 80) === req.params.id);
+    if (existingPending) return res.status(409).json(err(new Error('这条评价的店家回复正在审核')));
+    const moderationPrecheck = runLocalModerationPrecheck({
+      scene: 'shop_review_reply',
+      targetType: 'shop_review_reply',
+      texts: { replyText },
+      allowContact: false,
+    });
+    const publicReview = await createPublicReview({
+      targetType: 'shop_reply_create',
+      profile,
+      title: `店家回复 · ${cleanText(review.subject_name, 160) || '店家评价'}`,
+      summary: replyText,
+      payload: {
+        ranking_id: review.id,
+        reply_text: replyText,
+        shop_profile_id: profile.id,
+        shop_name: shopName,
+      },
+      moderationPrecheck,
+      wechatImageSafetyRequired: false,
+    });
+    await logSecurityEvent(req, {
+      action: 'shop_review_reply_submitted_for_review',
+      targetType: 'public_review',
+      targetId: publicReview.id,
+      actorId: creatorId,
+      actorRole: profile.role || 'shop',
+      metadata: { ranking_id: review.id, moderation: moderationPrecheck },
+    });
+    res.status(202).json(ok(publicReviewAcceptedResponse(publicReview)));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/shop/review/:id/appeal', authMiddleware, async (req, res) => {
+app.post('/api/lc/shop/review/:id/appeal', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'shop_review_appeal',
+  targetType: 'shop_review_appeal',
+  content: req => [req.body?.reason],
+}), async (req, res) => {
   try {
     const creatorId = getReq(req, 'creatorId');
     const { data: profile } = await supabase.from('lc_profiles').select('role, verified_shop, shop_name, display_name').eq('id', creatorId).single();
     if (!profile?.verified_shop) return res.status(403).json(err(new Error('非认证店家账号')));
     const { data: review } = await supabase.from('lc_rankings').select('*').eq('id', req.params.id).single();
     if (!review) return res.status(404).json(err(new Error('评价不存在')));
-    const shopName = profile.shop_name || profile.display_name;
-    if (review.subject_type !== 'store' || review.subject_name !== shopName) return res.status(403).json(err(new Error('无权申诉此评价')));
+    const ownedStores = await findClaimedStoreDossiers(String(creatorId));
+    if (!shopCanManageRanking(profile, review, ownedStores)) return res.status(403).json(err(new Error('无权申诉此评价，请先完成对应店家档案认领')));
     const { reason } = req.body;
     if (!reason) return res.status(400).json(err(new Error('请输入申诉理由')));
     await supabase.from('lc_rankings').update({ appeal_status: 'pending', appeal_reason: reason }).eq('id', req.params.id);
@@ -20135,7 +20448,11 @@ app.put('/api/lc/admin/shop/appeal/:id/resolve', authMiddleware, adminMiddleware
 
 // ── 认证 ──
 
-app.post('/api/lc/certifications', authMiddleware, async (req, res) => {
+app.post('/api/lc/certifications', authMiddleware, wechatMiniTextSafetyMiddleware({
+  businessScene: 'certification_description',
+  targetType: 'certification',
+  content: req => [req.body?.description],
+}), async (req, res) => {
   try {
     const { type, files, description } = req.body;
     if (!type || !CERTIFICATION_TYPES.includes(type)) {

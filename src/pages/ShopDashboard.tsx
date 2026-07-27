@@ -150,10 +150,12 @@ export default function ShopDashboard() {
   const [form, setForm] = useState<ShopForm>(() => blankShopForm());
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
+  const [shopProfileReviewPending, setShopProfileReviewPending] = useState(false);
 
   const [replyOpenId, setReplyOpenId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [replySending, setReplySending] = useState(false);
+  const [pendingReplyIds, setPendingReplyIds] = useState<Set<string>>(() => new Set());
 
   const [appealOpenId, setAppealOpenId] = useState<string | null>(null);
   const [appealReason, setAppealReason] = useState('');
@@ -204,13 +206,23 @@ export default function ShopDashboard() {
           setError(errMsg || '加载失败');
           return;
         }
-        const { profile, reviews: revs, comments: cmts, store_dossiers: dossiers, dm_affiliations: affiliations } = data;
+        const {
+          profile,
+          reviews: revs,
+          comments: cmts,
+          store_dossiers: dossiers,
+          dm_affiliations: affiliations,
+          pending_reply_ranking_ids: pendingReplyRankingIds,
+          shop_profile_review_pending: profileReviewPending,
+        } = data;
         if (!profile.verified_shop) { setError('此功能仅限已认证店家使用'); return; }
         setShop(profile);
         setReviews(revs || []);
         setComments(cmts || []);
         setStoreDossiers(dossiers || []);
         setDmAffiliations(affiliations || []);
+        setPendingReplyIds(new Set(Array.isArray(pendingReplyRankingIds) ? pendingReplyRankingIds : []));
+        setShopProfileReviewPending(Boolean(profileReviewPending));
         setForm(profileToForm(profile));
       })
       .catch(() => setError('网络错误'))
@@ -224,13 +236,23 @@ export default function ShopDashboard() {
       const r = await fetch(`${API}/lc/shop/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(form),
+        body: JSON.stringify(shopProfileReviewPending ? {
+          contact_phone: form.contact_phone,
+          contact_wechat: form.contact_wechat,
+        } : form),
       });
       const d = await r.json();
       if (d.success) {
         profileDraft.clearDraft();
-        setShop(prev => prev ? { ...prev, ...form } : prev);
-        setSaveMsg('已保存');
+        setShop(prev => prev ? {
+          ...prev,
+          contact_phone: form.contact_phone,
+          contact_wechat: form.contact_wechat,
+        } : prev);
+        setSaveMsg(d.data?.status === 'pending'
+          ? '联系方式已保存；公开资料审核通过后更新'
+          : '已保存');
+        if (d.data?.status === 'pending') setShopProfileReviewPending(true);
         setTimeout(() => setSaveMsg(''), 2500);
       }
       else setError(d.error || '保存失败');
@@ -250,9 +272,10 @@ export default function ShopDashboard() {
       const d = await r.json();
       if (d.success) {
         replyDraft.clearDraft();
-        setReviews(prev => prev.map(rv => rv.id === reviewId ? { ...rv, shop_reply: replyText.trim() } : rv));
+        setPendingReplyIds(previous => new Set(previous).add(reviewId));
         setReplyOpenId(null);
         setReplyText('');
+        alert('店家回复已提交审核，通过后公开展示');
       } else { alert(d.error || '回复失败'); }
     } catch { alert('网络错误'); }
     finally { setReplySending(false); }
@@ -546,6 +569,15 @@ export default function ShopDashboard() {
                       <span style={{ fontSize: '0.84rem', color: 'rgba(226,238,252,0.8)' }}>{review.shop_reply}</span>
                     </div>
                   )}
+                  {!review.shop_reply && pendingReplyIds.has(review.id) && (
+                    <div style={{
+                      marginBottom: 10, padding: '8px 12px', borderRadius: 8,
+                      backgroundColor: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)',
+                      fontSize: '0.78rem', color: '#fbbf24',
+                    }}>
+                      店家回复审核中
+                    </div>
+                  )}
 
                   {/* 申诉状态 */}
                   {review.appeal_status === 'pending' && (
@@ -566,7 +598,7 @@ export default function ShopDashboard() {
 
                   {/* 操作按钮 */}
                   <div style={{ display: 'flex', gap: 10 }}>
-                    {!review.shop_reply && replyOpenId !== review.id && (
+                    {!review.shop_reply && !pendingReplyIds.has(review.id) && replyOpenId !== review.id && (
                       <button
                         onClick={() => { setReplyOpenId(review.id); setReplyText(''); }}
                         style={{

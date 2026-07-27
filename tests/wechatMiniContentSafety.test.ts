@@ -141,6 +141,35 @@ test('server business routes enforce miniapp text checks instead of trusting cli
     '/api/lc/rankings/:id/vote',
     '/api/lc/rankings/:id/comments',
     '/api/lc/creators/:id',
+    '/api/lc/availability',
+    '/api/lc/availability/import-text',
+    '/api/lc/contact-request',
+    '/api/lc/tags',
+    '/api/lc/scripts/contributions',
+    '/api/lc/moderation/reviews',
+    '/api/lc/carpools/applications/:id/accept',
+    '/api/lc/carpools/applications/:id/reject',
+    '/api/lc/guides',
+    '/api/lc/dm-dossiers/:id/gifts',
+    '/api/lc/rating-discussions/:ratingType/:ratingId/official-response',
+    '/api/lc/rating-discussions/:ratingType/:ratingId/follow-up',
+    '/api/lc/dossier-edits/:dossierId',
+    '/api/lc/dossier-edits/:id/owner-response',
+    '/api/lc/dm-dossiers/:id/affiliations',
+    '/api/lc/dm-affiliations/:id/disputes',
+    '/api/lc/dm-dossiers/:id/affiliations/freelance',
+    '/api/lc/dm-dossiers/:id/withdraw-certification',
+    '/api/lc/dm-dossiers/:id/claim',
+    '/api/lc/rankings/:id/edit-requests',
+    '/api/lc/rankings/:id/resubmit',
+    '/api/lc/rankings/:id/comments/:cid/related-certify',
+    '/api/lc/rankings/:id/claim',
+    '/api/lc/shop/dm-affiliations/:id/reject',
+    '/api/lc/shop/dm-affiliations/:id/end',
+    '/api/lc/shop/profile',
+    '/api/lc/shop/review/:id/reply',
+    '/api/lc/shop/review/:id/appeal',
+    '/api/lc/certifications',
   ];
   for (const route of criticalRoutes) {
     const escapedRoute = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -150,6 +179,46 @@ test('server business routes enforce miniapp text checks instead of trusting cli
       `missing server-enforced WeChat check for ${route}`,
     );
   }
+});
+
+test('miniapp text checks exclude private credentials and identity evidence payloads', () => {
+  const source = readFileSync('api/index.ts', 'utf8');
+  const routeSection = (route: string, length = 900) => {
+    const start = source.indexOf(`'${route}'`);
+    assert.notEqual(start, -1, `missing route ${route}`);
+    return source.slice(start, start + length);
+  };
+  const shopProfile = routeSection('/api/lc/shop/profile');
+  assert.match(shopProfile, /shop_name/);
+  assert.match(shopProfile, /shop_description/);
+  assert.match(shopProfile, /address/);
+  assert.doesNotMatch(shopProfile.slice(0, shopProfile.indexOf('async (req, res)')), /contact_phone|contact_wechat/);
+
+  const certification = routeSection('/api/lc/certifications', 500);
+  assert.match(certification, /content:\s*req\s*=>\s*\[req\.body\?\.description\]/);
+  assert.doesNotMatch(certification.slice(0, certification.indexOf('async (req, res)')), /files/);
+
+  const legacyClaim = routeSection('/api/lc/rankings/:id/claim', 500);
+  assert.match(legacyClaim, /content:\s*req\s*=>\s*\[req\.body\?\.message\]/);
+  assert.doesNotMatch(legacyClaim.slice(0, legacyClaim.indexOf('async (req, res)')), /contact/);
+
+  const availabilityImport = routeSection('/api/lc/availability/import-text', 500);
+  assert.doesNotMatch(availabilityImport.slice(0, availabilityImport.indexOf('async (req, res)')), /rawText/);
+});
+
+test('shop public profile changes and replies enter human review before publication', () => {
+  const server = readFileSync('api/index.ts', 'utf8');
+  const dashboard = readFileSync('src/pages/ShopDashboard.tsx', 'utf8');
+  assert.match(server, /\|\s*'shop_profile_update'/);
+  assert.match(server, /\|\s*'shop_reply_create'/);
+  assert.match(server, /targetType:\s*'shop_profile_update'/);
+  assert.match(server, /targetType:\s*'shop_reply_create'/);
+  assert.match(server, /if \(review\.target_type === 'shop_profile_update'\)/);
+  assert.match(server, /if \(review\.target_type === 'shop_reply_create'\)/);
+  assert.match(server, /shop_review_reply_submitted_for_review/);
+  assert.match(server, /shop_profile_update_submitted_for_review/);
+  assert.doesNotMatch(dashboard, /setReviews\(prev\s*=>\s*prev\.map\(rv\s*=>\s*rv\.id === reviewId \? \{ \.\.\.rv, shop_reply:/);
+  assert.match(dashboard, /店家回复审核中/);
 });
 
 test('public images use async WeChat checks and approval gates', () => {
@@ -175,10 +244,11 @@ test('public images use async WeChat checks and approval gates', () => {
     5,
   );
   const publicReviewCalls = source.match(/createPublicReview\(\{[\s\S]*?\n\s{4}\}\);/g) || [];
-  assert.equal(publicReviewCalls.length, 12);
+  assert.equal(publicReviewCalls.length, 14);
   for (const call of publicReviewCalls) {
-    assert.match(call, /wechatImageSafetyRequired:\s*isWechatMiniClient\(req\)/);
+    assert.match(call, /wechatImageSafetyRequired:\s*(?:isWechatMiniClient\(req\)|false)/);
   }
+  assert.equal(publicReviewCalls.filter(call => /wechatImageSafetyRequired:\s*false/.test(call)).length, 2);
 });
 
 test('all WeChat safety network calls have a bounded timeout', () => {
@@ -198,6 +268,9 @@ test('production acceptance content checks are rate limited', () => {
   const source = readFileSync('api/index.ts', 'utf8');
   assert.match(source, /miniappContentCheckRateLimit = createRateLimiter\('miniapp-content-check', 10 \* 60 \* 1000, 12\)/);
   assert.match(source, /path === '\/api\/lc\/miniapp\/content-check'\) return miniappContentCheckRateLimit\(req, res, next\)/);
+  assert.match(source, /miniappBusinessContentRateLimit = createRateLimiter\([\s\S]{0,180}10 \* 60 \* 1000,[\s\S]{0,80}80/);
+  assert.match(source, /miniappBusinessContentRateLimit\(req, res,/);
+  assert.match(source, /creatorId \|\| ''/);
 });
 
 test('server checks every content chunk before allowing publication', () => {

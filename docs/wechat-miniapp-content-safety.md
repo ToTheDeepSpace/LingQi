@@ -42,8 +42,17 @@ Token 只保存在腾讯云服务端环境文件和微信公众平台，不写�
 | 举报与建议反馈 | `/api/lc/reports`、`/api/lc/site-messages` |
 | DM / 店家档案与评价 | `/api/lc/dm-dossiers`、`/api/lc/dm-ratings`、`/api/lc/store-ratings` |
 | 红黑白榜、投票附言与评论 | `/api/lc/rankings`、`/api/lc/rankings/:id/vote`、`/api/lc/rankings/:id/comments` |
+| 红黑白榜修改、重提与相关方说明 | `/api/lc/rankings/:id/edit-requests`、`/api/lc/rankings/:id/resubmit`、`/api/lc/rankings/:id/comments/:cid/related-certify` |
+| 公开档期、标签与剧本资料共建 | `/api/lc/availability`、`/api/lc/availability/import-text`、`/api/lc/tags`、`/api/lc/scripts/contributions` |
+| 攻略、评价回应与缠头留言 | `/api/lc/guides`、`/api/lc/rating-discussions/:ratingType/:ratingId/official-response`、`/api/lc/rating-discussions/:ratingType/:ratingId/follow-up`、`/api/lc/dm-dossiers/:id/gifts` |
+| 档案修改、认领、任职关系与认证说明 | `/api/lc/dossier-edits/:dossierId`、`/api/lc/dm-dossiers/:id/claim`、`/api/lc/dm-dossiers/:id/affiliations`、`/api/lc/certifications` |
+| 店家公开资料、评价回复与申诉 | `/api/lc/shop/profile`、`/api/lc/shop/review/:id/reply`、`/api/lc/shop/review/:id/appeal` |
 
 头像、委托条主图、DM / 店家档案照片、红黑榜公开图和作品图在业务提交口强制确认图片检查记录。私密举报证据、认领材料和支付凭证不公开，不混入公开图片检查闸门，但仍执行文件清洗、权限隔离和人工审核。多图审核材料最多 8 张，每张最多 8MB、单次请求合计最多 18MB；生产 Nginx 的 20MB 请求体上限作为更外层保护。
+
+微信检查只接收对应场景中需要判断的文字。手机号、微信号、支付凭证、身份证明图片、认领证据和原始档期截图文字不发送给微信；只检查最终会公开或进入人工处理的说明字段。店家公开资料和店家公开回复先进入 `lc_public_reviews`，管理员审核通过后才写入公开页面；私密联系电话和微信号独立保存，不随公开资料送审。
+
+小程序业务写入的微信文字检查按登录账号限速为 10 分钟 80 次，无法取得账号标识时才退回 IP 限速；独立验收接口维持更严格的 10 分钟 12 次。这样可以阻止脚本批量消耗微信接口，同时不会让同一网络下的正常用户互相挤占主要额度。
 
 ## 新写入接口的强制分类
 
@@ -55,6 +64,8 @@ Token 只保存在腾讯云服务端环境文件和微信公众平台，不写�
 - `state-only`：关注、已读、上下架、撤回、接受或拒绝等不包含新公开言论的状态变更。
 
 `tests/miniappMutationClassification.test.ts` 会扫描小程序源码中的全部非 GET 请求。新增写接口却未分类，或者需要检查的文字没有服务端微信检查时，测试会直接失败。
+
+`tests/serverWriteRouteClassification.test.ts` 进一步扫描服务端全部已登录、非管理员写接口。任何读取正文、表单或文件却没有微信文字检查的入口，都必须明确归入私密凭证、私密联系方式、私密证据、公开媒体、财务或纯状态变更之一；不允许使用笼统的“其他”分类绕过检查。
 
 ## 审计记录
 
