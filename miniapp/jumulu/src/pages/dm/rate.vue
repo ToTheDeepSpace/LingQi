@@ -6,7 +6,7 @@ import DossierSearchPicker from '../../components/DossierSearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import ScriptSearchPicker from '../../components/ScriptSearchPicker.vue'
 import type { Dossier, NewDossierDraft, Script } from '../../types'
-import { apiRequest, checkMiniContent, requireLogin } from '../../utils/api'
+import { apiRequest, requireLogin } from '../../utils/api'
 import { currentDate } from '../../utils/format'
 
 const dms = ref<Dossier[]>([])
@@ -64,7 +64,6 @@ async function submit() {
     if (!selectedScript.value) throw new Error('请选择本次体验剧本')
     if (content.value.trim().length < 12) throw new Error('请至少写 12 个字说明体验')
     submitting.value = true
-    await checkMiniContent(`${dmName.value} ${storeName.value} ${content.value} ${tags.value}`, 'dm_rating')
     const result = await apiRequest<{ message?: string }>('/lc/dm-ratings', {
       method: 'POST',
       data: {

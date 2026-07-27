@@ -6,7 +6,7 @@ import DossierSearchPicker from '../../components/DossierSearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import ScriptSearchPicker from '../../components/ScriptSearchPicker.vue'
 import type { Dossier, NewDossierDraft, Script } from '../../types'
-import { apiRequest, checkMiniContent, requireLogin } from '../../utils/api'
+import { apiRequest, requireLogin } from '../../utils/api'
 import { currentDate } from '../../utils/format'
 
 const stores = ref<Dossier[]>([])
@@ -46,7 +46,6 @@ async function submit() {
     if (!selectedScript.value) throw new Error('请选择剧本')
     if (content.value.trim().length < 12) throw new Error('请至少写 12 个字说明到店体验')
     submitting.value = true
-    await checkMiniContent(`${storeName.value} ${content.value} ${tags.value}`, 'store_rating')
     const result = await apiRequest<{ message?: string }>('/lc/store-ratings', {
       method: 'POST',
       data: {

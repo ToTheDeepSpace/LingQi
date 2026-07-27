@@ -144,3 +144,16 @@ test('server checks every content chunk before allowing publication', () => {
   assert.match(source, /checkWechatMiniText\(\s*chunk,/);
   assert.match(source, /if \(!verdict\.allowed\) break/);
 });
+
+test('rating and ranking checks include nested dossier drafts', () => {
+  const source = readFileSync('api/index.ts', 'utf8');
+  for (const scene of ['dm_rating_submit', 'store_rating_submit', 'ranking_submit']) {
+    const start = source.indexOf(`businessScene: '${scene}'`);
+    assert.notEqual(start, -1, `missing ${scene} middleware`);
+    const routeSection = source.slice(start, start + 2400);
+    assert.match(routeSection, /objectPayload\((?:req\.body|body)(?:\?\.|\.)(?:newDm|newStore|newSubject)/);
+    assert.match(routeSection, /\.workplace/);
+    assert.match(routeSection, /\.note/);
+    assert.match(routeSection, /\.tags/);
+  }
+});

@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import CitySearchPicker from './CitySearchPicker.vue'
 import type { NewDossierDraft } from '../types'
-import { apiRequest, checkMiniContent, requireLogin, uploadImageFile } from '../utils/api'
+import { apiRequest, requireLogin, uploadImageFile } from '../utils/api'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -75,7 +75,6 @@ async function submit() {
     if (!draft.city) throw new Error('请选择城市')
     if (props.entityType === 'store' && !draft.workplace) throw new Error('请填写店家地址、商圈或常驻位置')
     submitting.value = true
-    await checkMiniContent([draft.name, draft.city, draft.workplace, draft.note, ...draft.tags].join(' '), props.entityType === 'dm' ? 'dm_dossier_submit' : 'store_dossier_submit')
     if (props.mode === 'draft') {
       emit('created', draft)
       emit('close')

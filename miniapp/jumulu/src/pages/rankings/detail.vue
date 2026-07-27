@@ -5,7 +5,7 @@ import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Ranking, RankingComment } from '../../types'
-import { apiRequest, checkMiniContent, encoded, readAuth, requireLogin } from '../../utils/api'
+import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText, RANKING_TYPE_TEXT } from '../../utils/format'
 
 const id = ref('')
@@ -79,7 +79,6 @@ async function submitComment() {
   try {
     await requireLogin()
     submitting.value = true
-    await checkMiniContent(content, 'ranking_comment')
     await apiRequest(`/lc/rankings/${encoded(id.value)}/comments`, { method: 'POST', data: { content } })
     commentText.value = ''
     uni.showModal({ title: '评论已提交', content: '评论通过审核后会公开展示。', showCancel: false })

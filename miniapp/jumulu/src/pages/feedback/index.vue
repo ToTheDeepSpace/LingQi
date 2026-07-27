@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
-import { apiRequest, checkMiniContent, uploadPrivateEvidence } from '../../utils/api'
+import { apiRequest, uploadPrivateEvidence } from '../../utils/api'
 import { dateText } from '../../utils/format'
 
 type FeedbackCategory = 'bug' | 'dossier_correction' | 'invalid_contact' | 'payment_refund' | 'report_abuse' | 'other'
@@ -78,7 +78,6 @@ async function submit() {
   if (content.value.trim().length < 4) return uni.showToast({ title: '请至少说明 4 个字', icon: 'none' })
   submitting.value = true
   try {
-    await checkMiniContent(`${categoryLabel.value} ${content.value}`, 'feedback')
     const result = await apiRequest<{ id: string }>('/lc/site-messages', {
       method: 'POST',
       data: {

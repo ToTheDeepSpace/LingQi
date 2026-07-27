@@ -79,14 +79,6 @@ export async function requireLogin(): Promise<AuthSession> {
   throw new Error('请先登录')
 }
 
-export async function checkMiniContent(content: string, scene: string) {
-  if (!content.trim()) return
-  await apiRequest<{ checked: boolean }>('/lc/miniapp/content-check', {
-    method: 'POST',
-    data: { content: content.trim(), scene },
-  })
-}
-
 export async function uploadImageFile(filePath: string, scope: string) {
   const auth = await requireLogin()
   const response = await new Promise<UniApp.UploadFileSuccessCallbackResult>((resolve, reject) => {

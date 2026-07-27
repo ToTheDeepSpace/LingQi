@@ -5,7 +5,7 @@ import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { RoleRating, Script } from '../../types'
-import { apiRequest, checkMiniContent, encoded, readAuth, requireLogin } from '../../utils/api'
+import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText } from '../../utils/format'
 import { flattenRoles, roleKind } from '../../utils/roles'
 
@@ -45,7 +45,6 @@ async function submit() {
     await requireLogin()
     if (!content.value.trim()) throw new Error('请写一句评分理由')
     submitting.value = true
-    await checkMiniContent(content.value, activeLane.value === 'deep_spoiler' ? 'role_spoiler_review' : 'role_review')
     const result = await apiRequest<{ message?: string }>('/lc/entity-ratings', { method: 'POST', data: { targetType: 'script_role', targetId: id.value, rating: rating.value, content: content.value.trim(), reviewLane: activeLane.value } })
     content.value = ''
     composerOpen.value = false

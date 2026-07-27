@@ -15784,16 +15784,34 @@ app.post(
   wechatMiniTextSafetyMiddleware({
     businessScene: 'dm_rating_submit',
     targetType: 'dm_rating',
-    content: req => [
-      req.body?.content,
-      req.body?.tags,
-      req.body?.scriptName,
-      req.body?.script_name,
-      req.body?.storeName,
-      req.body?.store_name,
-      req.body?.dmName,
-      req.body?.dm_name,
-    ],
+    content: req => {
+      const newDm = objectPayload(req.body?.newDm ?? req.body?.new_dm);
+      const newStore = objectPayload(req.body?.newStore ?? req.body?.new_store);
+      return [
+        req.body?.content,
+        req.body?.tags,
+        req.body?.scriptName,
+        req.body?.script_name,
+        req.body?.storeName,
+        req.body?.store_name,
+        req.body?.dmName,
+        req.body?.dm_name,
+        newDm.dmName,
+        newDm.dm_name,
+        newDm.name,
+        newDm.city,
+        newDm.workplace,
+        newDm.note,
+        newDm.tags,
+        newStore.storeName,
+        newStore.store_name,
+        newStore.name,
+        newStore.city,
+        newStore.workplace,
+        newStore.note,
+        newStore.tags,
+      ];
+    },
   }),
   async (req, res) => {
   try {
@@ -16100,14 +16118,24 @@ app.post(
   wechatMiniTextSafetyMiddleware({
     businessScene: 'store_rating_submit',
     targetType: 'store_rating',
-    content: req => [
-      req.body?.content,
-      req.body?.tags,
-      req.body?.scriptName,
-      req.body?.script_name,
-      req.body?.storeName,
-      req.body?.store_name,
-    ],
+    content: req => {
+      const newStore = objectPayload(req.body?.newStore ?? req.body?.new_store);
+      return [
+        req.body?.content,
+        req.body?.tags,
+        req.body?.scriptName,
+        req.body?.script_name,
+        req.body?.storeName,
+        req.body?.store_name,
+        newStore.storeName,
+        newStore.store_name,
+        newStore.name,
+        newStore.city,
+        newStore.workplace,
+        newStore.note,
+        newStore.tags,
+      ];
+    },
   }),
   async (req, res) => {
   try {
@@ -17432,6 +17460,7 @@ app.post(
     targetType: 'ranking',
     content: req => {
       const body = rankingRequestBody(req);
+      const newSubject = objectPayload(body.newSubject ?? body.new_subject);
       return [
         body.subjectName,
         body.subject_name,
@@ -17442,6 +17471,15 @@ app.post(
         body.event_script_name,
         body.eventStoreName,
         body.event_store_name,
+        newSubject.name,
+        newSubject.dmName,
+        newSubject.dm_name,
+        newSubject.storeName,
+        newSubject.store_name,
+        newSubject.city,
+        newSubject.workplace,
+        newSubject.note,
+        newSubject.tags,
       ];
     },
   }),

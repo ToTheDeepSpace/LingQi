@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import PageIntro from '../../components/PageIntro.vue'
-import { apiRequest, checkMiniContent, requireLogin, uploadPrivateEvidence } from '../../utils/api'
+import { apiRequest, requireLogin, uploadPrivateEvidence } from '../../utils/api'
 
 const targetType = ref('')
 const targetId = ref('')
@@ -47,7 +47,6 @@ async function submit() {
   try {
     await requireLogin()
     submitting.value = true
-    await checkMiniContent(`${reason.value} ${description.value}`, 'report')
     const result = await apiRequest<{ id: string }>('/lc/reports', {
       method: 'POST',
       data: {

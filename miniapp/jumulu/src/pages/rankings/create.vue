@@ -6,7 +6,7 @@ import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
 import DossierSearchPicker from '../../components/DossierSearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import type { Dossier, NewDossierDraft, RankingFile, Script } from '../../types'
-import { apiRequest, checkMiniContent, encoded, requireLogin, uploadImageFile } from '../../utils/api'
+import { apiRequest, encoded, requireLogin, uploadImageFile } from '../../utils/api'
 
 type RankingType = 'red' | 'black' | 'white'
 type SubjectType = 'creator' | 'dm' | 'store' | 'takeaway' | 'player'
@@ -131,7 +131,6 @@ async function submit() {
     if (!content.value.trim()) throw new Error('请填写具体事件或体验')
     if (!rulesAccepted.value) throw new Error('请先确认发布规则')
     submitting.value = true
-    await checkMiniContent(`${name} ${city} ${selectedScript.value?.name || ''} ${selectedEventStore.value?.dm_name || ''} ${content.value}`, 'ranking_submit')
     const result = await apiRequest<{ id?: string; message?: string }>('/lc/rankings', {
       method: 'POST',
       data: {

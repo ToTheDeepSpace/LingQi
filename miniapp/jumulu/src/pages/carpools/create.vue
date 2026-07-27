@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
-import { apiRequest, checkMiniContent, requireLogin } from '../../utils/api'
+import { apiRequest, requireLogin } from '../../utils/api'
 import { generateCarpoolMessage, parseCarpoolMessage } from '../../../../../src/lib/carpoolMessage'
 
 const rawMessage = ref('')
@@ -111,7 +111,6 @@ async function submit() {
     if (!city.value || !eventDate.value || !deadlineDate.value || !scriptName.value.trim() || !leaderContact.value.trim() || !content.value.trim()) throw new Error('请补齐城市、日期、截止日期、剧本、联系方式和拼车说明')
     if (deadlineDate.value > eventDate.value) throw new Error('申请截止日期不能晚于开车日期')
     submitting.value = true
-    await checkMiniContent(`${city.value} ${scriptName.value} ${roleName.value} ${content.value}`, 'carpool_submit')
     await apiRequest('/lc/carpools', {
       method: 'POST',
       data: {

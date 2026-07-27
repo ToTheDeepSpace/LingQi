@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
-import { apiRequest, checkMiniContent, readAuth, requireLogin } from '../../utils/api'
+import { apiRequest, readAuth, requireLogin } from '../../utils/api'
 
 const title = ref('')
 const content = ref('')
@@ -35,7 +35,6 @@ async function submit() {
     if (!city.value) throw new Error('请选择委托执行城市')
     if (!privateContact.value.trim()) throw new Error('请留下接受申请后用于联系的方式')
     submitting.value = true
-    await checkMiniContent(`${title.value} ${content.value} ${city.value} ${desiredRole.value} ${budget.value}`, 'commission_submit')
     await apiRequest('/lc/commissions', {
       method: 'POST',
       data: {

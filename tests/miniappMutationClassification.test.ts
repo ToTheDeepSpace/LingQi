@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-type MutationClass = 'public-ugc' | 'private-content' | 'state-only' | 'safety-infrastructure';
+type MutationClass = 'public-ugc' | 'private-content' | 'state-only';
 
 type MutationPolicy = {
   method: 'POST' | 'PUT' | 'DELETE';
@@ -37,7 +37,6 @@ const MUTATION_POLICIES: MutationPolicy[] = [
   { method: 'PUT', route: '/lc/follows/stores/:param', class: 'state-only' },
   { method: 'POST', route: '/lc/miniapp/auth/refresh', class: 'state-only' },
   { method: 'POST', route: '/lc/miniapp/auth/wechat', class: 'state-only' },
-  { method: 'POST', route: '/lc/miniapp/content-check', class: 'safety-infrastructure' },
   { method: 'POST', route: '/lc/provider-listings/mine', class: 'public-ugc', serverRoute: '/api/lc/provider-listings/mine' },
   { method: 'PUT', route: '/lc/provider-listings/mine/active', class: 'state-only' },
   { method: 'PUT', route: '/lc/provider-listings/mine/contact-available', class: 'state-only' },
@@ -171,6 +170,13 @@ test('every public miniapp UGC mutation is protected by a server-side WeChat che
       `public miniapp UGC is not protected on the server: ${mutationKey(policy.method, policy.route)}`,
     );
   }
+});
+
+test('miniapp relies on enforced business-route checks instead of duplicate preflight calls', () => {
+  const source = sourceFiles('miniapp/jumulu/src')
+    .map(filePath => scriptSource(filePath))
+    .join('\n');
+  assert.doesNotMatch(source, /checkMiniContent|\/lc\/miniapp\/content-check/);
 });
 
 test('miniapp upload helpers keep public media and private evidence on separate routes', () => {
