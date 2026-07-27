@@ -581,7 +581,21 @@ async function submitWechatMiniMediaCheck(mediaUrl: string, openid: string, scen
   return interpretWechatMediaSubmission(payload);
 }
 
+type AuthClientChannel = 'web' | 'wechat-miniapp';
+
+function authClientForToken(req: express.Request): AuthClientChannel {
+  const authenticatedClient = (req as Record<string, unknown>).authClient;
+  if (authenticatedClient === 'wechat-miniapp') return 'wechat-miniapp';
+  if (authenticatedClient === 'web') return 'web';
+  return req.header('X-LC-Client') === 'wechat-miniapp' ? 'wechat-miniapp' : 'web';
+}
+
 function isWechatMiniClient(req: express.Request) {
+  const authenticatedClient = (req as Record<string, unknown>).authClient;
+  if (authenticatedClient === 'wechat-miniapp' || authenticatedClient === 'web') {
+    return authenticatedClient === 'wechat-miniapp';
+  }
+  // Legacy tokens are upgraded by /miniapp/auth/refresh on the next app launch.
   return req.header('X-LC-Client') === 'wechat-miniapp';
 }
 
@@ -878,9 +892,14 @@ async function loadAuthenticatedAccount(req: express.Request, res: express.Respo
     res.status(401).json(err(new Error('请先登录')));
     return null;
   }
-  let decoded: { creatorId: string; role?: string; sessionVersion?: number };
+  let decoded: { creatorId: string; role?: string; sessionVersion?: number; authClient?: AuthClientChannel };
   try {
-    decoded = jwt.verify(auth.slice(7), JWT_SECRET) as { creatorId: string; role?: string; sessionVersion?: number };
+    decoded = jwt.verify(auth.slice(7), JWT_SECRET) as {
+      creatorId: string;
+      role?: string;
+      sessionVersion?: number;
+      authClient?: AuthClientChannel;
+    };
   } catch {
     res.status(401).json(err(new Error('登录已过期，请重新登录')));
     return null;
@@ -906,6 +925,9 @@ async function loadAuthenticatedAccount(req: express.Request, res: express.Respo
     (req as Record<string, unknown>).creatorId = decoded.creatorId;
     (req as Record<string, unknown>).role = actualRole;
     (req as Record<string, unknown>).accountProfile = profile;
+    if (decoded.authClient === 'web' || decoded.authClient === 'wechat-miniapp') {
+      (req as Record<string, unknown>).authClient = decoded.authClient;
+    }
 
     if (!profile.merged_into && !authSessionMatches(decoded.sessionVersion, profile.session_version)) {
       res.status(401).json(err(new Error('登录状态已失效，请重新登录')));
@@ -1268,11 +1290,12 @@ function profileAuthRole(profile: Record<string, unknown> | null | undefined) {
   return cleanText(profile?.role, 40).toLowerCase() === 'admin' ? 'admin' : 'creator';
 }
 
-function signProfileAuthToken(profile: Record<string, unknown>) {
+function signProfileAuthToken(profile: Record<string, unknown>, authClient: AuthClientChannel = 'web') {
   return jwt.sign({
     creatorId: String(profile.id),
     role: profileAuthRole(profile),
     sessionVersion: sessionVersionOf(profile.session_version),
+    authClient,
   }, JWT_SECRET, { expiresIn: '7d' });
 }
 
@@ -6190,7 +6213,8 @@ app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
         .eq('id', existing.id)
         .single();
       if (mergedProfileError || !mergedProfile) throw mergedProfileError || new Error('合并后的账号不存在');
-      const token = signProfileAuthToken(mergedProfile);
+      const authClient = authClientForToken(req);
+      const token = signProfileAuthToken(mergedProfile, authClient);
       await logSecurityEvent(req, {
         action: 'auth_miniapp_account_merged',
         targetType: 'profile',
@@ -6219,6 +6243,7 @@ app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
         role_type: mergedProfile.role_type,
         identity_roles: mergedProfile.identity_roles || [],
         token,
+        auth_client: authClient,
         has_password: Boolean(mergedProfile.password_hash),
         account_merged: true,
       }));
@@ -6234,7 +6259,8 @@ app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
     await runReferralSideEffect('stage1-after-bind-phone', () => maybeAwardReferralStage1(creatorId));
 
     const nextProfile = { ...current, ...patch };
-    const token = signProfileAuthToken(nextProfile);
+    const authClient = authClientForToken(req);
+    const token = signProfileAuthToken(nextProfile, authClient);
     await logSecurityEvent(req, {
       action: 'auth_phone_bound',
       targetType: 'profile',
@@ -6255,6 +6281,7 @@ app.post('/api/lc/auth/bind-phone', authMiddleware, async (req, res) => {
       role_type: nextProfile.role_type,
       identity_roles: nextProfile.identity_roles || [],
       token,
+      auth_client: authClient,
       has_password: Boolean(nextProfile.password_hash),
       account_merged: false,
     }));
@@ -6302,7 +6329,7 @@ app.post('/api/lc/auth/set-password', authMiddleware, async (req, res) => {
       ...current,
       password_hash: passwordHash,
       session_version: nextSessionVersion(current.session_version),
-    });
+    }, authClientForToken(req));
     await logSecurityEvent(req, {
       action: 'auth_password_set',
       targetType: 'profile',
@@ -6622,7 +6649,7 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
       await runReferralSideEffect('miniapp-signup', () => registerReferralForNewProfile(profile, referralCode));
     }
 
-    const token = signProfileAuthToken(profile);
+    const token = signProfileAuthToken(profile, 'wechat-miniapp');
     await logSecurityEvent(req, {
       action: 'auth_miniapp_login_success',
       targetType: 'profile',
@@ -6643,10 +6670,25 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
       role: profile.role,
       token,
       auth_provider: 'wechat_miniapp',
+      auth_client: 'wechat-miniapp',
       has_password: Boolean(profile.password_hash),
       profile_setup_completed: profile.profile_setup_completed !== false,
     }));
   } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.post('/api/lc/miniapp/auth/refresh', authMiddleware, async (req, res) => {
+  try {
+    if (req.header('X-LC-Client') !== 'wechat-miniapp') {
+      return res.status(403).json(err(new Error('该接口仅供微信小程序使用')));
+    }
+    const profile = await getAuthedProfile(req);
+    if (!profile?.wechat_mini_openid) {
+      return res.status(409).json(err(new Error('请先使用微信小程序重新登录')));
+    }
+    const token = signProfileAuthToken(profile, 'wechat-miniapp');
+    return res.json(ok({ token, auth_client: 'wechat-miniapp' }));
+  } catch (e) { return res.status(500).json(err(e)); }
 });
 
 app.post('/api/lc/miniapp/content-check', authMiddleware, async (req, res) => {

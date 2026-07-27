@@ -12,6 +12,7 @@ export type AuthSession = {
   city?: string | null
   role?: string
   auth_provider?: string
+  auth_client?: 'wechat-miniapp'
   account_merged?: boolean
   profile_setup_completed?: boolean
 }

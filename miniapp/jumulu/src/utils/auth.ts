@@ -5,8 +5,16 @@ export async function refreshCurrentUser(options: { silent?: boolean } = {}) {
   const current = readAuth()
   if (!current?.token) return null
   try {
+    let session = current
+    if (session.auth_client !== 'wechat-miniapp') {
+      const refreshed = await apiRequest<{ token: string; auth_client: 'wechat-miniapp' }>('/lc/miniapp/auth/refresh', {
+        method: 'POST',
+      })
+      session = { ...session, ...refreshed }
+      writeAuth(session)
+    }
     const profile = await apiRequest<Omit<AuthSession, 'token'>>('/lc/me')
-    const next = { ...current, ...profile, token: current.token }
+    const next = { ...session, ...profile, token: session.token }
     writeAuth(next)
     uni.$emit('jumulu:auth-changed', next)
     return next

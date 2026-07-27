@@ -72,6 +72,9 @@ test('maps business scenes and truncates combined content to WeChat limits', () 
 
 test('server business routes enforce miniapp text checks instead of trusting client preflight', () => {
   const source = readFileSync('api/index.ts', 'utf8');
+  assert.match(source, /signProfileAuthToken\(profile,\s*'wechat-miniapp'\)/);
+  assert.match(source, /app\.post\('\/api\/lc\/miniapp\/auth\/refresh'/);
+  assert.match(source, /authenticatedClient === 'wechat-miniapp' \|\| authenticatedClient === 'web'/);
   const criticalRoutes = [
     '/api/lc/provider-listings/mine',
     '/api/lc/commissions',
