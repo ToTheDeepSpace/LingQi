@@ -3,6 +3,7 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import { isTokenExpired } from '../lib/authSession';
 import { ADMIN_REVIEW_ACTIONS, moderationHistoryMetadataLines, summarizeProfileReviewPayload } from '../lib/adminReviewPresentation';
+import { wechatSafetyStatusPresentation } from '../lib/wechatSafetyPresentation';
 import BrandLogo from '../components/BrandLogo';
 import RankingEvidenceEditor from '../components/RankingEvidenceEditor';
 
@@ -3419,26 +3420,17 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   </div>
                   <ListEmpty empty={wechatContentChecks.length === 0} text="暂无微信内容安全检查记录">
                     {wechatContentChecks.map(item => {
-                      const statusLabel = item.status === 'pass'
-                        ? '通过'
-                        : item.status === 'pending'
-                          ? '检查中'
-                          : item.status === 'review'
-                            ? '需复核'
-                            : item.status === 'risky'
-                              ? '风险'
-                              : '调用异常';
-                      const accent = item.status === 'pass'
-                        ? '#15803d'
-                        : item.status === 'pending'
-                          ? '#d97706'
-                          : '#b91c1c';
+                      const presentation = wechatSafetyStatusPresentation(
+                        item.status,
+                        item.check_type,
+                        item.created_at,
+                      );
                       return (
-                        <Row key={item.id} accent={accent}>
+                        <Row key={item.id} accent={presentation.accent}>
                           <div style={{ minWidth: 0, flex: 1 }}>
                             <TitleLine
                               title={`${item.check_type === 'image' ? '图片' : '文字'} · ${item.business_scene}`}
-                              pill={statusLabel}
+                              pill={presentation.label}
                             />
                             <Meta>
                               用户：{item.profile_name || item.profile_id || '未知'}
@@ -3449,6 +3441,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                             {(item.error_message || item.errcode) && (
                               <Proof>{item.error_message || '接口返回异常'}{item.errcode ? `（${item.errcode}）` : ''}</Proof>
                             )}
+                            {presentation.note && <Proof>{presentation.note}</Proof>}
                             {item.trace_id && <Meta>微信 trace_id：{item.trace_id}</Meta>}
                           </div>
                         </Row>
