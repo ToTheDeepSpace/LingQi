@@ -9,7 +9,7 @@ const jwtSecret = process.env.JWT_SECRET;
 const imageUrl = String(process.env.WECHAT_TEST_IMAGE_URL || '').trim();
 const miniAppId = process.env.LINGQI_WECHAT_MINI_APP_ID;
 const miniAppSecret = process.env.LINGQI_WECHAT_MINI_APP_SECRET;
-const imageCallbackWaitMs = Math.max(10_000, Number(process.env.WECHAT_IMAGE_CALLBACK_WAIT_MS || 90_000));
+const imageCallbackWaitMs = Math.max(10_000, Number(process.env.WECHAT_IMAGE_CALLBACK_WAIT_MS || 31 * 60_000));
 
 if (!databaseUrl || !jwtSecret) {
   throw new Error('DATABASE_URL and JWT_SECRET are required');
@@ -95,7 +95,7 @@ async function verifyImageCallback(profile) {
     }
     await sleep(2_000);
   }
-  throw new Error(`Image check was accepted but no callback arrived within ${imageCallbackWaitMs}ms; audit_id=${audit.id}`);
+  throw new Error(`Image check was accepted but no callback arrived within ${imageCallbackWaitMs}ms; WeChat documents a delivery window of up to 30 minutes; audit_id=${audit.id}`);
 }
 
 try {

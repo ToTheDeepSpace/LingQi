@@ -67,7 +67,8 @@ Token 只保存在腾讯云服务端环境文件和微信公众平台，不写�
 
 - 正式文字检查已通过：`msgSecCheck` 返回成功，数据库生成 `production_acceptance / text / pass` 记录。
 - 正式图片任务已被 `mediaCheckAsync` 接受并生成 `pending` 记录。
-- 图片任务等待 90 秒仍未收到微信回调，证明当前微信公众平台消息推送配置尚未保存或未生效；这项完成前不能宣称图片异步闭环已经验收通过。
+- 图片任务在首个 90 秒观察窗口内仍为 `pending`。微信官方文档说明异步结果会在 30 分钟内推送，因此 90 秒不足以断言消息推送配置失败；必须持续观察完整 30 分钟窗口。结果变为 `pass` 才能证明闭环成功，超过 30 分钟仍为 `pending` 才应排查公众平台消息推送配置。
+- 官方依据：`https://developers.weixin.qq.com/miniprogram/dev/server/API/sec-center/sec-check/api_mediacheckasync.html`
 
 ## 网站微信账号
 
