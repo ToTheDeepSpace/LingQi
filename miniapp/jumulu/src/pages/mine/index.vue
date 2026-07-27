@@ -5,7 +5,7 @@ import DailyCheckinView from '../../components/DailyCheckinView.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import type { AccountStatus, AuthSession } from '../../types'
 import { apiRequest, readAuth } from '../../utils/api'
-import { loginWithWechat, logout, refreshCurrentUser } from '../../utils/auth'
+import { hasCurrentLegalConsent, loginWithWechat, logout, refreshCurrentUser } from '../../utils/auth'
 
 type PublicationSummary = {
   total: number
@@ -25,6 +25,7 @@ const accountStatus = ref<AccountStatus | null>(null)
 const publicationSummary = ref<PublicationSummary>({ total: 0, pending: 0, approved: 0, action_required: 0, closed: 0 })
 const showCheckin = ref(false)
 const checkinView = ref<InstanceType<typeof DailyCheckinView> | null>(null)
+const legalAccepted = ref(hasCurrentLegalConsent())
 
 async function refresh() {
   loading.value = true; error.value = ''
@@ -48,14 +49,35 @@ async function refresh() {
 }
 async function login() {
   error.value = ''
+  if (!legalAccepted.value) {
+    error.value = '请先阅读并同意用户协议和隐私政策'
+    return
+  }
   try {
     loading.value = true
-    auth.value = await loginWithWechat()
+    auth.value = await loginWithWechat({ legalAccepted: true })
     uni.showToast({ title: '登录成功', icon: 'success' })
     await refresh()
   }
   catch (err) { error.value = err instanceof Error ? err.message : '微信登录失败' }
   finally { loading.value = false }
+}
+function handleLoginTap() {
+  // #ifndef MP-WEIXIN
+  void login()
+  // #endif
+}
+function handleWechatPrivacyAuthorization(event: { detail?: { errMsg?: string } }) {
+  if (!legalAccepted.value) {
+    error.value = '请先阅读并同意用户协议和隐私政策'
+    return
+  }
+  const errMsg = String(event.detail?.errMsg || '')
+  if (errMsg && !/ok$/i.test(errMsg)) {
+    error.value = '请先同意微信隐私保护指引'
+    return
+  }
+  void login()
 }
 async function submitInitialProfile() {
   const displayName = setupNickname.value.trim()
@@ -84,6 +106,11 @@ function signOut() { logout(); auth.value = null }
 function go(url: string) { uni.navigateTo({ url }) }
 function openCheckin() { showCheckin.value = true }
 function copyAdmin() { uni.setClipboardData({ data: 'https://jumulu.jusichen.com/admin', success: () => uni.showToast({ title: '后台地址已复制', icon: 'success' }) }) }
+function openLegal(type: 'terms' | 'privacy') { uni.navigateTo({ url: `/pages/legal/document?type=${type}` }) }
+function updateLegalAccepted(event: { detail: { value: string[] } }) {
+  legalAccepted.value = event.detail.value.includes('accepted')
+  if (legalAccepted.value) error.value = ''
+}
 function unreadLabel() {
   const count = Math.max(0, Number(accountStatus.value?.unread_count || 0))
   return count > 99 ? '99+' : String(count)
@@ -115,7 +142,24 @@ onPullDownRefresh(pullRefresh)
       <text class="login-title">微信一键登录</text>
       <text class="hint">先进入剧幕录浏览内容，再设置公开昵称、关注城市和个人主页。</text>
       <text v-if="error" class="error">{{ error }}</text>
-      <button class="primary-button login-button" :loading="loading" :disabled="loading" @tap="login">微信一键登录</button>
+      <checkbox-group class="legal-consent" @change="updateLegalAccepted">
+        <label class="legal-consent__label">
+          <checkbox value="accepted" color="#275389" :checked="legalAccepted" />
+          <text>我已阅读并同意</text>
+        </label>
+        <view class="legal-consent__links">
+          <text @tap.stop="openLegal('terms')">《用户协议》</text>
+          <text @tap.stop="openLegal('privacy')">《隐私政策》</text>
+        </view>
+      </checkbox-group>
+      <button
+        class="primary-button login-button"
+        open-type="agreePrivacyAuthorization"
+        :loading="loading"
+        :disabled="loading || !legalAccepted"
+        @tap="handleLoginTap"
+        @agreeprivacyauthorization="handleWechatPrivacyAuthorization"
+      >微信一键登录</button>
     </view>
     <template v-else>
       <view class="account surface">
@@ -184,7 +228,11 @@ onPullDownRefresh(pullRefresh)
 .hint, .error { display: block; margin-top: 12rpx; font-size: 22rpx; line-height: 1.5; }
 .hint { color: #7b8492; text-align: center; }
 .error { color: #b42318; }
-.login-button { width: 100%; margin-top: 18rpx; }
+.legal-consent { display: flex; align-items: center; justify-content: center; gap: 8rpx; margin-top: 18rpx; color: #64748b; font-size: 21rpx; line-height: 1.5; }
+.legal-consent__label, .legal-consent__links { display: flex; align-items: center; }
+.legal-consent__label checkbox { transform: scale(.72); transform-origin: center; }
+.legal-consent__links text { color: #8b5919; font-weight: 750; }
+.login-button { width: 100%; margin-top: 14rpx; }
 .setup { border-color: #d7e3f1; background: #f7faff; }
 .setup-heading strong, .setup-heading text, .setup-status strong, .setup-status text { display: block; }
 .setup-heading strong, .setup-status strong { color: #27364a; font-size: 27rpx; }

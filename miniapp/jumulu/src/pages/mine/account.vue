@@ -42,6 +42,7 @@ async function bindPhone() {
   finally { binding.value = false }
 }
 onShow(() => { auth.value = readAuth() })
+function openLegal(type: 'terms' | 'privacy') { uni.navigateTo({ url: `/pages/legal/document?type=${type}` }) }
 </script>
 
 <template>
@@ -63,7 +64,11 @@ onShow(() => { auth.value = readAuth() })
     </view>
     <view class="privacy surface">
       <text class="privacy__title">隐私与账号说明</text>
-      <text>公开昵称用于主页和发布内容；手机号、OpenID、内部账号 ID 不公开。内容提交会经过机器预检和人工审核，举报与处置会留存必要安全记录。</text>
+      <text>公开昵称用于主页和发布内容；手机号、OpenID、内部账号 ID 不公开。内容提交会经过服务端内容检查和人工审核，举报与处置会留存必要安全记录。</text>
+      <view class="legal-links">
+        <button class="secondary-button" @tap="openLegal('terms')">用户协议</button>
+        <button class="secondary-button" @tap="openLegal('privacy')">隐私政策</button>
+      </view>
     </view>
   </view>
 </template>
@@ -79,6 +84,8 @@ onShow(() => { auth.value = readAuth() })
 .bind__title, .bind__description, .privacy__title, .privacy text { display: block; }
 .bind__title, .privacy__title { font-size: 29rpx; font-weight: 850; }
 .bind__description, .privacy text { margin-top: 8rpx; color: #64748b; font-size: 23rpx; line-height: 1.6; }
+.legal-links { display: grid; grid-template-columns: 1fr 1fr; gap: 10rpx; margin-top: 16rpx; }
+.legal-links button { width: 100%; margin: 0; }
 .code-row { display: grid; grid-template-columns: 1fr 220rpx; gap: 10rpx; }
 .code-row button { padding: 0 8rpx; }
 .submit { width: 100%; margin: 0; }

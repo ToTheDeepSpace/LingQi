@@ -221,6 +221,8 @@ const WECHAT_OPEN_APP_SECRET = process.env.WECHAT_OPEN_APP_SECRET || '';
 const LINGQI_WECHAT_MINI_APP_ID = process.env.LINGQI_WECHAT_MINI_APP_ID || process.env.WECHAT_MINI_APP_ID || '';
 const LINGQI_WECHAT_MINI_APP_SECRET = process.env.LINGQI_WECHAT_MINI_APP_SECRET || process.env.WECHAT_MINI_APP_SECRET || '';
 const LINGQI_WECHAT_MINI_MSG_TOKEN = process.env.LINGQI_WECHAT_MINI_MSG_TOKEN || '';
+const LINGQI_TERMS_VERSION = '2026-07-12';
+const LINGQI_PRIVACY_VERSION = '2026-07-12';
 const WECHAT_REDIRECT_URI = process.env.WECHAT_REDIRECT_URI || `${LINGQI_SITE_URL}/api/lc/auth/wechat/callback`;
 const WECHAT_MP_TOKEN = process.env.WECHAT_MP_TOKEN || '';
 const WECHAT_MP_ENCODING_AES_KEY = process.env.WECHAT_MP_ENCODING_AES_KEY || '';
@@ -6766,6 +6768,15 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
     const displayNameInput = cleanText(req.body?.displayName, 80);
     const avatarInput = cleanText(req.body?.avatar, 800);
     const referralCode = cleanText(req.body?.referralCode, 16).toUpperCase();
+    const termsVersion = cleanText(req.body?.termsVersion, 32);
+    const privacyVersion = cleanText(req.body?.privacyVersion, 32);
+    if (
+      req.body?.termsAccepted !== true
+      || termsVersion !== LINGQI_TERMS_VERSION
+      || privacyVersion !== LINGQI_PRIVACY_VERSION
+    ) {
+      return res.status(400).json(err(new Error('请先阅读并同意当前版本的用户协议和隐私政策')));
+    }
     if (!code) return res.status(400).json(err(new Error('缺少微信登录 code')));
 
     const sessionUrl = new URL('https://api.weixin.qq.com/sns/jscode2session');
@@ -6868,7 +6879,13 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
       targetId: profile.id,
       actorId: profile.id,
       actorRole: profile.role || 'creator',
-      metadata: { has_unionid: Boolean(unionid), wechat_bound_at: nowIso },
+      metadata: {
+        has_unionid: Boolean(unionid),
+        wechat_bound_at: nowIso,
+        terms_version: termsVersion,
+        privacy_version: privacyVersion,
+        legal_consent_at: nowIso,
+      },
     });
 
     res.json(ok({
