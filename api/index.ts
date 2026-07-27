@@ -769,6 +769,50 @@ async function startWechatMiniImageSafetyCheck(req: express.Request, input: {
   }
 }
 
+async function ensureWechatMiniImageSafetyChecks(req: express.Request, input: {
+  urls: unknown[];
+  businessScene: string;
+  targetType: string;
+  targetId?: string | null;
+}) {
+  if (!isWechatMiniClient(req)) return;
+  const profile = await getAuthedProfile(req);
+  if (!profile) throw new Error('用户不存在');
+  const urls = Array.from(new Set(
+    input.urls
+      .map(url => normalizeOptionalPublicUrl(url, 2000, true))
+      .filter((url): url is string => Boolean(url)),
+  ));
+  if (urls.length === 0) return;
+
+  const hashes = urls.map(url => sha256(url));
+  const existingResult = await supabase.from('lc_wechat_content_checks')
+    .select('resource_hash, status, created_at')
+    .eq('profile_id', profile.id)
+    .eq('check_type', 'image')
+    .in('resource_hash', hashes)
+    .order('created_at', { ascending: false });
+  if (existingResult.error) throw existingResult.error;
+  const latest = new Map<string, string>();
+  for (const row of existingResult.data || []) {
+    if (!latest.has(row.resource_hash)) latest.set(row.resource_hash, row.status);
+  }
+
+  for (const url of urls) {
+    const priorStatus = latest.get(sha256(url));
+    if (priorStatus === 'pass' || priorStatus === 'pending') continue;
+    if (priorStatus === 'review' || priorStatus === 'risky') {
+      throw new Error('图片未通过微信内容安全检查，请更换后重试');
+    }
+    await startWechatMiniImageSafetyCheck(req, {
+      mediaUrl: url,
+      businessScene: input.businessScene,
+      targetType: input.targetType,
+      targetId: input.targetId,
+    });
+  }
+}
+
 async function assertWechatImageChecksAllowApproval(urls: unknown[]) {
   const hashes = Array.from(new Set(urls.map(url => cleanText(url, 2000)).filter(Boolean).map(url => sha256(url))));
   if (hashes.length === 0) return;
@@ -7874,6 +7918,11 @@ app.post(
       ));
     }
 
+    await ensureWechatMiniImageSafetyChecks(req, {
+      urls: [draft.poster_url],
+      businessScene: 'provider_listing_image_submit',
+      targetType: 'provider_listing_update',
+    });
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'provider_listing_submit',
       targetType: 'provider_listing',
@@ -8449,6 +8498,13 @@ app.put(
       }
     }
     if (changedFields.length === 0 && !reviewedRolePreferences) return res.status(400).json(err(new Error('没有检测到需要审核的资料修改')));
+    if (changedFields.includes('avatar')) {
+      await ensureWechatMiniImageSafetyChecks(req, {
+        urls: [profilePatch.avatar],
+        businessScene: 'profile_avatar_submit',
+        targetType: 'profile_update',
+      });
+    }
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'profile_update_submit',
       targetType: 'profile_update',
@@ -8773,7 +8829,26 @@ app.delete('/api/lc/availability/:id', authMiddleware, async (req, res) => {
 
 // ==================== 服务管理（需登录） ====================
 
-app.post('/api/lc/services', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/services',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'service_submit',
+    targetType: 'service',
+    content: req => {
+      const services = Array.isArray(req.body?.services) ? req.body.services : [];
+      return [
+        req.body?.serviceType,
+        req.body?.duration,
+        req.body?.description,
+        ...services.flatMap((service: unknown) => {
+          const item = objectPayload(service);
+          return [item.serviceType, item.service_type, item.duration, item.description];
+        }),
+      ];
+    },
+  }),
+  async (req, res) => {
   try {
     const { creatorId, serviceType, price, duration, description } = req.body;
     if (getReq(req, 'creatorId') !== creatorId) {
@@ -8825,7 +8900,8 @@ app.post('/api/lc/services', authMiddleware, async (req, res) => {
       service_count: items.length,
     }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.delete('/api/lc/services/:id', authMiddleware, async (req, res) => {
   try {
@@ -8841,7 +8917,15 @@ app.delete('/api/lc/services/:id', authMiddleware, async (req, res) => {
 
 // ==================== 作品管理（需登录） ====================
 
-app.post('/api/lc/portfolio', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/portfolio',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'portfolio_submit',
+    targetType: 'portfolio',
+    content: req => [req.body?.caption],
+  }),
+  async (req, res) => {
   try {
     const { creatorId, imageUrl, caption } = req.body;
     if (getReq(req, 'creatorId') !== creatorId) {
@@ -8850,6 +8934,11 @@ app.post('/api/lc/portfolio', authMiddleware, async (req, res) => {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     if (!imageUrl) return res.status(400).json(err(new Error('请先上传作品图片')));
+    await ensureWechatMiniImageSafetyChecks(req, {
+      urls: [imageUrl],
+      businessScene: 'portfolio_image_submit',
+      targetType: 'portfolio',
+    });
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: 'portfolio_submit',
       targetType: 'portfolio',
@@ -8874,7 +8963,8 @@ app.post('/api/lc/portfolio', authMiddleware, async (req, res) => {
     });
     res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.delete('/api/lc/portfolio/:id', authMiddleware, async (req, res) => {
   try {
@@ -14988,6 +15078,11 @@ app.post(
     if (!isOptionalUrlPlaceholder(rawProfileUrl) && !profileUrl) return res.status(400).json(err(new Error('个人主页链接格式不正确，不填写时请直接留空')));
     if (!isOptionalUrlPlaceholder(rawPhotoUrl) && !photoUrl) return res.status(400).json(err(new Error('照片链接格式不正确，也可以直接使用上传按钮')));
 
+    await ensureWechatMiniImageSafetyChecks(req, {
+      urls: photoFiles.map(file => file.url),
+      businessScene: entityType === 'store' ? 'store_dossier_image_submit' : 'dm_dossier_image_submit',
+      targetType: 'dm_dossier',
+    });
     const moderationPrecheck = runLocalModerationPrecheck({
       scene: entityType === 'store' ? 'store_dossier_submit' : 'dm_dossier_submit',
       targetType: 'dm_dossier',
@@ -17397,6 +17492,11 @@ app.post(
       texts: { type, subjectName: finalSubjectName, subjectType, subjectCity: finalSubjectCity, subjectUrl, content },
       files: displayFiles,
       allowContact: false,
+    });
+    await ensureWechatMiniImageSafetyChecks(req, {
+      urls: displayFiles.map(file => file.url),
+      businessScene: 'ranking_display_image_submit',
+      targetType: 'ranking',
     });
 
     const posterId = getReq(req, 'creatorId');

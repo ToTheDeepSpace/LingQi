@@ -94,6 +94,8 @@ test('server business routes enforce miniapp text checks instead of trusting cli
     '/api/lc/carpools/:id/applications',
     '/api/lc/commissions/:id/applications',
     '/api/lc/dm-dossiers',
+    '/api/lc/services',
+    '/api/lc/portfolio',
     '/api/lc/dm-ratings',
     '/api/lc/store-ratings',
     '/api/lc/rankings',
@@ -115,6 +117,11 @@ test('public images use async WeChat checks and approval gates', () => {
   assert.match(source, /media_check_async/);
   assert.match(source, /app\.post\('\/api\/wechat\/mini\/events'/);
   assert.match(source, /startWechatMiniImageSafetyCheck\(req/);
+  assert.match(source, /ensureWechatMiniImageSafetyChecks\(req/);
+  assert.match(source, /businessScene:\s*'profile_avatar_submit'/);
+  assert.match(source, /businessScene:\s*'provider_listing_image_submit'/);
+  assert.match(source, /businessScene:\s*'ranking_display_image_submit'/);
+  assert.match(source, /businessScene:\s*entityType === 'store' \? 'store_dossier_image_submit' : 'dm_dossier_image_submit'/);
   assert.match(source, /assertWechatImageChecksAllowApproval\(collectPotentialPublicImageUrls\(review\.payload\)\)/);
   assert.match(source, /assertWechatImageChecksAllowApproval\(collectPotentialPublicImageUrls\(r\.display_files\)\)/);
 });
