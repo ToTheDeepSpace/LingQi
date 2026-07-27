@@ -1122,6 +1122,9 @@ export default function Admin() {
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [wechatContentChecks, setWechatContentChecks] = useState<WechatContentCheck[]>([]);
   const [wechatSafetyFilter, setWechatSafetyFilter] = useState<WechatSafetyFilter>('attention');
+  const [wechatSafetyClock, setWechatSafetyClock] = useState(() => Date.now());
+  const [wechatSafetyRefreshing, setWechatSafetyRefreshing] = useState(false);
+  const [wechatSafetyError, setWechatSafetyError] = useState('');
   const [publicReviews, setPublicReviews] = useState<PublicReview[]>([]);
   const [reviewHistory, setReviewHistory] = useState<PublicReview[]>([]);
   const [guides, setGuides] = useState<GuideReview[]>([]);
@@ -1166,6 +1169,28 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       setError(accountError instanceof Error ? accountError.message : '账号加载失败');
     } finally {
       setAccountsLoading(false);
+    }
+  }, []);
+
+  const refreshWechatSafety = useCallback(async (quiet = false) => {
+    const token = getToken();
+    if (!token) return;
+    if (!quiet) setWechatSafetyRefreshing(true);
+    try {
+      const response = await fetch(`${API}/lc/admin/wechat-content-checks?limit=200`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '安全记录加载失败');
+      }
+      setWechatContentChecks(payload.data || []);
+      setWechatSafetyClock(Date.now());
+      setWechatSafetyError('');
+    } catch (refreshError) {
+      setWechatSafetyError(refreshError instanceof Error ? refreshError.message : '安全记录加载失败');
+    } finally {
+      if (!quiet) setWechatSafetyRefreshing(false);
     }
   }, []);
 
@@ -1243,6 +1268,13 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     const timer = window.setTimeout(() => void loadAccounts(undefined, accountPage, accountSearch), 250);
     return () => window.clearTimeout(timer);
   }, [authed, accountPage, accountSearch, loadAccounts]);
+
+  useEffect(() => {
+    if (!authed || tab !== 'security') return;
+    setWechatSafetyClock(Date.now());
+    const timer = window.setInterval(() => void refreshWechatSafety(true), 60_000);
+    return () => window.clearInterval(timer);
+  }, [authed, tab, refreshWechatSafety]);
 
   const approveProfile = async (id: string) => {
     await fetch(`${API}/lc/admin/profile/${id}/unflag`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
@@ -2333,7 +2365,6 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     { group: 'history', label: '审核历史', tab: 'reviewHistory' },
     { group: 'accounts', label: '账号与安全', tab: 'accounts', count: pendingProfiles.length + certs.filter(item => item.type === 'realname').length },
   ];
-  const wechatSafetyNow = Date.now();
   const wechatSafetyFilters: Array<{ value: WechatSafetyFilter; label: string }> = [
     { value: 'attention', label: '需处理' },
     { value: 'pending', label: '检查中' },
@@ -2347,7 +2378,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
       item.check_type,
       item.created_at,
       filter.value,
-      wechatSafetyNow,
+      wechatSafetyClock,
     )).length,
   ]));
   const visibleWechatContentChecks = wechatContentChecks.filter(item => wechatSafetyMatchesFilter(
@@ -2355,7 +2386,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     item.check_type,
     item.created_at,
     wechatSafetyFilter,
-    wechatSafetyNow,
+    wechatSafetyClock,
   ));
 
   if (!authed) return (
@@ -3469,8 +3500,28 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           {filter.label} {wechatSafetyFilterCounts.get(filter.value) || 0}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={() => void refreshWechatSafety()}
+                        disabled={wechatSafetyRefreshing}
+                        style={{
+                          minHeight: 28,
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          border: `1px solid ${LINE}`,
+                          background: SURFACE,
+                          color: MUTED,
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          cursor: wechatSafetyRefreshing ? 'wait' : 'pointer',
+                          opacity: wechatSafetyRefreshing ? 0.58 : 1,
+                        }}
+                      >
+                        {wechatSafetyRefreshing ? '刷新中' : '刷新'}
+                      </button>
                     </div>
                   </div>
+                  {wechatSafetyError && <Proof>{wechatSafetyError}</Proof>}
                   <ListEmpty empty={visibleWechatContentChecks.length === 0} text={wechatSafetyFilter === 'attention' ? '暂无需要处理的微信安全记录' : '这个分类暂无检查记录'}>
                     {visibleWechatContentChecks.map(item => {
                       const presentation = wechatSafetyStatusPresentation(
