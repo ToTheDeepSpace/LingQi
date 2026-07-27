@@ -642,6 +642,7 @@ export default function Dashboard() {
   const [sendingPasswordVerifyCode, setSendingPasswordVerifyCode] = useState(false);
   const [sendingBindCode, setSendingBindCode] = useState(false);
   const [bindingPhone, setBindingPhone] = useState(false);
+  const [bindingWechat, setBindingWechat] = useState(false);
   const [settingPassword, setSettingPassword] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [offersServices, setOffersServices] = useState(false);
@@ -681,15 +682,17 @@ export default function Dashboard() {
 
     Promise.all([
       fetch(`${API}/lc/creators/${data.id}`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
+      fetch(`${API}/lc/me`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/creators/${data.id}/availability?from=${dateKeyAfterDays(0)}&to=${dateKeyAfterDays(120)}`).then(r => r.json()),
       fetch(`${API}/lc/rankings/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/commissions/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/carpools/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
       fetch(`${API}/lc/scripts`).then(r => r.json()),
       fetch(`${API}/lc/provider-listings/mine`, { headers: { Authorization: `Bearer ${data.token}` } }).then(r => r.json()),
-    ]).then(([profileData, availData, rankingsData, commissionsData, carpoolsData, scriptsData, providerListingDataResult]) => {
+    ]).then(([profileData, meData, availData, rankingsData, commissionsData, carpoolsData, scriptsData, providerListingDataResult]) => {
       if (profileData.success && profileData.data) {
-        const { services: svc, portfolio: port, ...profile } = profileData.data;
+        const { services: svc, portfolio: port, ...publicProfile } = profileData.data;
+        const profile = { ...publicProfile, ...(meData.success && meData.data ? meData.data : {}) };
         setCreator(profile);
         setServices(svc || []);
         setPortfolio(port || []);
@@ -1136,6 +1139,25 @@ export default function Dashboard() {
       setError(e instanceof Error ? e.message : '绑定手机号失败');
     } finally {
       setBindingPhone(false);
+    }
+  };
+
+  const bindWechatToAccount = async () => {
+    if (bindingWechat) return;
+    setBindingWechat(true);
+    setError('');
+    try {
+      const response = await fetch(`${API}/lc/auth/wechat/bind-url?redirect=${encodeURIComponent('/dashboard/account')}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success || !payload.data?.url) {
+        throw new Error(payload.error || '微信扫码绑定暂时不可用');
+      }
+      window.location.assign(payload.data.url);
+    } catch (bindError) {
+      setBindingWechat(false);
+      setError(bindError instanceof Error ? bindError.message : '微信扫码绑定暂时不可用');
     }
   };
 
@@ -1999,6 +2021,11 @@ export default function Dashboard() {
                     <EmojiStatus icon="🔐" tone={creator.has_password ? 'ok' : 'warn'} label={creator.has_password ? '✓' : '未设'}>
                       {creator.has_password ? '日常登录可直接使用账号加密码。' : '设置后可以减少验证码发送次数。'}
                     </EmojiStatus>
+                    <EmojiStatus icon="💬" tone={creator.wechat_bound ? 'ok' : 'warn'} label={creator.wechat_bound ? '✓' : '未绑'}>
+                      {creator.wechat_bound
+                        ? `已绑定微信${creator.wechat_nickname ? `：${creator.wechat_nickname}` : ''}，可用于账号互通。`
+                        : '微信登录是可选项；绑定后可和小程序身份互通。'}
+                    </EmojiStatus>
                   </div>
 
                   <div className="account-action-row" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: (accountBindExpanded || passwordExpanded) ? 12 : 0 }}>
@@ -2026,6 +2053,18 @@ export default function Dashboard() {
                     }}>
                       {showPasswordForm ? '收起' : creator.has_password ? '修改密码' : '设置密码'}
                     </button>
+                    {creator.wechat_web_binding_available && <button type="button" onClick={() => void bindWechatToAccount()} disabled={bindingWechat} style={{
+                      padding: '5px 10px',
+                      border: '1px solid rgba(34,197,94,0.24)',
+                      borderRadius: 999,
+                      background: 'rgba(240,253,244,0.86)',
+                      color: '#15803d',
+                      fontSize: '0.75rem',
+                      fontWeight: 900,
+                      cursor: bindingWechat ? 'wait' : 'pointer',
+                    }}>
+                      {bindingWechat ? '打开中...' : creator.wechat_bound ? '更换微信' : '绑定微信'}
+                    </button>}
                   </div>
 
                   {accountBindExpanded && (
@@ -2238,10 +2277,11 @@ export default function Dashboard() {
                   subtitle="手机号、邮箱、密码和登录状态单独收纳，不再挤在公开主页资料首屏。"
                   action={contactVerified ? <button type="button" onClick={() => setShowPasswordForm(v => !v)} style={darkActionStyle}>{creator.has_password ? '修改密码' : '设置密码'}</button> : null}
                 />
-                <div className="dashboard-metric-grid account-security-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                <div className="dashboard-metric-grid account-security-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
                   <SecurityCard title="手机号" value={creator.phone || '未绑定'} status={phoneVerified ? '已验证' : '待验证'} tone={phoneVerified ? 'green' : 'gold'} />
                   <SecurityCard title="邮箱" value={creator.email || '未绑定'} status={emailVerified ? '已验证' : '待验证'} tone={emailVerified ? 'green' : 'gold'} />
                   <SecurityCard title="网页登录密码" value={creator.has_password ? '已设置' : '未设置'} status={creator.has_password ? '可用' : '建议设置'} tone={creator.has_password ? 'green' : 'red'} />
+                  <SecurityCard title="微信" value={creator.wechat_nickname || (creator.wechat_bound ? '已绑定' : '未绑定')} status={creator.wechat_bound ? '可用' : '可选'} tone={creator.wechat_bound ? 'green' : 'gold'} />
                 </div>
                 <section style={card}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -2259,6 +2299,9 @@ export default function Dashboard() {
                       <button type="button" onClick={() => setShowPasswordForm(v => !v)} disabled={!contactVerified} style={{ ...secondaryActionStyle, opacity: contactVerified ? 1 : 0.56, cursor: contactVerified ? 'pointer' : 'not-allowed' }}>
                         {showPasswordForm ? '收起' : creator.has_password ? '修改密码' : '设置密码'}
                       </button>
+                      {creator.wechat_web_binding_available && <button type="button" onClick={() => void bindWechatToAccount()} disabled={bindingWechat} style={{ ...secondaryActionStyle, color: '#15803d', borderColor: 'rgba(34,197,94,0.24)', cursor: bindingWechat ? 'wait' : 'pointer' }}>
+                        {bindingWechat ? '打开中...' : creator.wechat_bound ? '更换微信' : '绑定微信'}
+                      </button>}
                     </div>
                   </div>
 

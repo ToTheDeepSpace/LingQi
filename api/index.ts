@@ -111,7 +111,16 @@ import {
   nextSessionVersion,
   sessionVersionOf,
 } from './authSessionPolicy.js';
-import { interpretWechatContentCheck, type WechatContentCheckPayload } from './wechatMiniContentSafety.js';
+import {
+  interpretWechatContentCheck,
+  interpretWechatMediaCallback,
+  interpretWechatMediaSubmission,
+  joinWechatSafetyText,
+  wechatSafetySceneNumber,
+  type WechatContentCheckPayload,
+  type WechatMediaCallbackPayload,
+  type WechatMediaCheckSubmissionPayload,
+} from './wechatMiniContentSafety.js';
 import {
   miniappAccountMergeErrorMessage,
   miniappAccountMergePreflight,
@@ -197,6 +206,7 @@ const WECHAT_OPEN_APP_ID = process.env.WECHAT_OPEN_APP_ID || '';
 const WECHAT_OPEN_APP_SECRET = process.env.WECHAT_OPEN_APP_SECRET || '';
 const LINGQI_WECHAT_MINI_APP_ID = process.env.LINGQI_WECHAT_MINI_APP_ID || process.env.WECHAT_MINI_APP_ID || '';
 const LINGQI_WECHAT_MINI_APP_SECRET = process.env.LINGQI_WECHAT_MINI_APP_SECRET || process.env.WECHAT_MINI_APP_SECRET || '';
+const LINGQI_WECHAT_MINI_MSG_TOKEN = process.env.LINGQI_WECHAT_MINI_MSG_TOKEN || '';
 const WECHAT_REDIRECT_URI = process.env.WECHAT_REDIRECT_URI || `${LINGQI_SITE_URL}/api/lc/auth/wechat/callback`;
 const WECHAT_MP_TOKEN = process.env.WECHAT_MP_TOKEN || '';
 const WECHAT_MP_ENCODING_AES_KEY = process.env.WECHAT_MP_ENCODING_AES_KEY || '';
@@ -465,6 +475,46 @@ function verifyWechatMpRequest(req: express.Request, encrypted = ''): boolean {
   return safeEqualText(expected, signature);
 }
 
+function verifyWechatMiniEventRequest(req: express.Request): boolean {
+  if (!LINGQI_WECHAT_MINI_MSG_TOKEN) return false;
+  const timestamp = singleQueryValue(req.query.timestamp);
+  const nonce = singleQueryValue(req.query.nonce);
+  const signature = singleQueryValue(req.query.signature);
+  if (!timestamp || !nonce || !signature) return false;
+  return safeEqualText(
+    sha1Sorted([LINGQI_WECHAT_MINI_MSG_TOKEN, timestamp, nonce]),
+    signature,
+  );
+}
+
+function xmlText(rawXml: string, tag: string) {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = rawXml.match(new RegExp(
+    `<${escaped}>\\s*(?:<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|([\\s\\S]*?))\\s*</${escaped}>`,
+    'i',
+  ));
+  return (match?.[1] || match?.[2] || '').trim();
+}
+
+function parseWechatMiniMediaEvent(body: unknown, rawBody: string): WechatMediaCallbackPayload {
+  if (body && typeof body === 'object' && !Array.isArray(body)) {
+    return body as WechatMediaCallbackPayload;
+  }
+  const errcodeText = xmlText(rawBody, 'errcode');
+  const labelText = xmlText(rawBody, 'label');
+  return {
+    Event: xmlText(rawBody, 'Event') || xmlText(rawBody, 'event'),
+    appid: xmlText(rawBody, 'appid') || xmlText(rawBody, 'AppId'),
+    trace_id: xmlText(rawBody, 'trace_id'),
+    errcode: errcodeText ? Number(errcodeText) : 0,
+    errmsg: xmlText(rawBody, 'errmsg'),
+    result: {
+      suggest: xmlText(rawBody, 'suggest'),
+      label: labelText ? Number(labelText) : undefined,
+    },
+  };
+}
+
 function getWechatMpConfigError(): string {
   if (!WECHAT_MP_TOKEN) return 'wechat mp token not configured';
   if (WECHAT_MP_ENCODING_AES_KEY && WECHAT_MP_ENCODING_AES_KEY.length !== 43) return 'wechat mp aes key invalid';
@@ -495,12 +545,12 @@ async function getWechatMiniAccessToken() {
   return wechatMiniAccessToken;
 }
 
-async function checkWechatMiniText(content: string, openid: string) {
+async function checkWechatMiniText(content: string, openid: string, scene: 1 | 2 | 3 | 4) {
   const token = await getWechatMiniAccessToken();
   const response = await fetch(`https://api.weixin.qq.com/wxa/msg_sec_check?access_token=${encodeURIComponent(token)}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ content, version: 2, scene: 2, openid }),
+    body: JSON.stringify({ content, version: 2, scene, openid }),
   });
   const payload = await response.json() as WechatContentCheckPayload;
   if (payload.errcode === 40014 || payload.errcode === 42001) {
@@ -508,6 +558,225 @@ async function checkWechatMiniText(content: string, openid: string) {
     wechatMiniAccessTokenExpiresAt = 0;
   }
   return interpretWechatContentCheck(payload);
+}
+
+async function submitWechatMiniMediaCheck(mediaUrl: string, openid: string, scene: 1 | 2 | 3 | 4) {
+  const token = await getWechatMiniAccessToken();
+  const response = await fetch(`https://api.weixin.qq.com/wxa/media_check_async?access_token=${encodeURIComponent(token)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      media_url: mediaUrl,
+      media_type: 2,
+      version: 2,
+      scene,
+      openid,
+    }),
+  });
+  const payload = await response.json() as WechatMediaCheckSubmissionPayload;
+  if (payload.errcode === 40014 || payload.errcode === 42001) {
+    wechatMiniAccessToken = '';
+    wechatMiniAccessTokenExpiresAt = 0;
+  }
+  return interpretWechatMediaSubmission(payload);
+}
+
+function isWechatMiniClient(req: express.Request) {
+  return req.header('X-LC-Client') === 'wechat-miniapp';
+}
+
+function wechatSafetyStatusFromSuggestion(suggest: string) {
+  if (suggest === 'pass' || suggest === 'review' || suggest === 'risky') return suggest;
+  return 'error';
+}
+
+async function insertWechatContentCheck(input: {
+  profileId: string | null;
+  checkType: 'text' | 'image';
+  businessScene: string;
+  targetType: string;
+  targetId?: string | null;
+  resourceHash: string;
+  status: 'pending' | 'pass' | 'review' | 'risky' | 'error';
+  suggest?: string | null;
+  label?: number | null;
+  traceId?: string | null;
+  errcode?: number;
+  errorMessage?: string | null;
+}) {
+  const nowIso = new Date().toISOString();
+  const result = await supabase.from('lc_wechat_content_checks').insert({
+    profile_id: input.profileId,
+    check_type: input.checkType,
+    business_scene: cleanText(input.businessScene, 80),
+    target_type: cleanText(input.targetType, 80) || null,
+    target_id: cleanText(input.targetId, 120) || null,
+    resource_hash: input.resourceHash,
+    status: input.status,
+    suggest: cleanText(input.suggest, 20) || null,
+    label: Number.isFinite(input.label) ? input.label : null,
+    trace_id: cleanText(input.traceId, 160) || null,
+    errcode: Number(input.errcode || 0),
+    error_message: cleanText(input.errorMessage, 300) || null,
+    checked_at: input.status === 'pending' ? null : nowIso,
+    updated_at: nowIso,
+  }).select('id, status, trace_id').single();
+  if (result.error) throw result.error;
+  return result.data;
+}
+
+async function runWechatMiniTextSafetyCheck(req: express.Request, input: {
+  businessScene: string;
+  targetType: string;
+  targetId?: string | null;
+  content: string;
+}) {
+  const profile = await getAuthedProfile(req);
+  if (!profile) throw new Error('用户不存在');
+  if (!profile.wechat_mini_openid) throw new Error('请先使用微信小程序重新登录');
+  const content = joinWechatSafetyText([input.content]);
+  if (!content) throw new Error('缺少待检查内容');
+  const resourceHash = sha256(content);
+  try {
+    const verdict = await checkWechatMiniText(
+      content,
+      profile.wechat_mini_openid,
+      wechatSafetySceneNumber(input.businessScene),
+    );
+    const row = await insertWechatContentCheck({
+      profileId: profile.id,
+      checkType: 'text',
+      businessScene: input.businessScene,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      resourceHash,
+      status: wechatSafetyStatusFromSuggestion(verdict.suggest),
+      suggest: verdict.suggest,
+      label: verdict.label,
+      traceId: verdict.traceId,
+      errcode: verdict.errcode,
+      errorMessage: verdict.reason,
+    });
+    return { profile, verdict, row };
+  } catch (error) {
+    await insertWechatContentCheck({
+      profileId: profile.id,
+      checkType: 'text',
+      businessScene: input.businessScene,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      resourceHash,
+      status: 'error',
+      errcode: -1,
+      errorMessage: getErrorText(error) || '微信内容安全服务暂时不可用',
+    }).catch(logError => console.error('[wechat-safety] text audit failed', getErrorText(logError)));
+    throw error;
+  }
+}
+
+function wechatMiniTextSafetyMiddleware(input: {
+  businessScene: string;
+  targetType: string;
+  content: (req: express.Request) => unknown[];
+}) {
+  return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (!isWechatMiniClient(req)) return next();
+    const content = joinWechatSafetyText(input.content(req));
+    if (!content) return next();
+    try {
+      const result = await runWechatMiniTextSafetyCheck(req, {
+        businessScene: input.businessScene,
+        targetType: input.targetType,
+        targetId: req.params.id || null,
+        content,
+      });
+      if (!result.verdict.allowed) {
+        return res.status(result.verdict.retryable ? 503 : 400).json(err(new Error(result.verdict.reason)));
+      }
+      (req as Record<string, unknown>).wechatContentCheckId = result.row?.id || null;
+      return next();
+    } catch (error) {
+      console.error('[wechat-safety] text check failed', getErrorText(error));
+      return res.status(503).json(err(new Error('微信内容安全服务暂时不可用，请稍后重试')));
+    }
+  };
+}
+
+async function startWechatMiniImageSafetyCheck(req: express.Request, input: {
+  mediaUrl: string;
+  businessScene: string;
+  targetType: string;
+  targetId?: string | null;
+}) {
+  if (!isWechatMiniClient(req)) return null;
+  const profile = await getAuthedProfile(req);
+  if (!profile) throw new Error('用户不存在');
+  if (!profile.wechat_mini_openid) throw new Error('请先使用微信小程序重新登录');
+  const resourceHash = sha256(input.mediaUrl);
+  try {
+    const submission = await submitWechatMiniMediaCheck(
+      input.mediaUrl,
+      profile.wechat_mini_openid,
+      wechatSafetySceneNumber(input.businessScene),
+    );
+    const row = await insertWechatContentCheck({
+      profileId: profile.id,
+      checkType: 'image',
+      businessScene: input.businessScene,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      resourceHash,
+      status: submission.accepted ? 'pending' : 'error',
+      traceId: submission.traceId,
+      errcode: submission.errcode,
+      errorMessage: submission.reason,
+    });
+    if (!submission.accepted) throw new Error(submission.reason);
+    return { id: row.id, status: row.status, traceId: submission.traceId };
+  } catch (error) {
+    const message = getErrorText(error) || '微信图片内容安全任务提交失败';
+    console.error('[wechat-safety] image task failed', message);
+    throw new Error('微信图片内容安全服务暂时不可用，请稍后重试', { cause: error });
+  }
+}
+
+async function assertWechatImageChecksAllowApproval(urls: unknown[]) {
+  const hashes = Array.from(new Set(urls.map(url => cleanText(url, 2000)).filter(Boolean).map(url => sha256(url))));
+  if (hashes.length === 0) return;
+  const result = await supabase.from('lc_wechat_content_checks')
+    .select('resource_hash, status, created_at')
+    .eq('check_type', 'image')
+    .in('resource_hash', hashes)
+    .order('created_at', { ascending: false });
+  if (result.error) throw result.error;
+  const latest = new Map<string, string>();
+  for (const row of result.data || []) {
+    if (!latest.has(row.resource_hash)) latest.set(row.resource_hash, row.status);
+  }
+  const tracked = hashes.filter(hash => latest.has(hash));
+  if (tracked.length === 0) return;
+  if (tracked.some(hash => latest.get(hash) === 'risky' || latest.get(hash) === 'review')) {
+    throw new Error('图片未通过微信内容安全检查，不能公开');
+  }
+  if (tracked.some(hash => latest.get(hash) !== 'pass')) {
+    throw new Error('图片仍在等待微信内容安全检查，请稍后再审核');
+  }
+}
+
+function collectPotentialPublicImageUrls(value: unknown, depth = 0): string[] {
+  if (depth > 5 || value === null || value === undefined) return [];
+  if (typeof value === 'string') {
+    const normalized = normalizeOptionalPublicUrl(value, 2000, true);
+    return normalized ? [normalized] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(item => collectPotentialPublicImageUrls(item, depth + 1));
+  }
+  if (typeof value !== 'object') return [];
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => {
+    if (!/(avatar|image|photo|poster|file|url)/i.test(key) && typeof child === 'string') return [];
+    return collectPotentialPublicImageUrls(child, depth + 1);
+  });
 }
 
 type AccountStateProfile = Record<string, unknown> & AccountRestrictionProfile & {
@@ -821,7 +1090,15 @@ app.put('/api/lc/account/notifications/:id/read', accountStateMiddleware, async 
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/account/appeals', accountStateMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/account/appeals',
+  accountStateMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'account_appeal',
+    targetType: 'account_appeal',
+    content: req => [req.body?.content],
+  }),
+  async (req, res) => {
   try {
     const profile = accountProfileFromRequest(req);
     if (profile.merged_into) return res.status(409).json(codedErr(new Error('账号已合并，请重新登录'), 'ACCOUNT_MERGED'));
@@ -884,7 +1161,8 @@ app.post('/api/lc/account/appeals', accountStateMiddleware, async (req, res) => 
     });
     res.status(201).json(ok(data));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 async function getOptionalCreatorId(req: express.Request) {
   const auth = req.headers.authorization;
@@ -1827,6 +2105,22 @@ function safeFrontendRedirect(input: unknown) {
 function makeWechatAuthorizeUrl(redirectPath: string, referralCode?: string) {
   const normalizedReferralCode = normalizeReferralCode(referralCode);
   const state = jwt.sign({ kind: 'lc_wechat_login', redirectPath, referralCode: normalizedReferralCode || undefined }, JWT_SECRET, { expiresIn: '10m' });
+  const params = new URLSearchParams({
+    appid: WECHAT_OPEN_APP_ID,
+    redirect_uri: WECHAT_REDIRECT_URI,
+    response_type: 'code',
+    scope: 'snsapi_login',
+    state,
+  });
+  return `https://open.weixin.qq.com/connect/qrconnect?${params.toString()}#wechat_redirect`;
+}
+
+function makeWechatBindAuthorizeUrl(profileId: string, redirectPath: string) {
+  const state = jwt.sign({
+    kind: 'lc_wechat_bind',
+    profileId,
+    redirectPath,
+  }, JWT_SECRET, { expiresIn: '10m' });
   const params = new URLSearchParams({
     appid: WECHAT_OPEN_APP_ID,
     redirect_uri: WECHAT_REDIRECT_URI,
@@ -5482,6 +5776,62 @@ app.post('/api/wechat/mp/events', express.text({ type: ['text/*', 'application/x
   return res.status(200).type('text/plain').send('success');
 });
 
+app.get('/api/wechat/mini/events', (req, res) => {
+  const echostr = singleQueryValue(req.query.echostr);
+  if (!LINGQI_WECHAT_MINI_MSG_TOKEN) return res.status(503).type('text/plain').send('wechat mini message token not configured');
+  if (!echostr) return res.status(400).type('text/plain').send('missing echostr');
+  if (!verifyWechatMiniEventRequest(req)) return res.status(403).type('text/plain').send('invalid signature');
+  return res.status(200).type('text/plain').send(echostr);
+});
+
+app.post('/api/wechat/mini/events', express.text({ type: ['text/*', 'application/xml', 'text/xml'], limit: '2mb' }), async (req, res) => {
+  try {
+    if (!LINGQI_WECHAT_MINI_MSG_TOKEN) return res.status(503).type('text/plain').send('wechat mini message token not configured');
+    if (!verifyWechatMiniEventRequest(req)) return res.status(403).type('text/plain').send('invalid signature');
+    const rawBody = typeof req.body === 'string'
+      ? req.body
+      : String((req as Record<string, unknown>).rawBody || JSON.stringify(req.body || {}));
+    let parsedBody: unknown = req.body;
+    if (typeof parsedBody === 'string' && parsedBody.trim().startsWith('{')) {
+      try {
+        parsedBody = JSON.parse(parsedBody);
+      } catch {
+        parsedBody = null;
+      }
+    }
+    const payload = parseWechatMiniMediaEvent(parsedBody, rawBody);
+    if (payload.appid && payload.appid !== LINGQI_WECHAT_MINI_APP_ID) {
+      return res.status(403).type('text/plain').send('invalid appid');
+    }
+    const verdict = interpretWechatMediaCallback(payload);
+    if (!verdict.valid || !verdict.traceId) {
+      console.error('[wechat-safety] invalid media callback', {
+        event: payload.Event || payload.event || null,
+        has_trace_id: Boolean(payload.trace_id),
+      });
+      return res.status(200).type('text/plain').send('success');
+    }
+    const nowIso = new Date().toISOString();
+    const updateResult = await supabase.from('lc_wechat_content_checks').update({
+      status: verdict.status,
+      suggest: verdict.suggest,
+      label: verdict.label,
+      errcode: verdict.errcode,
+      error_message: verdict.reason || null,
+      checked_at: nowIso,
+      updated_at: nowIso,
+    }).eq('trace_id', verdict.traceId).eq('check_type', 'image').select('id, profile_id, target_type, target_id').maybeSingle();
+    if (updateResult.error) throw updateResult.error;
+    if (!updateResult.data) {
+      console.error('[wechat-safety] media callback trace not found', { trace_id: verdict.traceId });
+    }
+    return res.status(200).type('text/plain').send('success');
+  } catch (error) {
+    console.error('[wechat-safety] media callback failed', getErrorText(error));
+    return res.status(500).type('text/plain').send('error');
+  }
+});
+
 // ==================== 创作者认证 ====================
 
 function parseConfirmedAuthPassword(rawPassword: unknown, rawConfirm: unknown, required: boolean) {
@@ -5985,14 +6335,34 @@ app.get('/api/lc/auth/wechat/start', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.get('/api/lc/auth/wechat/bind-url', authMiddleware, async (req, res) => {
+  try {
+    if (!isWechatLoginConfigured()) return res.status(503).json(err(new Error('微信扫码绑定尚未配置')));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const redirectPath = safeFrontendRedirect(req.query.redirect || '/dashboard/account');
+    res.json(ok({
+      enabled: true,
+      url: makeWechatBindAuthorizeUrl(profile.id, redirectPath),
+    }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 app.get('/api/lc/auth/wechat/callback', async (req, res) => {
   try {
     if (!isWechatLoginConfigured()) throw new Error('微信扫码登录尚未配置');
     const code = typeof req.query.code === 'string' ? req.query.code : '';
     const state = typeof req.query.state === 'string' ? req.query.state : '';
     if (!code || !state) throw new Error('微信登录参数缺失');
-    const statePayload = jwt.verify(state, JWT_SECRET) as { kind?: string; redirectPath?: string; referralCode?: string };
-    if (statePayload.kind !== 'lc_wechat_login') throw new Error('微信登录状态无效');
+    const statePayload = jwt.verify(state, JWT_SECRET) as {
+      kind?: string;
+      redirectPath?: string;
+      referralCode?: string;
+      profileId?: string;
+    };
+    if (!['lc_wechat_login', 'lc_wechat_bind'].includes(statePayload.kind || '')) {
+      throw new Error('微信登录状态无效');
+    }
 
     const tokenUrl = new URL('https://api.weixin.qq.com/sns/oauth2/access_token');
     tokenUrl.search = new URLSearchParams({
@@ -6025,7 +6395,39 @@ app.get('/api/lc/auth/wechat/callback', async (req, res) => {
     let query = supabase.from('lc_profiles').select('*');
     if (unionid) query = query.eq('wechat_unionid', unionid);
     else query = query.eq('wechat_openid', openid);
-    let { data: profile } = await query.maybeSingle();
+    const identityResult = await query.maybeSingle();
+    if (identityResult.error) throw identityResult.error;
+    let profile = identityResult.data;
+
+    if (statePayload.kind === 'lc_wechat_bind') {
+      const profileId = cleanText(statePayload.profileId, 80);
+      if (!profileId) throw new Error('微信绑定状态无效');
+      if (profile && profile.id !== profileId) throw new Error('该微信已绑定其他剧幕录账号');
+      const targetResult = await supabase.from('lc_profiles').select('*').eq('id', profileId).maybeSingle();
+      if (targetResult.error) throw targetResult.error;
+      const targetProfile = targetResult.data;
+      if (!targetProfile) throw new Error('要绑定的账号不存在');
+      if (restrictionBlocksLogin(targetProfile)) throw new Error('账号已被限制登录，请联系管理员申诉');
+      const updateResult = await supabase.from('lc_profiles').update({
+        wechat_openid: openid,
+        wechat_unionid: unionid || targetProfile.wechat_unionid || null,
+        wechat_nickname: nickname,
+        wechat_avatar: avatar,
+        wechat_bound_at: nowIso,
+      }).eq('id', targetProfile.id);
+      if (updateResult.error) throw updateResult.error;
+      await logSecurityEvent(req, {
+        action: 'auth_wechat_bound',
+        targetType: 'profile',
+        targetId: targetProfile.id,
+        actorId: targetProfile.id,
+        actorRole: targetProfile.role || 'creator',
+        metadata: { has_unionid: Boolean(unionid), wechat_bound_at: nowIso },
+      });
+      const redirectPath = safeFrontendRedirect(statePayload.redirectPath || '/dashboard/account');
+      const joiner = redirectPath.includes('?') ? '&' : '?';
+      return res.redirect(`${LINGQI_SITE_URL}${redirectPath}${joiner}wechat_bound=1`);
+    }
 
     if (profile && restrictionBlocksLogin(profile)) {
       await logSecurityEvent(req, {
@@ -6249,27 +6651,32 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
 
 app.post('/api/lc/miniapp/content-check', authMiddleware, async (req, res) => {
   try {
-    if (req.header('X-LC-Client') !== 'wechat-miniapp') return res.status(403).json(err(new Error('该接口仅供微信小程序使用')));
-    const profile = await getAuthedProfile(req);
-    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
-    if (!profile.wechat_mini_openid) return res.status(409).json(err(new Error('请先使用微信小程序重新登录')));
-    if (!profile.phone_verified_at) return res.status(409).json(err(new Error('付费前请先绑定并验证手机号，已有网站账号请绑定原账号手机号')));
-    const content = cleanText(req.body?.content, 2400);
+    if (!isWechatMiniClient(req)) return res.status(403).json(err(new Error('该接口仅供微信小程序使用')));
+    const content = joinWechatSafetyText([req.body?.content]);
     const scene = cleanText(req.body?.scene, 80) || 'ugc';
     if (!content) return res.status(400).json(err(new Error('缺少待检查内容')));
-    const verdict = await checkWechatMiniText(content, profile.wechat_mini_openid);
-    if (!verdict.allowed) {
+    const result = await runWechatMiniTextSafetyCheck(req, {
+      businessScene: scene,
+      targetType: 'preflight',
+      content,
+    });
+    if (!result.verdict.allowed) {
       await logSecurityEvent(req, {
         action: 'miniapp_content_check_blocked',
         targetType: 'profile',
-        targetId: profile.id,
-        actorId: profile.id,
-        actorRole: profile.role || 'creator',
-        metadata: { scene, label: verdict.label, retryable: verdict.retryable },
+        targetId: result.profile.id,
+        actorId: result.profile.id,
+        actorRole: result.profile.role || 'creator',
+        metadata: {
+          scene,
+          label: result.verdict.label,
+          retryable: result.verdict.retryable,
+          trace_id: result.verdict.traceId,
+        },
       });
-      return res.status(verdict.retryable ? 503 : 400).json(err(new Error(verdict.reason)));
+      return res.status(result.verdict.retryable ? 503 : 400).json(err(new Error(result.verdict.reason)));
     }
-    res.json(ok({ checked: true }));
+    res.json(ok({ checked: true, trace_id: result.verdict.traceId }));
   } catch (e) {
     console.error('[miniapp-content-check]', e instanceof Error ? e.message : String(e));
     res.status(503).json(err(new Error('微信内容安全服务暂时不可用，请稍后重试')));
@@ -6984,10 +7391,21 @@ app.post('/api/lc/auth', async (req, res) => {
 app.get('/api/lc/me', authMiddleware, async (req, res) => {
   try {
     const { data } = await supabase.from('lc_profiles')
-      .select('id, display_name, avatar, phone, phone_verified_at, email, email_verified_at, password_hash, is_realname, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, profile_setup_completed')
+      .select('id, display_name, avatar, phone, phone_verified_at, email, email_verified_at, password_hash, is_realname, city, available_cities, role, role_type, identity_roles, verified_dm, verified_shop, referral_code, community_role, community_role_expires_at, profile_setup_completed, wechat_openid, wechat_unionid, wechat_mini_openid, wechat_nickname, wechat_bound_at')
       .eq('id', getReq(req, 'creatorId'))
       .single();
-    res.json(ok(data ? sanitizeProfile(data, true) : null));
+    if (!data) return res.json(ok(null));
+    const ownerProfile = sanitizeProfile(data, true);
+    delete ownerProfile.wechat_openid;
+    delete ownerProfile.wechat_unionid;
+    delete ownerProfile.wechat_mini_openid;
+    res.json(ok({
+      ...ownerProfile,
+      wechat_bound: Boolean(data.wechat_openid || data.wechat_unionid || data.wechat_mini_openid),
+      wechat_web_binding_available: isWechatLoginConfigured(),
+      wechat_nickname: data.wechat_nickname || null,
+      wechat_bound_at: data.wechat_bound_at || null,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
@@ -7182,6 +7600,37 @@ app.put('/api/lc/admin/profile/:id/realname', authMiddleware, adminMiddleware, a
   } catch (e) { res.status(500).json(err(e)); }
 });
 
+app.get('/api/lc/admin/wechat-content-checks', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const status = cleanText(req.query.status, 20);
+    const checkType = cleanText(req.query.check_type ?? req.query.checkType, 20);
+    const limit = Math.min(200, Math.max(1, Number.parseInt(cleanText(req.query.limit, 8), 10) || 80));
+    let query = supabase.from('lc_wechat_content_checks')
+      .select('id, profile_id, check_type, business_scene, target_type, target_id, provider, status, suggest, label, trace_id, errcode, error_message, checked_at, created_at, updated_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (['pending', 'pass', 'review', 'risky', 'error'].includes(status)) query = query.eq('status', status);
+    if (['text', 'image'].includes(checkType)) query = query.eq('check_type', checkType);
+    const result = await query;
+    if (result.error && isMissingRelation(result.error, 'lc_wechat_content_checks')) {
+      return res.status(503).json(err(new Error('微信内容安全审计表尚未初始化')));
+    }
+    if (result.error) throw result.error;
+    const profileIds = Array.from(new Set((result.data || [])
+      .map(row => cleanText(row.profile_id, 80))
+      .filter(Boolean)));
+    const profileResult = profileIds.length > 0
+      ? await supabase.from('lc_profiles').select('id, display_name').in('id', profileIds)
+      : { data: [], error: null };
+    if (profileResult.error) throw profileResult.error;
+    const names = new Map((profileResult.data || []).map(row => [String(row.id), cleanText(row.display_name, 80) || '用户']));
+    res.json(ok((result.data || []).map(row => ({
+      ...row,
+      profile_name: names.get(String(row.profile_id || '')) || null,
+    }))));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
 // ==================== 委托师委托条与私密联系 ====================
 
 function publicProviderProfile(profile: Record<string, unknown>) {
@@ -7315,7 +7764,19 @@ app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/provider-listings/mine',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'provider_listing_submit',
+    targetType: 'provider_listing',
+    content: req => [
+      req.body?.headline,
+      req.body?.description,
+      req.body?.roleTypes ?? req.body?.role_types,
+    ],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -7389,7 +7850,8 @@ app.post('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
     });
     res.status(201).json(ok({ review_id: review?.id, status: 'pending' }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.put('/api/lc/provider-listings/mine/active', authMiddleware, async (req, res) => {
   try {
@@ -7813,7 +8275,22 @@ function profileReviewComparableValue(value: unknown) {
   return String(value);
 }
 
-app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
+app.put(
+  '/api/lc/creators/:id',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'profile_update',
+    targetType: 'profile',
+    content: req => [
+      req.body?.display_name,
+      req.body?.bio,
+      req.body?.tags,
+      req.body?.city,
+      req.body?.available_cities,
+      req.body?.preferred_story_lines,
+    ],
+  }),
+  async (req, res) => {
   try {
     if (getReq(req, 'creatorId') !== req.params.id) {
       return res.status(403).json(err(new Error('只能修改自己的资料')));
@@ -7956,7 +8433,8 @@ app.put('/api/lc/creators/:id', authMiddleware, async (req, res) => {
     });
     res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 // ==================== 档期管理（需登录） ====================
 
@@ -8368,6 +8846,11 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
       randomId: () => `${Date.now()}-${digest}`,
       cosTransport: LINGQI_COS_UPLOAD_TRANSPORT,
     });
+    const contentCheck = await startWechatMiniImageSafetyCheck(req, {
+      mediaUrl: result.url,
+      businessScene: `${scope}_image_upload`,
+      targetType: scope,
+    });
 
     res.json(ok({
       url: result.url,
@@ -8377,6 +8860,11 @@ app.post('/api/lc/upload', authMiddleware, upload.single('file'), async (req, re
       size: image.buffer.length,
       width: image.width,
       height: image.height,
+      content_check: contentCheck ? {
+        id: contentCheck.id,
+        status: contentCheck.status,
+        trace_id: contentCheck.traceId,
+      } : null,
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
@@ -8462,7 +8950,28 @@ app.get('/api/lc/commissions/mine', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/commissions',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'commission_submit',
+    targetType: 'commission',
+    content: req => [
+      req.body?.title,
+      req.body?.content,
+      req.body?.desiredRole,
+      req.body?.desired_role,
+      req.body?.targetType,
+      req.body?.target_type,
+      req.body?.location,
+      req.body?.budget,
+      req.body?.contactNote,
+      req.body?.contact_note,
+      req.body?.scriptName,
+      req.body?.script_name,
+    ],
+  }),
+  async (req, res) => {
   try {
     const {
       title, content, desiredRole, targetType, neededDate, neededEndDate,
@@ -8545,7 +9054,8 @@ app.post('/api/lc/commissions', authMiddleware, async (req, res) => {
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.put('/api/lc/commissions/:id/close', authMiddleware, async (req, res) => {
   try {
@@ -8751,7 +9261,15 @@ app.get('/api/lc/scripts/:id/ratings', async (req, res) => {
     }));
   } catch (e) { res.status(500).json(err(e)); }
 });
-app.post('/api/lc/scripts/:id/ratings', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/scripts/:id/ratings',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'script_rating_submit',
+    targetType: 'script_rating',
+    content: req => [req.body?.content, req.body?.tags],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     const blockReason = getSpeakBlockReason(profile);
@@ -8800,7 +9318,8 @@ app.post('/api/lc/scripts/:id/ratings', authMiddleware, async (req, res) => {
     });
     res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.get('/api/lc/entity-ratings', async (req, res) => {
   try {
@@ -8832,7 +9351,15 @@ app.get('/api/lc/entity-ratings', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/entity-ratings', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/entity-ratings',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'entity_rating_submit',
+    targetType: 'entity_rating',
+    content: req => [req.body?.content, req.body?.tags],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     const blockReason = getSpeakBlockReason(profile);
@@ -8900,7 +9427,8 @@ app.post('/api/lc/entity-ratings', authMiddleware, async (req, res) => {
     });
     res.json(ok(publicReviewAcceptedResponse(review as Record<string, unknown>)));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 type PlayerScriptExperience = {
   script_id: string;
@@ -9238,7 +9766,36 @@ app.get('/api/lc/carpools/mine', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/carpools',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'carpool_submit',
+    targetType: 'carpool',
+    content: req => [
+      req.body?.title,
+      req.body?.scriptName,
+      req.body?.script_name,
+      req.body?.roleName,
+      req.body?.role_name,
+      req.body?.roleNote,
+      req.body?.role_note,
+      req.body?.storeName,
+      req.body?.store_name,
+      req.body?.storeVerifyNote,
+      req.body?.store_verify_note,
+      req.body?.contactNote,
+      req.body?.contact_note,
+      req.body?.content,
+      req.body?.subsidyNote,
+      req.body?.subsidy_note,
+      req.body?.rawMessage,
+      req.body?.raw_message,
+      req.body?.generatedMessage,
+      req.body?.generated_message,
+    ],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -9400,7 +9957,8 @@ app.post('/api/lc/carpools', authMiddleware, async (req, res) => {
     });
     res.json(ok({ id: data?.id, status: 'pending', balance: walletSpend?.balance ?? (profile.balance || 0), message: '已提交审核，通过后才会公开展示并同步剧司辰' }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.get('/api/lc/carpools/:id/contact', authMiddleware, async (req, res) => {
   try {
@@ -9429,7 +9987,15 @@ app.get('/api/lc/carpools/:id/contact', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/reports', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/reports',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'report_submit',
+    targetType: 'report',
+    content: req => [req.body?.reason, req.body?.description],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -9691,7 +10257,8 @@ app.post('/api/lc/reports', authMiddleware, async (req, res) => {
     });
     res.json(ok({ id: data?.id, moderation }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.post('/api/lc/reports/:id/evidence', authMiddleware, upload.single('file'), async (req, res) => {
   let savedFile: ReturnType<typeof saveModerationEvidenceFile> | null = null;
@@ -9853,7 +10420,15 @@ app.post('/api/lc/moderation/reviews', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/site-messages', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/site-messages',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'feedback_submit',
+    targetType: 'site_message',
+    content: req => [req.body?.subject, req.body?.content],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -9920,7 +10495,8 @@ app.post('/api/lc/site-messages', authMiddleware, async (req, res) => {
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.post('/api/lc/site-messages/:id/evidence', authMiddleware, upload.single('file'), async (req, res) => {
   let savedFile: ReturnType<typeof saveModerationEvidenceFile> | null = null;
@@ -10153,7 +10729,15 @@ app.put('/api/lc/carpools/applications/:id/reject', authMiddleware, async (req, 
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/carpools/:id/applications', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/carpools/:id/applications',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'carpool_application',
+    targetType: 'carpool_application',
+    content: req => [req.body?.message, req.body?.roleName, req.body?.role_name],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -10197,7 +10781,8 @@ app.post('/api/lc/carpools/:id/applications', authMiddleware, async (req, res) =
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.put('/api/lc/carpools/:id/close', authMiddleware, async (req, res) => {
   try {
@@ -10334,7 +10919,15 @@ app.get('/api/lc/commissions/applications/sent', authMiddleware, async (req, res
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/commissions/:id/applications',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'commission_application',
+    targetType: 'commission_application',
+    content: req => [req.body?.letter],
+  }),
+  async (req, res) => {
   try {
     const letter = typeof req.body?.letter === 'string' ? req.body.letter.trim().slice(0, 1200) : '';
     const privateContact = cleanText(req.body?.privateContact ?? req.body?.private_contact, 300);
@@ -10394,7 +10987,8 @@ app.post('/api/lc/commissions/:id/applications', authMiddleware, async (req, res
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.put('/api/lc/commissions/applications/:id/decision', authMiddleware, async (req, res) => {
   try {
@@ -11613,6 +12207,7 @@ app.put('/api/lc/admin/public-reviews/:id/approve', authMiddleware, adminMiddlew
     if (findErr) throw findErr;
     if (!review) return res.status(404).json(err(new Error('审核记录不存在')));
     if (review.status !== 'pending') return res.status(400).json(err(new Error('这条审核记录已经处理过了')));
+    await assertWechatImageChecksAllowApproval(collectPotentialPublicImageUrls(review.payload));
     if (review.target_type === 'dossier_update') {
       const payload = objectPayload(review.payload);
       if (cleanText(payload.review_mode, 30) === 'owner') {
@@ -11736,6 +12331,10 @@ app.put('/api/lc/admin/dm-dossiers/:id/approve', authMiddleware, adminMiddleware
       return res.json(ok(reviewed.dossier));
     }
     if (dossier.status !== 'pending') return res.status(400).json(err(new Error('这条档案审核已经处理过了')));
+    await assertWechatImageChecksAllowApproval(collectPotentialPublicImageUrls({
+      photo_url: dossier.photo_url,
+      photo_files: dossier.photo_files,
+    }));
 
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
     patch.status = 'approved';
@@ -14282,7 +14881,23 @@ app.put('/api/lc/rating-reactions/:targetType/:targetId', authMiddleware, async 
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/dm-dossiers',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'dossier_submit',
+    targetType: 'dm_dossier',
+    content: req => [
+      req.body?.dmName,
+      req.body?.dm_name,
+      req.body?.name,
+      req.body?.city,
+      req.body?.workplace,
+      req.body?.note,
+      req.body?.tags,
+    ],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -14354,7 +14969,8 @@ app.post('/api/lc/dm-dossiers', authMiddleware, async (req, res) => {
     });
     res.json(ok({ id: data?.id, entity_type: entityType, status: 'pending' }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 function hasOwnInput(input: Record<string, unknown>, ...keys: string[]) {
   return keys.some(key => Object.prototype.hasOwnProperty.call(input, key));
@@ -15007,7 +15623,24 @@ app.put('/api/lc/dossier-edits/:id/owner-response', authMiddleware, async (req, 
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/dm-ratings',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'dm_rating_submit',
+    targetType: 'dm_rating',
+    content: req => [
+      req.body?.content,
+      req.body?.tags,
+      req.body?.scriptName,
+      req.body?.script_name,
+      req.body?.storeName,
+      req.body?.store_name,
+      req.body?.dmName,
+      req.body?.dm_name,
+    ],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -15303,9 +15936,25 @@ app.post('/api/lc/dm-ratings', authMiddleware, async (req, res) => {
       message: '评分和DM资料已提交审核，通过后公开并计入综合分',
     }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
-app.post('/api/lc/store-ratings', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/store-ratings',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'store_rating_submit',
+    targetType: 'store_rating',
+    content: req => [
+      req.body?.content,
+      req.body?.tags,
+      req.body?.scriptName,
+      req.body?.script_name,
+      req.body?.storeName,
+      req.body?.store_name,
+    ],
+  }),
+  async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
@@ -15530,7 +16179,8 @@ app.post('/api/lc/store-ratings', authMiddleware, async (req, res) => {
       message: '评分和店家资料已提交审核，通过后公开并计入综合分',
     }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 type DossierClaimProofType = 'social_account' | 'employment' | 'business_license' | 'store_backend' | 'other';
 
@@ -16618,7 +17268,29 @@ app.post('/api/lc/rankings/:id/restore-request', authMiddleware, async (req, res
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/rankings', authMiddleware, upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES), async (req, res) => {
+app.post(
+  '/api/lc/rankings',
+  authMiddleware,
+  upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES),
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'ranking_submit',
+    targetType: 'ranking',
+    content: req => {
+      const body = rankingRequestBody(req);
+      return [
+        body.subjectName,
+        body.subject_name,
+        body.subjectCity,
+        body.subject_city,
+        body.content,
+        body.eventScriptName,
+        body.event_script_name,
+        body.eventStoreName,
+        body.event_store_name,
+      ];
+    },
+  }),
+  async (req, res) => {
   let savedEvidenceFiles: RankingEvidenceFile[] = [];
   let rankingCommitted = false;
   try {
@@ -16735,7 +17407,8 @@ app.post('/api/lc/rankings', authMiddleware, upload.array('evidenceFiles', MAX_R
     if (!rankingCommitted && savedEvidenceFiles.length > 0) removeRankingEvidenceFiles(PRIVATE_UPLOAD_ROOT, savedEvidenceFiles);
     res.status(500).json(err(e));
   }
-});
+  },
+);
 
 app.put('/api/lc/rankings/:id/resubmit', authMiddleware, upload.array('evidenceFiles', MAX_RANKING_EVIDENCE_FILES), async (req, res) => {
   let savedEvidenceFiles: RankingEvidenceFile[] = [];
@@ -17174,7 +17847,15 @@ app.get('/api/lc/rankings/:id/comments', async (req, res) => {
   } catch (e) { res.status(500).json(err(e)); }
 });
 
-app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
+app.post(
+  '/api/lc/rankings/:id/comments',
+  authMiddleware,
+  wechatMiniTextSafetyMiddleware({
+    businessScene: 'ranking_comment_submit',
+    targetType: 'ranking_comment',
+    content: req => [req.body?.content],
+  }),
+  async (req, res) => {
   try {
     const { content } = req.body;
     if (!content) return res.status(400).json(err(new Error('缺少评论内容')));
@@ -17203,7 +17884,8 @@ app.post('/api/lc/rankings/:id/comments', authMiddleware, async (req, res) => {
     });
     res.json(ok({ id: data?.id }));
   } catch (e) { res.status(500).json(err(e)); }
-});
+  },
+);
 
 app.post('/api/lc/rankings/:id/comments/:cid/related-certify', authMiddleware, async (req, res) => {
   try {
@@ -17621,6 +18303,7 @@ app.put('/api/lc/admin/rankings/batch-approve', authMiddleware, adminMiddleware,
         continue;
       }
       try {
+        await assertWechatImageChecksAllowApproval(collectPotentialPublicImageUrls(row.display_files));
         if (['dm', 'store'].includes(cleanText(row.subject_type, 40))) {
           if (!row.subject_dossier_id) throw new Error('尚未关联公开档案');
           await findRankingDossier(row.subject_dossier_id, row.subject_type as 'dm' | 'store');
@@ -17666,8 +18349,9 @@ app.put('/api/lc/admin/rankings/batch-approve', authMiddleware, adminMiddleware,
 app.put('/api/lc/admin/rankings/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const targetType = ['red', 'black', 'white'].includes(req.body?.targetType) ? req.body.targetType : null;
-    const { data: r } = await supabase.from('lc_rankings').select('type, initial_amount, subject_type, subject_dossier_id, dm_employment_status_suggestion, dm_employer_store_id_suggestion').eq('id', req.params.id).single();
+    const { data: r } = await supabase.from('lc_rankings').select('type, initial_amount, subject_type, subject_dossier_id, dm_employment_status_suggestion, dm_employer_store_id_suggestion, display_files').eq('id', req.params.id).single();
     if (!r) return res.status(404).json(err(new Error('帖子不存在')));
+    await assertWechatImageChecksAllowApproval(collectPotentialPublicImageUrls(r.display_files));
     if (['dm', 'store'].includes(String(r.subject_type || '')) && r.subject_dossier_id) {
       await findRankingDossier(r.subject_dossier_id, r.subject_type as 'dm' | 'store');
     }

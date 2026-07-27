@@ -100,8 +100,16 @@ export async function uploadImageFile(filePath: string, scope: string) {
       fail: reject,
     })
   })
-  let body: ApiEnvelope<{ url: string }>
-  try { body = JSON.parse(response.data) as ApiEnvelope<{ url: string }> }
+  let body: ApiEnvelope<{
+    url: string
+    content_check?: { id: string; status: 'pending' | 'pass' | 'review' | 'risky' | 'error'; trace_id?: string | null } | null
+  }>
+  try {
+    body = JSON.parse(response.data) as ApiEnvelope<{
+      url: string
+      content_check?: { id: string; status: 'pending' | 'pass' | 'review' | 'risky' | 'error'; trace_id?: string | null } | null
+    }>
+  }
   catch { throw new Error('图片上传返回格式不正确') }
   if (body.code === 'ACCOUNT_MERGED') {
     writeAuth(null)
@@ -109,6 +117,9 @@ export async function uploadImageFile(filePath: string, scope: string) {
   }
   if (response.statusCode < 200 || response.statusCode >= 300 || !body.success || !body.data?.url) {
     throw new Error(errorText(body.error, `图片上传失败 ${response.statusCode}`))
+  }
+  if (body.data.content_check?.status === 'pending') {
+    uni.showToast({ title: '图片安全检查中', icon: 'none' })
   }
   return body.data.url
 }

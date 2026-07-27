@@ -486,6 +486,24 @@ type SecurityEvent = {
   created_at: string;
 };
 
+type WechatContentCheck = {
+  id: string;
+  profile_id?: string | null;
+  profile_name?: string | null;
+  check_type: 'text' | 'image';
+  business_scene: string;
+  target_type?: string | null;
+  target_id?: string | null;
+  status: 'pending' | 'pass' | 'review' | 'risky' | 'error';
+  suggest?: string | null;
+  label?: number | null;
+  trace_id?: string | null;
+  errcode?: number | null;
+  error_message?: string | null;
+  checked_at?: string | null;
+  created_at: string;
+};
+
 type SiteMessage = {
   id: string;
   sender_id?: string | null;
@@ -1097,6 +1115,7 @@ export default function Admin() {
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [accountAppeals, setAccountAppeals] = useState<AccountAppeal[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
+  const [wechatContentChecks, setWechatContentChecks] = useState<WechatContentCheck[]>([]);
   const [publicReviews, setPublicReviews] = useState<PublicReview[]>([]);
   const [reviewHistory, setReviewHistory] = useState<PublicReview[]>([]);
   const [guides, setGuides] = useState<GuideReview[]>([]);
@@ -1178,16 +1197,19 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setGuides((d.data as { guides: GuideReview[] }).guides || []);
         setGuideWithdrawals((d.data as { guideWithdrawals: GuideWithdrawalReview[] }).guideWithdrawals || []);
         setServicePurchases((d.data as { servicePurchases: ServicePurchaseAudit[] }).servicePurchases || []);
-        const [applicationResponse, providerInquiryResponse] = await Promise.all([
+        const [applicationResponse, providerInquiryResponse, wechatContentResponse] = await Promise.all([
           fetch(`${API}/lc/admin/commission-applications`, { headers: { Authorization: `Bearer ${t}` } }),
           fetch(`${API}/lc/admin/provider-inquiries`, { headers: { Authorization: `Bearer ${t}` } }),
+          fetch(`${API}/lc/admin/wechat-content-checks?limit=100`, { headers: { Authorization: `Bearer ${t}` } }),
         ]);
-        const [applicationPayload, providerInquiryPayload] = await Promise.all([
+        const [applicationPayload, providerInquiryPayload, wechatContentPayload] = await Promise.all([
           applicationResponse.json(),
           providerInquiryResponse.json(),
+          wechatContentResponse.json(),
         ]);
         if (applicationResponse.ok && applicationPayload.success) setCommissionApplications(applicationPayload.data || []);
         if (providerInquiryResponse.ok && providerInquiryPayload.success) setProviderInquiries(providerInquiryPayload.data || []);
+        if (wechatContentResponse.ok && wechatContentPayload.success) setWechatContentChecks(wechatContentPayload.data || []);
       } else {
         const errMsg = typeof d.error === 'string' ? d.error : (d.error?.message || '加载失败');
         setError(errMsg);
@@ -1992,6 +2014,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setSiteMessages([]);
     setAccountAppeals([]);
     setSecurityEvents([]);
+    setWechatContentChecks([]);
     setPublicReviews([]);
     setReviewHistory([]);
     setGuides([]);
@@ -3388,26 +3411,75 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
 
             {tab === 'security' && (
-              <ListEmpty empty={securityEvents.length === 0} text="暂无安全日志">
-                {securityEvents.map(event => (
-                  <Row key={event.id} accent="#fb923c">
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={securityActionLabel(event.action)} pill={event.actor_role || 'unknown'} />
-                      <Meta>
-                        {event.actor_id ? `操作者：${event.actor_id}` : '操作者：未登录'}
-                        {event.target_type ? ` · 对象：${event.target_type}/${event.target_id || '-'}` : ''}
-                        {event.ip_address ? ` · IP：${event.ip_address}` : ''}
-                        {event.created_at ? ` · ${event.created_at.slice(0, 19).replace('T', ' ')}` : ''}
-                      </Meta>
-                      {event.request_path && <Meta>路径：{event.request_path}</Meta>}
-                      {event.user_agent && <Proof>UA：{event.user_agent.slice(0, 220)}</Proof>}
-                      {event.metadata && Object.keys(event.metadata).length > 0 && (
-                        <ContentBox>{JSON.stringify(event.metadata, null, 2)}</ContentBox>
-                      )}
-                    </div>
-                  </Row>
-                ))}
-              </ListEmpty>
+              <div style={{ display: 'grid', gap: 14 }}>
+                <section>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                    <h2 style={{ margin: 0, fontSize: '0.98rem' }}>微信内容安全检查</h2>
+                    <Meta>仅保存检查结果和哈希，不在这里复制用户原文</Meta>
+                  </div>
+                  <ListEmpty empty={wechatContentChecks.length === 0} text="暂无微信内容安全检查记录">
+                    {wechatContentChecks.map(item => {
+                      const statusLabel = item.status === 'pass'
+                        ? '通过'
+                        : item.status === 'pending'
+                          ? '检查中'
+                          : item.status === 'review'
+                            ? '需复核'
+                            : item.status === 'risky'
+                              ? '风险'
+                              : '调用异常';
+                      const accent = item.status === 'pass'
+                        ? '#15803d'
+                        : item.status === 'pending'
+                          ? '#d97706'
+                          : '#b91c1c';
+                      return (
+                        <Row key={item.id} accent={accent}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <TitleLine
+                              title={`${item.check_type === 'image' ? '图片' : '文字'} · ${item.business_scene}`}
+                              pill={statusLabel}
+                            />
+                            <Meta>
+                              用户：{item.profile_name || item.profile_id || '未知'}
+                              {item.target_type ? ` · 对象：${item.target_type}/${item.target_id || '-'}` : ''}
+                              {item.label !== null && item.label !== undefined ? ` · 标签：${item.label}` : ''}
+                              {item.created_at ? ` · ${item.created_at.slice(0, 19).replace('T', ' ')}` : ''}
+                            </Meta>
+                            {(item.error_message || item.errcode) && (
+                              <Proof>{item.error_message || '接口返回异常'}{item.errcode ? `（${item.errcode}）` : ''}</Proof>
+                            )}
+                            {item.trace_id && <Meta>微信 trace_id：{item.trace_id}</Meta>}
+                          </div>
+                        </Row>
+                      );
+                    })}
+                  </ListEmpty>
+                </section>
+                <section>
+                  <h2 style={{ margin: '0 0 8px', fontSize: '0.98rem' }}>平台安全日志</h2>
+                  <ListEmpty empty={securityEvents.length === 0} text="暂无安全日志">
+                    {securityEvents.map(event => (
+                      <Row key={event.id} accent="#fb923c">
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <TitleLine title={securityActionLabel(event.action)} pill={event.actor_role || 'unknown'} />
+                          <Meta>
+                            {event.actor_id ? `操作者：${event.actor_id}` : '操作者：未登录'}
+                            {event.target_type ? ` · 对象：${event.target_type}/${event.target_id || '-'}` : ''}
+                            {event.ip_address ? ` · IP：${event.ip_address}` : ''}
+                            {event.created_at ? ` · ${event.created_at.slice(0, 19).replace('T', ' ')}` : ''}
+                          </Meta>
+                          {event.request_path && <Meta>路径：{event.request_path}</Meta>}
+                          {event.user_agent && <Proof>UA：{event.user_agent.slice(0, 220)}</Proof>}
+                          {event.metadata && Object.keys(event.metadata).length > 0 && (
+                            <ContentBox>{JSON.stringify(event.metadata, null, 2)}</ContentBox>
+                          )}
+                        </div>
+                      </Row>
+                    ))}
+                  </ListEmpty>
+                </section>
+              </div>
             )}
 
             {tab === 'comments' && (

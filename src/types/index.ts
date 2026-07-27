@@ -4,6 +4,10 @@ export interface Creator {
   phone_verified_at?: string | null;
   email?: string;
   email_verified_at?: string | null;
+  wechat_bound?: boolean;
+  wechat_web_binding_available?: boolean;
+  wechat_nickname?: string | null;
+  wechat_bound_at?: string | null;
   has_password?: boolean;
   display_name: string;
   avatar: string | null;
