@@ -20,6 +20,7 @@
     "test:chanto": "tsc -p tsconfig.test.json && node --test dist-test/tests/chantoPolicy.test.js",
     "test:dossier-wiki": "tsc -p tsconfig.test.json && node --test dist-test/tests/dossierWiki.test.js",
     "test:miniapp": "tsc -p tsconfig.test.json && node --test dist-test/tests/wechatAccessTokenCache.test.js dist-test/tests/wechatImageSafetyPolicy.test.js dist-test/tests/wechatMiniContentSafety.test.js dist-test/tests/wechatSafetyPresentation.test.js dist-test/tests/miniappMutationClassification.test.js dist-test/tests/miniappVisualContract.test.js",
+    "verify:wechat-callback": "node scripts/verify-wechat-mini-callback-security.mjs",
     "build:miniapp": "npm --prefix miniapp/jumulu run build:mp-weixin",
     "check:miniapp": "npm --prefix miniapp/jumulu run check",
     "preview": "vite preview",
