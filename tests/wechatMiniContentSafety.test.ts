@@ -296,6 +296,8 @@ test('rating and ranking checks include nested dossier drafts', () => {
 test('keeps the review guide aligned with the enforced server-only flow', () => {
   const guide = readFileSync('docs/wechat-miniapp-content-safety.md', 'utf8');
   const readme = readFileSync('miniapp/jumulu/README.md', 'utf8');
+  const packageJson = JSON.parse(readFileSync('miniapp/jumulu/package.json', 'utf8')) as { version: string };
+  const versionPattern = packageJson.version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   assert.match(guide, /客户端不再先调用独立预检接口/);
   assert.match(guide, /private-contact/);
@@ -303,12 +305,12 @@ test('keeps the review guide aligned with the enforced server-only flow', () => 
   assert.match(guide, /任务提交失败时，服务端会删除刚写入的本机文件或 COS 对象/);
   assert.match(guide, /每次重定向都会重新验证来源，读取 8 秒超时/);
   assert.match(guide, /单次请求合计最多 18MB/);
-  assert.match(guide, /0\.1\.41/);
+  assert.match(guide, new RegExp(versionPattern));
   assert.match(guide, /服务端在调用微信 `jscode2session` 前验证主动同意与版本/);
   assert.match(guide, /红黑榜信息流卡片、详情页主帖和评论均使用统一举报入口/);
   assert.match(guide, /退出状态不会显示可填写的发布、评价、认领、反馈或账号修改表单/);
   assert.doesNotMatch(guide, /客户端的预检只改善反馈速度/);
-  assert.match(readme, /当前 0\.1\.41 范围/);
+  assert.match(readme, new RegExp(`当前 ${versionPattern} 范围`));
   assert.match(readme, /登录前主动同意用户协议与隐私政策/);
   assert.match(readme, /红黑榜信息流无需先进入详情即可举报/);
   assert.match(readme, /客户端不再重复预检/);
