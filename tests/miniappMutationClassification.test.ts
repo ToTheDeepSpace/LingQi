@@ -48,7 +48,7 @@ const MUTATION_POLICIES: MutationPolicy[] = [
   { method: 'POST', route: '/lc/rankings/:param/vote', class: 'public-ugc', serverRoute: '/api/lc/rankings/:id/vote' },
   { method: 'PUT', route: '/lc/rankings/:param/withdraw', class: 'state-only' },
   { method: 'POST', route: '/lc/reports', class: 'private-content', serverRoute: '/api/lc/reports' },
-  { method: 'POST', route: '/lc/service-payments/create', class: 'state-only' },
+  { method: 'POST', route: '/lc/miniapp/virtual-service-payments/create', class: 'state-only' },
   { method: 'POST', route: '/lc/site-messages', class: 'private-content', serverRoute: '/api/lc/site-messages' },
   { method: 'POST', route: '/lc/store-ratings', class: 'public-ugc', serverRoute: '/api/lc/store-ratings' },
 ];

@@ -169,47 +169,82 @@ type ServicePaymentCreation = {
   purchase: ServicePurchase
   already_paid: boolean
   payment?: {
-    timeStamp: string
-    nonceStr: string
-    package: string
-    signType: 'RSA'
-    paySign: string
-    out_trade_no: string
+    mode: 'short_series_goods'
+    signData: string
+    paySig: string
+    signature: string
     expires_at: string
   }
+}
+
+type WechatVirtualPaymentRuntime = {
+  requestVirtualPayment(options: Omit<NonNullable<ServicePaymentCreation['payment']>, 'expires_at'> & {
+    success: () => void
+    fail: (reason: unknown) => void
+  }): void
 }
 
 function wait(milliseconds: number) {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
 
+function virtualPaymentError(reason: unknown) {
+  const payload = reason && typeof reason === 'object'
+    ? reason as { errCode?: number; err_code?: number; errMsg?: string; message?: string }
+    : {}
+  const code = Number(payload.errCode ?? payload.err_code)
+  const raw = payload.errMsg || payload.message || errorText(reason, '支付未完成')
+  if (code === -2 || /cancel/i.test(raw)) return new Error('已取消支付', { cause: reason })
+  if (code === -4) return new Error('本次支付被微信风控拦截，请稍后重试', { cause: reason })
+  if (code === -15002) return new Error('订单号已使用，请重新点击支付', { cause: reason })
+  if ([-15005, -15006, -15007].includes(code) || /signature|签名|session/i.test(raw)) {
+    return new Error('微信支付会话已失效，请重新发起支付', { cause: reason })
+  }
+  if (code === -15008) return new Error('微信虚拟支付商户配置尚未完成', { cause: reason })
+  if (code === -15010 || /not.?publish|未发布|商品不存在/i.test(raw)) {
+    return new Error('该虚拟道具尚未发布，请联系平台处理', { cause: reason })
+  }
+  if (code === -15011) return new Error('当前小程序版本与支付环境不匹配', { cause: reason })
+  if (code === -15013) return new Error('道具价格与微信后台不一致，请联系平台处理', { cause: reason })
+  if (code === -15014) return new Error('道具刚发布尚未生效，请约十分钟后重试', { cause: reason })
+  if (code === -15018) return new Error('该虚拟道具未通过微信审核，请联系平台处理', { cause: reason })
+  if (code === -15020) return new Error('操作太快，请稍后再试', { cause: reason })
+  if (code === -15021) return new Error('小程序交易暂时受限，请稍后再试', { cause: reason })
+  return new Error(raw, { cause: reason })
+}
+
 export async function requestServicePayment(productType: ServiceProductType, targetId: string) {
   await requireLogin()
-  const creation = await apiRequest<ServicePaymentCreation>('/lc/service-payments/create', {
+  const login = await new Promise<UniApp.LoginRes>((resolve, reject) => {
+    uni.login({ provider: 'weixin', success: resolve, fail: reject })
+  })
+  if (!login.code) throw new Error('微信登录会话获取失败，请重试')
+  const creation = await apiRequest<ServicePaymentCreation>('/lc/miniapp/virtual-service-payments/create', {
     method: 'POST',
-    data: { productType, targetId },
+    data: { productType, targetId, loginCode: login.code },
   })
   if (creation.already_paid || creation.purchase.paid) return creation.purchase
-  if (!creation.payment) throw new Error('微信支付参数缺失，请稍后重试')
+  if (!creation.payment) throw new Error('微信虚拟支付参数缺失，请稍后重试')
 
   try {
     await new Promise<void>((resolve, reject) => {
-      const paymentOptions = {
-        provider: 'wxpay',
-        timeStamp: creation.payment!.timeStamp,
-        nonceStr: creation.payment!.nonceStr,
-        package: creation.payment!.package,
-        signType: creation.payment!.signType,
-        paySign: creation.payment!.paySign,
+      const wechat = (globalThis as unknown as { wx: WechatVirtualPaymentRuntime }).wx
+      if (!wechat?.requestVirtualPayment) {
+        reject(new Error('当前微信版本不支持虚拟支付，请升级微信后重试'))
+        return
+      }
+      const payment = creation.payment!
+      wechat.requestVirtualPayment({
+        mode: payment.mode,
+        signData: payment.signData,
+        paySig: payment.paySig,
+        signature: payment.signature,
         success: () => resolve(),
         fail: reject,
-      } as unknown as UniApp.RequestPaymentOptions
-      uni.requestPayment(paymentOptions)
+      })
     })
   } catch (reason) {
-    const message = errorText(reason, '支付未完成')
-    if (/cancel/i.test(message)) throw new Error('已取消支付', { cause: reason })
-    throw new Error(message, { cause: reason })
+    throw virtualPaymentError(reason)
   }
 
   for (let attempt = 0; attempt < 8; attempt += 1) {

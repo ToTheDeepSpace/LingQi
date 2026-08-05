@@ -27,6 +27,7 @@ const EXEMPTIONS = new Map<string, ExemptionClass>([
   ['POST /api/lc/auth/set-password', 'private-credential'],
   ['POST /api/lc/miniapp/content-check', 'explicit-safety-endpoint'],
   ['POST /api/lc/service-payments/create', 'financial'],
+  ['POST /api/lc/miniapp/virtual-service-payments/create', 'financial'],
   ['PUT /api/lc/follows/cities', 'state-only'],
   ['PUT /api/lc/follows/stores/:id', 'state-only'],
   ['PUT /api/lc/provider-listings/mine/active', 'state-only'],
