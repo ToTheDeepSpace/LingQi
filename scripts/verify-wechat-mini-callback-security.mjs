@@ -1,12 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-const token = String(process.env.LINGQI_WECHAT_MINI_MSG_TOKEN || '').trim();
+const token = String(process.env.WECHAT_MP_TOKEN || process.env.LINGQI_WECHAT_MINI_MSG_TOKEN || '').trim();
 const callbackUrl = String(
   process.env.WECHAT_MINI_EVENT_URL
-  || `${String(process.env.LINGQI_SITE_URL || 'https://jumulu.jusichen.com').replace(/\/+$/, '')}/api/wechat/mini/events`,
+  || `${String(process.env.LINGQI_SITE_URL || 'https://jumulu.jusichen.com').replace(/\/+$/, '')}/api/wechat/mp/events`,
 ).trim();
 
-if (!token) throw new Error('LINGQI_WECHAT_MINI_MSG_TOKEN is required');
+if (!token) throw new Error('WECHAT_MP_TOKEN is required');
 
 async function probe(timestampSeconds) {
   const timestamp = String(timestampSeconds);

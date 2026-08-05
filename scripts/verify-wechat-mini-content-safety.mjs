@@ -9,10 +9,10 @@ const jwtSecret = process.env.JWT_SECRET;
 const imageUrl = String(process.env.WECHAT_TEST_IMAGE_URL || '').trim();
 const miniAppId = process.env.LINGQI_WECHAT_MINI_APP_ID;
 const miniAppSecret = process.env.LINGQI_WECHAT_MINI_APP_SECRET;
-const miniMessageToken = process.env.LINGQI_WECHAT_MINI_MSG_TOKEN;
+const miniMessageToken = process.env.WECHAT_MP_TOKEN || process.env.LINGQI_WECHAT_MINI_MSG_TOKEN;
 const miniEventUrl = String(
   process.env.WECHAT_MINI_EVENT_URL
-  || `${String(process.env.LINGQI_SITE_URL || 'https://jumulu.jusichen.com').replace(/\/+$/, '')}/api/wechat/mini/events`,
+  || `${String(process.env.LINGQI_SITE_URL || 'https://jumulu.jusichen.com').replace(/\/+$/, '')}/api/wechat/mp/events`,
 ).trim();
 const imageCallbackWaitMs = Math.max(10_000, Number(process.env.WECHAT_IMAGE_CALLBACK_WAIT_MS || 31 * 60_000));
 
@@ -27,7 +27,7 @@ async function sleep(ms) {
 }
 
 async function verifyPublicCallbackHandshake() {
-  if (!miniMessageToken) throw new Error('LINGQI_WECHAT_MINI_MSG_TOKEN is required');
+  if (!miniMessageToken) throw new Error('WECHAT_MP_TOKEN is required');
   const timestamp = String(Math.floor(Date.now() / 1000));
   const nonce = createHash('sha256').update(`${timestamp}:${process.pid}`).digest('hex').slice(0, 24);
   const echo = createHash('sha256').update(`${nonce}:callback-probe`).digest('hex').slice(0, 32);

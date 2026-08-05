@@ -4,12 +4,13 @@
 
 - AppID：读取 `LINGQI_WECHAT_MINI_APP_ID`
 - AppSecret：读取 `LINGQI_WECHAT_MINI_APP_SECRET`
-- 消息推送 Token：读取 `LINGQI_WECHAT_MINI_MSG_TOKEN`
-- 消息推送 URL：`https://jumulu.jusichen.com/api/wechat/mini/events`
+- 消息推送 Token：读取 `WECHAT_MP_TOKEN`
+- 消息推送 URL：`https://jumulu.jusichen.com/api/wechat/mp/events`
 - 数据格式：JSON
 - 消息加密：第一版使用明文模式；签名仍由 Token 校验
 
 Token 只保存在腾讯云服务端环境文件和微信公众平台，不写入代码、日志、知识库或截图。
+`/api/wechat/mini/events` 仅保留为旧验收链路的兼容入口，生产配置和验收脚本统一使用 `/api/wechat/mp/events`，避免回调落到只验签但不更新审核状态的错误处理器。
 
 ## 检查边界
 
@@ -82,7 +83,7 @@ Token 只保存在腾讯云服务端环境文件和微信公众平台，不写�
 ## 提审验证
 
 1. 确认微信后台开发版为 `0.1.42`，上传回执包体为 619866 字节；红黑榜信息流卡片、详情页主帖和评论均使用统一举报入口，退出状态不会显示可填写的发布、评价、认领、反馈或账号修改表单。
-2. 在微信公众平台消息推送配置页保存 URL `https://jumulu.jusichen.com/api/wechat/mini/events`，选择明文模式和 JSON；截图必须遮住 Token。
+2. 在微信公众平台消息推送配置页保存 URL `https://jumulu.jusichen.com/api/wechat/mp/events`，选择明文模式和 JSON；截图必须遮住 Token。
 3. 在开发者工具登录测试账号，分别提交一条角色点评、一条红黑榜评论和一张公开图片。
 4. 录制业务接口成功返回；文字接口必须由服务端产生微信检查记录，图片接口必须先返回 `pending`。
 5. 打开网站管理后台“账号与安全 / 安全日志”，录制相同 `trace_id` 从 `pending` 变为 `pass`。
@@ -99,7 +100,7 @@ Token 只保存在腾讯云服务端环境文件和微信公众平台，不写�
 - 公网回调 URL 已使用生产 Token 完成签名握手，证明域名、TLS、Nginx 路由和服务端验签可用。
 - 回调防重放校验已通过：新鲜时间戳返回 200，过期时间戳返回 403。
 - 正式图片任务已被 `mediaCheckAsync` 接受并生成 `pending` 记录。
-- 图片任务超过微信官方说明的完整 30 分钟窗口后仍为 `pending`，且服务日志未收到媒体回调。当前应在微信公众平台核对并保存消息推送 URL、Token、明文模式和 JSON；在真实状态变为 `pass` 前，不能宣称图片闭环或提审证据已经完成。
+- 2026-08-05 核对发现微信公众平台一直启用 `/api/wechat/mp/events`，微信也曾向该地址成功发送 POST，但旧处理器只验签并返回成功，没有更新图片审核记录；现已统一由该生产入口处理 `wxa_media_check`。仍需重新提交一张真实图片，确认记录从 `pending` 变为 `pass` 后才能宣称图片闭环完成。
 - 官方依据：`https://developers.weixin.qq.com/miniprogram/dev/server/API/sec-center/sec-check/api_mediacheckasync.html`
 
 ## 网站微信账号

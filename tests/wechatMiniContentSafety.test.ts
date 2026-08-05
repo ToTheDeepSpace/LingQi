@@ -99,6 +99,16 @@ test('accepts the official media callback payload shape', () => {
   assert.equal(verdict.traceId, '60f96f1d-3845297a-1976a3ae');
 });
 
+test('the configured message push route persists miniapp media callbacks', () => {
+  const source = readFileSync('api/index.ts', 'utf8');
+  const routeStart = source.indexOf("app.post('/api/wechat/mp/events'");
+  const routeEnd = source.indexOf("app.get('/api/wechat/mini/events'", routeStart);
+  assert.notEqual(routeStart, -1);
+  assert.notEqual(routeEnd, -1);
+  assert.match(source.slice(routeStart, routeEnd), /handleWechatMiniMediaCallback\(req,\s*res\)/);
+  assert.match(source, /async function handleWechatMiniMediaCallback/);
+});
+
 test('maps business scenes and truncates combined content to WeChat limits', () => {
   assert.equal(wechatSafetySceneNumber('profile_update'), 1);
   assert.equal(wechatSafetySceneNumber('ranking_comment'), 2);

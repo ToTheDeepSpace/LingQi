@@ -519,6 +519,7 @@ function verifyWechatMpRequest(req: express.Request, encrypted = ''): boolean {
   const msgSignature = singleQueryValue(req.query.msg_signature);
   const signature = msgSignature || singleQueryValue(req.query.signature);
   if (!timestamp || !nonce || !signature) return false;
+  if (!isWechatEventTimestampFresh(timestamp)) return false;
   const expected = msgSignature && encrypted
     ? sha1Sorted([WECHAT_MP_TOKEN, timestamp, nonce, encrypted])
     : sha1Sorted([WECHAT_MP_TOKEN, timestamp, nonce]);
@@ -564,6 +565,61 @@ function parseWechatMiniMediaEvent(body: unknown, rawBody: string): WechatMediaC
       label: labelText ? Number(labelText) : undefined,
     },
   };
+}
+
+function parseWechatCallbackBody(req: express.Request) {
+  const rawBody = typeof req.body === 'string'
+    ? req.body
+    : String((req as Record<string, unknown>).rawBody || JSON.stringify(req.body || {}));
+  let parsedBody: unknown = req.body;
+  if (typeof parsedBody === 'string' && parsedBody.trim().startsWith('{')) {
+    try {
+      parsedBody = JSON.parse(parsedBody);
+    } catch {
+      parsedBody = null;
+    }
+  }
+  return { rawBody, parsedBody };
+}
+
+async function handleWechatMiniMediaCallback(req: express.Request, res: express.Response) {
+  try {
+    const { rawBody, parsedBody } = parseWechatCallbackBody(req);
+    const payload = parseWechatMiniMediaEvent(parsedBody, rawBody);
+    if (payload.appid && payload.appid !== LINGQI_WECHAT_MINI_APP_ID) {
+      return res.status(403).type('text/plain').send('invalid appid');
+    }
+    const event = String(payload.Event || payload.event || '').toLowerCase();
+    if (event !== 'wxa_media_check') {
+      return res.status(200).type('text/plain').send('success');
+    }
+    const verdict = interpretWechatMediaCallback(payload);
+    if (!verdict.valid || !verdict.traceId) {
+      console.error('[wechat-safety] invalid media callback', {
+        event: payload.Event || payload.event || null,
+        has_trace_id: Boolean(payload.trace_id),
+      });
+      return res.status(200).type('text/plain').send('success');
+    }
+    const nowIso = new Date().toISOString();
+    const updateResult = await supabase.from('lc_wechat_content_checks').update({
+      status: verdict.status,
+      suggest: verdict.suggest,
+      label: verdict.label,
+      errcode: verdict.errcode,
+      error_message: verdict.reason || null,
+      checked_at: nowIso,
+      updated_at: nowIso,
+    }).eq('trace_id', verdict.traceId).eq('check_type', 'image').select('id, profile_id, target_type, target_id').maybeSingle();
+    if (updateResult.error) throw updateResult.error;
+    if (!updateResult.data) {
+      console.error('[wechat-safety] media callback trace not found', { trace_id: verdict.traceId });
+    }
+    return res.status(200).type('text/plain').send('success');
+  } catch (error) {
+    console.error('[wechat-safety] media callback failed', getErrorText(error));
+    return res.status(500).type('text/plain').send('error');
+  }
 }
 
 function getWechatMpConfigError(): string {
@@ -5976,12 +6032,10 @@ app.get('/api/wechat/mp/events', (req, res) => {
   return res.status(200).type('text/plain').send(echostr);
 });
 
-app.post('/api/wechat/mp/events', express.text({ type: ['text/*', 'application/xml', 'text/xml'], limit: '2mb' }), (req, res) => {
+app.post('/api/wechat/mp/events', express.text({ type: ['text/*', 'application/xml', 'text/xml'], limit: '2mb' }), async (req, res) => {
   const configError = getWechatMpConfigError();
   if (configError) return res.status(503).type('text/plain').send(configError);
-  const rawBody = typeof req.body === 'string'
-    ? req.body
-    : String((req as Record<string, unknown>).rawBody || JSON.stringify(req.body || {}));
+  const { rawBody } = parseWechatCallbackBody(req);
   const encrypted = extractWechatMpEncrypted(req.body, rawBody);
   if (!verifyWechatMpRequest(req, encrypted)) {
     console.error('[wechat-mp] event signature invalid', {
@@ -5990,7 +6044,7 @@ app.post('/api/wechat/mp/events', express.text({ type: ['text/*', 'application/x
     });
     return res.status(403).type('text/plain').send('invalid signature');
   }
-  return res.status(200).type('text/plain').send('success');
+  return handleWechatMiniMediaCallback(req, res);
 });
 
 app.get('/api/wechat/mini/events', (req, res) => {
@@ -6002,51 +6056,9 @@ app.get('/api/wechat/mini/events', (req, res) => {
 });
 
 app.post('/api/wechat/mini/events', express.text({ type: ['text/*', 'application/xml', 'text/xml'], limit: '2mb' }), async (req, res) => {
-  try {
-    if (!LINGQI_WECHAT_MINI_MSG_TOKEN) return res.status(503).type('text/plain').send('wechat mini message token not configured');
-    if (!verifyWechatMiniEventRequest(req)) return res.status(403).type('text/plain').send('invalid signature');
-    const rawBody = typeof req.body === 'string'
-      ? req.body
-      : String((req as Record<string, unknown>).rawBody || JSON.stringify(req.body || {}));
-    let parsedBody: unknown = req.body;
-    if (typeof parsedBody === 'string' && parsedBody.trim().startsWith('{')) {
-      try {
-        parsedBody = JSON.parse(parsedBody);
-      } catch {
-        parsedBody = null;
-      }
-    }
-    const payload = parseWechatMiniMediaEvent(parsedBody, rawBody);
-    if (payload.appid && payload.appid !== LINGQI_WECHAT_MINI_APP_ID) {
-      return res.status(403).type('text/plain').send('invalid appid');
-    }
-    const verdict = interpretWechatMediaCallback(payload);
-    if (!verdict.valid || !verdict.traceId) {
-      console.error('[wechat-safety] invalid media callback', {
-        event: payload.Event || payload.event || null,
-        has_trace_id: Boolean(payload.trace_id),
-      });
-      return res.status(200).type('text/plain').send('success');
-    }
-    const nowIso = new Date().toISOString();
-    const updateResult = await supabase.from('lc_wechat_content_checks').update({
-      status: verdict.status,
-      suggest: verdict.suggest,
-      label: verdict.label,
-      errcode: verdict.errcode,
-      error_message: verdict.reason || null,
-      checked_at: nowIso,
-      updated_at: nowIso,
-    }).eq('trace_id', verdict.traceId).eq('check_type', 'image').select('id, profile_id, target_type, target_id').maybeSingle();
-    if (updateResult.error) throw updateResult.error;
-    if (!updateResult.data) {
-      console.error('[wechat-safety] media callback trace not found', { trace_id: verdict.traceId });
-    }
-    return res.status(200).type('text/plain').send('success');
-  } catch (error) {
-    console.error('[wechat-safety] media callback failed', getErrorText(error));
-    return res.status(500).type('text/plain').send('error');
-  }
+  if (!LINGQI_WECHAT_MINI_MSG_TOKEN) return res.status(503).type('text/plain').send('wechat mini message token not configured');
+  if (!verifyWechatMiniEventRequest(req)) return res.status(403).type('text/plain').send('invalid signature');
+  return handleWechatMiniMediaCallback(req, res);
 });
 
 // ==================== 创作者认证 ====================
