@@ -1935,7 +1935,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
           hideTarget,
           restoreTarget,
           rejectReason: hideTarget ? '举报处理后下架' : undefined,
-          handlerNote: restoreTarget ? '复核后恢复展示' : action === 'dismissed' ? '已看，暂不处理' : '已处理',
+          handlerNote: restoreTarget ? '复核后恢复展示' : action === 'dismissed' ? '已看，暂不处理' : hideTarget ? '举报处理后下架' : '结案，未下架',
         }),
       });
       const payload = await response.json();
@@ -4220,7 +4220,7 @@ function ReportReviewCard({
           >
             {report.target_type === 'dm_affiliation' ? '确认异议并解除关联' : informationGap ? '信息不足，不能下架' : '下架并处理'}
           </ActionButton>
-          <ActionButton kind="ok" onClick={() => onResolve(report.id, 'resolved')}>标记已处理</ActionButton>
+          <ActionButton kind="ok" onClick={() => onResolve(report.id, 'resolved')}>结案，不下架</ActionButton>
           <ActionButton onClick={() => onResolve(report.id, 'dismissed')}>暂不处理</ActionButton>
         </Actions>
       )}

@@ -71,6 +71,7 @@ test('the report API rate limits abuse and rejects reporting your own content', 
 
 test('admin report handling records target state and reopening is concurrency safe', () => {
   const server = readFileSync('api/index.ts', 'utf8');
+  const admin = readFileSync('src/pages/Admin.tsx', 'utf8');
   assert.match(server, /app\.put\('\/api\/lc\/admin\/reports\/:id\/reopen'/);
   assert.match(server, /target_status_before: statusChange\.before/);
   assert.match(server, /target_content_fingerprint_after: targetContentFingerprint/);
@@ -78,6 +79,8 @@ test('admin report handling records target state and reopening is concurrency sa
   assert.match(server, /current_target_status_before_reopen: currentStatus/);
   assert.match(server, /action: 'admin_report_reopened'/);
   assert.match(server, /\.eq\('status', previousStatus\)/);
+  assert.match(admin, />结案，不下架<\/ActionButton>/);
+  assert.match(admin, /hideTarget \? '举报处理后下架' : '结案，未下架'/);
 });
 
 test('production startup rejects a report schema with pending migrations', () => {
