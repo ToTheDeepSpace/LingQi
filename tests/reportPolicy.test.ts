@@ -7,6 +7,11 @@ import {
   reportTargetLocation,
   reportTargetPath,
 } from '../src/lib/reportPresentation.js';
+import {
+  decideReportTargetRestore,
+  reportHandlingHidTarget,
+  reportReopenConfirmation,
+} from '../src/lib/reportReopenPolicy.js';
 
 test('privacy reports must identify the privacy item and its location', () => {
   assert.match(privacyReportDetailError('侵犯隐私', ''), /具体隐私项/);
@@ -43,4 +48,68 @@ test('report target links use the containing public page when the report targets
     reason: '辱骂攻击',
     target_snapshot: { ranking_id: 'ranking-1' },
   }), '/rankings/ranking-1');
+});
+
+test('reopening a report only restores content that still has the recorded handled status', () => {
+  assert.equal(reportHandlingHidTarget({
+    targetType: 'ranking',
+    before: 'approved',
+    after: 'rejected',
+  }), true);
+  assert.deepEqual(decideReportTargetRestore({
+    targetType: 'ranking',
+    before: 'approved',
+    after: 'rejected',
+    current: 'rejected',
+    handledContentFingerprint: 'same-fingerprint',
+    currentContentFingerprint: 'same-fingerprint',
+  }), { restore: true, reason: 'restore' });
+  assert.deepEqual(decideReportTargetRestore({
+    targetType: 'ranking',
+    before: 'approved',
+    after: 'rejected',
+    current: 'pending',
+    handledContentFingerprint: 'same-fingerprint',
+    currentContentFingerprint: 'same-fingerprint',
+  }), { restore: false, reason: 'target_changed' });
+});
+
+test('legacy report history without target statuses reopens without changing content', () => {
+  assert.deepEqual(decideReportTargetRestore({
+    targetType: 'profile',
+    before: null,
+    after: null,
+    current: 'hidden',
+  }), { restore: false, reason: 'missing_status_history' });
+  assert.match(reportReopenConfirmation({
+    targetType: 'profile',
+    before: null,
+    after: null,
+  }), /不会改动原内容/);
+});
+
+test('reopening never restores a target whose public content changed after handling', () => {
+  assert.deepEqual(decideReportTargetRestore({
+    targetType: 'commission',
+    before: 'approved',
+    after: 'rejected',
+    current: 'rejected',
+    handledContentFingerprint: 'handled-version',
+    currentContentFingerprint: 'newer-version',
+  }), { restore: false, reason: 'target_content_changed' });
+  assert.deepEqual(decideReportTargetRestore({
+    targetType: 'commission',
+    before: 'approved',
+    after: 'rejected',
+    current: 'rejected',
+  }), { restore: false, reason: 'missing_content_fingerprint' });
+});
+
+test('reopening a prior restore does not hide the target again', () => {
+  assert.deepEqual(decideReportTargetRestore({
+    targetType: 'profile',
+    before: 'hidden',
+    after: 'visible',
+    current: 'visible',
+  }), { restore: false, reason: 'no_target_hide' });
 });

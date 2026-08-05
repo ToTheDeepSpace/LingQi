@@ -64,3 +64,14 @@ test('the report API rate limits abuse and rejects reporting your own content', 
   assert.match(server, /if \(targetOwnerId && targetOwnerId === profile\.id\)/);
   assert.match(server, /自己的内容请使用编辑、撤回或下架入口/);
 });
+
+test('admin report handling records target state and reopening is concurrency safe', () => {
+  const server = readFileSync('api/index.ts', 'utf8');
+  assert.match(server, /app\.put\('\/api\/lc\/admin\/reports\/:id\/reopen'/);
+  assert.match(server, /target_status_before: statusChange\.before/);
+  assert.match(server, /target_content_fingerprint_after: targetContentFingerprint/);
+  assert.match(server, /decideReportTargetRestore\(\{/);
+  assert.match(server, /current_target_status_before_reopen: currentStatus/);
+  assert.match(server, /action: 'admin_report_reopened'/);
+  assert.match(server, /\.eq\('status', previousStatus\)/);
+});

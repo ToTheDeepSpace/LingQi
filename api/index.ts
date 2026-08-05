@@ -104,6 +104,7 @@ import { extractSharedUrl } from '../src/lib/socialLinks.js';
 import { CHANTO_MAX_AMOUNT, CHANTO_MIN_AMOUNT, isValidChantoAmount } from '../src/lib/chanto.js';
 import { MAX_MULTIPART_UPLOAD_BYTES } from '../src/lib/uploadLimits.js';
 import { privacyReportDetailError } from '../src/lib/reportPolicy.js';
+import { decideReportTargetRestore } from '../src/lib/reportReopenPolicy.js';
 import { CITIES } from '../src/constants/cities.js';
 import { adminPrivateAccountPayload, adminProfileListPayload } from './adminPrivacy.js';
 import { shopCanManageRanking } from './shopReviewOwnership.js';
@@ -5476,6 +5477,52 @@ async function currentTargetStatus(targetType: ReportTargetType, targetId: strin
   return null;
 }
 
+const REPORT_TARGET_CONTENT_FIELDS: Partial<Record<ReportTargetType, string[]>> = {
+  dm_affiliation: ['dm_dossier_id', 'store_dossier_id', 'dm_profile_id', 'requested_by_profile_id', 'requested_by_role', 'request_kind', 'request_note', 'started_at', 'ended_at', 'end_reason'],
+  ranking: ['type', 'subject_name', 'subject_type', 'subject_city', 'title', 'content', 'display_files'],
+  comment: ['ranking_id', 'author_id', 'author_name', 'content', 'is_pinned', 'pin_label'],
+  commission: ['poster_id', 'poster_name', 'title', 'content', 'desired_role', 'target_type', 'needed_date', 'needed_end_date', 'city', 'location', 'budget', 'contact_note', 'accept_expedition'],
+  carpool: ['poster_id', 'poster_name', 'title', 'city', 'event_date', 'start_time', 'deadline_date', 'deadline_time', 'script_name', 'role_name', 'role_note', 'store_name', 'store_city', 'store_address', 'store_source_url', 'store_verify_note', 'subsidy_mode', 'subsidy_type', 'subsidy_amount', 'needed_count', 'leader_contact', 'contact_note', 'content'],
+  profile: ['display_name', 'avatar_url', 'role_type', 'identity_roles', 'city', 'bio', 'gender', 'available_cities', 'travel_status', 'social_links'],
+};
+
+function canonicalReportTargetValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalReportTargetValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => [key, canonicalReportTargetValue(nested)]),
+    );
+  }
+  return value ?? null;
+}
+
+async function currentTargetContentFingerprint(targetType: ReportTargetType, targetId: string) {
+  const table = targetType === 'dm_affiliation'
+    ? 'lc_dm_store_affiliations'
+    : targetType === 'ranking'
+      ? 'lc_rankings'
+      : targetType === 'comment'
+        ? 'lc_comments'
+        : targetType === 'commission'
+          ? 'lc_commissions'
+          : targetType === 'carpool'
+            ? 'lc_carpools'
+            : targetType === 'profile'
+              ? 'lc_profiles'
+              : '';
+  const fields = REPORT_TARGET_CONTENT_FIELDS[targetType];
+  if (!table || !fields) return null;
+  const { data, error } = await supabase.from(table).select('*').eq('id', targetId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const contentState = Object.fromEntries(fields.map(field => [field, data[field] ?? null]));
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalReportTargetValue(contentState)))
+    .digest('hex');
+}
+
 async function restoreTargetAfterReport(targetType: ReportTargetType, targetId: string) {
   const before = await currentTargetStatus(targetType, targetId);
   const now = new Date().toISOString();
@@ -5494,6 +5541,39 @@ async function restoreTargetAfterReport(targetType: ReportTargetType, targetId: 
   }
   const after = await currentTargetStatus(targetType, targetId);
   return { before, after };
+}
+
+async function restoreTargetToRecordedStatus(targetType: ReportTargetType, targetId: string, status: string) {
+  const now = new Date().toISOString();
+  let result: { error: unknown } | null = null;
+  if (targetType === 'dm_affiliation') {
+    result = await supabase.from('lc_dm_store_affiliations')
+      .update({
+        status,
+        reject_reason: null,
+        ...(status === 'pending' ? { reviewed_at: null } : {}),
+        updated_at: now,
+      })
+      .eq('id', targetId);
+  } else if (targetType === 'ranking') {
+    result = await supabase.from('lc_rankings').update({ status }).eq('id', targetId);
+  } else if (targetType === 'comment') {
+    result = await supabase.from('lc_comments').update({ status }).eq('id', targetId);
+  } else if (targetType === 'commission') {
+    result = await supabase.from('lc_commissions')
+      .update({ status, reject_reason: null, updated_at: now })
+      .eq('id', targetId);
+  } else if (targetType === 'carpool') {
+    result = await supabase.from('lc_carpools')
+      .update({ status, reject_reason: null, updated_at: now })
+      .eq('id', targetId);
+  } else if (targetType === 'profile') {
+    result = await supabase.from('lc_profiles')
+      .update({ is_visible: status === 'visible', reject_reason: null, updated_at: now })
+      .eq('id', targetId);
+  }
+  if (result?.error) throw result.error;
+  return currentTargetStatus(targetType, targetId);
 }
 
 function buildReviewerSummary(reviews: Array<{ decision?: string; risk_labels?: string[] | null }>) {
@@ -19758,51 +19838,72 @@ app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, as
     }
 
     let statusChange: { before: string | null; after: string | null } = { before: null, after: null };
+    let targetContentFingerprint: string | null = null;
     if (restoreTarget) {
       statusChange = await restoreTargetAfterReport(report.target_type, report.target_id);
     } else if (hideTarget) {
+      const before = await currentTargetStatus(report.target_type, report.target_id);
+      targetContentFingerprint = await currentTargetContentFingerprint(report.target_type, report.target_id);
+      let targetUpdateError: unknown = null;
       if (report.target_type === 'carpool') {
-        await supabase.from('lc_carpools')
+        const result = await supabase.from('lc_carpools')
           .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
           .eq('id', report.target_id);
+        targetUpdateError = result.error;
       } else if (report.target_type === 'ranking') {
-        await supabase.from('lc_rankings')
+        const result = await supabase.from('lc_rankings')
           .update({ status: 'rejected' })
           .eq('id', report.target_id);
+        targetUpdateError = result.error;
       } else if (report.target_type === 'comment') {
-        await supabase.from('lc_comments')
+        const result = await supabase.from('lc_comments')
           .update({ status: 'rejected' })
           .eq('id', report.target_id);
+        targetUpdateError = result.error;
       } else if (report.target_type === 'commission') {
-        await supabase.from('lc_commissions')
+        const result = await supabase.from('lc_commissions')
           .update({ status: 'rejected', reject_reason: rejectReason, updated_at: new Date().toISOString() })
           .eq('id', report.target_id);
+        targetUpdateError = result.error;
       } else if (report.target_type === 'profile') {
-        await supabase.from('lc_profiles')
+        const result = await supabase.from('lc_profiles')
           .update({ is_visible: false, reject_reason: rejectReason, updated_at: new Date().toISOString() })
           .eq('id', report.target_id);
+        targetUpdateError = result.error;
       } else if (report.target_type === 'dm_affiliation') {
-        await supabase.from('lc_dm_store_affiliations')
+        const result = await supabase.from('lc_dm_store_affiliations')
           .update({ status: 'rejected', reject_reason: rejectReason, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
           .eq('id', report.target_id);
+        targetUpdateError = result.error;
       }
+      if (targetUpdateError) throw targetUpdateError;
       statusChange = {
-        before: report.target_status_before || null,
+        before,
         after: await currentTargetStatus(report.target_type, report.target_id),
       };
     }
+    const handledAt = new Date().toISOString();
+    const handlerContext = {
+      action: restoreTarget ? 'restore_target' : hideTarget ? 'hide_target' : action,
+      handled_at: handledAt,
+      handled_by: getReq(req, 'creatorId'),
+      target_content_fingerprint_after: targetContentFingerprint,
+    };
 
-    await supabase.from('lc_reports')
+    const { error: reportUpdateError } = await supabase.from('lc_reports')
       .update({
         status: action,
         handler_id: getReq(req, 'creatorId'),
         handler_note: handlerNote || (restoreTarget ? '复核后恢复展示' : hideTarget ? rejectReason : null),
+        handler_context: handlerContext,
+        target_status_before: statusChange.before || report.target_status_before || null,
         target_status_after: statusChange.after || report.target_status_after || null,
-        updated_at: new Date().toISOString(),
+        updated_at: handledAt,
       })
       .eq('target_type', report.target_type)
       .eq('target_id', report.target_id)
       .eq('status', 'pending');
+    if (reportUpdateError) throw reportUpdateError;
     await logSecurityEvent(req, {
       action: restoreTarget ? 'admin_report_resolved_and_target_restored' : hideTarget ? 'admin_report_resolved_and_target_hidden' : `admin_report_${action}`,
       targetType: report.target_type,
@@ -19817,6 +19918,111 @@ app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, as
       },
     });
     res.json(ok({ status: action, hidden: hideTarget, restored: restoreTarget, statusChange }));
+  } catch (e) { res.status(500).json(err(e)); }
+});
+
+app.put('/api/lc/admin/reports/:id/reopen', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data: report, error: reportError } = await supabase.from('lc_reports')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (reportError) throw reportError;
+    if (!report) return res.status(404).json(err(new Error('举报不存在')));
+    if (report.status === 'pending') return res.status(400).json(err(new Error('这条举报已经在待处理列表中')));
+
+    const previousStatus = cleanText(report.status, 40);
+    const previousUpdatedAt = report.updated_at || null;
+    const currentStatus = await currentTargetStatus(report.target_type, report.target_id);
+    const currentContentFingerprint = await currentTargetContentFingerprint(report.target_type, report.target_id);
+    const handlerContext = objectPayload(report.handler_context);
+    const handledContentFingerprint = cleanText(handlerContext.target_content_fingerprint_after, 100);
+    const restoreDecision = decideReportTargetRestore({
+      targetType: report.target_type,
+      before: report.target_status_before,
+      after: report.target_status_after,
+      current: currentStatus,
+      handledContentFingerprint,
+      currentContentFingerprint,
+    });
+    let restored = false;
+    let finalTargetStatus = currentStatus;
+    let warning = '';
+
+    const reopenedAt = new Date().toISOString();
+    const { data: reopenedReport, error: updateError } = await supabase.from('lc_reports')
+      .update({
+        status: 'pending',
+        auto_action: 'none',
+        updated_at: reopenedAt,
+      })
+      .eq('id', report.id)
+      .eq('status', previousStatus)
+      .select('id')
+      .maybeSingle();
+    if (updateError) throw updateError;
+    if (!reopenedReport) return res.status(409).json(err(new Error('这条举报的状态刚刚发生了变化，请刷新后重试')));
+
+    if (restoreDecision.restore) {
+      try {
+        finalTargetStatus = await restoreTargetToRecordedStatus(
+          report.target_type,
+          report.target_id,
+          cleanText(report.target_status_before, 40),
+        );
+        restored = finalTargetStatus === cleanText(report.target_status_before, 40);
+        if (!restored) warning = '举报已重新打开，但原内容未能恢复到处理前状态，请人工复核。';
+      } catch (restoreError) {
+        warning = `举报已重新打开，但恢复原内容失败，请人工复核：${cleanText(getErrorText(restoreError), 160) || '未知错误'}`;
+      }
+    } else if (restoreDecision.reason === 'missing_status_history') {
+      warning = '这是一条缺少处理前状态的历史记录，已重新打开举报，但没有改动原内容。';
+    } else if (restoreDecision.reason === 'missing_content_fingerprint') {
+      warning = '这是一条缺少内容版本记录的历史举报，已重新打开，但为避免覆盖后续修改，没有恢复原内容。';
+    } else if (restoreDecision.reason === 'target_content_changed') {
+      warning = '原内容在上次处理后被修改过，已重新打开举报，但没有覆盖当前内容状态。';
+    } else if (restoreDecision.reason === 'target_changed') {
+      warning = '原内容在上次处理后又被处理过，已重新打开举报，但没有覆盖当前内容状态。';
+    } else if (restoreDecision.reason === 'target_missing_or_unsupported') {
+      warning = '原内容已不存在或暂不支持自动恢复，已重新打开举报，请人工复核。';
+    }
+
+    await logSecurityEvent(req, {
+      action: 'admin_report_reopened',
+      targetType: report.target_type,
+      targetId: report.target_id,
+      metadata: {
+        report_id: report.id,
+        reopened_by: getReq(req, 'creatorId'),
+        reopened_at: reopenedAt,
+        previous_report_status: previousStatus,
+        previous_handler_id: report.handler_id || null,
+        previous_handler_note: report.handler_note || null,
+        previous_updated_at: previousUpdatedAt,
+        target_status_before: report.target_status_before || null,
+        target_status_after: report.target_status_after || null,
+        target_content_fingerprint_at_handling: handledContentFingerprint || null,
+        current_target_content_fingerprint: currentContentFingerprint || null,
+        current_target_status_before_reopen: currentStatus,
+        current_target_status_after_reopen: finalTargetStatus,
+        target_restored: restored,
+        restore_decision: restoreDecision.reason,
+        warning: warning || null,
+      },
+    });
+
+    res.json(ok({
+      reopened: true,
+      previousStatus,
+      restored,
+      warning: warning || null,
+      targetStatus: {
+        recordedBefore: report.target_status_before || null,
+        recordedAfter: report.target_status_after || null,
+        currentBefore: currentStatus,
+        currentAfter: finalTargetStatus,
+      },
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 

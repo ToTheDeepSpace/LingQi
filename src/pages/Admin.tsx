@@ -18,6 +18,7 @@ import {
   reportTargetLocation,
   reportTargetPath,
 } from '../lib/reportPresentation';
+import { reportReopenConfirmation } from '../lib/reportReopenPolicy';
 import BrandLogo from '../components/BrandLogo';
 import RankingEvidenceEditor from '../components/RankingEvidenceEditor';
 
@@ -492,6 +493,8 @@ type ReportReview = {
   moderation_precheck?: ModerationPrecheck | null;
   status?: 'pending' | 'resolved' | 'dismissed';
   handler_note?: string | null;
+  target_status_before?: string | null;
+  target_status_after?: string | null;
   created_at: string;
   updated_at?: string | null;
 };
@@ -1948,6 +1951,31 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     }
   };
 
+  const reopenReport = async (report: ReportReview) => {
+    if (!window.confirm(reportReopenConfirmation({
+      targetType: report.target_type,
+      before: report.target_status_before,
+      after: report.target_status_after,
+    }))) return;
+    try {
+      const response = await fetch(`${API}/lc/admin/reports/${report.id}/reopen`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '撤销处理失败');
+      }
+      await loadData();
+      const result = payload.data as { restored?: boolean; warning?: string | null };
+      window.alert(result.warning || (result.restored
+        ? '已撤销处理：举报重新进入待处理列表，原内容已恢复到处理前状态。'
+        : '已撤销处理：举报重新进入待处理列表，原内容未改动。'));
+    } catch (reopenError) {
+      setError(reopenError instanceof Error ? reopenError.message : '撤销处理失败');
+    }
+  };
+
   const resolveSiteMessage = async (id: string) => {
     const adminReply = window.prompt('填写给用户的处理回复。该回复会进入用户的消息通知：', '');
     if (adminReply === null) return;
@@ -3372,7 +3400,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                   <h3 style={{ margin: '0 0 8px', color: INK, fontSize: '0.92rem' }}>最近处理记录（{reportHistory.length}）</h3>
                   <ListEmpty empty={reportHistory.length === 0} text="暂无举报处理记录">
                     {reportHistory.map(report => (
-                      <ReportReviewCard key={report.id} report={report} readonly onResolve={resolveReport} />
+                      <ReportReviewCard key={report.id} report={report} readonly onResolve={resolveReport} onReopen={reopenReport} />
                     ))}
                   </ListEmpty>
                 </section>
@@ -4087,10 +4115,12 @@ function ReportReviewCard({
   report,
   readonly = false,
   onResolve,
+  onReopen,
 }: {
   report: ReportReview;
   readonly?: boolean;
   onResolve: (id: string, action: 'resolved' | 'dismissed', hideTarget?: boolean, restoreTarget?: boolean) => Promise<void>;
+  onReopen?: (report: ReportReview) => Promise<void>;
 }) {
   const targetPath = reportTargetPath(report);
   const targetLabel = reportTargetLabel(report.target_type);
@@ -4173,6 +4203,9 @@ function ReportReviewCard({
         )}
         <ModerationPrecheckBadge value={report.moderation_precheck} />
         {readonly && report.handler_note && <Proof>处理备注：{report.handler_note}</Proof>}
+        {readonly && report.target_status_before && report.target_status_after && (
+          <Meta>原内容状态：{report.target_status_before} → {report.target_status_after}</Meta>
+        )}
       </div>
 
       {!readonly && (
@@ -4189,6 +4222,11 @@ function ReportReviewCard({
           </ActionButton>
           <ActionButton kind="ok" onClick={() => onResolve(report.id, 'resolved')}>标记已处理</ActionButton>
           <ActionButton onClick={() => onResolve(report.id, 'dismissed')}>暂不处理</ActionButton>
+        </Actions>
+      )}
+      {readonly && onReopen && (
+        <Actions>
+          <ActionButton onClick={() => onReopen(report)}>撤销处理</ActionButton>
         </Actions>
       )}
     </Row>
