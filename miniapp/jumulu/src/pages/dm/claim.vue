@@ -74,7 +74,7 @@ async function pay() {
   paying.value = true
   try {
     await requestServicePayment('dossier_claim', id.value)
-    state.value = { ...(state.value || { claim: null, payment: { paid: false, amount_yuan: '8.88' } }), payment: { paid: true, amount_yuan: '8.88' } }
+    state.value = { ...(state.value || { claim: null, payment: { paid: false, amount_yuan: '9.00' } }), payment: { paid: true, amount_yuan: '9.00' } }
     uni.showToast({ title: '支付成功', icon: 'success' })
   } catch (reason) {
     uni.showToast({ title: (reason as Error).message, icon: 'none' })
@@ -120,7 +120,7 @@ onLoad(optionsValue => {
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="本人认证" nav-title="认领档案" :title="`认领「${name}」`" description="认领费 8.88 元用于资料真实性核验。认领成功后可以持续修改资料，修改免费但仍需审核。" />
+    <PageIntro eyebrow="本人认证" nav-title="认领档案" :title="`认领「${name}」`" description="认领费 9 元用于资料真实性核验。认领成功后可以持续修改资料，修改免费但仍需审核。" />
     <AuthFormGate message="登录后才能认领档案">
     <view v-if="loading" class="surface loading">正在读取认领状态…</view>
     <view v-else class="form-surface">
@@ -129,7 +129,7 @@ onLoad(optionsValue => {
       <template v-if="state?.claim?.status !== 'pending'">
         <view class="fee-row">
           <view><strong>认领审核服务费</strong><text>{{ state?.payment.paid ? '已经支付，不会重复收费' : '支付后再提交证明材料' }}</text></view>
-          <strong>{{ state?.payment.paid ? '已支付' : '¥8.88' }}</strong>
+          <strong>{{ state?.payment.paid ? '已支付' : '¥9' }}</strong>
         </view>
         <text class="field-label">证明类型</text>
         <view class="proof-options">
@@ -146,7 +146,7 @@ onLoad(optionsValue => {
         <text v-if="error" class="form-error">{{ error }}</text>
         <view class="sticky-submit">
           <button class="primary-button submit" :loading="paying || submitting" :disabled="paying || submitting" @tap="submit">
-            {{ state?.payment.paid ? '提交认领审核' : '支付 8.88 元' }}
+            {{ state?.payment.paid ? '提交认领审核' : '支付 9 元' }}
           </button>
         </view>
       </template>

@@ -65,8 +65,8 @@ async function openInquiry() {
       const confirmed = await new Promise<boolean>(resolve => {
         uni.showModal({
           title: '永久解锁联系方式',
-          content: `支付 8.88 元后立即查看 ${profile.value?.display_name || '这位委托师'} 当前审核通过的业务联系方式。同一账号只支付一次。`,
-          confirmText: '支付 8.88 元',
+          content: `支付 9 元后立即查看 ${profile.value?.display_name || '这位委托师'} 当前审核通过的业务联系方式。同一账号只支付一次。`,
+          confirmText: '支付 9 元',
           success: result => resolve(result.confirm),
           fail: () => resolve(false),
         })

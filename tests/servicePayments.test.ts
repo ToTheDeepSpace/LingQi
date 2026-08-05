@@ -11,7 +11,7 @@ import {
 } from '../api/servicePayments.js';
 
 test('service payment amount and product types are server controlled', () => {
-  assert.equal(SERVICE_FEE_FEN, 888);
+  assert.equal(SERVICE_FEE_FEN, 900);
   assert.equal(normalizeServiceProductType('dossier_claim'), 'dossier_claim');
   assert.equal(normalizeServiceProductType('provider_listing'), 'provider_listing');
   assert.equal(normalizeServiceProductType('provider_contact'), 'provider_contact');
@@ -45,20 +45,20 @@ test('service payment envelope must match the configured miniapp merchant', () =
 
 test('service payment ownership rejects wrong amount and another payer', () => {
   assert.doesNotThrow(() => assertServicePaymentOwnership({
-    totalFee: 888,
-    attemptAmountFen: 888,
+    totalFee: 900,
+    attemptAmountFen: 900,
     payerOpenid: 'payer-a',
     expectedPayerOpenid: 'payer-a',
   }));
   assert.throws(() => assertServicePaymentOwnership({
     totalFee: 1,
-    attemptAmountFen: 888,
+    attemptAmountFen: 900,
     payerOpenid: 'payer-a',
     expectedPayerOpenid: 'payer-a',
   }), /金额不匹配/);
   assert.throws(() => assertServicePaymentOwnership({
-    totalFee: 888,
-    attemptAmountFen: 888,
+    totalFee: 900,
+    attemptAmountFen: 900,
     payerOpenid: 'payer-b',
     expectedPayerOpenid: 'payer-a',
   }), /付款人不匹配/);

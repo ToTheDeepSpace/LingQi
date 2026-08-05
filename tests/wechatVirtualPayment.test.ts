@@ -14,10 +14,10 @@ import {
   wechatVirtualOrderStatus,
 } from '../api/wechatVirtualPayment.js';
 
-test('formal virtual goods keep stable ids and the existing 8.88 price', () => {
+test('formal virtual goods keep stable ids and the configured 9 yuan price', () => {
   for (const good of Object.values(WECHAT_VIRTUAL_GOODS)) {
     assert.match(good.id, /^[A-Za-z0-9_-]{1,20}$/);
-    assert.equal(good.price, 888);
+    assert.equal(good.price, 900);
     assert.ok(good.name.length > 0);
   }
 });
@@ -33,13 +33,13 @@ test('client signature data follows the documented field order', () => {
     offerId: 'offer-1',
     env: 0,
     productId: 'dossier_claim',
-    goodsPrice: 888,
+    goodsPrice: 900,
     outTradeNo: 'JMLS1',
     attach: 'purchase-1',
   });
   assert.equal(
     signData,
-    '{"offerId":"offer-1","buyQuantity":1,"env":0,"currencyType":"CNY","productId":"dossier_claim","goodsPrice":888,"outTradeNo":"JMLS1","attach":"purchase-1"}',
+    '{"offerId":"offer-1","buyQuantity":1,"env":0,"currencyType":"CNY","productId":"dossier_claim","goodsPrice":900,"outTradeNo":"JMLS1","attach":"purchase-1"}',
   );
 });
 
@@ -100,8 +100,8 @@ test('delivery callback validates payer, product, amount and attach', () => {
     GoodsInfo: {
       ProductId: 'provider_listing',
       Quantity: 1,
-      OrigPrice: 888,
-      ActualPrice: 888,
+      OrigPrice: 900,
+      ActualPrice: 900,
       Attach: 'purchase-1',
     },
   });
@@ -110,7 +110,7 @@ test('delivery callback validates payer, product, amount and attach', () => {
     expectedEnv: 0,
     expectedProductId: 'provider_listing',
     expectedOpenid: 'openid-1',
-    expectedAmountFen: 888,
+    expectedAmountFen: 900,
     expectedAttach: 'purchase-1',
   }));
   assert.throws(() => assertWechatVirtualDelivery({
@@ -118,7 +118,7 @@ test('delivery callback validates payer, product, amount and attach', () => {
     expectedEnv: 0,
     expectedProductId: 'provider_listing',
     expectedOpenid: 'openid-2',
-    expectedAmountFen: 888,
+    expectedAmountFen: 900,
     expectedAttach: 'purchase-1',
   }), /付款人不匹配/);
 });

@@ -1,7 +1,7 @@
 import { createSign, randomBytes } from 'node:crypto';
 
-export const SERVICE_FEE_FEN = 888;
-export const SERVICE_FEE_YUAN = '8.88';
+export const SERVICE_FEE_FEN = 900;
+export const SERVICE_FEE_YUAN = '9.00';
 
 export const SERVICE_PRODUCT_TYPES = [
   'dossier_claim',

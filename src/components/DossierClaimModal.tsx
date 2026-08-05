@@ -185,7 +185,7 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
       return;
     }
     if (!paymentPaid) {
-      setError('请先在剧幕录微信小程序支付 8.88 元认领审核服务费');
+      setError('请先在剧幕录微信小程序支付 9 元认领审核服务费');
       return;
     }
     setSubmitting(true);
@@ -235,7 +235,7 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
           {history?.status === 'pending' && <div className="dossier-claim-pending">这份认领申请正在审核，无需重复提交。</div>}
           {!paymentPaid && (
             <div className="dossier-claim-payment">
-              本人认领审核服务费为 8.88 元，请先在剧幕录微信小程序完成支付。认领成功后的资料修改不再收费，但仍需审核。
+              本人认领审核服务费为 9 元，请先在剧幕录微信小程序完成支付。认领成功后的资料修改不再收费，但仍需审核。
             </div>
           )}
 
@@ -305,7 +305,7 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
         <footer className="dossier-claim-actions">
           <button type="button" className="secondary" onClick={onClose} disabled={submitting}>取消</button>
           <button type="button" className="primary" onClick={submit} disabled={loadingHistory || history?.status === 'pending' || submitting || !paymentPaid}>
-            {submitting ? '提交中…' : history?.status === 'pending' ? '审核中' : paymentPaid ? '提交认领审核' : '请先在小程序支付 8.88 元'}
+            {submitting ? '提交中…' : history?.status === 'pending' ? '审核中' : paymentPaid ? '提交认领审核' : '请先在小程序支付 9 元'}
           </button>
         </footer>
       </section>

@@ -269,7 +269,7 @@ onShow(() => {
         上次提交未通过：{{ state.latest_review.review_note || '请调整公开内容后重新提交' }}
       </view>
       <view v-if="!state.listing && !state.initial_fee_paid" class="fee-notice">
-        <strong>首次上架 8.88 元</strong>
+        <strong>首次上架 9 元</strong>
         <text>提交时唤起微信支付，审核通过后公开。以后修改委托条不再收费，但每次修改仍需审核。</text>
       </view>
 
@@ -303,7 +303,7 @@ onShow(() => {
         <view class="field full">
           <text class="field-label">业务联系方式 *</text>
           <input v-model="businessContact" class="input" maxlength="300" placeholder="微信号、手机号或其他专门用于接委托的方式" />
-          <text class="field-hint">不会直接公开，只有同一用户支付一次 8.88 元后才可永久查看。</text>
+          <text class="field-hint">不会直接公开，只有同一用户支付一次 9 元后才可永久查看。</text>
         </view>
       </view>
 
@@ -316,7 +316,7 @@ onShow(() => {
         <button class="secondary-button" :loading="toggling" @tap="toggleContactAvailable">{{ contactAvailable ? '暂停联系' : '重新开放' }}</button>
       </view>
       <text v-if="error" class="form-error">{{ error }}</text>
-      <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting || pending" @tap="submit">{{ pending ? '等待审核' : !state.listing && !state.initial_fee_paid ? '支付 8.88 元并提交' : '提交审核' }}</button></view>
+      <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting || pending" @tap="submit">{{ pending ? '等待审核' : !state.listing && !state.initial_fee_paid ? '支付 9 元并提交' : '提交审核' }}</button></view>
     </template>
     </AuthFormGate>
   </view>

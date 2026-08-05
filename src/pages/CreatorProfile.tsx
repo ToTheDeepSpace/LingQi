@@ -158,7 +158,7 @@ export default function CreatorProfile() {
       const payload = await response.json();
       if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '联系方式读取失败');
       if (!payload.data?.paid) {
-        setContactError('请在剧幕录微信小程序支付 8.88 元。支付后同一账号可永久查看这位委托师当前审核通过的业务联系方式。');
+        setContactError('请在剧幕录微信小程序支付 9 元。支付后同一账号可永久查看这位委托师当前审核通过的业务联系方式。');
       } else if (!payload.data?.contact_available || !payload.data?.business_contact) {
         setContactError('这位委托师暂未开放联系方式。你的永久解锁资格不会失效。');
       } else {
