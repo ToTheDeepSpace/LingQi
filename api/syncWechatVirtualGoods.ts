@@ -44,18 +44,43 @@ async function getAccessToken() {
   return payload.access_token;
 }
 
+function sleep(milliseconds: number) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+async function requestXpayWithBackoff<T extends Record<string, unknown>>(
+  action: string,
+  request: () => Promise<T>,
+) {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return await request();
+    } catch (error) {
+      lastError = error;
+      const errcode = Number((error as { errcode?: number })?.errcode);
+      const message = error instanceof Error ? error.message : String(error);
+      const retryable = errcode === -1 || errcode === 45009 || message.includes('频率限制');
+      if (!retryable || attempt === 3) throw error;
+      await sleep([2_000, 5_000, 10_000][attempt]);
+    }
+  }
+  throw lastError || new Error(`微信虚拟道具${action}失败`);
+}
+
 async function waitForTask(
   accessToken: string,
   uri: '/xpay/query_upload_goods' | '/xpay/query_publish_goods',
   action: '上传' | '发布',
 ) {
+  await sleep(2_000);
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const payload = await requestWechatXpay({
-      accessToken,
-      appKey,
-      uri,
-      body: { env },
-    });
+    const payload = await requestXpayWithBackoff(action, () => requestWechatXpay({
+        accessToken,
+        appKey,
+        uri,
+        body: { env },
+      }));
     const status = Number(payload.status);
     if (status === 3) return;
     if (status === 2) {
@@ -64,7 +89,10 @@ async function waitForTask(
       const items = Array.isArray(payload[itemKey])
         ? payload[itemKey] as Record<string, unknown>[]
         : [];
-      if (items.length > 0 && items.every(item => Number(item[itemStatusKey]) === 1)) return;
+      if (
+        items.length > 0
+        && items.every(item => [1, 2].includes(Number(item[itemStatusKey])))
+      ) return;
       const detail = items.map(item => ({
         id: item.id,
         status: item[itemStatusKey],
@@ -72,56 +100,58 @@ async function waitForTask(
       }));
       throw new Error(`微信虚拟道具${action}失败：${JSON.stringify(detail)}`);
     }
-    await new Promise(resolve => setTimeout(resolve, 2_000));
+    await sleep(2_000);
   }
   throw new Error(`微信虚拟道具${action}超时，请稍后查询任务状态`);
 }
 
-async function syncGood(
+async function syncGoods(
   accessToken: string,
-  good: (typeof WECHAT_VIRTUAL_GOODS)[keyof typeof WECHAT_VIRTUAL_GOODS],
   targetEnv: WechatVirtualPayEnv,
 ) {
-  await requestWechatXpay({
+  const goods = Object.values(WECHAT_VIRTUAL_GOODS);
+  await requestXpayWithBackoff('上传', () => requestWechatXpay({
     accessToken,
     appKey,
     uri: '/xpay/start_upload_goods',
     body: {
-      upload_item: [{
+      upload_item: goods.map(good => ({
         id: good.id,
         name: good.name,
         price: good.price,
         remark: good.remark,
         item_url: `${siteUrl}/api/wechat/virtual-pay/goods-image`,
-      }],
+      })),
       env: targetEnv,
     },
-  });
+  }));
   await waitForTask(accessToken, '/xpay/query_upload_goods', '上传');
 
-  await requestWechatXpay({
+  await requestXpayWithBackoff('发布', () => requestWechatXpay({
     accessToken,
     appKey,
     uri: '/xpay/start_publish_goods',
     body: {
-      publish_item: [{ id: good.id }],
+      publish_item: goods.map(good => ({ id: good.id })),
       env: targetEnv,
     },
-  });
+  }));
   await waitForTask(accessToken, '/xpay/query_publish_goods', '发布');
-  process.stdout.write(`已同步：${good.id} ${good.name} ${good.price}分\n`);
+  for (const good of goods) {
+    process.stdout.write(`已同步：${good.id} ${good.name} ${good.price}分\n`);
+  }
 }
 
 async function main() {
   requireConfig();
   const accessToken = await getAccessToken();
-  for (const good of Object.values(WECHAT_VIRTUAL_GOODS)) {
-    await syncGood(accessToken, good, env);
-  }
+  await syncGoods(accessToken, env);
   process.stdout.write(`微信虚拟道具同步完成，环境 env=${env}\n`);
 }
 
 main().catch(error => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  const errcode = Number((error as { errcode?: number })?.errcode);
+  const detail = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`${Number.isFinite(errcode) && errcode ? `[${errcode}] ` : ''}${detail}\n`);
   process.exitCode = 1;
 });
