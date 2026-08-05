@@ -7,10 +7,17 @@ import {
 export type WechatVirtualPayEnv = 0 | 1;
 
 export type WechatVirtualGood = {
-  id: ServiceProductType;
+  id: string;
   name: string;
   price: number;
   remark: string;
+};
+
+export const WECHAT_VIRTUAL_SANDBOX_GOOD: Readonly<WechatVirtualGood> = {
+  id: 'jumulu_sandbox_test',
+  name: '支付链路测试',
+  price: 1,
+  remark: '剧幕录沙箱支付链路测试，不开通正式权益',
 };
 
 export const WECHAT_VIRTUAL_GOODS: Readonly<Record<ServiceProductType, WechatVirtualGood>> = {
@@ -40,6 +47,13 @@ export function normalizeWechatVirtualPayEnv(value: unknown): WechatVirtualPayEn
 
 export function virtualGood(productType: ServiceProductType): WechatVirtualGood {
   return WECHAT_VIRTUAL_GOODS[productType];
+}
+
+export function virtualGoodForEnv(
+  productType: ServiceProductType,
+  env: WechatVirtualPayEnv,
+): WechatVirtualGood {
+  return env === 1 ? WECHAT_VIRTUAL_SANDBOX_GOOD : virtualGood(productType);
 }
 
 export function hmacSha256Hex(key: string, message: string): string {
@@ -83,7 +97,7 @@ export function createWechatVirtualPaymentParams(input: {
 }) {
   if (!input.offerId) throw new Error('微信虚拟支付 OfferId 未配置');
   if (!input.sessionKey) throw new Error('微信登录会话已失效，请重新发起支付');
-  const good = virtualGood(input.productType);
+  const good = virtualGoodForEnv(input.productType, input.env);
   const signData = createWechatVirtualPaymentSignData({
     offerId: input.offerId,
     env: input.env,
@@ -195,7 +209,7 @@ export function normalizeWechatVirtualDeliverEvent(payload: WechatVirtualGoodsDe
 export function assertWechatVirtualDelivery(input: {
   callback: ReturnType<typeof normalizeWechatVirtualDeliverEvent>;
   expectedEnv: WechatVirtualPayEnv;
-  expectedProductType: ServiceProductType;
+  expectedProductId: string;
   expectedOpenid: string | null;
   expectedAmountFen: number;
   expectedAttach: string;
@@ -204,7 +218,7 @@ export function assertWechatVirtualDelivery(input: {
   if (callback.event !== 'xpay_goods_deliver_notify') throw new Error('微信虚拟支付回调类型不正确');
   if (!callback.outTradeNo || !callback.transactionId) throw new Error('微信虚拟支付回调缺少订单号');
   if (callback.env !== input.expectedEnv) throw new Error('微信虚拟支付环境不匹配');
-  if (callback.productId !== virtualGood(input.expectedProductType).id) throw new Error('微信虚拟支付道具不匹配');
+  if (callback.productId !== input.expectedProductId) throw new Error('微信虚拟支付道具不匹配');
   if (callback.quantity !== 1) throw new Error('微信虚拟支付购买数量不匹配');
   if (
     callback.originalPrice !== input.expectedAmountFen

@@ -163,6 +163,7 @@ export type ServicePurchase = {
   contact_available?: boolean
   business_contact?: string | null
   contact_updated_at?: string | null
+  sandbox_test_completed?: boolean
 }
 
 type ServicePaymentCreation = {
@@ -174,6 +175,9 @@ type ServicePaymentCreation = {
     paySig: string
     signature: string
     expires_at: string
+    sandbox_test?: boolean
+    amount_fen?: number
+    amount_yuan?: string
   }
 }
 
@@ -225,6 +229,18 @@ export async function requestServicePayment(productType: ServiceProductType, tar
   })
   if (creation.already_paid || creation.purchase.paid) return creation.purchase
   if (!creation.payment) throw new Error('微信虚拟支付参数缺失，请稍后重试')
+  if (creation.payment.sandbox_test) {
+    const confirmed = await new Promise<boolean>((resolve) => {
+      uni.showModal({
+        title: '沙箱支付测试',
+        content: `本次只支付 ${creation.payment?.amount_yuan || '0.01'} 元，用于验证微信支付链路，不会开通正式服务权益。是否继续？`,
+        confirmText: '继续测试',
+        success: result => resolve(result.confirm),
+        fail: () => resolve(false),
+      })
+    })
+    if (!confirmed) throw new Error('已取消支付测试')
+  }
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -252,8 +268,12 @@ export async function requestServicePayment(productType: ServiceProductType, tar
       const purchase = await apiRequest<ServicePurchase>(
         `/lc/service-payments/${encoded(creation.purchase.id)}/status?refresh=1`,
       )
+      if (purchase.sandbox_test_completed) {
+        throw new Error('沙箱支付测试完成：已支付 0.01 元，未开通正式服务权益')
+      }
       if (purchase.paid) return purchase
-    } catch {
+    } catch (reason) {
+      if (reason instanceof Error && reason.message.includes('沙箱支付测试完成')) throw reason
       // 微信回调可能略晚于客户端返回，继续向服务端确认。
     }
     await wait(700 + attempt * 150)

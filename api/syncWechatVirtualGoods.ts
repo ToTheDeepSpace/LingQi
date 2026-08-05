@@ -1,4 +1,5 @@
 import {
+  WECHAT_VIRTUAL_SANDBOX_GOOD,
   WECHAT_VIRTUAL_GOODS,
   normalizeWechatVirtualPayEnv,
   requestWechatXpay,
@@ -143,7 +144,10 @@ async function syncGood(
 async function main() {
   requireConfig();
   const accessToken = await getAccessToken();
-  for (const good of Object.values(WECHAT_VIRTUAL_GOODS)) {
+  const goods = env === 1
+    ? [WECHAT_VIRTUAL_SANDBOX_GOOD]
+    : Object.values(WECHAT_VIRTUAL_GOODS);
+  for (const good of goods) {
     await syncGood(accessToken, good, env);
     await sleep(2_000);
   }

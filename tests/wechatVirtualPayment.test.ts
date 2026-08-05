@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   WECHAT_VIRTUAL_GOODS,
+  WECHAT_VIRTUAL_SANDBOX_GOOD,
   assertWechatVirtualDelivery,
   createWechatVirtualPaySig,
   createWechatVirtualPaymentParams,
@@ -13,12 +14,18 @@ import {
   wechatVirtualOrderStatus,
 } from '../api/wechatVirtualPayment.js';
 
-test('virtual goods use stable ids and the existing 8.88 price', () => {
+test('formal virtual goods keep stable ids and the existing 8.88 price', () => {
   for (const good of Object.values(WECHAT_VIRTUAL_GOODS)) {
     assert.match(good.id, /^[A-Za-z0-9_-]{1,20}$/);
     assert.equal(good.price, 888);
     assert.ok(good.name.length > 0);
   }
+});
+
+test('sandbox uses a dedicated one-cent good that cannot grant formal access', () => {
+  assert.equal(WECHAT_VIRTUAL_SANDBOX_GOOD.id, 'jumulu_sandbox_test');
+  assert.equal(WECHAT_VIRTUAL_SANDBOX_GOOD.price, 1);
+  assert.match(WECHAT_VIRTUAL_SANDBOX_GOOD.remark, /不开通正式权益/);
 });
 
 test('client signature data follows the documented field order', () => {
@@ -101,7 +108,7 @@ test('delivery callback validates payer, product, amount and attach', () => {
   assert.doesNotThrow(() => assertWechatVirtualDelivery({
     callback,
     expectedEnv: 0,
-    expectedProductType: 'provider_listing',
+    expectedProductId: 'provider_listing',
     expectedOpenid: 'openid-1',
     expectedAmountFen: 888,
     expectedAttach: 'purchase-1',
@@ -109,7 +116,7 @@ test('delivery callback validates payer, product, amount and attach', () => {
   assert.throws(() => assertWechatVirtualDelivery({
     callback,
     expectedEnv: 0,
-    expectedProductType: 'provider_listing',
+    expectedProductId: 'provider_listing',
     expectedOpenid: 'openid-2',
     expectedAmountFen: 888,
     expectedAttach: 'purchase-1',
@@ -132,7 +139,8 @@ test('miniapp service payment uses requestVirtualPayment instead of requestPayme
 
 test('goods synchronization respects the one-item server API limit', () => {
   const source = readFileSync('api/syncWechatVirtualGoods.ts', 'utf8');
-  assert.match(source, /for \(const good of Object\.values\(WECHAT_VIRTUAL_GOODS\)\)/);
+  assert.match(source, /env === 1[\s\S]*WECHAT_VIRTUAL_SANDBOX_GOOD/);
+  assert.match(source, /Object\.values\(WECHAT_VIRTUAL_GOODS\)/);
   assert.match(source, /upload_item: \[\{/);
   assert.match(source, /publish_item: \[\{ id: good\.id \}\]/);
   assert.doesNotMatch(source, /upload_item: .*\.map/);

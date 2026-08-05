@@ -187,7 +187,7 @@ import {
   normalizeWechatVirtualDeliverEvent,
   normalizeWechatVirtualPayEnv,
   requestWechatXpay,
-  virtualGood,
+  virtualGoodForEnv,
   wechatVirtualOrderStatus,
   type WechatVirtualGoodsDeliverEvent,
   type WechatVirtualPayEnv,
@@ -2888,7 +2888,7 @@ type ServicePaymentAttemptRow = {
   out_trade_no: string;
   prepay_id?: string | null;
   payment_provider?: 'wechat_pay' | 'wechat_virtual_pay';
-  product_id?: ServiceProductType | null;
+  product_id?: string | null;
   wx_order_id?: string | null;
   xpay_env?: WechatVirtualPayEnv | null;
   delivery_notified_at?: string | null;
@@ -2957,6 +2957,7 @@ async function createFreshVirtualServiceAttempt(
 ) {
   const expiresAt = makePaymentExpiresAt();
   const outTradeNo = makeServicePayOrderNo();
+  const paymentGood = virtualGoodForEnv(productType, env);
   if (useTencentPg) {
     const client = await tencentPgPool.connect();
     try {
@@ -2975,7 +2976,7 @@ async function createFreshVirtualServiceAttempt(
           (purchase_id, out_trade_no, amount_fen, status, payment_provider, product_id, xpay_env, expires_at)
          values ($1, $2, $3, 'created', 'wechat_virtual_pay', $4, $5, $6)
          returning *`,
-        [purchaseId, outTradeNo, SERVICE_FEE_FEN, virtualGood(productType).id, env, expiresAt.toISOString()],
+        [purchaseId, outTradeNo, paymentGood.price, paymentGood.id, env, expiresAt.toISOString()],
       );
       await client.query('commit');
       return inserted.rows[0];
@@ -2994,10 +2995,10 @@ async function createFreshVirtualServiceAttempt(
   const inserted = await supabase.from('lc_service_payment_attempts').insert({
     purchase_id: purchaseId,
     out_trade_no: outTradeNo,
-    amount_fen: SERVICE_FEE_FEN,
+    amount_fen: paymentGood.price,
     status: 'created',
     payment_provider: 'wechat_virtual_pay',
-    product_id: virtualGood(productType).id,
+    product_id: paymentGood.id,
     xpay_env: env,
     expires_at: expiresAt.toISOString(),
   }).select('*').single();
@@ -3086,7 +3087,10 @@ async function confirmServicePayment(input: {
       assertWechatVirtualDelivery({
         callback: input.virtualCallback,
         expectedEnv: attempt.xpay_env ?? LINGQI_WECHAT_VIRTUAL_PAY_ENV,
-        expectedProductType: purchase.product_type,
+        expectedProductId: attempt.product_id || virtualGoodForEnv(
+          purchase.product_type,
+          attempt.xpay_env ?? LINGQI_WECHAT_VIRTUAL_PAY_ENV,
+        ).id,
         expectedOpenid: expectedPayerOpenid,
         expectedAmountFen: Number(attempt.amount_fen),
         expectedAttach: purchase.id,
@@ -3145,9 +3149,15 @@ async function confirmServicePayment(input: {
       );
       if (attempt.status === 'paid' || attempt.status === 'duplicate_paid') {
         await client.query('commit');
-        return { ...attempt, newlyPaid: false, duplicatePaid: attempt.status === 'duplicate_paid' };
+        return {
+          ...attempt,
+          newlyPaid: false,
+          duplicatePaid: attempt.status === 'duplicate_paid',
+          sandboxPaid: provider === 'wechat_virtual_pay' && attempt.xpay_env === 1,
+        };
       }
-      const duplicatePaid = attempt.purchase_status === 'paid';
+      const sandboxPaid = provider === 'wechat_virtual_pay' && attempt.xpay_env === 1;
+      const duplicatePaid = !sandboxPaid && attempt.purchase_status === 'paid';
       await client.query(
         `update lc_service_payment_attempts
             set status = $2,
@@ -3165,7 +3175,7 @@ async function confirmServicePayment(input: {
           provider,
         ],
       );
-      if (!duplicatePaid) {
+      if (!duplicatePaid && !sandboxPaid) {
         await client.query(
           `update lc_service_purchases
               set status = 'paid',
@@ -3179,7 +3189,12 @@ async function confirmServicePayment(input: {
         );
       }
       await client.query('commit');
-      return { ...attempt, newlyPaid: !duplicatePaid, duplicatePaid };
+      return {
+        ...attempt,
+        newlyPaid: !duplicatePaid && !sandboxPaid,
+        duplicatePaid,
+        sandboxPaid,
+      };
     } catch (error) {
       await client.query('rollback');
       throw error;
@@ -3204,9 +3219,18 @@ async function confirmServicePayment(input: {
   const purchaseProfile = (purchaseResult.data as Record<string, unknown>).lc_profiles as { wechat_mini_openid?: string | null } | null;
   validateAttempt(attempt, purchase, purchaseProfile?.wechat_mini_openid || null);
   if (attempt.status === 'paid' || attempt.status === 'duplicate_paid') {
-    return { ...attempt, profile_id: purchase.profile_id, product_type: purchase.product_type, target_id: purchase.target_id, newlyPaid: false, duplicatePaid: attempt.status === 'duplicate_paid' };
+    return {
+      ...attempt,
+      profile_id: purchase.profile_id,
+      product_type: purchase.product_type,
+      target_id: purchase.target_id,
+      newlyPaid: false,
+      duplicatePaid: attempt.status === 'duplicate_paid',
+      sandboxPaid: provider === 'wechat_virtual_pay' && attempt.xpay_env === 1,
+    };
   }
-  const duplicatePaid = purchase.status === 'paid';
+  const sandboxPaid = provider === 'wechat_virtual_pay' && attempt.xpay_env === 1;
+  const duplicatePaid = !sandboxPaid && purchase.status === 'paid';
   const attemptUpdate = await supabase.from('lc_service_payment_attempts').update({
     status: duplicatePaid ? 'duplicate_paid' : 'paid',
     wechat_transaction_id: input.transactionId,
@@ -3216,7 +3240,7 @@ async function confirmServicePayment(input: {
     updated_at: new Date().toISOString(),
   }).eq('id', attempt.id);
   if (attemptUpdate.error) throw attemptUpdate.error;
-  if (!duplicatePaid) {
+  if (!duplicatePaid && !sandboxPaid) {
     const purchaseUpdate = await supabase.from('lc_service_purchases').update({
       status: 'paid',
       paid_attempt_id: attempt.id,
@@ -3227,7 +3251,15 @@ async function confirmServicePayment(input: {
     }).eq('id', purchase.id);
     if (purchaseUpdate.error) throw purchaseUpdate.error;
   }
-  return { ...attempt, profile_id: purchase.profile_id, product_type: purchase.product_type, target_id: purchase.target_id, newlyPaid: !duplicatePaid, duplicatePaid };
+  return {
+    ...attempt,
+    profile_id: purchase.profile_id,
+    product_type: purchase.product_type,
+    target_id: purchase.target_id,
+    newlyPaid: !duplicatePaid && !sandboxPaid,
+    duplicatePaid,
+    sandboxPaid,
+  };
 }
 
 async function requestConfiguredWechatXpay<T extends Record<string, unknown>>(
@@ -3404,7 +3436,16 @@ async function handleWechatVirtualPaymentCallback(
         console.error('[wechat-xpay] delivery order not found', { out_trade_no: callback.outTradeNo });
         return reply(-1, 'order not found');
       }
-      if (confirmed.newlyPaid) {
+      if (confirmed.sandboxPaid) {
+        await notifyProfile({
+          profileId: confirmed.profile_id,
+          type: 'service_payment_succeeded',
+          title: '沙箱支付测试完成',
+          content: '0.01 元支付链路测试已完成，本次不会开通正式服务权益。',
+          relatedType: confirmed.product_type,
+          relatedId: confirmed.target_id,
+        });
+      } else if (confirmed.newlyPaid) {
         await notifyProfile({
           profileId: confirmed.profile_id,
           type: 'service_payment_succeeded',
@@ -3415,7 +3456,11 @@ async function handleWechatVirtualPaymentCallback(
         });
       }
       await logSecurityEvent(req, {
-        action: confirmed.duplicatePaid ? 'service_virtual_payment_duplicate_paid' : 'service_virtual_payment_delivered',
+        action: confirmed.sandboxPaid
+          ? 'service_virtual_payment_sandbox_test_delivered'
+          : confirmed.duplicatePaid
+            ? 'service_virtual_payment_duplicate_paid'
+            : 'service_virtual_payment_delivered',
         targetType: confirmed.product_type,
         targetId: confirmed.target_id,
         actorRole: 'wechat_virtual_pay',
@@ -3424,6 +3469,7 @@ async function handleWechatVirtualPaymentCallback(
           out_trade_no: callback.outTradeNo,
           wx_order_id: callback.transactionId,
           newly_paid: confirmed.newlyPaid,
+          sandbox_paid: confirmed.sandboxPaid,
         },
       });
       await markWechatVirtualDeliveryNotified(confirmed.id, callback.transactionId);
@@ -7920,6 +7966,7 @@ app.post('/api/lc/miniapp/virtual-service-payments/create', authMiddleware, asyn
       LINGQI_WECHAT_VIRTUAL_PAY_ENV,
     );
     attemptId = attempt.id;
+    const paymentGood = virtualGoodForEnv(productType, LINGQI_WECHAT_VIRTUAL_PAY_ENV);
     const payParams = createWechatVirtualPaymentParams({
       offerId: LINGQI_WECHAT_VIRTUAL_PAY_OFFER_ID,
       appKey: wechatVirtualPayAppKey(),
@@ -7938,8 +7985,8 @@ app.post('/api/lc/miniapp/virtual-service-payments/create', authMiddleware, asyn
       metadata: {
         purchase_id: purchase.id,
         attempt_id: attempt.id,
-        amount_fen: SERVICE_FEE_FEN,
-        product_id: virtualGood(productType).id,
+        amount_fen: paymentGood.price,
+        product_id: paymentGood.id,
         xpay_env: LINGQI_WECHAT_VIRTUAL_PAY_ENV,
       },
     });
@@ -7949,6 +7996,9 @@ app.post('/api/lc/miniapp/virtual-service-payments/create', authMiddleware, asyn
       payment: {
         ...payParams,
         expires_at: attempt.expires_at,
+        sandbox_test: LINGQI_WECHAT_VIRTUAL_PAY_ENV === 1,
+        amount_fen: paymentGood.price,
+        amount_yuan: (paymentGood.price / 100).toFixed(2),
       },
     }));
   } catch (e) {
@@ -7976,6 +8026,7 @@ app.get('/api/lc/service-payments/:id/status', authMiddleware, async (req, res) 
     if (purchaseResult.error) throw purchaseResult.error;
     if (!purchaseResult.data) return res.status(404).json(err(new Error('支付订单不存在')));
     let purchase = purchaseResult.data as ServicePurchaseRow;
+    let sandboxTestCompleted = false;
 
     if (req.query.refresh === '1') {
       const attemptResult = await supabase.from('lc_service_payment_attempts')
@@ -7989,6 +8040,8 @@ app.get('/api/lc/service-payments/:id/status', authMiddleware, async (req, res) 
       const attempt = attemptResult.error ? null : attemptResult.data as ServicePaymentAttemptRow | null;
       const paymentProvider = attempt?.payment_provider || 'wechat_pay';
       if (attempt && paymentProvider === 'wechat_virtual_pay') {
+        sandboxTestCompleted = attempt.xpay_env === 1
+          && (attempt.status === 'paid' || attempt.status === 'duplicate_paid');
         const env = attempt.xpay_env ?? LINGQI_WECHAT_VIRTUAL_PAY_ENV;
         if (isWechatVirtualPayConfigured(env)) {
           const queryPayload = await requestConfiguredWechatXpay<Record<string, unknown>>('/xpay/query_order', {
@@ -8039,6 +8092,7 @@ app.get('/api/lc/service-payments/:id/status', authMiddleware, async (req, res) 
               virtualCallback: callback,
             });
             if (!confirmed) throw new Error('微信虚拟支付订单无法匹配本地记录');
+            sandboxTestCompleted = Boolean(confirmed.sandboxPaid);
             if (!attempt.delivery_notified_at) {
               await notifyWechatVirtualGoodsDelivered(attempt.out_trade_no, env);
               await markWechatVirtualDeliveryNotified(attempt.id, wxOrderId);
@@ -8092,7 +8146,10 @@ app.get('/api/lc/service-payments/:id/status', authMiddleware, async (req, res) 
       }
     }
     res.setHeader('Cache-Control', 'private, no-store');
-    res.json(ok(await servicePurchaseStatusPayload(purchase)));
+    res.json(ok({
+      ...await servicePurchaseStatusPayload(purchase),
+      sandbox_test_completed: sandboxTestCompleted,
+    }));
   } catch (e) { res.status(500).json(err(e)); }
 });
 
