@@ -130,10 +130,10 @@ test('miniapp service payment uses requestVirtualPayment instead of requestPayme
   assert.doesNotMatch(paymentFunction, /uni\.requestPayment/);
 });
 
-test('goods synchronization batches upload and publish requests', () => {
+test('goods synchronization respects the one-item server API limit', () => {
   const source = readFileSync('api/syncWechatVirtualGoods.ts', 'utf8');
-  assert.match(source, /const goods = Object\.values\(WECHAT_VIRTUAL_GOODS\)/);
-  assert.match(source, /upload_item: goods\.map/);
-  assert.match(source, /publish_item: goods\.map/);
-  assert.doesNotMatch(source, /for \(const good of Object\.values\(WECHAT_VIRTUAL_GOODS\)\)/);
+  assert.match(source, /for \(const good of Object\.values\(WECHAT_VIRTUAL_GOODS\)\)/);
+  assert.match(source, /upload_item: \[\{/);
+  assert.match(source, /publish_item: \[\{ id: good\.id \}\]/);
+  assert.doesNotMatch(source, /upload_item: .*\.map/);
 });

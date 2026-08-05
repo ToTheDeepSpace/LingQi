@@ -105,23 +105,23 @@ async function waitForTask(
   throw new Error(`微信虚拟道具${action}超时，请稍后查询任务状态`);
 }
 
-async function syncGoods(
+async function syncGood(
   accessToken: string,
+  good: (typeof WECHAT_VIRTUAL_GOODS)[keyof typeof WECHAT_VIRTUAL_GOODS],
   targetEnv: WechatVirtualPayEnv,
 ) {
-  const goods = Object.values(WECHAT_VIRTUAL_GOODS);
   await requestXpayWithBackoff('上传', () => requestWechatXpay({
     accessToken,
     appKey,
     uri: '/xpay/start_upload_goods',
     body: {
-      upload_item: goods.map(good => ({
+      upload_item: [{
         id: good.id,
         name: good.name,
         price: good.price,
         remark: good.remark,
         item_url: `${siteUrl}/api/wechat/virtual-pay/goods-image`,
-      })),
+      }],
       env: targetEnv,
     },
   }));
@@ -132,20 +132,21 @@ async function syncGoods(
     appKey,
     uri: '/xpay/start_publish_goods',
     body: {
-      publish_item: goods.map(good => ({ id: good.id })),
+      publish_item: [{ id: good.id }],
       env: targetEnv,
     },
   }));
   await waitForTask(accessToken, '/xpay/query_publish_goods', '发布');
-  for (const good of goods) {
-    process.stdout.write(`已同步：${good.id} ${good.name} ${good.price}分\n`);
-  }
+  process.stdout.write(`已同步：${good.id} ${good.name} ${good.price}分\n`);
 }
 
 async function main() {
   requireConfig();
   const accessToken = await getAccessToken();
-  await syncGoods(accessToken, env);
+  for (const good of Object.values(WECHAT_VIRTUAL_GOODS)) {
+    await syncGood(accessToken, good, env);
+    await sleep(2_000);
+  }
   process.stdout.write(`微信虚拟道具同步完成，环境 env=${env}\n`);
 }
 
