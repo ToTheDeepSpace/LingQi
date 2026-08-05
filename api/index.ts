@@ -181,6 +181,17 @@ import {
   servicePurchaseGrantsAccess,
   type ServiceProductType,
 } from './servicePayments.js';
+import {
+  assertWechatVirtualDelivery,
+  createWechatVirtualPaymentParams,
+  normalizeWechatVirtualDeliverEvent,
+  normalizeWechatVirtualPayEnv,
+  requestWechatXpay,
+  virtualGood,
+  wechatVirtualOrderStatus,
+  type WechatVirtualGoodsDeliverEvent,
+  type WechatVirtualPayEnv,
+} from './wechatVirtualPayment.js';
 
 function envValue(name: string) {
   const direct = process.env[name];
@@ -228,6 +239,10 @@ const WECHAT_OPEN_APP_SECRET = process.env.WECHAT_OPEN_APP_SECRET || '';
 const LINGQI_WECHAT_MINI_APP_ID = process.env.LINGQI_WECHAT_MINI_APP_ID || process.env.WECHAT_MINI_APP_ID || '';
 const LINGQI_WECHAT_MINI_APP_SECRET = process.env.LINGQI_WECHAT_MINI_APP_SECRET || process.env.WECHAT_MINI_APP_SECRET || '';
 const LINGQI_WECHAT_MINI_MSG_TOKEN = process.env.LINGQI_WECHAT_MINI_MSG_TOKEN || '';
+const LINGQI_WECHAT_VIRTUAL_PAY_OFFER_ID = process.env.LINGQI_WECHAT_VIRTUAL_PAY_OFFER_ID || '';
+const LINGQI_WECHAT_VIRTUAL_PAY_APP_KEY = envValue('LINGQI_WECHAT_VIRTUAL_PAY_APP_KEY');
+const LINGQI_WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY = envValue('LINGQI_WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY');
+const LINGQI_WECHAT_VIRTUAL_PAY_ENV = normalizeWechatVirtualPayEnv(process.env.LINGQI_WECHAT_VIRTUAL_PAY_ENV);
 const LINGQI_TERMS_VERSION = '2026-07-12';
 const LINGQI_PRIVACY_VERSION = '2026-07-12';
 const WECHAT_REDIRECT_URI = process.env.WECHAT_REDIRECT_URI || `${LINGQI_SITE_URL}/api/lc/auth/wechat/callback`;
@@ -427,6 +442,7 @@ app.use((req, res, next) => {
   if (req.method === 'POST' && (
     path.includes('/purchase')
     || path === '/api/lc/service-payments/create'
+    || path === '/api/lc/miniapp/virtual-service-payments/create'
     || path === '/api/lc/wallet/recharge'
     || path === '/api/lc/wallet/alipay/create'
     || path === '/api/lc/wallet/wechat/create'
@@ -593,10 +609,20 @@ async function handleWechatMiniMediaCallback(req: express.Request, res: express.
   try {
     const { rawBody, parsedBody } = parseWechatCallbackBody(req);
     const payload = parseWechatMiniMediaEvent(parsedBody, rawBody);
-    if (payload.appid && payload.appid !== LINGQI_WECHAT_MINI_APP_ID) {
+    const callbackAppId = cleanText(
+      payload.appid
+      || (parsedBody && typeof parsedBody === 'object'
+        ? (parsedBody as Record<string, unknown>).AppId
+        : ''),
+      120,
+    );
+    if (callbackAppId && callbackAppId !== LINGQI_WECHAT_MINI_APP_ID) {
       return res.status(403).type('text/plain').send('invalid appid');
     }
     const event = String(payload.Event || payload.event || '').toLowerCase();
+    if (event.startsWith('xpay_')) {
+      return handleWechatVirtualPaymentCallback(req, res, parsedBody);
+    }
     if (event !== 'wxa_media_check') {
       return res.status(200).type('text/plain').send('success');
     }
@@ -637,6 +663,63 @@ function getWechatMpConfigError(): string {
 
 function isWechatMiniLoginConfigured() {
   return Boolean(LINGQI_WECHAT_MINI_APP_ID && LINGQI_WECHAT_MINI_APP_SECRET);
+}
+
+type WechatMiniSession = {
+  openid: string;
+  unionid: string | null;
+  sessionKey: string;
+};
+
+async function exchangeWechatMiniCode(code: string): Promise<WechatMiniSession> {
+  if (!isWechatMiniLoginConfigured()) throw new Error('微信小程序登录尚未配置');
+  if (!code) throw new Error('缺少微信登录 code');
+  const sessionUrl = new URL('https://api.weixin.qq.com/sns/jscode2session');
+  sessionUrl.search = new URLSearchParams({
+    appid: LINGQI_WECHAT_MINI_APP_ID,
+    secret: LINGQI_WECHAT_MINI_APP_SECRET,
+    js_code: code,
+    grant_type: 'authorization_code',
+  }).toString();
+  const response = await fetch(sessionUrl, { signal: AbortSignal.timeout(8_000) });
+  const payload = await response.json() as {
+    openid?: string;
+    unionid?: string;
+    session_key?: string;
+    errcode?: number;
+    errmsg?: string;
+  };
+  if (!response.ok || payload.errcode) {
+    throw new Error(payload.errmsg || '微信小程序登录失败');
+  }
+  const openid = cleanText(payload.openid, 120);
+  const sessionKey = cleanText(payload.session_key, 300);
+  if (!openid || !sessionKey) throw new Error('微信小程序登录会话信息不完整');
+  return {
+    openid,
+    unionid: cleanText(payload.unionid, 120) || null,
+    sessionKey,
+  };
+}
+
+function wechatVirtualPayAppKey(env = LINGQI_WECHAT_VIRTUAL_PAY_ENV) {
+  return env === 1
+    ? LINGQI_WECHAT_VIRTUAL_PAY_SANDBOX_APP_KEY
+    : LINGQI_WECHAT_VIRTUAL_PAY_APP_KEY;
+}
+
+function isWechatVirtualPayConfigured(env = LINGQI_WECHAT_VIRTUAL_PAY_ENV) {
+  return Boolean(
+    isWechatMiniLoginConfigured()
+    && LINGQI_WECHAT_VIRTUAL_PAY_OFFER_ID
+    && wechatVirtualPayAppKey(env),
+  );
+}
+
+function assertWechatVirtualPayConfigured(env = LINGQI_WECHAT_VIRTUAL_PAY_ENV) {
+  if (!isWechatVirtualPayConfigured(env)) {
+    throw new Error(`微信虚拟支付${env === 1 ? '沙箱' : '生产'}配置尚未完成`);
+  }
 }
 
 const wechatMiniAccessTokenCache = new WechatAccessTokenCache();
@@ -2784,11 +2867,6 @@ async function createWechatPayMiniappOrder(input: {
   if (!data?.prepay_id) throw new Error('微信支付未返回预支付信息');
   return {
     prepayId: data.prepay_id,
-    payParams: createMiniappPaymentParams({
-      appId: WECHAT_PAY_APP_ID,
-      prepayId: data.prepay_id,
-      privateKey: WECHAT_PAY_PRIVATE_KEY,
-    }),
     description,
   };
 }
@@ -2809,6 +2887,11 @@ type ServicePaymentAttemptRow = {
   purchase_id: string;
   out_trade_no: string;
   prepay_id?: string | null;
+  payment_provider?: 'wechat_pay' | 'wechat_virtual_pay';
+  product_id?: ServiceProductType | null;
+  wx_order_id?: string | null;
+  xpay_env?: WechatVirtualPayEnv | null;
+  delivery_notified_at?: string | null;
   amount_fen: number;
   status: 'created' | 'paid' | 'failed' | 'expired' | 'duplicate_paid' | 'refunded';
   expires_at: string;
@@ -2865,6 +2948,61 @@ async function ensureServicePurchase(profileId: string, productType: ServiceProd
 async function paidServicePurchase(profileId: string, productType: ServiceProductType, targetId: string) {
   const purchase = await findServicePurchase(profileId, productType, targetId);
   return purchase && servicePurchaseGrantsAccess(purchase.status) ? purchase : null;
+}
+
+async function createFreshVirtualServiceAttempt(
+  purchaseId: string,
+  productType: ServiceProductType,
+  env: WechatVirtualPayEnv,
+) {
+  const expiresAt = makePaymentExpiresAt();
+  const outTradeNo = makeServicePayOrderNo();
+  if (useTencentPg) {
+    const client = await tencentPgPool.connect();
+    try {
+      await client.query('begin');
+      await client.query('select id from lc_service_purchases where id = $1 for update', [purchaseId]);
+      await client.query(
+        `update lc_service_payment_attempts
+            set status = 'expired',
+                updated_at = now()
+          where purchase_id = $1
+            and status = 'created'`,
+        [purchaseId],
+      );
+      const inserted = await client.query<ServicePaymentAttemptRow>(
+        `insert into lc_service_payment_attempts
+          (purchase_id, out_trade_no, amount_fen, status, payment_provider, product_id, xpay_env, expires_at)
+         values ($1, $2, $3, 'created', 'wechat_virtual_pay', $4, $5, $6)
+         returning *`,
+        [purchaseId, outTradeNo, SERVICE_FEE_FEN, virtualGood(productType).id, env, expiresAt.toISOString()],
+      );
+      await client.query('commit');
+      return inserted.rows[0];
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  const expired = await supabase.from('lc_service_payment_attempts').update({
+    status: 'expired',
+    updated_at: new Date().toISOString(),
+  }).eq('purchase_id', purchaseId).eq('status', 'created');
+  if (expired.error) throw expired.error;
+  const inserted = await supabase.from('lc_service_payment_attempts').insert({
+    purchase_id: purchaseId,
+    out_trade_no: outTradeNo,
+    amount_fen: SERVICE_FEE_FEN,
+    status: 'created',
+    payment_provider: 'wechat_virtual_pay',
+    product_id: virtualGood(productType).id,
+    xpay_env: env,
+    expires_at: expiresAt.toISOString(),
+  }).select('*').single();
+  if (inserted.error) throw inserted.error;
+  return inserted.data as ServicePaymentAttemptRow;
 }
 
 async function providerBusinessContact(providerId: string) {
@@ -2924,6 +3062,7 @@ async function validateServicePurchaseTarget(profile: AuthedProfile, productType
 }
 
 async function confirmServicePayment(input: {
+  provider?: 'wechat_pay' | 'wechat_virtual_pay';
   outTradeNo: string;
   transactionId: string;
   totalFee: number;
@@ -2932,15 +3071,43 @@ async function confirmServicePayment(input: {
   mchId: string;
   payerOpenid: string;
   payload: Record<string, unknown>;
+  virtualCallback?: ReturnType<typeof normalizeWechatVirtualDeliverEvent>;
 }) {
-  assertServicePaymentEnvelope({
-    appId: input.appId,
-    mchId: input.mchId,
-    currency: input.currency,
-    payerOpenid: input.payerOpenid,
-    expectedAppId: WECHAT_PAY_APP_ID,
-    expectedMchId: WECHAT_PAY_MCH_ID,
-  });
+  const provider = input.provider || 'wechat_pay';
+  const validateAttempt = (
+    attempt: ServicePaymentAttemptRow,
+    purchase: ServicePurchaseRow,
+    expectedPayerOpenid: string | null,
+  ) => {
+    const attemptProvider = attempt.payment_provider || 'wechat_pay';
+    if (attemptProvider !== provider) throw new Error('付费服务支付渠道不匹配');
+    if (provider === 'wechat_virtual_pay') {
+      if (!input.virtualCallback) throw new Error('微信虚拟支付回调内容缺失');
+      assertWechatVirtualDelivery({
+        callback: input.virtualCallback,
+        expectedEnv: attempt.xpay_env ?? LINGQI_WECHAT_VIRTUAL_PAY_ENV,
+        expectedProductType: purchase.product_type,
+        expectedOpenid: expectedPayerOpenid,
+        expectedAmountFen: Number(attempt.amount_fen),
+        expectedAttach: purchase.id,
+      });
+      return;
+    }
+    assertServicePaymentEnvelope({
+      appId: input.appId,
+      mchId: input.mchId,
+      currency: input.currency,
+      payerOpenid: input.payerOpenid,
+      expectedAppId: WECHAT_PAY_APP_ID,
+      expectedMchId: WECHAT_PAY_MCH_ID,
+    });
+    assertServicePaymentOwnership({
+      totalFee: input.totalFee,
+      attemptAmountFen: Number(attempt.amount_fen),
+      payerOpenid: input.payerOpenid,
+      expectedPayerOpenid,
+    });
+  };
   if (useTencentPg) {
     const client = await tencentPgPool.connect();
     try {
@@ -2964,12 +3131,18 @@ async function confirmServicePayment(input: {
         await client.query('rollback');
         return null;
       }
-      assertServicePaymentOwnership({
-        totalFee: input.totalFee,
-        attemptAmountFen: Number(attempt.amount_fen),
-        payerOpenid: input.payerOpenid,
-        expectedPayerOpenid: attempt.wechat_mini_openid,
-      });
+      validateAttempt(
+        attempt,
+        {
+          id: attempt.purchase_id,
+          profile_id: attempt.profile_id,
+          product_type: attempt.product_type,
+          target_id: attempt.target_id,
+          amount_fen: Number(attempt.amount_fen),
+          status: attempt.purchase_status as ServicePurchaseRow['status'],
+        },
+        attempt.wechat_mini_openid,
+      );
       if (attempt.status === 'paid' || attempt.status === 'duplicate_paid') {
         await client.query('commit');
         return { ...attempt, newlyPaid: false, duplicatePaid: attempt.status === 'duplicate_paid' };
@@ -2979,11 +3152,18 @@ async function confirmServicePayment(input: {
         `update lc_service_payment_attempts
             set status = $2,
                 wechat_transaction_id = $3,
+                wx_order_id = case when $5 = 'wechat_virtual_pay' then $3 else wx_order_id end,
                 notify_payload = $4::jsonb,
                 paid_at = now(),
                 updated_at = now()
           where id = $1`,
-        [attempt.id, duplicatePaid ? 'duplicate_paid' : 'paid', input.transactionId, JSON.stringify(input.payload)],
+        [
+          attempt.id,
+          duplicatePaid ? 'duplicate_paid' : 'paid',
+          input.transactionId,
+          JSON.stringify(input.payload),
+          provider,
+        ],
       );
       if (!duplicatePaid) {
         await client.query(
@@ -3022,12 +3202,7 @@ async function confirmServicePayment(input: {
   if (purchaseResult.error) throw purchaseResult.error;
   const purchase = purchaseResult.data as ServicePurchaseRow;
   const purchaseProfile = (purchaseResult.data as Record<string, unknown>).lc_profiles as { wechat_mini_openid?: string | null } | null;
-  assertServicePaymentOwnership({
-    totalFee: input.totalFee,
-    attemptAmountFen: Number(attempt.amount_fen),
-    payerOpenid: input.payerOpenid,
-    expectedPayerOpenid: purchaseProfile?.wechat_mini_openid || null,
-  });
+  validateAttempt(attempt, purchase, purchaseProfile?.wechat_mini_openid || null);
   if (attempt.status === 'paid' || attempt.status === 'duplicate_paid') {
     return { ...attempt, profile_id: purchase.profile_id, product_type: purchase.product_type, target_id: purchase.target_id, newlyPaid: false, duplicatePaid: attempt.status === 'duplicate_paid' };
   }
@@ -3035,6 +3210,7 @@ async function confirmServicePayment(input: {
   const attemptUpdate = await supabase.from('lc_service_payment_attempts').update({
     status: duplicatePaid ? 'duplicate_paid' : 'paid',
     wechat_transaction_id: input.transactionId,
+    wx_order_id: provider === 'wechat_virtual_pay' ? input.transactionId : attempt.wx_order_id || null,
     notify_payload: input.payload,
     paid_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -3052,6 +3228,277 @@ async function confirmServicePayment(input: {
     if (purchaseUpdate.error) throw purchaseUpdate.error;
   }
   return { ...attempt, profile_id: purchase.profile_id, product_type: purchase.product_type, target_id: purchase.target_id, newlyPaid: !duplicatePaid, duplicatePaid };
+}
+
+async function requestConfiguredWechatXpay<T extends Record<string, unknown>>(
+  uri: `/xpay/${string}`,
+  body: Record<string, unknown>,
+  env = LINGQI_WECHAT_VIRTUAL_PAY_ENV,
+  requiresPaySig = true,
+) {
+  assertWechatVirtualPayConfigured(env);
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const accessToken = await getWechatMiniAccessToken();
+    try {
+      return await requestWechatXpay<T>({
+        accessToken,
+        appKey: wechatVirtualPayAppKey(env),
+        uri,
+        body,
+        timeoutMs: WECHAT_MINI_API_TIMEOUT_MS,
+        requiresPaySig,
+      });
+    } catch (error) {
+      lastError = error;
+      const errcode = Number((error as { errcode?: number })?.errcode);
+      if (!isWechatAccessTokenInvalid(errcode)) throw error;
+      wechatMiniAccessTokenCache.invalidate(accessToken);
+    }
+  }
+  throw lastError || new Error('微信虚拟支付接口暂时不可用');
+}
+
+async function notifyWechatVirtualGoodsDelivered(outTradeNo: string, env: WechatVirtualPayEnv) {
+  await requestConfiguredWechatXpay('/xpay/notify_provide_goods', {
+    order_id: outTradeNo,
+    env,
+  }, env, false);
+}
+
+async function markWechatVirtualDeliveryNotified(attemptId: string, wxOrderId: string) {
+  const update = await supabase.from('lc_service_payment_attempts').update({
+    wx_order_id: wxOrderId || null,
+    delivery_notified_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq('id', attemptId);
+  if (update.error) throw update.error;
+}
+
+async function markVirtualServicePaymentRefunded(
+  outTradeNo: string,
+  payload: Record<string, unknown>,
+  refundFee?: number,
+) {
+  if (!outTradeNo) return null;
+  if (useTencentPg) {
+    const client = await tencentPgPool.connect();
+    try {
+      await client.query('begin');
+      const result = await client.query<ServicePaymentAttemptRow & {
+        profile_id: string;
+        product_type: ServiceProductType;
+        target_id: string;
+      }>(
+        `select attempt.*, purchase.profile_id, purchase.product_type, purchase.target_id
+           from lc_service_payment_attempts attempt
+           join lc_service_purchases purchase on purchase.id = attempt.purchase_id
+          where attempt.out_trade_no = $1
+            and attempt.payment_provider = 'wechat_virtual_pay'
+          for update of attempt, purchase`,
+        [outTradeNo],
+      );
+      const attempt = result.rows[0];
+      if (!attempt) {
+        await client.query('rollback');
+        return null;
+      }
+      if (refundFee !== undefined && refundFee < Number(attempt.amount_fen)) {
+        await client.query('rollback');
+        return { ...attempt, partialRefund: true };
+      }
+      await client.query(
+        `update lc_service_payment_attempts
+            set status = 'refunded',
+                notify_payload = coalesce(notify_payload, '{}'::jsonb) || $2::jsonb,
+                updated_at = now()
+          where id = $1`,
+        [attempt.id, JSON.stringify({ refund_notify: payload })],
+      );
+      await client.query(
+        `update lc_service_purchases
+            set status = 'refunded',
+                refunded_at = now(),
+                refund_reason = '微信虚拟支付退款',
+                updated_at = now()
+          where id = $1
+            and paid_attempt_id = $2`,
+        [attempt.purchase_id, attempt.id],
+      );
+      await client.query('commit');
+      return attempt;
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  const attemptResult = await supabase.from('lc_service_payment_attempts')
+    .select('*, lc_service_purchases!purchase_id(profile_id, product_type, target_id, paid_attempt_id)')
+    .eq('out_trade_no', outTradeNo)
+    .eq('payment_provider', 'wechat_virtual_pay')
+    .maybeSingle();
+  if (attemptResult.error) throw attemptResult.error;
+  if (!attemptResult.data) return null;
+  const attempt = attemptResult.data as ServicePaymentAttemptRow & {
+    lc_service_purchases?: {
+      profile_id: string;
+      product_type: ServiceProductType;
+      target_id: string;
+      paid_attempt_id?: string | null;
+    } | null;
+  };
+  const purchase = attempt.lc_service_purchases;
+  if (refundFee !== undefined && refundFee < Number(attempt.amount_fen)) {
+    return { ...attempt, ...(purchase || {}), partialRefund: true };
+  }
+  const attemptUpdate = await supabase.from('lc_service_payment_attempts').update({
+    status: 'refunded',
+    notify_payload: { refund_notify: payload },
+    updated_at: new Date().toISOString(),
+  }).eq('id', attempt.id);
+  if (attemptUpdate.error) throw attemptUpdate.error;
+  if (purchase?.paid_attempt_id === attempt.id) {
+    const purchaseUpdate = await supabase.from('lc_service_purchases').update({
+      status: 'refunded',
+      refunded_at: new Date().toISOString(),
+      refund_reason: '微信虚拟支付退款',
+      updated_at: new Date().toISOString(),
+    }).eq('id', attempt.purchase_id).eq('paid_attempt_id', attempt.id);
+    if (purchaseUpdate.error) throw purchaseUpdate.error;
+  }
+  return purchase ? { ...attempt, ...purchase } : attempt;
+}
+
+async function handleWechatVirtualPaymentCallback(
+  req: express.Request,
+  res: express.Response,
+  parsedBody: unknown,
+) {
+  const reply = (errCode: number, errMsg: string) => res.status(errCode === 0 ? 200 : 500).json({
+    ErrCode: errCode,
+    ErrMsg: errMsg,
+  });
+  try {
+    if (!parsedBody || typeof parsedBody !== 'object' || Array.isArray(parsedBody)) {
+      return reply(-1, 'invalid callback body');
+    }
+    const payload = parsedBody as Record<string, unknown>;
+    const event = cleanText(payload.Event ?? payload.event, 80).toLowerCase();
+    if (event === 'xpay_goods_deliver_notify') {
+      const callback = normalizeWechatVirtualDeliverEvent(payload as WechatVirtualGoodsDeliverEvent);
+      const confirmed = await confirmServicePayment({
+        provider: 'wechat_virtual_pay',
+        outTradeNo: callback.outTradeNo,
+        transactionId: callback.transactionId,
+        totalFee: callback.actualPrice,
+        currency: 'CNY',
+        appId: LINGQI_WECHAT_MINI_APP_ID,
+        mchId: '',
+        payerOpenid: callback.openid,
+        payload,
+        virtualCallback: callback,
+      });
+      if (!confirmed) {
+        console.error('[wechat-xpay] delivery order not found', { out_trade_no: callback.outTradeNo });
+        return reply(-1, 'order not found');
+      }
+      if (confirmed.newlyPaid) {
+        await notifyProfile({
+          profileId: confirmed.profile_id,
+          type: 'service_payment_succeeded',
+          title: '支付成功',
+          content: `${serviceProductDescription(confirmed.product_type)}已支付成功，权益已经生效。`,
+          relatedType: confirmed.product_type,
+          relatedId: confirmed.target_id,
+        });
+      }
+      await logSecurityEvent(req, {
+        action: confirmed.duplicatePaid ? 'service_virtual_payment_duplicate_paid' : 'service_virtual_payment_delivered',
+        targetType: confirmed.product_type,
+        targetId: confirmed.target_id,
+        actorRole: 'wechat_virtual_pay',
+        metadata: {
+          purchase_id: confirmed.purchase_id,
+          out_trade_no: callback.outTradeNo,
+          wx_order_id: callback.transactionId,
+          newly_paid: confirmed.newlyPaid,
+        },
+      });
+      await markWechatVirtualDeliveryNotified(confirmed.id, callback.transactionId);
+      return reply(0, '');
+    }
+    if (event === 'xpay_refund_notify') {
+      const outTradeNo = cleanText(
+        payload.MchOrderId
+        ?? payload.OutTradeNo
+        ?? payload.out_trade_no,
+        120,
+      );
+      const refundResultCode = Number(payload.RetCode);
+      const refundFee = Number(payload.RefundFee);
+      if (refundResultCode !== 0) {
+        await logSecurityEvent(req, {
+          action: 'service_virtual_payment_refund_failed',
+          targetType: 'service_payment_attempt',
+          targetId: null,
+          actorRole: 'wechat_virtual_pay',
+          metadata: {
+            out_trade_no: outTradeNo,
+            ret_code: refundResultCode,
+            retry_times: Number(payload.RetryTimes || 0),
+          },
+        });
+        return reply(0, '');
+      }
+      const refunded = await markVirtualServicePaymentRefunded(outTradeNo, payload, refundFee);
+      if (refunded?.profile_id && !refunded.partialRefund) {
+        await notifyProfile({
+          profileId: refunded.profile_id,
+          type: 'service_payment_succeeded',
+          title: '退款完成',
+          content: '对应付费服务已经退款，原服务权益同时失效。',
+          relatedType: refunded.product_type || 'service_payment',
+          relatedId: refunded.target_id || refunded.purchase_id,
+        });
+      }
+      await logSecurityEvent(req, {
+        action: refunded?.partialRefund
+          ? 'service_virtual_payment_partial_refund_review_required'
+          : 'service_virtual_payment_refunded',
+        targetType: 'service_payment_attempt',
+        targetId: refunded?.id || null,
+        actorRole: 'wechat_virtual_pay',
+        metadata: {
+          out_trade_no: outTradeNo,
+          matched: Boolean(refunded),
+          partial_refund: Boolean(refunded?.partialRefund),
+          refund_fee: Number.isFinite(refundFee) ? refundFee : null,
+        },
+      });
+      return reply(0, '');
+    }
+    if (event === 'xpay_complaint_notify' || event === 'xpay_wxpay_callback_notify') {
+      await logSecurityEvent(req, {
+        action: event,
+        targetType: 'wechat_virtual_payment',
+        targetId: cleanText(
+          payload.MchOrderId
+          ?? payload.OutTradeNo
+          ?? payload.out_trade_no,
+          120,
+        ) || null,
+        actorRole: 'wechat_virtual_pay',
+        metadata: { received: true },
+      });
+      return reply(0, '');
+    }
+    return reply(0, '');
+  } catch (error) {
+    console.error('[wechat-xpay] callback failed', getErrorText(error));
+    return reply(-1, 'delivery failed');
+  }
 }
 
 function decryptWechatPayResource(resource: Record<string, unknown>) {
@@ -6285,6 +6732,21 @@ function rankingVoteRpcStatus(message: string) {
 // --- 健康检查 ---
 app.get('/api/health', (_req, res) => res.json(ok({ status: '剧幕录服务正常' })));
 
+app.get('/api/wechat/virtual-pay/goods-image', (_req, res) => {
+  try {
+    const image = readFileSync('public/brand/jumulu-virtual-good.png');
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', String(image.byteLength));
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Access-Control-Allow-Origin', 'https://mp.weixin.qq.com');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.status(200).send(image);
+  } catch (error) {
+    console.error('[wechat-xpay] goods image unavailable', getErrorText(error));
+    return res.status(404).type('text/plain').send('not found');
+  }
+});
+
 app.get('/api/wechat/mp/events', (req, res) => {
   const configError = getWechatMpConfigError();
   const echostr = singleQueryValue(req.query.echostr);
@@ -7053,22 +7515,8 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
     }
     if (!code) return res.status(400).json(err(new Error('缺少微信登录 code')));
 
-    const sessionUrl = new URL('https://api.weixin.qq.com/sns/jscode2session');
-    sessionUrl.search = new URLSearchParams({
-      appid: LINGQI_WECHAT_MINI_APP_ID,
-      secret: LINGQI_WECHAT_MINI_APP_SECRET,
-      js_code: code,
-      grant_type: 'authorization_code',
-    }).toString();
-    const sessionResp = await fetch(sessionUrl);
-    const sessionData = await sessionResp.json() as Record<string, unknown>;
-    if (!sessionResp.ok || sessionData.errcode) {
-      throw new Error(String(sessionData.errmsg || '微信小程序登录失败'));
-    }
-
-    const openid = cleanText(sessionData.openid, 120);
-    const unionid = cleanText(sessionData.unionid, 120) || null;
-    if (!openid) throw new Error('微信小程序登录缺少 openid');
+    const session = await exchangeWechatMiniCode(code);
+    const { openid, unionid } = session;
 
     const nowIso = new Date().toISOString();
     let query = supabase.from('lc_profiles').select('*');
@@ -7316,6 +7764,9 @@ app.post('/api/lc/service-payments/create', authMiddleware, async (req, res) => 
       .maybeSingle();
     if (activeResult.error && !isMissingRelation(activeResult.error, 'lc_service_payment_attempts')) throw activeResult.error;
     let attempt = activeResult.error ? null : activeResult.data as ServicePaymentAttemptRow | null;
+    if (attempt && (attempt.payment_provider || 'wechat_pay') === 'wechat_virtual_pay') {
+      return res.status(409).json(err(new Error('请更新到最新版剧幕录小程序后重新支付')));
+    }
 
     if (!attempt) {
       const expiresAt = makePaymentExpiresAt();
@@ -7324,6 +7775,7 @@ app.post('/api/lc/service-payments/create', authMiddleware, async (req, res) => 
         out_trade_no: makeServicePayOrderNo(),
         amount_fen: SERVICE_FEE_FEN,
         status: 'created',
+        payment_provider: 'wechat_pay',
         expires_at: expiresAt.toISOString(),
       }).select('*').single();
       if (insertResult.error) {
@@ -7337,6 +7789,9 @@ app.post('/api/lc/service-payments/create', authMiddleware, async (req, res) => 
             .single();
           if (raced.error) throw raced.error;
           attempt = raced.data as ServicePaymentAttemptRow;
+          if ((attempt.payment_provider || 'wechat_pay') === 'wechat_virtual_pay') {
+            return res.status(409).json(err(new Error('请更新到最新版剧幕录小程序后重新支付')));
+          }
         } else {
           throw insertResult.error;
         }
@@ -7382,14 +7837,117 @@ app.post('/api/lc/service-payments/create', authMiddleware, async (req, res) => 
       actorRole: profileAuthRole(profile),
       targetType: productType,
       targetId,
-      metadata: { purchase_id: purchase.id, attempt_id: attempt.id, amount_fen: SERVICE_FEE_FEN },
+      metadata: {
+        purchase_id: purchase.id,
+        attempt_id: attempt.id,
+        amount_fen: SERVICE_FEE_FEN,
+        transition_only: true,
+      },
+    });
+    return res.status(201).json(ok({
+      purchase: publicServicePurchase(purchase),
+      already_paid: false,
+      payment: {
+        ...payParams,
+        out_trade_no: attempt.out_trade_no,
+        expires_at: attempt.expires_at,
+      },
+    }));
+  } catch (e) {
+    await logSecurityEvent(req, {
+      action: 'service_payment_create_failed',
+      targetType: 'service_payment_attempt',
+      targetId: attemptId || null,
+      metadata: { error: cleanText(getErrorText(e), 500), transition_only: true },
+    });
+    const statusCode = Number((e as { statusCode?: number })?.statusCode || 500);
+    return res.status(statusCode).json(err(e));
+  }
+});
+
+app.post('/api/lc/miniapp/virtual-service-payments/create', authMiddleware, async (req, res) => {
+  let attemptId = '';
+  try {
+    if (req.header('X-LC-Client') !== 'wechat-miniapp') {
+      return res.status(409).json(err(new Error('当前付费服务请在剧幕录微信小程序内完成')));
+    }
+    if (!isWechatVirtualPayConfigured()) {
+      return res.status(503).json(err(new Error('微信小程序虚拟支付尚未配置')));
+    }
+    assertWechatVirtualPayConfigured();
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if (!profile.wechat_mini_openid) return res.status(409).json(err(new Error('请先使用微信小程序重新登录')));
+    const loginCode = cleanText(req.body?.loginCode ?? req.body?.login_code, 200);
+    if (!loginCode) return res.status(400).json(err(new Error('请重新发起支付以刷新微信登录会话')));
+    const miniSession = await exchangeWechatMiniCode(loginCode);
+    if (miniSession.openid !== profile.wechat_mini_openid) {
+      await logSecurityEvent(req, {
+        action: 'service_virtual_payment_openid_mismatch',
+        targetType: 'profile',
+        targetId: profile.id,
+        actorId: profile.id,
+        actorRole: profileAuthRole(profile),
+        metadata: { login_openid_matches: false },
+      });
+      return res.status(403).json(err(new Error('当前微信身份与登录账号不一致，请重新登录')));
+    }
+    const productType = normalizeServiceProductType(req.body?.productType ?? req.body?.product_type);
+    if (!productType) return res.status(400).json(err(new Error('付费服务类型不正确')));
+    const requestedTargetId = cleanText(req.body?.targetId ?? req.body?.target_id, 80);
+    const targetId = await validateServicePurchaseTarget(profile, productType, requestedTargetId);
+    let purchase = await ensureServicePurchase(profile.id, productType, targetId);
+    if (purchase.status === 'refunded') {
+      const resetResult = await supabase.from('lc_service_purchases').update({
+        status: 'unpaid',
+        paid_attempt_id: null,
+        paid_at: null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', purchase.id).eq('status', 'refunded').select('*').single();
+      if (resetResult.error) throw resetResult.error;
+      purchase = resetResult.data as ServicePurchaseRow;
+    }
+    if (servicePurchaseGrantsAccess(purchase.status)) {
+      return res.json(ok({
+        purchase: await servicePurchaseStatusPayload(purchase),
+        already_paid: true,
+      }));
+    }
+
+    const attempt = await createFreshVirtualServiceAttempt(
+      purchase.id,
+      productType,
+      LINGQI_WECHAT_VIRTUAL_PAY_ENV,
+    );
+    attemptId = attempt.id;
+    const payParams = createWechatVirtualPaymentParams({
+      offerId: LINGQI_WECHAT_VIRTUAL_PAY_OFFER_ID,
+      appKey: wechatVirtualPayAppKey(),
+      sessionKey: miniSession.sessionKey,
+      env: LINGQI_WECHAT_VIRTUAL_PAY_ENV,
+      productType,
+      outTradeNo: attempt.out_trade_no,
+      attach: purchase.id,
+    });
+    await logSecurityEvent(req, {
+      action: 'service_virtual_payment_created',
+      actorId: profile.id,
+      actorRole: profileAuthRole(profile),
+      targetType: productType,
+      targetId,
+      metadata: {
+        purchase_id: purchase.id,
+        attempt_id: attempt.id,
+        amount_fen: SERVICE_FEE_FEN,
+        product_id: virtualGood(productType).id,
+        xpay_env: LINGQI_WECHAT_VIRTUAL_PAY_ENV,
+      },
     });
     res.status(201).json(ok({
       purchase: publicServicePurchase(purchase),
       already_paid: false,
       payment: {
         ...payParams,
-        out_trade_no: attempt.out_trade_no,
         expires_at: attempt.expires_at,
       },
     }));
@@ -7419,17 +7977,96 @@ app.get('/api/lc/service-payments/:id/status', authMiddleware, async (req, res) 
     if (!purchaseResult.data) return res.status(404).json(err(new Error('支付订单不存在')));
     let purchase = purchaseResult.data as ServicePurchaseRow;
 
-    if (!servicePurchaseGrantsAccess(purchase.status) && req.query.refresh === '1' && isWechatPayConfigured()) {
+    if (req.query.refresh === '1') {
       const attemptResult = await supabase.from('lc_service_payment_attempts')
         .select('*')
         .eq('purchase_id', purchase.id)
-        .in('status', ['created', 'expired'])
+        .in('status', ['created', 'expired', 'paid'])
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
       if (attemptResult.error && !isMissingRelation(attemptResult.error, 'lc_service_payment_attempts')) throw attemptResult.error;
       const attempt = attemptResult.error ? null : attemptResult.data as ServicePaymentAttemptRow | null;
-      if (attempt) {
+      const paymentProvider = attempt?.payment_provider || 'wechat_pay';
+      if (attempt && paymentProvider === 'wechat_virtual_pay') {
+        const env = attempt.xpay_env ?? LINGQI_WECHAT_VIRTUAL_PAY_ENV;
+        if (isWechatVirtualPayConfigured(env)) {
+          const queryPayload = await requestConfiguredWechatXpay<Record<string, unknown>>('/xpay/query_order', {
+            openid: profile.wechat_mini_openid,
+            env,
+            order_id: attempt.out_trade_no,
+          }, env);
+          const nestedOrder = queryPayload.order;
+          const order = nestedOrder && typeof nestedOrder === 'object' && !Array.isArray(nestedOrder)
+            ? nestedOrder as Record<string, unknown>
+            : queryPayload;
+          const state = wechatVirtualOrderStatus(order.status ?? queryPayload.status);
+          if (state.paid) {
+            const wxOrderId = cleanText(
+              order.wx_order_id
+              ?? order.order_id
+              ?? order.transaction_id
+              ?? queryPayload.wx_order_id,
+              160,
+            );
+            if (!wxOrderId) throw new Error('微信虚拟支付查单结果缺少平台订单号');
+            const originalPrice = Number(order.order_fee ?? order.orig_price ?? attempt.amount_fen);
+            const actualPrice = Number(order.paid_fee ?? order.actual_price ?? originalPrice);
+            const callback = normalizeWechatVirtualDeliverEvent({
+              Event: 'xpay_goods_deliver_notify',
+              OpenId: cleanText(order.openid, 120) || profile.wechat_mini_openid,
+              OutTradeNo: cleanText(order.out_trade_no, 120) || attempt.out_trade_no,
+              Env: env,
+              WeChatPayInfo: { TransactionId: wxOrderId },
+              GoodsInfo: {
+                ProductId: cleanText(order.product_id, 80) || attempt.product_id || purchase.product_type,
+                Quantity: Number(order.buy_quantity ?? order.quantity ?? 1),
+                OrigPrice: originalPrice,
+                ActualPrice: actualPrice,
+                Attach: cleanText(order.attach, 120) || purchase.id,
+              },
+            });
+            const confirmed = await confirmServicePayment({
+              provider: 'wechat_virtual_pay',
+              outTradeNo: callback.outTradeNo,
+              transactionId: callback.transactionId,
+              totalFee: callback.actualPrice,
+              currency: 'CNY',
+              appId: LINGQI_WECHAT_MINI_APP_ID,
+              mchId: '',
+              payerOpenid: callback.openid,
+              payload: { ...queryPayload, event_type: 'ORDER.QUERY' },
+              virtualCallback: callback,
+            });
+            if (!confirmed) throw new Error('微信虚拟支付订单无法匹配本地记录');
+            if (!attempt.delivery_notified_at) {
+              await notifyWechatVirtualGoodsDelivered(attempt.out_trade_no, env);
+              await markWechatVirtualDeliveryNotified(attempt.id, wxOrderId);
+            }
+            const refreshed = await supabase.from('lc_service_purchases').select('*').eq('id', purchase.id).single();
+            if (refreshed.error) throw refreshed.error;
+            purchase = refreshed.data as ServicePurchaseRow;
+          } else if (state.refunded) {
+            await markVirtualServicePaymentRefunded(attempt.out_trade_no, {
+              ...queryPayload,
+              event_type: 'ORDER.QUERY.REFUNDED',
+            });
+            const refreshed = await supabase.from('lc_service_purchases').select('*').eq('id', purchase.id).single();
+            if (refreshed.error) throw refreshed.error;
+            purchase = refreshed.data as ServicePurchaseRow;
+          } else if (state.closed && attempt.status === 'created') {
+            const expired = await supabase.from('lc_service_payment_attempts').update({
+              status: 'expired',
+              updated_at: new Date().toISOString(),
+            }).eq('id', attempt.id).eq('status', 'created');
+            if (expired.error) throw expired.error;
+          }
+        }
+      } else if (
+        attempt
+        && !servicePurchaseGrantsAccess(purchase.status)
+        && isWechatPayConfigured()
+      ) {
         const transaction = await wechatPayRequest<Record<string, unknown>>(
           'GET',
           `/v3/pay/transactions/out-trade-no/${encodeURIComponent(attempt.out_trade_no)}?mchid=${encodeURIComponent(WECHAT_PAY_MCH_ID)}`,

@@ -57,7 +57,7 @@ test('server rejects missing or stale miniapp agreement versions before WeChat l
   assert.match(route, /req\.body\?\.termsAccepted !== true/)
   assert.match(route, /termsVersion !== LINGQI_TERMS_VERSION/)
   assert.match(route, /privacyVersion !== LINGQI_PRIVACY_VERSION/)
-  assert.ok(route.indexOf('termsAccepted !== true') < route.indexOf('jscode2session'))
+  assert.ok(route.indexOf('termsAccepted !== true') < route.indexOf('exchangeWechatMiniCode(code)'))
   assert.match(route, /terms_version: termsVersion/)
   assert.match(route, /privacy_version: privacyVersion/)
   assert.match(route, /legal_consent_at: nowIso/)
