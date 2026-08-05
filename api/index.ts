@@ -122,11 +122,16 @@ import {
   interpretWechatContentCheck,
   interpretWechatMediaCallback,
   interpretWechatMediaSubmission,
+  interpretWechatUserRisk,
+  isWechatUserRiskPermissionMissing,
   splitWechatSafetyText,
   wechatSafetySceneNumber,
   type WechatContentCheckPayload,
   type WechatMediaCallbackPayload,
   type WechatMediaCheckSubmissionPayload,
+  type WechatUserRiskPayload,
+  type WechatUserRiskScene,
+  type WechatUserRiskVerdict,
 } from './wechatMiniContentSafety.js';
 import { WechatAccessTokenCache } from './wechatAccessTokenCache.js';
 import { WechatWebLoginExchangeStore } from './wechatWebLoginExchange.js';
@@ -634,6 +639,11 @@ function isWechatMiniLoginConfigured() {
 
 const wechatMiniAccessTokenCache = new WechatAccessTokenCache();
 const WECHAT_MINI_API_TIMEOUT_MS = 8_000;
+const WECHAT_MINI_USER_RISK_CACHE_TTL_MS = 5 * 60 * 1000;
+const wechatMiniUserRiskCache = new Map<string, {
+  expiresAt: number;
+  verdict: WechatUserRiskVerdict;
+}>();
 
 function wechatMiniApiSignal() {
   return AbortSignal.timeout(WECHAT_MINI_API_TIMEOUT_MS);
@@ -695,6 +705,57 @@ async function submitWechatMiniMediaCheck(mediaUrl: string, openid: string, scen
   return interpretWechatMediaSubmission(payload);
 }
 
+async function checkWechatMiniUserRisk(input: {
+  openid: string;
+  scene: WechatUserRiskScene;
+  clientIp: string;
+}) {
+  const cacheKey = sha256([
+    input.openid,
+    input.scene,
+    input.clientIp,
+  ].join('|'));
+  const now = Date.now();
+  const cached = wechatMiniUserRiskCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return { ...cached.verdict, cached: true };
+  }
+  if (cached) wechatMiniUserRiskCache.delete(cacheKey);
+  if (wechatMiniUserRiskCache.size > 5_000) {
+    for (const [key, entry] of wechatMiniUserRiskCache) {
+      if (entry.expiresAt <= now) wechatMiniUserRiskCache.delete(key);
+    }
+  }
+
+  let payload: WechatUserRiskPayload = {};
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const token = await getWechatMiniAccessToken();
+    const body: Record<string, unknown> = {
+      appid: LINGQI_WECHAT_MINI_APP_ID,
+      openid: input.openid,
+      scene: input.scene,
+      client_ip: input.clientIp,
+    };
+    const response = await fetch(`https://api.weixin.qq.com/wxa/getuserriskrank?access_token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: wechatMiniApiSignal(),
+    });
+    payload = await response.json() as WechatUserRiskPayload;
+    if (!isWechatAccessTokenInvalid(payload.errcode)) break;
+    wechatMiniAccessTokenCache.invalidate(token);
+  }
+  const verdict = interpretWechatUserRisk(payload);
+  if (verdict.available || isWechatUserRiskPermissionMissing(verdict.errcode)) {
+    wechatMiniUserRiskCache.set(cacheKey, {
+      expiresAt: now + WECHAT_MINI_USER_RISK_CACHE_TTL_MS,
+      verdict,
+    });
+  }
+  return { ...verdict, cached: false };
+}
+
 type AuthClientChannel = 'web' | 'wechat-miniapp';
 
 function authClientForToken(req: express.Request): AuthClientChannel {
@@ -711,6 +772,118 @@ function isWechatMiniClient(req: express.Request) {
   }
   // Legacy tokens are upgraded by /miniapp/auth/refresh on the next app launch.
   return req.header('X-LC-Client') === 'wechat-miniapp';
+}
+
+async function runWechatMiniUserRiskCheck(req: express.Request, input: {
+  scene: WechatUserRiskScene;
+  businessAction: string;
+  profile?: AuthedProfile | null;
+  openid?: string | null;
+}) {
+  const profile = input.profile === undefined ? await getAuthedProfile(req) : input.profile;
+  const openid = cleanText(input.openid || profile?.wechat_mini_openid, 120);
+  const clientIp = cleanText(getClientIp(req), 80).replace(/^::ffff:/, '');
+  if (!openid || !clientIp) {
+    const verdict: WechatUserRiskVerdict & { cached: boolean } = {
+      available: false,
+      allowed: false,
+      retryable: true,
+      decision: 'unavailable',
+      reason: !openid ? '缺少微信小程序用户标识' : '无法取得用户网络地址',
+      riskRank: null,
+      errcode: -1,
+      cached: false,
+    };
+    await logSecurityEvent(req, {
+      action: 'wechat_mini_user_risk_failed',
+      targetType: 'profile',
+      targetId: profile?.id || null,
+      actorId: profile?.id || null,
+      actorRole: profile?.role || 'anonymous',
+      metadata: {
+        scene: input.scene,
+        business_action: input.businessAction,
+        decision: verdict.decision,
+        errcode: verdict.errcode,
+      },
+    });
+    return verdict;
+  }
+
+  try {
+    const verdict = await checkWechatMiniUserRisk({
+      openid,
+      scene: input.scene,
+      clientIp,
+    });
+    await logSecurityEvent(req, {
+      action: verdict.available
+        ? 'wechat_mini_user_risk_checked'
+        : isWechatUserRiskPermissionMissing(verdict.errcode)
+          ? 'wechat_mini_user_risk_permission_missing'
+          : 'wechat_mini_user_risk_failed',
+      targetType: 'profile',
+      targetId: profile?.id || null,
+      actorId: profile?.id || null,
+      actorRole: profile?.role || 'anonymous',
+      metadata: {
+        scene: input.scene,
+        business_action: input.businessAction,
+        decision: verdict.decision,
+        risk_rank: verdict.riskRank,
+        errcode: verdict.errcode,
+        cached: verdict.cached,
+      },
+    });
+    return verdict;
+  } catch (error) {
+    const verdict: WechatUserRiskVerdict & { cached: boolean } = {
+      available: false,
+      allowed: false,
+      retryable: true,
+      decision: 'unavailable',
+      reason: getErrorText(error) || '微信用户安全等级服务暂时不可用',
+      riskRank: null,
+      errcode: -1,
+      cached: false,
+    };
+    await logSecurityEvent(req, {
+      action: 'wechat_mini_user_risk_failed',
+      targetType: 'profile',
+      targetId: profile?.id || null,
+      actorId: profile?.id || null,
+      actorRole: profile?.role || 'anonymous',
+      metadata: {
+        scene: input.scene,
+        business_action: input.businessAction,
+        decision: verdict.decision,
+        errcode: verdict.errcode,
+      },
+    });
+    return verdict;
+  }
+}
+
+function respondToWechatMiniUserRisk(
+  res: express.Response,
+  verdict: WechatUserRiskVerdict,
+) {
+  if (!verdict.available) {
+    return res.status(503).json(codedErr(
+      new Error('微信安全服务暂时不可用，请稍后重试'),
+      'WECHAT_USER_RISK_UNAVAILABLE',
+      { retryable: true },
+    ));
+  }
+  return res.status(403).json(codedErr(
+    new Error('本次操作需要进一步安全核验，请稍后重试或联系平台'),
+    'WECHAT_USER_RISK_BLOCKED',
+    { retryable: false },
+  ));
+}
+
+function wechatMiniUserRiskAllowsAction(verdict: WechatUserRiskVerdict) {
+  return verdict.allowed || isWechatUserRiskPermissionMissing(verdict.errcode);
 }
 
 function wechatSafetyStatusFromSuggestion(suggest: string) {
@@ -829,6 +1002,14 @@ function wechatMiniTextSafetyMiddleware(input: {
     let rateLimitPassed = false;
     miniappBusinessContentRateLimit(req, res, () => { rateLimitPassed = true; });
     if (!rateLimitPassed) return;
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const userRisk = await runWechatMiniUserRiskCheck(req, {
+      scene: 2,
+      businessAction: input.businessScene,
+      profile,
+    });
+    if (!wechatMiniUserRiskAllowsAction(userRisk)) return respondToWechatMiniUserRisk(res, userRisk);
     let content: string;
     try {
       content = splitWechatSafetyText(input.content(req)).join('');
@@ -6832,6 +7013,28 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
       return res.status(403).json(err(new Error('账号已被限制登录，请联系管理员申诉')));
     }
 
+    let referralRewardAllowed = true;
+    if (!profile) {
+      const registrationRisk = await runWechatMiniUserRiskCheck(req, {
+        scene: 0,
+        businessAction: 'miniapp_registration',
+        profile: null,
+        openid,
+      });
+      if (!wechatMiniUserRiskAllowsAction(registrationRisk)) {
+        return respondToWechatMiniUserRisk(res, registrationRisk);
+      }
+      if (referralCode) {
+        const referralRisk = await runWechatMiniUserRiskCheck(req, {
+          scene: 1,
+          businessAction: 'miniapp_referral_signup_reward',
+          profile: null,
+          openid,
+        });
+        referralRewardAllowed = wechatMiniUserRiskAllowsAction(referralRisk);
+      }
+    }
+
     const displayName = displayNameInput || profile?.display_name || '新用户';
     if (profile) {
       const patch: Record<string, unknown> = {
@@ -6881,7 +7084,18 @@ app.post('/api/lc/miniapp/auth/wechat', async (req, res) => {
         bonus_balance_before: 0,
         bonus_balance_after: 30,
       });
-      await runReferralSideEffect('miniapp-signup', () => registerReferralForNewProfile(profile, referralCode));
+      if (referralRewardAllowed) {
+        await runReferralSideEffect('miniapp-signup', () => registerReferralForNewProfile(profile, referralCode));
+      } else if (referralCode) {
+        await logSecurityEvent(req, {
+          action: 'miniapp_referral_reward_skipped_by_risk_control',
+          targetType: 'profile',
+          targetId: profile.id,
+          actorId: profile.id,
+          actorRole: profile.role || 'creator',
+          metadata: { referral_code_present: true },
+        });
+      }
     }
 
     const token = signProfileAuthToken(profile, 'wechat-miniapp');
@@ -6935,6 +7149,14 @@ app.post('/api/lc/miniapp/auth/refresh', authMiddleware, async (req, res) => {
 app.post('/api/lc/miniapp/content-check', authMiddleware, async (req, res) => {
   try {
     if (!isWechatMiniClient(req)) return res.status(403).json(err(new Error('该接口仅供微信小程序使用')));
+    const profile = await getAuthedProfile(req);
+    if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const userRisk = await runWechatMiniUserRiskCheck(req, {
+      scene: 2,
+      businessAction: 'miniapp_content_check',
+      profile,
+    });
+    if (!wechatMiniUserRiskAllowsAction(userRisk)) return respondToWechatMiniUserRisk(res, userRisk);
     const content = splitWechatSafetyText([req.body?.content]).join('');
     const scene = cleanText(req.body?.scene, 80) || 'ugc';
     if (!content) return res.status(400).json(err(new Error('缺少待检查内容')));
@@ -19668,6 +19890,14 @@ app.post('/api/lc/daily-checkin', authMiddleware, async (req, res) => {
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    if (isWechatMiniClient(req)) {
+      const userRisk = await runWechatMiniUserRiskCheck(req, {
+        scene: 1,
+        businessAction: 'daily_checkin_reward',
+        profile,
+      });
+      if (!wechatMiniUserRiskAllowsAction(userRisk)) return respondToWechatMiniUserRisk(res, userRisk);
+    }
     const { data, error: claimError } = await supabase.rpc('lc_claim_daily_checkin', {
       p_profile_id: profile.id,
     });

@@ -180,8 +180,14 @@ function profileAuthProviderLabel(provider?: string | null) {
 }
 
 function securityActionLabel(action: string) {
-  if (action === 'admin_profile_private_view') return '管理员查看账号隐私信息';
-  return action;
+  const labels: Record<string, string> = {
+    admin_profile_private_view: '管理员查看账号隐私信息',
+    wechat_mini_user_risk_checked: '微信小程序用户风险核验',
+    wechat_mini_user_risk_permission_missing: '微信用户风险接口待开通',
+    wechat_mini_user_risk_failed: '微信小程序用户风险核验失败',
+    miniapp_referral_reward_skipped_by_risk_control: '邀请奖励已被风控跳过',
+  };
+  return labels[action] || action;
 }
 
 function profileAccountById(profiles: Profile[], profileId?: string | null) {

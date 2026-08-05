@@ -7,6 +7,8 @@ import {
   interpretWechatContentCheck,
   interpretWechatMediaCallback,
   interpretWechatMediaSubmission,
+  interpretWechatUserRisk,
+  isWechatUserRiskPermissionMissing,
   joinWechatSafetyText,
   splitWechatSafetyText,
   wechatSafetySceneNumber,
@@ -64,6 +66,26 @@ test('accepts a media task only when WeChat returns a trace id', () => {
     errcode: 0,
   });
   assert.equal(interpretWechatMediaSubmission({ errcode: 0 }).accepted, false);
+});
+
+test('classifies WeChat user risk ranks without exposing user identifiers', () => {
+  assert.deepEqual(interpretWechatUserRisk({ errcode: 0, risk_rank: 2 }), {
+    available: true,
+    allowed: true,
+    retryable: false,
+    decision: 'allow',
+    reason: '',
+    riskRank: 2,
+    errcode: 0,
+  });
+  assert.equal(interpretWechatUserRisk({ errcode: 0, risk_rank: 3 }).decision, 'review');
+  assert.equal(interpretWechatUserRisk({ errcode: 0, risk_rank: 4 }).decision, 'block');
+  assert.equal(interpretWechatUserRisk({ errcode: 61080, errmsg: 'service unavailable' }).decision, 'unavailable');
+  assert.equal(interpretWechatUserRisk({ errcode: 61080 }).retryable, true);
+  assert.equal(interpretWechatUserRisk({ errcode: 0, risk_rank: 9 }).available, false);
+  assert.equal(isWechatUserRiskPermissionMissing(48001), true);
+  assert.equal(isWechatUserRiskPermissionMissing(61007), true);
+  assert.equal(isWechatUserRiskPermissionMissing(61080), false);
 });
 
 test('interprets asynchronous media callbacks without exposing media urls', () => {
@@ -266,12 +288,33 @@ test('all WeChat safety network calls have a bounded timeout', () => {
   assert.match(source, /const WECHAT_MINI_API_TIMEOUT_MS = 8_000/);
   assert.equal(
     source.match(/signal: wechatMiniApiSignal\(\)/g)?.length,
-    3,
+    4,
   );
   assert.equal(
     source.match(/if \(!isWechatAccessTokenInvalid\(payload\.errcode\)\) break;/g)?.length,
-    2,
+    3,
   );
+});
+
+test('connects all three WeChat miniapp security capabilities to business actions', () => {
+  const source = readFileSync('api/index.ts', 'utf8');
+  const admin = readFileSync('src/pages/Admin.tsx', 'utf8');
+  assert.match(source, /\/wxa\/msg_sec_check\?access_token=/);
+  assert.match(source, /\/wxa\/media_check_async\?access_token=/);
+  assert.match(source, /\/wxa\/getuserriskrank\?access_token=/);
+  assert.match(source, /scene:\s*0,[\s\S]{0,120}?businessAction:\s*'miniapp_registration'/);
+  assert.match(source, /scene:\s*1,[\s\S]{0,120}?businessAction:\s*'miniapp_referral_signup_reward'/);
+  assert.match(source, /scene:\s*1,[\s\S]{0,120}?businessAction:\s*'daily_checkin_reward'/);
+  assert.match(source, /scene:\s*2,[\s\S]{0,120}?businessAction:\s*input\.businessScene/);
+  assert.match(source, /'wechat_mini_user_risk_checked'/);
+  assert.match(source, /'wechat_mini_user_risk_permission_missing'/);
+  assert.match(source, /verdict\.allowed \|\| isWechatUserRiskPermissionMissing\(verdict\.errcode\)/);
+  assert.doesNotMatch(
+    source.match(/metadata:\s*\{[\s\S]{0,240}?risk_rank:[\s\S]{0,100}?\}/)?.[0] || '',
+    /openid|mobile_no|email_address/,
+  );
+  assert.match(admin, /wechat_mini_user_risk_checked:\s*'微信小程序用户风险核验'/);
+  assert.match(admin, /wechat_mini_user_risk_permission_missing:\s*'微信用户风险接口待开通'/);
 });
 
 test('production acceptance content checks are rate limited', () => {

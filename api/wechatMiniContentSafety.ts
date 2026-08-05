@@ -14,6 +14,90 @@ export function isWechatAccessTokenInvalid(errcode: unknown) {
   return [40001, 40014, 42001].includes(Number(errcode));
 }
 
+export type WechatUserRiskScene = 0 | 1 | 2;
+
+export type WechatUserRiskPayload = {
+  errcode?: number;
+  errmsg?: string;
+  risk_rank?: number;
+  unoin_id?: string | number;
+};
+
+export type WechatUserRiskDecision = 'allow' | 'review' | 'block' | 'unavailable';
+
+export type WechatUserRiskVerdict = {
+  available: boolean;
+  allowed: boolean;
+  retryable: boolean;
+  decision: WechatUserRiskDecision;
+  reason: string;
+  riskRank: number | null;
+  errcode: number;
+};
+
+export function isWechatUserRiskPermissionMissing(errcode: unknown) {
+  return [48001, 61007].includes(Number(errcode));
+}
+
+export function interpretWechatUserRisk(payload: WechatUserRiskPayload): WechatUserRiskVerdict {
+  const errcode = Number(payload.errcode || 0);
+  if (errcode !== 0) {
+    return {
+      available: false,
+      allowed: false,
+      retryable: isWechatAccessTokenInvalid(errcode) || [61010, 61080].includes(errcode),
+      decision: 'unavailable',
+      reason: payload.errmsg || '微信用户安全等级服务暂时不可用',
+      riskRank: null,
+      errcode,
+    };
+  }
+
+  const riskRank = Number(payload.risk_rank);
+  if (!Number.isInteger(riskRank) || riskRank < 0 || riskRank > 4) {
+    return {
+      available: false,
+      allowed: false,
+      retryable: true,
+      decision: 'unavailable',
+      reason: '微信用户安全等级服务返回异常',
+      riskRank: null,
+      errcode,
+    };
+  }
+  if (riskRank >= 4) {
+    return {
+      available: true,
+      allowed: false,
+      retryable: false,
+      decision: 'block',
+      reason: '本次操作未通过微信安全核验',
+      riskRank,
+      errcode,
+    };
+  }
+  if (riskRank === 3) {
+    return {
+      available: true,
+      allowed: false,
+      retryable: false,
+      decision: 'review',
+      reason: '本次操作需要进一步安全核验',
+      riskRank,
+      errcode,
+    };
+  }
+  return {
+    available: true,
+    allowed: true,
+    retryable: false,
+    decision: 'allow',
+    reason: '',
+    riskRank,
+    errcode,
+  };
+}
+
 export function isWechatEventTimestampFresh(
   timestamp: string,
   nowMs = Date.now(),
