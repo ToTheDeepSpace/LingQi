@@ -103,6 +103,7 @@ import {
 import { extractSharedUrl } from '../src/lib/socialLinks.js';
 import { CHANTO_MAX_AMOUNT, CHANTO_MIN_AMOUNT, isValidChantoAmount } from '../src/lib/chanto.js';
 import { MAX_MULTIPART_UPLOAD_BYTES } from '../src/lib/uploadLimits.js';
+import { privacyReportDetailError } from '../src/lib/reportPolicy.js';
 import { CITIES } from '../src/constants/cities.js';
 import { adminPrivateAccountPayload, adminProfileListPayload } from './adminPrivacy.js';
 import { shopCanManageRanking } from './shopReviewOwnership.js';
@@ -10558,6 +10559,10 @@ app.post(
     if (!targetType || !targetId || !reason) {
       return res.status(400).json(err(new Error('请选择举报对象和举报原因')));
     }
+    const privacyDetailError = privacyReportDetailError(reason, description);
+    if (privacyDetailError) {
+      return res.status(400).json(err(new Error(privacyDetailError)));
+    }
     if (targetType === 'dm_affiliation') {
       return res.status(400).json(err(new Error('任职关系异议必须通过专用入口提交证据')));
     }
@@ -10577,12 +10582,13 @@ app.post(
       targetTitle = item.title;
       targetOwnerId = cleanText(item.poster_id, 80);
       snapshot = {
+        carpool_id: item.id,
         city: item.city,
         event_date: item.event_date,
         script_name: item.script_name,
         role_name: item.role_name,
         poster_name: item.poster_name,
-        content_preview: cleanText(item.content, 240),
+        content_preview: cleanText(item.content, 2000),
       };
     } else if (targetType === 'ranking') {
       const { data: item, error: qErr } = await supabase.from('lc_rankings')
@@ -10596,12 +10602,13 @@ app.post(
       targetTitle = item.subject_name;
       targetOwnerId = cleanText(item.poster_id, 80);
       snapshot = {
+        ranking_id: item.id,
         ranking_type: item.type,
         subject_type: item.subject_type,
         city: item.subject_city,
         poster_name: item.author_name,
         image_reference: targetSubId || null,
-        content_preview: cleanText(item.content, 240),
+        content_preview: cleanText(item.content, 2000),
       };
     } else if (targetType === 'comment') {
       const { data: item, error: qErr } = await supabase.from('lc_comments')
@@ -10622,7 +10629,7 @@ app.post(
         poster_name: item.author_name,
         is_pinned: !!item.is_pinned,
         pin_label: item.pin_label,
-        content_preview: cleanText(item.content, 240),
+        content_preview: cleanText(item.content, 2000),
       };
     } else if (targetType === 'commission') {
       const { data: item, error: qErr } = await supabase.from('lc_commissions')
@@ -10638,9 +10645,10 @@ app.post(
       snapshot = {
         city: item.city,
         needed_date: item.needed_date,
+        needed_end_date: item.needed_end_date,
         target_type: item.target_type,
         poster_name: item.poster_name,
-        content_preview: cleanText(item.content, 240),
+        content_preview: cleanText(item.content, 2000),
       };
     } else if (targetType === 'profile') {
       const { data: item, error: qErr } = await supabase.from('lc_profiles')
@@ -10654,10 +10662,11 @@ app.post(
       targetTitle = item.display_name;
       targetOwnerId = cleanText(item.id, 80);
       snapshot = {
+        profile_id: item.id,
         display_name: item.display_name,
         role_type: item.role_type,
         city: item.city,
-        content_preview: cleanText(item.bio, 240),
+        content_preview: cleanText(item.bio, 2000),
       };
     } else if (targetType === 'dossier' || targetType === 'dossier_image') {
       const { data: item, error: qErr } = await supabase.from('lc_dm_dossiers')
@@ -10669,11 +10678,13 @@ app.post(
       targetTitle = `${item.entity_type === 'store' ? '店家' : 'DM'}档案 · ${item.dm_name}`;
       targetOwnerId = cleanText(item.claimed_by, 80);
       snapshot = {
+        dossier_id: item.id,
+        dm_name: item.dm_name,
         entity_type: item.entity_type,
         city: item.city,
         workplace: item.workplace,
         image_reference: targetType === 'dossier_image' ? targetSubId || null : null,
-        content_preview: cleanText(item.bio || item.note, 240),
+        content_preview: cleanText(item.bio || item.note, 2000),
       };
     } else if (targetType === 'dm_rating' || targetType === 'store_rating') {
       const table = targetType === 'dm_rating' ? 'lc_dm_ratings' : 'lc_store_ratings';
@@ -10683,10 +10694,11 @@ app.post(
       targetTitle = `${targetType === 'dm_rating' ? 'DM' : '店家'}评价 · ${cleanText(item.script_name, 120) || '体验记录'}`;
       targetOwnerId = cleanText(item.profile_id, 80);
       snapshot = {
+        dossier_id: targetType === 'dm_rating' ? item.dm_dossier_id : item.store_dossier_id,
         profile_name: item.profile_name,
         script_name: item.script_name,
         rating: item.rating,
-        content_preview: cleanText(item.content, 240),
+        content_preview: cleanText(item.content, 2000),
       };
     } else if (targetType === 'role_rating') {
       const { data: item, error: qErr } = await supabase.from('lc_entity_ratings').select('*').eq('id', targetId).maybeSingle();
@@ -10696,10 +10708,12 @@ app.post(
       targetTitle = `角色点评 · ${cleanText(metadata.role_name, 120) || cleanText(item.target_name, 120) || '角色体验'}`;
       targetOwnerId = cleanText(item.profile_id, 80);
       snapshot = {
+        target_type: item.target_type,
+        target_name: item.target_name,
         profile_name: item.profile_name,
         review_lane: item.review_lane,
         rating: item.rating,
-        content_preview: cleanText(item.content, 240),
+        content_preview: cleanText(item.content, 2000),
       };
     } else if (targetType === 'rating_reply') {
       const { data: item, error: qErr } = await supabase.from('lc_rating_discussion_nodes').select('*').eq('id', targetId).maybeSingle();
@@ -10712,7 +10726,7 @@ app.post(
         rating_id: item.rating_id,
         node_type: item.node_type,
         profile_name: item.is_anonymous ? '匿名用户' : item.profile_name,
-        content_preview: cleanText(item.content, 240),
+        content_preview: cleanText(item.content, 2000),
       };
     } else if (targetType === 'provider_listing') {
       const [listingResult, profileResult] = await Promise.all([
@@ -10725,10 +10739,11 @@ app.post(
       targetTitle = `委托条 · ${profileResult.data.display_name || '委托师'}`;
       targetOwnerId = cleanText(targetId, 80);
       snapshot = {
+        profile_id: targetId,
         city: profileResult.data.city,
         headline: listingResult.data.headline,
         role_types: listingResult.data.role_types,
-        content_preview: cleanText(listingResult.data.description, 240),
+        content_preview: cleanText(listingResult.data.description, 2000),
       };
     } else if (targetType === 'guide') {
       const { data: item, error: qErr } = await supabase.from('lc_guides').select('*').eq('id', targetId).maybeSingle();
@@ -10740,7 +10755,7 @@ app.post(
         author_name: item.author_name,
         guide_type: item.guide_type,
         target_name: item.target_name,
-        content_preview: cleanText(item.summary || item.content, 240),
+        content_preview: cleanText(item.summary || item.content, 2000),
       };
     } else if (targetType === 'service') {
       const { data: item, error: qErr } = await supabase.from('lc_services').select('*').eq('id', targetId).maybeSingle();
@@ -10749,10 +10764,11 @@ app.post(
       targetTitle = `服务 · ${cleanText(item.service_type, 120) || '服务项目'}`;
       targetOwnerId = cleanText(item.creator_id, 80);
       snapshot = {
+        creator_id: item.creator_id,
         service_type: item.service_type,
         price: item.price,
         duration: item.duration,
-        content_preview: cleanText(item.description, 240),
+        content_preview: cleanText(item.description, 2000),
       };
     } else if (targetType === 'portfolio' || targetType === 'portfolio_image') {
       const { data: item, error: qErr } = await supabase.from('lc_portfolio').select('*').eq('id', targetId).maybeSingle();
@@ -10761,8 +10777,10 @@ app.post(
       targetTitle = targetType === 'portfolio_image' ? '作品图片' : `作品 · ${cleanText(item.title, 120) || '未命名作品'}`;
       targetOwnerId = cleanText(item.creator_id, 80);
       snapshot = {
+        creator_id: item.creator_id,
+        title: item.title,
         image_reference: targetType === 'portfolio_image' ? targetSubId || cleanText(item.image_url, 300) || null : null,
-        content_preview: cleanText(item.description || item.title, 240),
+        content_preview: cleanText(item.description || item.title, 2000),
       };
     }
     if (targetOwnerId && targetOwnerId === profile.id) {
@@ -12393,6 +12411,11 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       .select('id, profile_id, product_type, target_id, amount_fen, currency, status, paid_at, refunded_at, refund_reason, created_at, updated_at')
       .order('created_at', { ascending: false })
       .limit(200);
+    const reportHistoryResult = await supabase.from('lc_reports')
+      .select('*')
+      .neq('status', 'pending')
+      .order('updated_at', { ascending: false })
+      .limit(100);
     if (dmDossiersResult.error && !isMissingRelation(dmDossiersResult.error, 'lc_dm_dossiers')) throw dmDossiersResult.error;
     if (rankingEditRequestsResult.error && !isMissingRelation(rankingEditRequestsResult.error, 'lc_ranking_edit_requests')) throw rankingEditRequestsResult.error;
     if (dmClaimsResult.error && !isMissingRelation(dmClaimsResult.error, 'lc_dm_dossier_claims')) throw dmClaimsResult.error;
@@ -12400,6 +12423,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     if (dmRatingsResult.error && !isMissingRelation(dmRatingsResult.error, 'lc_dm_ratings')) throw dmRatingsResult.error;
     if (storeRatingsResult.error && !isMissingRelation(storeRatingsResult.error, 'lc_store_ratings')) throw storeRatingsResult.error;
     if (dmIdentityWithdrawalsResult.error && !isMissingRelation(dmIdentityWithdrawalsResult.error, 'lc_dm_identity_withdrawals')) throw dmIdentityWithdrawalsResult.error;
+    if (reportHistoryResult.error && !isMissingRelation(reportHistoryResult.error, 'lc_reports')) throw reportHistoryResult.error;
     if (publicReviewsResult.error && !isMissingRelation(publicReviewsResult.error, 'lc_public_reviews')) throw publicReviewsResult.error;
     if (reviewHistoryResult.error && !isMissingRelation(reviewHistoryResult.error, 'lc_public_reviews')) throw reviewHistoryResult.error;
     if (guidesResult.error && !isMissingRelation(guidesResult.error, 'lc_guides')) throw guidesResult.error;
@@ -12574,6 +12598,12 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       certifications: certifications || [],
       carpools: carpools || [],
       reports: (reports || []).map((report: Record<string, unknown>) => ({
+        ...report,
+        evidence_files: report.target_type === 'dm_affiliation'
+          ? publicClaimProofMetadata(report.evidence_files)
+          : publicModerationEvidenceMetadata(report.evidence_files),
+      })),
+      reportHistory: (reportHistoryResult.error ? [] : reportHistoryResult.data || []).map((report: Record<string, unknown>) => ({
         ...report,
         evidence_files: report.target_type === 'dm_affiliation'
           ? publicClaimProofMetadata(report.evidence_files)
@@ -19720,6 +19750,12 @@ app.put('/api/lc/admin/reports/:id/resolve', authMiddleware, adminMiddleware, as
       .single();
     if (rErr) throw rErr;
     if (!report) return res.status(404).json(err(new Error('举报不存在')));
+    if (hideTarget && report.target_type !== 'dm_affiliation') {
+      const privacyDetailError = privacyReportDetailError(report.reason, report.description);
+      if (privacyDetailError) {
+        return res.status(400).json(err(new Error('举报人未说明具体隐私项和出现位置，现有信息不足，不能直接下架原内容')));
+      }
+    }
 
     let statusChange: { before: string | null; after: string | null } = { before: null, after: null };
     if (restoreTarget) {

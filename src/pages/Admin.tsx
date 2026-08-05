@@ -9,6 +9,15 @@ import {
   wechatSafetyStatusPresentation,
   type WechatSafetyFilter,
 } from '../lib/wechatSafetyPresentation';
+import {
+  reportContentPreview,
+  reportInformationGap,
+  reportSnapshotEntries,
+  reportStatusLabel,
+  reportTargetLabel,
+  reportTargetLocation,
+  reportTargetPath,
+} from '../lib/reportPresentation';
 import BrandLogo from '../components/BrandLogo';
 import RankingEvidenceEditor from '../components/RankingEvidenceEditor';
 
@@ -481,7 +490,10 @@ type ReportReview = {
     decisions?: Record<string, number>;
   } | null;
   moderation_precheck?: ModerationPrecheck | null;
+  status?: 'pending' | 'resolved' | 'dismissed';
+  handler_note?: string | null;
   created_at: string;
+  updated_at?: string | null;
 };
 
 type SecurityEvent = {
@@ -1127,6 +1139,7 @@ export default function Admin() {
   const [dmIdentityWithdrawals, setDmIdentityWithdrawals] = useState<DmIdentityWithdrawalReview[]>([]);
   const [dossierOptions, setDossierOptions] = useState<DossierOption[]>([]);
   const [reports, setReports] = useState<ReportReview[]>([]);
+  const [reportHistory, setReportHistory] = useState<ReportReview[]>([]);
   const [siteMessages, setSiteMessages] = useState<SiteMessage[]>([]);
   const [accountAppeals, setAccountAppeals] = useState<AccountAppeal[]>([]);
   const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
@@ -1230,6 +1243,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
         setTransactions((d.data as { transactions: TransactionReview[] }).transactions || []);
         setCerts((d.data as { certifications: CertReview[] }).certifications || []);
         setReports((d.data as { reports: ReportReview[] }).reports || []);
+        setReportHistory((d.data as { reportHistory: ReportReview[] }).reportHistory || []);
         setSiteMessages((d.data as { siteMessages: SiteMessage[] }).siteMessages || []);
         setAccountAppeals((d.data as { accountAppeals: AccountAppeal[] }).accountAppeals || []);
         setSecurityEvents((d.data as { securityEvents: SecurityEvent[] }).securityEvents || []);
@@ -1909,21 +1923,29 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   };
 
   const resolveReport = async (id: string, action: 'resolved' | 'dismissed', hideTarget = false, restoreTarget = false) => {
-    await fetch(`${API}/lc/admin/reports/${id}/resolve`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action,
-        hideTarget,
-        restoreTarget,
-        rejectReason: hideTarget ? '举报处理后下架' : undefined,
-        handlerNote: restoreTarget ? '复核后恢复展示' : action === 'dismissed' ? '已看，暂不处理' : '已处理',
-      }),
-    });
-    const target = reports.find(item => item.id === id);
-    setReports(prev => target ? prev.filter(item => !(item.target_type === target.target_type && item.target_id === target.target_id)) : prev.filter(item => item.id !== id));
-    if (hideTarget && target?.target_type === 'carpool') setCarpools(prev => prev.filter(item => item.id !== target.target_id));
-    void loadData();
+    try {
+      const response = await fetch(`${API}/lc/admin/reports/${id}/resolve`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          hideTarget,
+          restoreTarget,
+          rejectReason: hideTarget ? '举报处理后下架' : undefined,
+          handlerNote: restoreTarget ? '复核后恢复展示' : action === 'dismissed' ? '已看，暂不处理' : '已处理',
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '举报处理失败');
+      }
+      const target = reports.find(item => item.id === id);
+      setReports(prev => target ? prev.filter(item => !(item.target_type === target.target_type && item.target_id === target.target_id)) : prev.filter(item => item.id !== id));
+      if (hideTarget && target?.target_type === 'carpool') setCarpools(prev => prev.filter(item => item.id !== target.target_id));
+      void loadData();
+    } catch (resolveError) {
+      setError(resolveError instanceof Error ? resolveError.message : '举报处理失败');
+    }
   };
 
   const resolveSiteMessage = async (id: string) => {
@@ -2059,6 +2081,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     setDossierOptions([]);
     setRankingEditRequests([]);
     setReports([]);
+    setReportHistory([]);
     setSiteMessages([]);
     setAccountAppeals([]);
     setSecurityEvents([]);
@@ -3336,59 +3359,24 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
             )}
 
             {tab === 'reports' && (
-              <ListEmpty empty={reports.length === 0} text="暂无待处理举报">
-                {reports.map(r => (
-                  <Row key={r.id} accent="#f87171">
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <TitleLine title={r.target_title || r.target_id} pill={r.target_type === 'dm_affiliation' ? '任职异议' : r.target_type === 'carpool' ? '拼车举报' : '举报'} />
-                      <Meta>
-                        举报人：{r.reporter_name}
-                        {` · 原因：${r.reason}`}
-                        {r.target_sub_id ? ` · 精确位置：${r.target_sub_id}` : ''}
-                        {r.report_group_count && r.report_group_count > 1 ? ` · 同对象有效举报 ${r.report_group_count}` : ''}
-                        {r.created_at ? ` · ${r.created_at.slice(0, 10)}` : ''}
-                      </Meta>
-                      {(r.auto_action === 'temporary_hidden' || r.auto_action === 'queued_priority') && (
-                        <Proof>
-                          {r.auto_action === 'temporary_hidden' ? '历史自动处置记录：曾临时折叠' : '历史自动处置记录：曾进入优先复核'}
-                          {r.risk_level ? ` · 风险级别：${r.risk_level}` : ''}
-                          {r.auto_action_reason ? <div style={{ marginTop: 6, lineHeight: 1.7 }}>{r.auto_action_reason}</div> : null}
-                        </Proof>
-                      )}
-                      {r.reviewer_summary && Number(r.reviewer_summary.total || 0) > 0 && (
-                        <Meta>
-                          社区观察员建议：共 {r.reviewer_summary.total} 条
-                          {typeof r.reviewer_summary.hide_votes === 'number' ? ` · 建议隐藏 ${r.reviewer_summary.hide_votes}` : ''}
-                          {typeof r.reviewer_summary.safe_votes === 'number' ? ` · 建议保留 ${r.reviewer_summary.safe_votes}` : ''}
-                        </Meta>
-                      )}
-                      <ModerationPrecheckBadge value={r.moderation_precheck} />
-                      {r.description && <ContentBox>{r.description}</ContentBox>}
-                      {r.target_type === 'dm_affiliation' && <AdminPrivateClaimProofs claimId={r.id} files={r.evidence_files || []} route="affiliation" />}
-                      {r.target_type !== 'dm_affiliation' && <AdminPrivateModerationEvidence recordId={r.id} files={r.evidence_files || []} kind="report" />}
-                      {r.target_snapshot && (
-                        <Proof>
-                          {typeof r.target_snapshot.city === 'string' ? `城市：${r.target_snapshot.city} ` : ''}
-                          {typeof r.target_snapshot.event_date === 'string' ? `日期：${r.target_snapshot.event_date} ` : ''}
-                          {typeof r.target_snapshot.script_name === 'string' ? `本名：${r.target_snapshot.script_name} ` : ''}
-                          {typeof r.target_snapshot.poster_name === 'string' ? `发布者：${r.target_snapshot.poster_name}` : ''}
-                          {typeof r.target_snapshot.content_preview === 'string' && (
-                            <div style={{ marginTop: 6, lineHeight: 1.7 }}>内容摘录：{r.target_snapshot.content_preview}</div>
-                          )}
-                        </Proof>
-                      )}
-                    </div>
-                    <Actions vertical>
-                      {r.auto_action === 'temporary_hidden' && (
-                        <ActionButton kind="ok" onClick={() => resolveReport(r.id, 'resolved', false, true)}>复核恢复展示</ActionButton>
-                      )}
-                      <ActionButton kind="bad" onClick={() => resolveReport(r.id, 'resolved', true)}>{r.target_type === 'dm_affiliation' ? '确认异议并解除关联' : '下架并处理'}</ActionButton>
-                      <ActionButton kind="ok" onClick={() => resolveReport(r.id, 'resolved')}>标记已处理</ActionButton>
-                      <ActionButton onClick={() => resolveReport(r.id, 'dismissed')}>暂不处理</ActionButton>
-                    </Actions>
-                  </Row>
-                ))}
-              </ListEmpty>
+              <div style={{ display: 'grid', gap: 18 }}>
+                <section>
+                  <h3 style={{ margin: '0 0 8px', color: INK, fontSize: '0.92rem' }}>待处理举报（{reports.length}）</h3>
+                  <ListEmpty empty={reports.length === 0} text="暂无待处理举报">
+                    {reports.map(report => (
+                      <ReportReviewCard key={report.id} report={report} onResolve={resolveReport} />
+                    ))}
+                  </ListEmpty>
+                </section>
+                <section>
+                  <h3 style={{ margin: '0 0 8px', color: INK, fontSize: '0.92rem' }}>最近处理记录（{reportHistory.length}）</h3>
+                  <ListEmpty empty={reportHistory.length === 0} text="暂无举报处理记录">
+                    {reportHistory.map(report => (
+                      <ReportReviewCard key={report.id} report={report} readonly onResolve={resolveReport} />
+                    ))}
+                  </ListEmpty>
+                </section>
+              </div>
             )}
 
             {tab === 'messages' && (
@@ -4092,6 +4080,118 @@ function ActionButton({ children, onClick, kind, disabled }: { children: React.R
       style={{ minHeight: 32, padding: '6px 10px', borderRadius: 6, border: `1px solid ${ok ? 'rgba(22,101,52,0.22)' : bad ? 'rgba(185,28,28,0.20)' : 'rgba(217,168,87,0.30)'}`, cursor: disabled ? 'not-allowed' : 'pointer', background: ok ? 'rgba(240,253,244,0.95)' : bad ? 'rgba(254,242,242,0.95)' : '#fff8e8', color: ok ? '#166534' : bad ? '#b91c1c' : '#8a5a19', fontWeight: 750, fontSize: '0.76rem', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap' }}>
       {children}
     </button>
+  );
+}
+
+function ReportReviewCard({
+  report,
+  readonly = false,
+  onResolve,
+}: {
+  report: ReportReview;
+  readonly?: boolean;
+  onResolve: (id: string, action: 'resolved' | 'dismissed', hideTarget?: boolean, restoreTarget?: boolean) => Promise<void>;
+}) {
+  const targetPath = reportTargetPath(report);
+  const targetLabel = reportTargetLabel(report.target_type);
+  const targetLocation = reportTargetLocation(report);
+  const informationGap = reportInformationGap(report);
+  const snapshotEntries = reportSnapshotEntries(report.target_snapshot);
+  const contentPreview = reportContentPreview(report.target_snapshot);
+  const evidenceCount = report.evidence_files?.length || 0;
+  const canHideTarget = !informationGap || report.target_type === 'dm_affiliation';
+  const timestamp = readonly ? report.updated_at || report.created_at : report.created_at;
+
+  return (
+    <Row accent={informationGap ? '#d97706' : readonly ? '#94a3b8' : '#f87171'}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <TitleLine
+          title={report.target_title || report.target_id}
+          pill={`${targetLabel} · ${reportStatusLabel(report.status)}`}
+        />
+        <Meta>
+          举报人：{report.reporter_name}
+          {report.report_group_count && report.report_group_count > 1 ? ` · 同对象有效举报 ${report.report_group_count}` : ''}
+          {timestamp ? ` · ${timestamp.slice(0, 19).replace('T', ' ')}` : ''}
+        </Meta>
+
+        <ReviewSection title="被举报对象">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '4px 16px' }}>
+            <AdminDetail label="对象类型" value={targetLabel} />
+            <AdminDetail label="具体位置" value={targetLocation} />
+            <AdminDetail label="对象编号" value={report.target_id} />
+            <AdminDetail label="举报编号" value={report.id} />
+          </div>
+          {targetPath && (
+            <Link to={targetPath} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 4, color: '#275389', fontSize: '0.78rem', fontWeight: 900 }}>
+              打开原页面核对
+            </Link>
+          )}
+        </ReviewSection>
+
+        <ReviewSection title="举报理由与具体说明">
+          <div style={{ color: '#991b1b', fontWeight: 950 }}>{report.reason}</div>
+          <div style={{ marginTop: 5, whiteSpace: 'pre-wrap' }}>
+            {report.description?.trim() || '举报人没有填写任何补充说明。'}
+          </div>
+        </ReviewSection>
+
+        {informationGap && <ReviewNotice tone="red">{informationGap}</ReviewNotice>}
+
+        <ReviewSection title="提交举报时的公开内容快照">
+          {snapshotEntries.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '3px 14px' }}>
+              {snapshotEntries.map(entry => <AdminDetail key={entry.key} label={entry.label} value={entry.value} />)}
+            </div>
+          )}
+          <div style={{ marginTop: snapshotEntries.length > 0 ? 7 : 0 }}>
+            <div style={{ color: MUTED, fontSize: '0.72rem', fontWeight: 800, marginBottom: 4 }}>被举报内容原文 / 摘录</div>
+            <ContentBox>{contentPreview || '该对象没有公开文本，或举报提交时未抓取到文本内容。'}</ContentBox>
+          </div>
+        </ReviewSection>
+
+        <div style={{ marginTop: 8 }}>
+          <Meta>举报证据：{evidenceCount > 0 ? `${evidenceCount} 张，仅管理员可见` : '未提交'}</Meta>
+        </div>
+        {report.target_type === 'dm_affiliation'
+          ? <AdminPrivateClaimProofs claimId={report.id} files={report.evidence_files || []} route="affiliation" />
+          : <AdminPrivateModerationEvidence recordId={report.id} files={report.evidence_files || []} kind="report" />}
+
+        {(report.auto_action === 'temporary_hidden' || report.auto_action === 'queued_priority') && (
+          <Proof>
+            {report.auto_action === 'temporary_hidden' ? '历史自动处置记录：曾临时折叠' : '历史自动处置记录：曾进入优先复核'}
+            {report.risk_level ? ` · 风险级别：${report.risk_level}` : ''}
+            {report.auto_action_reason ? <div style={{ marginTop: 6 }}>{report.auto_action_reason}</div> : null}
+          </Proof>
+        )}
+        {report.reviewer_summary && Number(report.reviewer_summary.total || 0) > 0 && (
+          <Meta>
+            社区观察员建议：共 {report.reviewer_summary.total} 条
+            {typeof report.reviewer_summary.hide_votes === 'number' ? ` · 建议隐藏 ${report.reviewer_summary.hide_votes}` : ''}
+            {typeof report.reviewer_summary.safe_votes === 'number' ? ` · 建议保留 ${report.reviewer_summary.safe_votes}` : ''}
+          </Meta>
+        )}
+        <ModerationPrecheckBadge value={report.moderation_precheck} />
+        {readonly && report.handler_note && <Proof>处理备注：{report.handler_note}</Proof>}
+      </div>
+
+      {!readonly && (
+        <Actions>
+          {report.auto_action === 'temporary_hidden' && (
+            <ActionButton kind="ok" onClick={() => onResolve(report.id, 'resolved', false, true)}>复核恢复展示</ActionButton>
+          )}
+          <ActionButton
+            kind="bad"
+            disabled={!canHideTarget}
+            onClick={() => onResolve(report.id, 'resolved', true)}
+          >
+            {report.target_type === 'dm_affiliation' ? '确认异议并解除关联' : informationGap ? '信息不足，不能下架' : '下架并处理'}
+          </ActionButton>
+          <ActionButton kind="ok" onClick={() => onResolve(report.id, 'resolved')}>标记已处理</ActionButton>
+          <ActionButton onClick={() => onResolve(report.id, 'dismissed')}>暂不处理</ActionButton>
+        </Actions>
+      )}
+    </Row>
   );
 }
 

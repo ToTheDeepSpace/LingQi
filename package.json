@@ -15,6 +15,7 @@
     "test:dm-affiliation": "tsc -p tsconfig.test.json && node --test dist-test/tests/dmAffiliationWorkflow.test.js",
     "test:shared-script-library": "tsc -p tsconfig.test.json && node --test dist-test/tests/sharedScriptCatalog.test.js",
     "test:ranking-workflow": "tsc -p tsconfig.test.json && node --test dist-test/tests/rankingWorkflow.test.js dist-test/tests/rankingAuthorEditPolicy.test.js",
+    "test:reports": "tsc -p tsconfig.test.json && node --test dist-test/tests/reportPolicy.test.js dist-test/tests/reportContract.test.js",
     "test:dossier-claim": "tsc -p tsconfig.test.json && node --test dist-test/tests/dossierClaimStorage.test.js",
     "test:dossier-edit": "tsc -p tsconfig.test.json && node --test dist-test/tests/dossierEditWorkflow.test.js",
     "test:chanto": "tsc -p tsconfig.test.json && node --test dist-test/tests/chantoPolicy.test.js",

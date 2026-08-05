@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import DraftAutosaveNotice from './DraftAutosaveNotice';
 import { useDraftAutosave } from '../hooks/useDraftAutosave';
+import { PRIVACY_REPORT_REASON, privacyReportDetailError } from '../lib/reportPolicy';
 
 export type ReportTargetType =
   | 'carpool' | 'ranking' | 'comment' | 'commission' | 'profile'
@@ -70,6 +71,8 @@ export default function ReportModal({
 
   const submit = async () => {
     if (!reason.trim()) return setError('请选择举报原因');
+    const detailError = privacyReportDetailError(reason, description);
+    if (detailError) return setError(detailError);
     setSubmitting(true);
     setError('');
     try {
@@ -161,10 +164,18 @@ export default function ReportModal({
               {REPORT_REASONS.map(item => <option key={item}>{item}</option>)}
             </select>
             <div style={{ marginTop: 12 }}>
-              <Label>补充说明</Label>
+              <Label>{reason === PRIVACY_REPORT_REASON ? '具体隐私项与位置 *' : '补充说明'}</Label>
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={5}
-                placeholder="可写清楚哪里不实、涉及谁、有什么证据。"
+                maxLength={800}
+                placeholder={reason === PRIVACY_REPORT_REASON
+                  ? '请说明具体是哪项隐私，以及出现在页面、正文或哪张图片的什么位置。请勿重复粘贴敏感信息。'
+                  : '可写清楚哪里不实、涉及谁、有什么证据。'}
                 style={{ ...inputStyle, resize: 'none', lineHeight: 1.7 }} />
+              {reason === PRIVACY_REPORT_REASON && (
+                <p style={{ margin: '6px 0 0', color: '#9a5f18', fontSize: '0.76rem', lineHeight: 1.55 }}>
+                  至少 10 个字。只写“侵犯隐私”无法帮助管理员定位问题。
+                </p>
+              )}
             </div>
             <div style={{ marginTop: 12 }}>
               <Label>证据图片（选填，最多 3 张）</Label>

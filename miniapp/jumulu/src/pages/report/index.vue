@@ -45,6 +45,10 @@ async function addEvidence() {
 }
 
 async function submit() {
+  if (reason.value === '侵犯隐私' && description.value.trim().length < 10) {
+    uni.showToast({ title: '请说明具体隐私项和出现位置，至少10个字', icon: 'none' })
+    return
+  }
   try {
     await requireLogin()
     submitting.value = true
@@ -89,8 +93,16 @@ function previewEvidence(current: string) {
       <view class="reason-grid">
         <text v-for="option in reasons" :key="option" class="reason" :class="{ active: reason === option }" @tap="reason = option">{{ option }}</text>
       </view>
-      <text class="field-label">具体说明</text>
-      <textarea v-model="description" class="textarea" maxlength="800" placeholder="选填。可以写明具体位置、问题和希望平台核查的事实。" />
+      <text class="field-label">具体说明{{ reason === '侵犯隐私' ? '（必填）' : '（选填）' }}</text>
+      <textarea
+        v-model="description"
+        class="textarea"
+        maxlength="800"
+        :placeholder="reason === '侵犯隐私'
+          ? '请说明具体是哪项隐私，以及出现在页面、正文或哪张图片的什么位置。请勿重复粘贴敏感信息。'
+          : '可以写明具体位置、问题和希望平台核查的事实。'"
+      />
+      <text v-if="reason === '侵犯隐私'" class="privacy-detail-tip">至少 10 个字。只写“侵犯隐私”无法帮助管理员定位问题。</text>
       <view class="evidence-head"><text class="field-label">证据图片（选填，最多 3 张）</text><text v-if="evidencePaths.length < 3" @tap="addEvidence">添加图片</text></view>
       <view v-if="evidencePaths.length" class="evidence-grid">
         <view v-for="(url, index) in evidencePaths" :key="url">
@@ -117,5 +129,6 @@ function previewEvidence(current: string) {
 .evidence-grid button { position: absolute; top: 5rpx; right: 5rpx; width: 42rpx; min-height: 42rpx; margin: 0; padding: 0; border: 0; border-radius: 50%; background: rgba(31,41,55,.78); color: #fff; font-size: 28rpx; line-height: 42rpx; }
 .evidence-grid button::after { border: 0; }
 .privacy { display: block; margin-top: 12rpx; color: #64748b; font-size: 21rpx; line-height: 1.55; }
+.privacy-detail-tip { display: block; margin-top: -6rpx; color: #9a651e; font-size: 21rpx; line-height: 1.5; }
 .submit { width: 100%; margin: 0; }
 </style>
