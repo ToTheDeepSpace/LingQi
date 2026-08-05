@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import {
+  missingRequiredProductionSchemaColumns,
+  REQUIRED_PRODUCTION_SCHEMA_COLUMNS,
+} from '../api/productionSchema.js';
 
 function sourceFiles(root: string, extension: RegExp): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
@@ -74,4 +78,19 @@ test('admin report handling records target state and reopening is concurrency sa
   assert.match(server, /current_target_status_before_reopen: currentStatus/);
   assert.match(server, /action: 'admin_report_reopened'/);
   assert.match(server, /\.eq\('status', previousStatus\)/);
+});
+
+test('production startup rejects a report schema with pending migrations', () => {
+  const completeSchema = Object.entries(REQUIRED_PRODUCTION_SCHEMA_COLUMNS)
+    .flatMap(([table_name, columns]) => columns.map(column_name => ({ table_name, column_name })));
+  assert.deepEqual(missingRequiredProductionSchemaColumns(completeSchema), []);
+  assert.deepEqual(
+    missingRequiredProductionSchemaColumns(
+      completeSchema.filter(column => column.column_name !== 'handler_context'),
+    ),
+    ['lc_reports.handler_context'],
+  );
+
+  const standalone = readFileSync('server/standalone.ts', 'utf8');
+  assert.match(standalone, /await assertRequiredProductionSchema\(tencentPgPool\)/);
 });
