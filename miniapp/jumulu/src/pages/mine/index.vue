@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShareAppMessage, onShow } from '@dcloudio/uni-app'
 import DailyCheckinView from '../../components/DailyCheckinView.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import type { AccountStatus, AuthSession } from '../../types'
 import { apiRequest, readAuth } from '../../utils/api'
 import { hasCurrentLegalConsent, loginWithWechat, logout, refreshCurrentUser } from '../../utils/auth'
+import { inviteSharePayload } from '../../utils/share'
 
 type PublicationSummary = {
   total: number
@@ -26,6 +27,7 @@ const publicationSummary = ref<PublicationSummary>({ total: 0, pending: 0, appro
 const showCheckin = ref(false)
 const checkinView = ref<InstanceType<typeof DailyCheckinView> | null>(null)
 const legalAccepted = ref(hasCurrentLegalConsent())
+const checkinPreview = ref(false)
 
 async function refresh() {
   loading.value = true; error.value = ''
@@ -128,13 +130,27 @@ async function pullRefresh() {
   await refresh()
 }
 
-onShow(() => { auth.value = readAuth(); if (auth.value?.token) void refresh() })
+onLoad((options) => {
+  // #ifdef H5
+  if (import.meta.env.DEV && options?.preview === 'checkin') {
+    checkinPreview.value = true
+    auth.value = { id: 'preview-user', token: 'preview', display_name: '预览用户' }
+    showCheckin.value = true
+  }
+  // #endif
+})
+onShow(() => {
+  if (checkinPreview.value) return
+  auth.value = readAuth()
+  if (auth.value?.token) void refresh()
+})
 onPullDownRefresh(pullRefresh)
+onShareAppMessage(() => inviteSharePayload())
 </script>
 
 <template>
   <view class="page">
-    <DailyCheckinView v-if="auth && showCheckin" ref="checkinView" @back="showCheckin = false" />
+    <DailyCheckinView v-if="auth && showCheckin" ref="checkinView" :preview="checkinPreview" @back="showCheckin = false" />
     <template v-else>
     <PageIntro nav-title="我的" :title="auth ? auth.display_name : '微信登录剧幕录'" />
     <view v-if="!auth" class="login surface">

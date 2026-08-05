@@ -327,6 +327,39 @@ export type DailyCheckinState = {
   } | null
 }
 
+export type ReferralSummary = {
+  referral_code: string
+  share_url?: string
+  community_role?: string | null
+  community_role_expires_at?: string | null
+  stats: {
+    registered_invites: number
+    valid_invites: number
+    converted_invites: number
+    invitee_bonus_count: number
+    stage1_reward_count: number
+    stage2_reward_count: number
+    referrer_reward_total: number
+    next_milestone?: { target: number; title: string; remaining: number }
+  }
+  rules: {
+    new_user_base_bonus: number
+    invitee_extra_bonus: number
+    referrer_stage1_bonus: number
+    referrer_stage2_bonus: number
+  }
+  referrals: Array<{
+    id: string
+    status: string
+    invitee: { id: string; display_name: string; avatar?: string | null }
+    invitee_bonus_awarded_at?: string | null
+    stage1_awarded_at?: string | null
+    stage2_awarded_at?: string | null
+    stage2_reason?: string | null
+    created_at: string
+  }>
+}
+
 export type RoleRating = {
   id: string
   profile_id?: string

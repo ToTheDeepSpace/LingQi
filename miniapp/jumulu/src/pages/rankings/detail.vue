@@ -7,6 +7,7 @@ import StatePanel from '../../components/StatePanel.vue'
 import type { Ranking, RankingComment } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText, RANKING_TYPE_TEXT } from '../../utils/format'
+import { shareImage, sharePath } from '../../utils/share'
 
 const id = ref('')
 const item = ref<Ranking | null>(null)
@@ -95,7 +96,11 @@ function previewImages(index: number) { uni.previewImage({ current: index, urls:
 
 onLoad(options => { id.value = String(options?.id || ''); void load() })
 onPullDownRefresh(load)
-onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.type]}｜${item.value.subject_name}` : '剧幕录口碑事件', path: `/pages/rankings/detail?id=${encoded(id.value)}` }))
+onShareAppMessage(() => ({
+  title: item.value ? `${RANKING_TYPE_TEXT[item.value.type]}｜${item.value.subject_name}` : '剧幕录口碑事件',
+  path: sharePath(`/pages/rankings/detail?id=${encoded(id.value)}`),
+  imageUrl: shareImage(images.value[0]),
+}))
 </script>
 
 <template>
@@ -108,6 +113,7 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
           <text class="article__type">{{ RANKING_TYPE_TEXT[item.type] }}</text>
           <view class="article__tools">
             <text class="article__city">{{ item.subject_city || '城市待补充' }}</text>
+            <button class="article__share" open-type="share">分享</button>
             <ReportFlag target-type="ranking" :target-id="item.id" :title="`${item.subject_name}的口碑事件`" :own="item.poster_id === readAuth()?.id" />
           </view>
         </view>
@@ -160,6 +166,7 @@ onShareAppMessage(() => ({ title: item.value ? `${RANKING_TYPE_TEXT[item.value.t
 .article__type { color: #9a651e; font-size: 24rpx; font-weight: 900; }
 .article__tools { display: flex; align-items: center; gap: 10rpx; }
 .article__city, .article__meta, .article__author { color: #7b8492; font-size: 22rpx; }
+.article__share { width: auto; min-height: 46rpx; margin: 0; padding: 0 10rpx; border: 1rpx solid #d7dee7; border-radius: 7rpx; background: #fff; color: #526174; font-size: 19rpx; line-height: 44rpx; }
 .article__subject { display: block; margin-top: 12rpx; font-family: serif; font-size: 42rpx; font-weight: 900; }
 .article__meta, .article__content { display: block; margin-top: 12rpx; }
 .article__content { color: #27364a; font-size: 29rpx; line-height: 1.78; white-space: pre-wrap; }

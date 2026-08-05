@@ -1,6 +1,7 @@
 import type { AuthSession } from '../types'
 import { PRIVACY_VERSION, TERMS_VERSION } from '../content/legalDocuments'
 import { apiRequest, readAuth, writeAuth } from './api'
+import { clearIncomingReferral, loadReferralSummary, readIncomingReferral } from './share'
 
 const LEGAL_CONSENT_KEY = 'jumulu:miniapp:legal-consent'
 
@@ -32,6 +33,7 @@ export async function refreshCurrentUser(options: { silent?: boolean } = {}) {
     const profile = await apiRequest<Omit<AuthSession, 'token'>>('/lc/me')
     const next = { ...session, ...profile, token: session.token }
     writeAuth(next)
+    void loadReferralSummary().catch(() => null)
     uni.$emit('jumulu:auth-changed', next)
     return next
   } catch (error) {
@@ -48,13 +50,16 @@ export async function loginWithWechat(options: { legalAccepted: boolean }) {
     method: 'POST',
     data: {
       code: login.code,
+      referralCode: readIncomingReferral() || undefined,
       termsAccepted: true,
       termsVersion: TERMS_VERSION,
       privacyVersion: PRIVACY_VERSION,
     },
   })
   rememberLegalConsent()
+  clearIncomingReferral()
   writeAuth(auth)
+  void loadReferralSummary().catch(() => null)
   uni.$emit('jumulu:auth-changed', auth)
   return auth
 }

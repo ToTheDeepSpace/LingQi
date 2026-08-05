@@ -7,8 +7,9 @@ const props = withDefaults(defineProps<{
   home?: boolean
   back?: boolean
   inlineBack?: boolean
+  message?: boolean
   fallback?: string
-}>(), { subtitle: '', home: false, back: true, inlineBack: false, fallback: '/pages/index/index' })
+}>(), { subtitle: '', home: false, back: true, inlineBack: false, message: true, fallback: '/pages/index/index' })
 
 const emit = defineEmits<{ back: [] }>()
 
@@ -34,8 +35,8 @@ function updateUnread(value: unknown) {
 onMounted(() => {
   const pages = getCurrentPages()
   const currentRoute = pages[pages.length - 1]?.route || ''
-  showMessageEntry.value = currentRoute !== 'pages/mine/account-status'
-  showBack.value = props.back && !tabPages.has(currentRoute)
+  showMessageEntry.value = props.message && currentRoute !== 'pages/mine/account-status'
+  showBack.value = props.back && (props.inlineBack || !tabPages.has(currentRoute))
   const windowInfo = uni.getWindowInfo()
   statusBarHeight.value = Number(windowInfo.statusBarHeight || 20)
   try {

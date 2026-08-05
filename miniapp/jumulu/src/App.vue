@@ -2,6 +2,7 @@
 import { onLaunch, onShow } from '@dcloudio/uni-app'
 import { refreshCurrentUser } from './utils/auth'
 import { apiRequest, readAuth } from './utils/api'
+import { rememberIncomingReferral } from './utils/share'
 
 let checkingFollows = false
 let checkingNotifications = false
@@ -34,7 +35,8 @@ async function refreshNotificationCount() {
   finally { checkingNotifications = false }
 }
 
-onLaunch(() => {
+onLaunch((options) => {
+  rememberIncomingReferral(options?.query)
   void refreshCurrentUser({ silent: true }).then(() => Promise.all([ensureCityFollows(), refreshNotificationCount()]))
   uni.$on('jumulu:auth-changed', () => setTimeout(() => {
     void ensureCityFollows()
@@ -42,7 +44,8 @@ onLaunch(() => {
   }, 250))
   uni.$on('jumulu:refresh-notifications', () => void refreshNotificationCount())
 })
-onShow(() => {
+onShow((options) => {
+  rememberIncomingReferral(options?.query)
   void ensureCityFollows()
   void refreshNotificationCount()
 })

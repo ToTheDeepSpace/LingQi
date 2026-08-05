@@ -7854,6 +7854,8 @@ app.get('/api/lc/referrals/me', authMiddleware, async (req, res) => {
         valid_invites: validInvites,
         converted_invites: convertedInvites,
         invitee_bonus_count: inviteeBonusCount,
+        stage1_reward_count: stage1RewardCount,
+        stage2_reward_count: stage2RewardCount,
         referrer_reward_total: stage1RewardCount * 10 + stage2RewardCount * 20,
         next_milestone: nextMilestone,
       },
@@ -15131,6 +15133,56 @@ app.get('/api/lc/store-dossiers/:id', async (req, res) => {
     if (ratingResult.error && !isMissingRelation(ratingResult.error, 'lc_store_ratings')) throw ratingResult.error;
     const rows = ratingResult.error ? [] : (ratingResult.data || []) as Record<string, unknown>[];
     const ratingDiscussions = await loadRatingDiscussionPayload('store', rows, await getOptionalCreatorId(req));
+    const affiliationResult = await supabase.from('lc_dm_store_affiliations')
+      .select('dm_dossier_id, started_at, reviewed_at')
+      .eq('store_dossier_id', req.params.id)
+      .eq('status', 'approved')
+      .order('started_at', { ascending: false, nullsFirst: false })
+      .limit(200);
+    if (affiliationResult.error && !isMissingRelation(affiliationResult.error, 'lc_dm_store_affiliations')) throw affiliationResult.error;
+    const affiliatedDmIds = Array.from(new Set(((affiliationResult.data || []) as Record<string, unknown>[])
+      .map(item => cleanText(item.dm_dossier_id, 80))
+      .filter(Boolean)));
+    const dmDossierResult = affiliatedDmIds.length > 0
+      ? await supabase.from('lc_dm_dossiers')
+        .select('id, dm_name, city, photo_url, photo_focus_x, photo_focus_y, claim_status')
+        .in('id', affiliatedDmIds)
+        .eq('entity_type', 'dm')
+        .eq('status', 'approved')
+      : { data: [], error: null };
+    if (dmDossierResult.error) throw dmDossierResult.error;
+    const dmRatingResult = affiliatedDmIds.length > 0
+      ? await supabase.from('lc_dm_ratings')
+        .select('dm_dossier_id, profile_id, rating')
+        .in('dm_dossier_id', affiliatedDmIds)
+        .eq('status', 'approved')
+        .limit(10000)
+      : { data: [], error: null };
+    if (dmRatingResult.error && !isMissingRelation(dmRatingResult.error, 'lc_dm_ratings')) throw dmRatingResult.error;
+    const ratingsByDm = new Map<string, Record<string, unknown>[]>();
+    for (const rating of (dmRatingResult.data || []) as Record<string, unknown>[]) {
+      const dmId = cleanText(rating.dm_dossier_id, 80);
+      if (!dmId) continue;
+      ratingsByDm.set(dmId, [...(ratingsByDm.get(dmId) || []), rating]);
+    }
+    const affiliatedDms = ((dmDossierResult.data || []) as Record<string, unknown>[])
+      .map(dm => ({
+        id: dm.id,
+        dm_name: dm.dm_name,
+        city: dm.city,
+        photo_url: dm.photo_url,
+        photo_focus_x: normalizeImageFocus(dm.photo_focus_x, 50),
+        photo_focus_y: normalizeImageFocus(dm.photo_focus_y, 25),
+        claim_status: dm.claim_status,
+        rating_summary: summarizeDmRatingRows(ratingsByDm.get(String(dm.id || '')) || []),
+      }))
+      .sort((a, b) => (
+        Number(b.rating_summary.avg || 0) - Number(a.rating_summary.avg || 0)
+        || Number(b.rating_summary.player_count || 0) - Number(a.rating_summary.player_count || 0)
+        || Number(b.claim_status === 'approved') - Number(a.claim_status === 'approved')
+        || Number(Boolean(b.photo_url)) - Number(Boolean(a.photo_url))
+        || String(a.dm_name || '').localeCompare(String(b.dm_name || ''), 'zh-CN')
+      ));
     const rankingResult = await supabase.from('lc_rankings')
       .select('*')
       .eq('subject_dossier_id', req.params.id)
@@ -15158,6 +15210,7 @@ app.get('/api/lc/store-dossiers/:id', async (req, res) => {
         claimed_by: dossier.claim_status === 'approved' ? dossier.claimed_by : null,
       },
       summary: summarizeDmRatingRows(rows),
+      dms: affiliatedDms,
       reputation_summary: buildReputationSummary(rankingRows),
       reputation_events: rankingRows.map(publicRankingPayload),
       ratings: rows.map(row => ({
@@ -19578,7 +19631,7 @@ async function loadDailyCheckinState(profileId: string) {
     supabase.from('lc_transactions')
       .select('id, amount, description, metadata, created_at')
       .eq('profile_id', profileId)
-      .eq('ref_type', 'daily_checkin')
+      .in('ref_type', ['daily_checkin', 'referral_invitee_bonus', 'referral_stage1', 'referral_stage2'])
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .limit(30),

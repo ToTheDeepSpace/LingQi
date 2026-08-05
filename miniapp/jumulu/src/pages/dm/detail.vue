@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
@@ -8,12 +8,14 @@ import type { DossierDetail } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dossierAffiliationLabel, dossierClaimLabel } from '../../utils/dossierPresentation'
 import { dateText, ratingText } from '../../utils/format'
+import { shareImage, sharePath } from '../../utils/share'
 
 const id = ref('')
 const data = ref<DossierDetail | null>(null)
 const loading = ref(false)
 const error = ref('')
 const selectedPhoto = ref(0)
+const focusRatingId = ref('')
 const photos = computed(() => {
   const dossier = data.value?.dossier
   if (!dossier) return []
@@ -29,7 +31,13 @@ const affiliationLabel = computed(() => data.value ? dossierAffiliationLabel(dat
 async function load() {
   if (!id.value) return
   loading.value = true; error.value = ''
-  try { data.value = await apiRequest<DossierDetail>(`/lc/dm-dossiers/${encoded(id.value)}`) }
+  try {
+    data.value = await apiRequest<DossierDetail>(`/lc/dm-dossiers/${encoded(id.value)}`)
+    if (focusRatingId.value) {
+      await nextTick()
+      uni.pageScrollTo({ selector: `#dm-rating-${focusRatingId.value}`, duration: 260 })
+    }
+  }
   catch (err) { error.value = err instanceof Error ? err.message : 'DM档案加载失败' }
   finally { loading.value = false; uni.stopPullDownRefresh() }
 }
@@ -48,9 +56,29 @@ function goClaim() {
 }
 function openProfile(profileId?: string | null) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 
-onLoad(options => { id.value = String(options?.id || ''); void load() })
+onLoad(options => {
+  id.value = String(options?.id || '')
+  focusRatingId.value = String(options?.ratingId || '')
+  void load()
+})
 onPullDownRefresh(load)
-onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧幕录档案`, path: `/pages/dm/detail?id=${encoded(id.value)}` }))
+onShareAppMessage((options) => {
+  const dataset = (options?.target as { dataset?: Record<string, string> } | undefined)?.dataset || {}
+  const dossier = data.value?.dossier
+  if (dataset.shareKind === 'dm-rating' && dataset.ratingId) {
+    const rating = data.value?.ratings.find(item => item.id === dataset.ratingId)
+    return {
+      title: `${dossier?.dm_name || 'DM'}体验评价：${rating?.rating || 0} 星｜剧幕录`,
+      path: sharePath(`/pages/dm/detail?id=${encoded(id.value)}&ratingId=${encoded(dataset.ratingId)}`),
+      imageUrl: shareImage(activePhoto.value?.url),
+    }
+  }
+  return {
+    title: `${dossier?.dm_name || 'DM'}｜剧幕录档案`,
+    path: sharePath(`/pages/dm/detail?id=${encoded(id.value)}`),
+    imageUrl: shareImage(activePhoto.value?.url),
+  }
+})
 </script>
 
 <template>
@@ -72,7 +100,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
                 <text class="status-badge" :class="{ verified: data.dossier.claim_status === 'approved' }">{{ claimLabel }}</text>
                 <text class="affiliation-badge">{{ affiliationLabel }}</text>
               </view>
-              <view class="hero__title-row"><text class="hero__name">{{ data.dossier.dm_name }}</text><ReportFlag target-type="dossier" :target-id="data.dossier.id" :title="`${data.dossier.dm_name}的 DM 档案`" :own="data.dossier.claimed_by === readAuth()?.id" /></view>
+              <view class="hero__title-row"><text class="hero__name">{{ data.dossier.dm_name }}</text><view class="hero__title-actions"><button class="share-button" open-type="share">分享</button><ReportFlag target-type="dossier" :target-id="data.dossier.id" :title="`${data.dossier.dm_name}的 DM 档案`" :own="data.dossier.claimed_by === readAuth()?.id" /></view></view>
               <text class="hero__meta">{{ data.dossier.city || '城市待补充' }}</text>
               <text v-if="data.dossier.affiliation?.store_dossier_id" class="hero__store" @tap="goStore">查看任职店家 ›</text>
             </view>
@@ -116,8 +144,8 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 
       <text class="section-title">玩家体验</text>
       <view v-if="!data.ratings.length" class="surface empty-reviews">还没有公开评分。</view>
-      <view v-for="rating in data.ratings" :key="rating.id" class="review surface">
-        <view class="review__head"><text class="review__author" :class="{ link: rating.profile_id }" @tap="openProfile(rating.profile_id)">{{ rating.profile_name || '用户' }}</text><view class="review__head-actions"><text class="review__score">{{ rating.rating }} 星</text><ReportFlag target-type="dm_rating" :target-id="rating.id" title="DM 体验评价" :own="rating.profile_id === readAuth()?.id" /></view></view>
+      <view v-for="rating in data.ratings" :id="`dm-rating-${rating.id}`" :key="rating.id" class="review surface">
+        <view class="review__head"><text class="review__author" :class="{ link: rating.profile_id }" @tap="openProfile(rating.profile_id)">{{ rating.profile_name || '用户' }}</text><view class="review__head-actions"><text class="review__score">{{ rating.rating }} 星</text><button class="review-share" open-type="share" data-share-kind="dm-rating" :data-rating-id="rating.id">分享</button><ReportFlag target-type="dm_rating" :target-id="rating.id" title="DM 体验评价" :own="rating.profile_id === readAuth()?.id" /></view></view>
         <text class="review__meta">《{{ rating.script_name }}》 · {{ rating.store_name }} · {{ dateText(rating.played_on) }}<template v-if="rating.replay_number"> · 第 {{ rating.replay_number }} 刷</template></text>
         <text class="review__content">{{ rating.content }}</text>
         <view v-if="rating.tags?.length" class="chip-row"><text v-for="tag in rating.tags" :key="tag" class="chip">{{ tag }}</text></view>
@@ -143,11 +171,12 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 .status-badge { flex: 0 0 auto; }
 .status-badge.verified { border-color: #ead8ad; background: #fff8e8; color: #8a5a19; }
 .affiliation-badge { background: #f8fafc; }
-.hero__title-row, .review__head-actions { display: flex; align-items: center; justify-content: space-between; gap: 10rpx; }
+.hero__title-row, .review__head-actions, .hero__title-actions { display: flex; align-items: center; justify-content: space-between; gap: 10rpx; }
 .hero__name, .hero__meta, .hero__store { display: block; }
 .hero__name { color: #1f2937; font-family: serif; font-size: 46rpx; font-weight: 900; }
 .hero__meta, .hero__store { margin-top: 8rpx; color: #64748b; font-size: 24rpx; }
 .hero__store { color: #275389; font-weight: 750; }
+.share-button { width: auto; min-height: 50rpx; margin: 0; padding: 0 13rpx; border: 1rpx solid #d4dce7; border-radius: 7rpx; background: #fff; color: #275389; font-size: 20rpx; font-weight: 800; line-height: 48rpx; }
 .score-row { display: flex; align-items: baseline; gap: 12rpx; margin-top: 18rpx; }
 .score { color: #9a651e; font-size: 44rpx; font-weight: 900; }
 .score-meta { color: #7b8492; font-size: 22rpx; }
@@ -168,6 +197,7 @@ onShareAppMessage(() => ({ title: `${data.value?.dossier.dm_name || 'DM'}｜剧�
 .review__author { color: #27364a; font-weight: 850; }
 .review__author.link { color: #275389; }
 .review__score { color: #9a651e; font-weight: 900; }
+.review-share { width: auto; min-height: 46rpx; margin: 0; padding: 0 10rpx; border: 1rpx solid #d7dee7; border-radius: 7rpx; background: #fff; color: #526174; font-size: 19rpx; line-height: 44rpx; }
 .review__meta, .review__content { display: block; margin-top: 10rpx; }
 .review__meta { color: #7b8492; font-size: 22rpx; }
 .review__content { color: #374151; font-size: 26rpx; line-height: 1.68; white-space: pre-wrap; }
