@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   SERVICE_FEE_FEN,
@@ -22,6 +23,20 @@ test('only paid purchases grant durable access', () => {
   assert.equal(servicePurchaseGrantsAccess('paid'), true);
   assert.equal(servicePurchaseGrantsAccess('unpaid'), false);
   assert.equal(servicePurchaseGrantsAccess('refunded'), false);
+});
+
+test('only unpaid legacy purchases are refreshed to the current service fee', () => {
+  const source = readFileSync('api/index.ts', 'utf8');
+  const ensurePurchase = source.slice(
+    source.indexOf('async function ensureServicePurchase'),
+    source.indexOf('async function paidServicePurchase'),
+  );
+  assert.match(ensurePurchase, /existing\.status !== 'unpaid'/);
+  assert.match(ensurePurchase, /amount_fen:\s*SERVICE_FEE_FEN/);
+  assert.match(ensurePurchase, /\.eq\('status', 'unpaid'\)/);
+
+  const refundedResets = source.match(/status:\s*'unpaid',\s*amount_fen:\s*SERVICE_FEE_FEN/g) || [];
+  assert.equal(refundedResets.length, 2);
 });
 
 test('service payment envelope must match the configured miniapp merchant', () => {

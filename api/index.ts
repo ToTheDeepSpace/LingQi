@@ -2926,7 +2926,15 @@ async function findServicePurchase(profileId: string, productType: ServiceProduc
 
 async function ensureServicePurchase(profileId: string, productType: ServiceProductType, targetId: string) {
   const existing = await findServicePurchase(profileId, productType, targetId);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.status !== 'unpaid' || Number(existing.amount_fen) === SERVICE_FEE_FEN) return existing;
+    const refreshed = await supabase.from('lc_service_purchases').update({
+      amount_fen: SERVICE_FEE_FEN,
+      updated_at: new Date().toISOString(),
+    }).eq('id', existing.id).eq('status', 'unpaid').select('*').single();
+    if (refreshed.error) throw refreshed.error;
+    return refreshed.data as ServicePurchaseRow;
+  }
   const result = await supabase.from('lc_service_purchases').insert({
     profile_id: profileId,
     product_type: productType,
@@ -2937,7 +2945,7 @@ async function ensureServicePurchase(profileId: string, productType: ServiceProd
   if (result.error) {
     if (result.error.code === '23505') {
       const raced = await findServicePurchase(profileId, productType, targetId);
-      if (raced) return raced;
+      if (raced) return ensureServicePurchase(profileId, productType, targetId);
     }
     if (isMissingRelation(result.error, 'lc_service_purchases')) throw new Error('付费服务数据表尚未初始化');
     throw result.error;
@@ -7782,6 +7790,7 @@ app.post('/api/lc/service-payments/create', authMiddleware, async (req, res) => 
     if (purchase.status === 'refunded') {
       const resetResult = await supabase.from('lc_service_purchases').update({
         status: 'unpaid',
+        amount_fen: SERVICE_FEE_FEN,
         paid_attempt_id: null,
         paid_at: null,
         updated_at: new Date().toISOString(),
@@ -7946,6 +7955,7 @@ app.post('/api/lc/miniapp/virtual-service-payments/create', authMiddleware, asyn
     if (purchase.status === 'refunded') {
       const resetResult = await supabase.from('lc_service_purchases').update({
         status: 'unpaid',
+        amount_fen: SERVICE_FEE_FEN,
         paid_attempt_id: null,
         paid_at: null,
         updated_at: new Date().toISOString(),
