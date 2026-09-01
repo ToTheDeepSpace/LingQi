@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Script, ScriptRole } from '../../types'
 import { apiRequest, encoded } from '../../utils/api'
 import { roleKind } from '../../utils/roles'
+import { timelineSharePayload } from '../../utils/share'
 
 const scriptId = ref('')
 const scripts = ref<Script[]>([])
@@ -62,6 +63,7 @@ function openPicker() {
 onLoad(options => { scriptId.value = String(options?.id || ''); void load() })
 onPullDownRefresh(load)
 onShareAppMessage(() => ({ title: script.value ? `《${script.value.name}》角色评分` : '剧幕录剧本角色评分', path: `/pages/roles/script-detail?id=${encoded(scriptId.value)}` }))
+onShareTimeline(() => timelineSharePayload(script.value ? `《${script.value.name}》角色评分` : '剧幕录剧本角色评分', `id=${encoded(scriptId.value)}`))
 </script>
 
 <template>

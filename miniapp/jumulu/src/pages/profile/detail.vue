@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
+import { onLoad, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { ProviderListing } from '../../types'
 import { apiRequest, encoded, readAuth, requestServicePayment, requireLogin, type ServicePurchase } from '../../utils/api'
+import { timelineSharePayload } from '../../utils/share'
 
 type SocialPlatform = 'douyin' | 'xiaohongshu'
 type Availability = { id: string; date: string; start_time?: string | null; end_time?: string | null; city?: string | null; location?: string | null; is_booked?: boolean }
@@ -101,6 +102,7 @@ async function openInquiry() {
 }
 onLoad(options => { id.value = String(options?.id || ''); void load() })
 onShareAppMessage(() => ({ title: `${profile.value?.display_name || '用户'}｜剧幕录主页`, path: `/pages/profile/detail?id=${encoded(id.value)}` }))
+onShareTimeline(() => timelineSharePayload(`${profile.value?.display_name || '用户'}｜剧幕录主页`, `id=${encoded(id.value)}`, profile.value?.avatar))
 </script>
 
 <template>

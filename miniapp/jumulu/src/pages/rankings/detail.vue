@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Ranking, RankingComment } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText, RANKING_TYPE_TEXT } from '../../utils/format'
-import { shareImage, sharePath } from '../../utils/share'
+import { shareImage, sharePath, timelineSharePayload } from '../../utils/share'
 
 const id = ref('')
 const item = ref<Ranking | null>(null)
@@ -101,6 +101,7 @@ onShareAppMessage(() => ({
   path: sharePath(`/pages/rankings/detail?id=${encoded(id.value)}`),
   imageUrl: shareImage(images.value[0]),
 }))
+onShareTimeline(() => timelineSharePayload(item.value ? `${RANKING_TYPE_TEXT[item.value.type]}｜${item.value.subject_name}` : '剧幕录口碑事件', `id=${encoded(id.value)}`, images.value[0]))
 </script>
 
 <template>

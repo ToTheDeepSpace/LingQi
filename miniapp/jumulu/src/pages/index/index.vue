@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Dossier, PublicProfile, Ranking, Script } from '../../types'
 import { apiRequest, encoded, readAuth } from '../../utils/api'
 import { RANKING_TYPE_TEXT, compactText, dateText, ratingText } from '../../utils/format'
+import { inviteSharePayload, timelineSharePayload } from '../../utils/share'
 
 type HomeLink = {
   id: string
@@ -317,6 +319,8 @@ onMounted(() => {
   if (categories.some(item => item.key === stored)) activeCategory.value = stored as EncyclopediaCategory
   void load()
 })
+onShareAppMessage(() => inviteSharePayload())
+onShareTimeline(() => timelineSharePayload('来剧幕录查 DM 口碑，一起记录真实体验'))
 </script>
 
 <template>

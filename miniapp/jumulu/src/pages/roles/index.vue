@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
 import PageIntro from '../../components/PageIntro.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Script } from '../../types'
 import { apiRequest, encoded } from '../../utils/api'
 import { flattenRoles, roleKind } from '../../utils/roles'
+import { pageSharePayload, timelineSharePayload } from '../../utils/share'
 
 const scripts = ref<Script[]>([])
 const loading = ref(false)
@@ -73,6 +74,8 @@ function openRole(id?: string) {
 onLoad(options => { pendingScriptName.value = String(options?.script || '') })
 onShow(() => { if (!scripts.value.length) void load() })
 onPullDownRefresh(load)
+onShareAppMessage(() => pageSharePayload('来剧幕录看剧本角色点评', '/pages/roles/index'))
+onShareTimeline(() => timelineSharePayload('来剧幕录看剧本角色点评'))
 </script>
 
 <template>

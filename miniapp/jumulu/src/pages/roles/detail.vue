@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
+import { onLoad, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
@@ -8,6 +8,7 @@ import type { RoleRating, Script } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText } from '../../utils/format'
 import { flattenRoles, roleKind } from '../../utils/roles'
+import { timelineSharePayload } from '../../utils/share'
 
 type RatingPayload = {
   ratings: RoleRating[]
@@ -63,6 +64,7 @@ async function openComposer() {
 function openProfile(profileId?: string) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 onLoad(options => { id.value = String(options?.id || ''); void load() })
 onShareAppMessage(() => ({ title: role.value ? `${role.value.role_name}《${role.value.script_name}》角色点评` : '剧幕录角色点评', path: `/pages/roles/detail?id=${encoded(id.value)}` }))
+onShareTimeline(() => timelineSharePayload(role.value ? `${role.value.role_name}《${role.value.script_name}》角色点评` : '剧幕录角色点评', `id=${encoded(id.value)}`))
 </script>
 
 <template>

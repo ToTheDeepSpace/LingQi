@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
-import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
@@ -8,7 +8,7 @@ import type { DossierRating, RatingSummary, Ranking } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { storeClaimLabel } from '../../utils/dossierPresentation'
 import { dateText, ratingText } from '../../utils/format'
-import { shareImage, sharePath } from '../../utils/share'
+import { shareImage, sharePath, timelineSharePayload } from '../../utils/share'
 
 type StoreDm = {
   id: string
@@ -113,6 +113,7 @@ onShareAppMessage((options) => {
     imageUrl: shareImage(store?.photo_url),
   }
 })
+onShareTimeline(() => timelineSharePayload(`${data.value?.dossier.name || '店家'}｜剧幕录档案`, `id=${encoded(id.value)}`, data.value?.dossier.photo_url))
 </script>
 
 <template>

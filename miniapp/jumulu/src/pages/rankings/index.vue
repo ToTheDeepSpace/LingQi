@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import { onPullDownRefresh, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import RankingCard from '../../components/RankingCard.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Ranking } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
+import { pageSharePayload, timelineSharePayload } from '../../utils/share'
 
 const CITY_KEY = 'jumulu:ranking:last-city'
 const items = ref<Ranking[]>([])
@@ -48,6 +49,8 @@ function showRules() {
 }
 onShow(() => { authId.value = readAuth()?.id || ''; void load() })
 onPullDownRefresh(load)
+onShareAppMessage(() => pageSharePayload('来剧幕录看沉浸式娱乐口碑', '/pages/rankings/index'))
+onShareTimeline(() => timelineSharePayload('来剧幕录看沉浸式娱乐口碑'))
 </script>
 
 <template>

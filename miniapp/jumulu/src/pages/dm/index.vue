@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import { onPullDownRefresh, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
 import DossierCard from '../../components/DossierCard.vue'
@@ -9,6 +9,7 @@ import StatePanel from '../../components/StatePanel.vue'
 import type { Dossier } from '../../types'
 import { apiRequest, encoded, requireLogin } from '../../utils/api'
 import { sortDossiers, type DossierSortMode } from '../../utils/dossierSort'
+import { pageSharePayload, timelineSharePayload } from '../../utils/share'
 
 const CITY_KEY = 'jumulu:dm:last-city'
 const SORT_KEY = 'jumulu:dm:sort-mode'
@@ -85,6 +86,8 @@ function loadMore() { displayLimit.value += PAGE_SIZE }
 
 onShow(() => { if (!items.value.length) void load() })
 onPullDownRefresh(load)
+onShareAppMessage(() => pageSharePayload('来剧幕录查 DM 口碑', '/pages/dm/index'))
+onShareTimeline(() => timelineSharePayload('来剧幕录查 DM 口碑'))
 </script>
 
 <template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import { onPullDownRefresh, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
@@ -8,6 +8,7 @@ import StatePanel from '../../components/StatePanel.vue'
 import type { Carpool, CarpoolApplication } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dateText } from '../../utils/format'
+import { pageSharePayload, timelineSharePayload } from '../../utils/share'
 
 type PageView = 'discover' | 'mine'
 
@@ -118,6 +119,8 @@ async function decide(item: CarpoolApplication, decision: 'accept' | 'reject') {
 
 onShow(() => void load())
 onPullDownRefresh(load)
+onShareAppMessage(() => pageSharePayload('来剧幕录找同城拼车', '/pages/carpools/index'))
+onShareTimeline(() => timelineSharePayload('来剧幕录找同城拼车'))
 </script>
 
 <template>

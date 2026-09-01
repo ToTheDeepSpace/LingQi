@@ -47,6 +47,13 @@ export function sharePath(path: string, referralCode = readOwnReferralCode()) {
   return `${path}${path.includes('?') ? '&' : '?'}ref=${encodeURIComponent(code)}`
 }
 
+export function shareQuery(query = '', referralCode = readOwnReferralCode()) {
+  const normalized = String(query || '').trim().replace(/^\?/, '')
+  const code = normalizeReferralCode(referralCode)
+  if (!code || /(?:^|&)ref=/.test(normalized)) return normalized
+  return [normalized, `ref=${encodeURIComponent(code)}`].filter(Boolean).join('&')
+}
+
 export function shareImage(preferred?: string | null) {
   const value = String(preferred || '').trim()
   return value || DEFAULT_SHARE_IMAGE
@@ -57,5 +64,21 @@ export function inviteSharePayload() {
     title: '来剧幕录查 DM 口碑，一起记录真实体验',
     path: sharePath('/pages/index/index'),
     imageUrl: DEFAULT_SHARE_IMAGE,
+  }
+}
+
+export function pageSharePayload(title: string, path: string, preferredImage?: string | null) {
+  return {
+    title,
+    path: sharePath(path),
+    imageUrl: shareImage(preferredImage),
+  }
+}
+
+export function timelineSharePayload(title: string, query = '', preferredImage?: string | null) {
+  return {
+    title,
+    query: shareQuery(query),
+    imageUrl: shareImage(preferredImage),
   }
 }

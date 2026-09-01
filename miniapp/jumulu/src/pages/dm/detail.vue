@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { onLoad, onPullDownRefresh, onShareAppMessage } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import ReportFlag from '../../components/ReportFlag.vue'
 import StatePanel from '../../components/StatePanel.vue'
@@ -8,7 +8,7 @@ import type { DossierDetail } from '../../types'
 import { apiRequest, encoded, readAuth, requireLogin } from '../../utils/api'
 import { dossierAffiliationLabel, dossierClaimLabel } from '../../utils/dossierPresentation'
 import { dateText, ratingText } from '../../utils/format'
-import { shareImage, sharePath } from '../../utils/share'
+import { shareImage, sharePath, timelineSharePayload } from '../../utils/share'
 
 const id = ref('')
 const data = ref<DossierDetail | null>(null)
@@ -79,6 +79,7 @@ onShareAppMessage((options) => {
     imageUrl: shareImage(activePhoto.value?.url),
   }
 })
+onShareTimeline(() => timelineSharePayload(`${data.value?.dossier.dm_name || 'DM'}｜剧幕录档案`, `id=${encoded(id.value)}`, activePhoto.value?.url))
 </script>
 
 <template>
