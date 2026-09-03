@@ -185,7 +185,7 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
       return;
     }
     if (!paymentPaid) {
-      setError('请先在剧幕录微信小程序支付 9 元认领审核服务费');
+      setError(entityType === 'store' ? '请先在剧幕录微信小程序支付90元店家认证费' : '请在微信小程序支付9元认领费，或使用店家认证码提交');
       return;
     }
     setSubmitting(true);
@@ -235,7 +235,7 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
           {history?.status === 'pending' && <div className="dossier-claim-pending">这份认领申请正在审核，无需重复提交。</div>}
           {!paymentPaid && (
             <div className="dossier-claim-payment">
-              本人认领审核服务费为 9 元，请先在剧幕录微信小程序完成支付。认领成功后的资料修改不再收费，但仍需审核。
+              {entityType === 'store' ? '店家认证90元，人工审核通过后永久有效（暂行），含11个一次性DM认证码；每90元可加购11个。' : '本人认领9元，或在微信小程序使用店家认证码免付并提交；用码审核通过后自动绑定店家关系。'} 请在剧幕录微信小程序完成支付。资料修改免费，仍需审核。
             </div>
           )}
 
@@ -305,7 +305,7 @@ function DossierClaimDialog({ dossier, token, displayName, onClose, onSubmitted 
         <footer className="dossier-claim-actions">
           <button type="button" className="secondary" onClick={onClose} disabled={submitting}>取消</button>
           <button type="button" className="primary" onClick={submit} disabled={loadingHistory || history?.status === 'pending' || submitting || !paymentPaid}>
-            {submitting ? '提交中…' : history?.status === 'pending' ? '审核中' : paymentPaid ? '提交认领审核' : '请先在小程序支付 9 元'}
+            {submitting ? '提交中…' : history?.status === 'pending' ? '审核中' : paymentPaid ? '提交认领审核' : entityType === 'store' ? '请先在小程序支付90元' : '请在小程序支付或用码'}
           </button>
         </footer>
       </section>

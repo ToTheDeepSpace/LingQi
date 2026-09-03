@@ -178,9 +178,13 @@ import {
   createMiniappPaymentParams,
   normalizeServiceProductType,
   serviceProductDescription,
+  serviceProductPriceFen,
+  serviceProductPriceYuan,
   servicePurchaseGrantsAccess,
   type ServiceProductType,
 } from './servicePayments.js';
+import { consumeStoreCode, fulfillStoreCodePack, grantStoreCertification, lockActiveStore, lockStoreEntitlements, reserveStoreCode, revokeRefundedStorePurchase } from './storeCertification.js';
+import { registerStoreCertificationRoutes } from './storeCertificationRoutes.js';
 import {
   assertWechatVirtualDelivery,
   createWechatVirtualPaymentParams,
@@ -2857,7 +2861,7 @@ async function createWechatPayMiniappOrder(input: {
     notify_url: WECHAT_PAY_NOTIFY_URL,
     attach: 'jumulu_service_purchase',
     amount: {
-      total: SERVICE_FEE_FEN,
+      total: serviceProductPriceFen(input.productType),
       currency: 'CNY',
     },
     payer: {
@@ -2903,8 +2907,8 @@ function publicServicePurchase(purchase: ServicePurchaseRow, extra: Record<strin
     id: purchase.id,
     product_type: purchase.product_type,
     target_id: purchase.target_id,
-    amount_fen: SERVICE_FEE_FEN,
-    amount_yuan: SERVICE_FEE_YUAN,
+    amount_fen: purchase.amount_fen,
+    amount_yuan: (purchase.amount_fen / 100).toFixed(2),
     status: purchase.status,
     paid: servicePurchaseGrantsAccess(purchase.status),
     paid_at: purchase.paid_at || null,
@@ -2925,11 +2929,12 @@ async function findServicePurchase(profileId: string, productType: ServiceProduc
 }
 
 async function ensureServicePurchase(profileId: string, productType: ServiceProductType, targetId: string) {
+  const amount = serviceProductPriceFen(productType);
   const existing = await findServicePurchase(profileId, productType, targetId);
   if (existing) {
-    if (existing.status !== 'unpaid' || Number(existing.amount_fen) === SERVICE_FEE_FEN) return existing;
+    if (existing.status !== 'unpaid' || Number(existing.amount_fen) === amount) return existing;
     const refreshed = await supabase.from('lc_service_purchases').update({
-      amount_fen: SERVICE_FEE_FEN,
+      amount_fen: amount,
       updated_at: new Date().toISOString(),
     }).eq('id', existing.id).eq('status', 'unpaid').select('*').single();
     if (refreshed.error) throw refreshed.error;
@@ -2939,7 +2944,7 @@ async function ensureServicePurchase(profileId: string, productType: ServiceProd
     profile_id: profileId,
     product_type: productType,
     target_id: targetId,
-    amount_fen: SERVICE_FEE_FEN,
+    amount_fen: amount,
     status: 'unpaid',
   }).select('*').single();
   if (result.error) {
@@ -3038,13 +3043,30 @@ async function servicePurchaseStatusPayload(purchase: ServicePurchaseRow) {
 async function validateServicePurchaseTarget(profile: AuthedProfile, productType: ServiceProductType, requestedTargetId: string) {
   if (productType === 'provider_listing') return profile.id;
   if (!/^[0-9a-f-]{36}$/i.test(requestedTargetId)) throw Object.assign(new Error('付费服务对象不正确'), { statusCode: 400 });
-  if (productType === 'dossier_claim') {
+  if (productType === 'store_code_pack') {
+    if (!useTencentPg) throw Object.assign(new Error('店家认证需要当前生产数据库'), { statusCode: 503 });
+    const batch = await tencentPgPool.query(
+      `select store_dossier_id from lc_store_certification_code_batches
+       where id=$1 and profile_id=$2 and source='addon' and status in ('pending','issued')`, [requestedTargetId,profile.id]);
+    if (!batch.rows[0]) throw Object.assign(new Error('加购包不存在或无权支付'), { statusCode: 404 });
+    await lockActiveStore(tencentPgPool,String(batch.rows[0].store_dossier_id),profile.id);
+    return requestedTargetId;
+  }
+  if (productType === 'dossier_claim' || productType === 'store_certification') {
     const result = await supabase.from('lc_dm_dossiers')
-      .select('id, status, claim_status, claimed_by')
+      .select('id, status, entity_type, claim_status, claimed_by')
       .eq('id', requestedTargetId)
       .maybeSingle();
     if (result.error) throw result.error;
     if (!result.data || result.data.status !== 'approved') throw Object.assign(new Error('档案不存在或尚未公开'), { statusCode: 404 });
+    if ((result.data.entity_type === 'store') !== (productType === 'store_certification')) {
+      throw Object.assign(new Error('店家认证为90元，请更新小程序后使用经营者认证入口'), { statusCode: 400 });
+    }
+    if (productType === 'store_certification') {
+      if (!useTencentPg) throw Object.assign(new Error('店家认证需要当前生产数据库'), { statusCode: 503 });
+      const cert = await tencentPgPool.query('select status from lc_store_certifications where store_dossier_id=$1',[requestedTargetId]);
+      if (cert.rows[0]) throw Object.assign(new Error('该店已完成认证或已被撤销，请在店家认证页查看'), { statusCode: 409 });
+    }
     if (result.data.claim_status === 'approved' && result.data.claimed_by !== profile.id) {
       throw Object.assign(new Error('这个档案已经被认领'), { statusCode: 409 });
     }
@@ -3092,6 +3114,8 @@ async function confirmServicePayment(input: {
     if (attemptProvider !== provider) throw new Error('付费服务支付渠道不匹配');
     if (provider === 'wechat_virtual_pay') {
       if (!input.virtualCallback) throw new Error('微信虚拟支付回调内容缺失');
+      if (['store_certification','store_code_pack'].includes(purchase.product_type)
+        && attempt.xpay_env !== 1 && Number(attempt.amount_fen) !== 9000) throw new Error('店家订单金额必须为90元');
       assertWechatVirtualDelivery({
         callback: input.virtualCallback,
         expectedEnv: attempt.xpay_env ?? LINGQI_WECHAT_VIRTUAL_PAY_ENV,
@@ -3118,12 +3142,14 @@ async function confirmServicePayment(input: {
       attemptAmountFen: Number(attempt.amount_fen),
       payerOpenid: input.payerOpenid,
       expectedPayerOpenid,
+      productType: purchase.product_type,
     });
   };
   if (useTencentPg) {
     const client = await tencentPgPool.connect();
     try {
       await client.query('begin');
+      await lockStoreEntitlements(client);
       const attemptResult = await client.query<ServicePaymentAttemptRow & { profile_id: string; product_type: ServiceProductType; target_id: string; purchase_status: string; wechat_mini_openid: string | null }>(
         `select attempt.*,
                 purchase.profile_id,
@@ -3155,7 +3181,14 @@ async function confirmServicePayment(input: {
         },
         attempt.wechat_mini_openid,
       );
+      if (attempt.status === 'refunded') {
+        await client.query('commit');
+        return { ...attempt, newlyPaid: false, duplicatePaid: false, sandboxPaid: false };
+      }
       if (attempt.status === 'paid' || attempt.status === 'duplicate_paid') {
+        if (attempt.status === 'paid' && attempt.purchase_status === 'paid' && attempt.xpay_env !== 1) {
+          await fulfillStoreCodePack(client, { id: attempt.purchase_id, profile_id: attempt.profile_id, target_id: attempt.target_id, product_type: attempt.product_type });
+        }
         await client.query('commit');
         return {
           ...attempt,
@@ -3195,6 +3228,7 @@ async function confirmServicePayment(input: {
             where id = $1`,
           [attempt.purchase_id, attempt.id],
         );
+        await fulfillStoreCodePack(client, { id: attempt.purchase_id, profile_id: attempt.profile_id, target_id: attempt.target_id, product_type: attempt.product_type });
       }
       await client.query('commit');
       return {
@@ -3325,6 +3359,7 @@ async function markVirtualServicePaymentRefunded(
     const client = await tencentPgPool.connect();
     try {
       await client.query('begin');
+      await lockStoreEntitlements(client);
       const result = await client.query<ServicePaymentAttemptRow & {
         profile_id: string;
         product_type: ServiceProductType;
@@ -3355,16 +3390,19 @@ async function markVirtualServicePaymentRefunded(
           where id = $1`,
         [attempt.id, JSON.stringify({ refund_notify: payload })],
       );
-      await client.query(
+      const refundedPurchase = await client.query(
         `update lc_service_purchases
             set status = 'refunded',
                 refunded_at = now(),
                 refund_reason = '微信虚拟支付退款',
                 updated_at = now()
           where id = $1
-            and paid_attempt_id = $2`,
+            and paid_attempt_id = $2 returning id`,
         [attempt.purchase_id, attempt.id],
       );
+      if (refundedPurchase.rows[0] && ['store_certification','store_code_pack'].includes(attempt.product_type)) {
+        await revokeRefundedStorePurchase(client,attempt.purchase_id);
+      }
       await client.query('commit');
       return attempt;
     } catch (error) {
@@ -7784,6 +7822,9 @@ app.post('/api/lc/service-payments/create', authMiddleware, async (req, res) => 
     if (!profile.wechat_mini_openid) return res.status(409).json(err(new Error('请先使用微信小程序重新登录')));
     const productType = normalizeServiceProductType(req.body?.productType ?? req.body?.product_type);
     if (!productType) return res.status(400).json(err(new Error('付费服务类型不正确')));
+    if (productType === 'store_certification' || productType === 'store_code_pack') {
+      return res.status(409).json(err(new Error('店家付费服务请使用最新版小程序的虚拟支付')));
+    }
     const requestedTargetId = cleanText(req.body?.targetId ?? req.body?.target_id, 80);
     const targetId = await validateServicePurchaseTarget(profile, productType, requestedTargetId);
     let purchase = await ensureServicePurchase(profile.id, productType, targetId);
@@ -7949,13 +7990,19 @@ app.post('/api/lc/miniapp/virtual-service-payments/create', authMiddleware, asyn
     }
     const productType = normalizeServiceProductType(req.body?.productType ?? req.body?.product_type);
     if (!productType) return res.status(400).json(err(new Error('付费服务类型不正确')));
+    if ((productType === 'store_certification' || productType === 'store_code_pack') && !profile.phone_verified_at) {
+      return res.status(403).json(err(new Error('请先验证手机号')));
+    }
     const requestedTargetId = cleanText(req.body?.targetId ?? req.body?.target_id, 80);
     const targetId = await validateServicePurchaseTarget(profile, productType, requestedTargetId);
     let purchase = await ensureServicePurchase(profile.id, productType, targetId);
     if (purchase.status === 'refunded') {
+      if (productType === 'store_certification' || productType === 'store_code_pack') {
+        return res.status(409).json(err(new Error('该店家订单已退款，请新建加购包或联系管理员核对认证')));
+      }
       const resetResult = await supabase.from('lc_service_purchases').update({
         status: 'unpaid',
-        amount_fen: SERVICE_FEE_FEN,
+        amount_fen: serviceProductPriceFen(productType),
         paid_attempt_id: null,
         paid_at: null,
         updated_at: new Date().toISOString(),
@@ -13241,7 +13288,7 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       return ids.filter(Boolean);
     })));
     const serviceDossierIds = Array.from(new Set(servicePurchaseRows
-      .filter(item => item.product_type === 'dossier_claim')
+      .filter(item => item.product_type === 'dossier_claim' || item.product_type === 'store_certification')
       .map(item => cleanText(item.target_id, 80))
       .filter(Boolean)));
     const [serviceProfilesResult, serviceDossiersResult, serviceClaimsResult, providerListingsResult] = await Promise.all([
@@ -13271,6 +13318,12 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
     const serviceDossierMap = new Map((serviceDossiersResult.data || []).map(item => [String(item.id), item]));
     const serviceClaimMap = new Map((serviceClaimsResult.data || []).map(item => [String(item.payment_purchase_id), item]));
     const providerListingMap = new Map((providerListingsResult.data || []).map(item => [String(item.initial_purchase_id), item]));
+    const codePackIds = servicePurchaseRows.filter(item => item.product_type === 'store_code_pack').map(item => item.target_id);
+    const codePacks = useTencentPg && codePackIds.length ? await tencentPgPool.query(
+      `select b.id,b.status,d.dm_name from lc_store_certification_code_batches b
+        join lc_dm_dossiers d on d.id=b.store_dossier_id where b.id=any($1::uuid[])`,[codePackIds],
+    ) : {rows:[]};
+    const codePackMap = new Map<string, Record<string, unknown>>(codePacks.rows.map(item => [String(item.id),item] as const));
     const providerReviewMap = new Map<string, Record<string, unknown>>();
     [
       ...(publicReviewsResult.error ? [] : (publicReviewsResult.data || [])),
@@ -13293,9 +13346,13 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       const providerListing = providerListingMap.get(purchaseId);
       let submissionStatus = 'not_submitted';
       let submissionId: string | null = null;
-      if (productType === 'provider_contact' && purchase.status === 'paid') {
+      const codePack = codePackMap.get(String(purchase.target_id));
+      if (productType === 'store_code_pack' && codePack) {
+        submissionStatus = codePack.status === 'issued' ? 'codes_issued' : codePack.status === 'revoked' ? 'revoked' : 'not_submitted';
+        submissionId = String(codePack.id);
+      } else if (productType === 'provider_contact' && purchase.status === 'paid') {
         submissionStatus = 'access_granted';
-      } else if (productType === 'dossier_claim' && claim) {
+      } else if ((productType === 'dossier_claim' || productType === 'store_certification') && claim) {
         submissionStatus = cleanText(claim.status, 40) || 'not_submitted';
         submissionId = cleanText(claim.id, 80) || null;
       } else if (productType === 'provider_listing' && providerReview) {
@@ -13309,18 +13366,28 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
       return {
         ...purchase,
         profile_name: serviceProfileMap.get(cleanText(purchase.profile_id, 80))?.display_name || '未知用户',
-        target_name: productType === 'dossier_claim'
+        target_name: productType === 'dossier_claim' || productType === 'store_certification'
           ? targetDossier?.dm_name || '未知档案'
-          : targetProfile?.display_name || '未知用户',
+          : productType === 'store_code_pack' ? codePack?.dm_name || '店家认证码包' : targetProfile?.display_name || '未知用户',
         target_entity_type: targetDossier?.entity_type || null,
         submission_status: submissionStatus,
         submission_id: submissionId,
       };
     });
-    const approvedDossiers = approvedDmDossiersResult.error ? [] : (approvedDmDossiersResult.data || []) as Record<string, unknown>[];
+    const storeCertifications = useTencentPg ? await tencentPgPool.query('select store_dossier_id,status from lc_store_certifications') : { rows: [] };
+    const storeCertificationMap = new Map(storeCertifications.rows.map(item => [String(item.store_dossier_id),item.status]));
+    const approvedDossiers: Record<string, unknown>[] = (approvedDmDossiersResult.error ? [] : (approvedDmDossiersResult.data || []) as Record<string, unknown>[])
+      .map(dossier => ({ ...dossier, store_certification_status: storeCertificationMap.get(String(dossier.id)) || null }));
     const approvedDmDossiers = approvedDossiers.filter(dossier => dossier.entity_type === 'dm');
     const approvedStoreDossiers = approvedDossiers.filter(dossier => dossier.entity_type === 'store');
     const pendingClaimByDossier = new Map<string, Record<string, unknown>>();
+    const claimCodeIds = (dmClaimsResult.data || []).map(item => item.store_code_id).filter(Boolean);
+    const codeIssuers = useTencentPg && claimCodeIds.length ? await tencentPgPool.query(
+      `select c.id,d.dm_name from lc_store_certification_codes c
+        join lc_store_certification_code_batches b on b.id=c.batch_id
+        join lc_dm_dossiers d on d.id=b.store_dossier_id where c.id=any($1::uuid[])`, [claimCodeIds],
+    ) : { rows: [] };
+    const codeIssuerMap = new Map(codeIssuers.rows.map(item => [String(item.id),String(item.dm_name)]));
     if (!dmClaimsResult.error) {
       ((dmClaimsResult.data || []) as Record<string, unknown>[]).forEach(claim => {
         const dossierId = String(claim.dossier_id || '');
@@ -13334,6 +13401,9 @@ app.get('/api/lc/admin/pending', authMiddleware, adminMiddleware, async (_req, r
         return {
           id: claim.id,
           claimant_id: claim.claimant_id,
+          store_code_id: claim.store_code_id || null,
+          issuing_store_name: codeIssuerMap.get(String(claim.store_code_id)) || null,
+          payment_purchase_id: claim.payment_purchase_id || null,
           proof_type: claim.proof_type,
           claim_note: claim.claim_note,
           proof_files: publicClaimProofMetadata(claim.proof_files),
@@ -17730,14 +17800,17 @@ async function createDossierClaimRecord(input: {
   proofType: DossierClaimProofType;
   claimNote: string;
   proofFiles: DossierClaimProofFile[];
-  paymentPurchaseId: string;
+  paymentPurchaseId: string | null;
+  storeCode?: string;
+  useStoreCode?: boolean;
 }) {
   if (useTencentPg) {
     const client = await tencentPgPool.connect();
     try {
       await client.query('BEGIN');
+      await lockStoreEntitlements(client);
       const dossierResult = await client.query(
-        `select id, status, claim_status
+        `select id, status, claim_status, entity_type
            from lc_dm_dossiers
           where id = $1
           for update`,
@@ -17745,14 +17818,29 @@ async function createDossierClaimRecord(input: {
       );
       const dossier = dossierResult.rows[0];
       if (!dossier || dossier.status !== 'approved') throw new Error('档案不存在或尚未公开');
+      if ((dossier.entity_type === 'store' ? 'store' : 'dm') !== input.entityType) throw new Error('档案类型已变化，请刷新重试');
       if (dossier.claim_status === 'approved') throw new Error('这个档案已经被认领');
       if (dossier.claim_status === 'pending') throw new Error('这份档案已经有认领申请正在审核');
 
+      const code = input.useStoreCode
+        ? await reserveStoreCode(client, { code: input.storeCode, profileId: input.claimantId, dossierId: input.dossierId })
+        : null;
+      if (input.useStoreCode && (!code || input.entityType !== 'dm')) throw new Error('认证码不可用于此申请');
+      if (!code) {
+        const productType = input.entityType === 'store' ? 'store_certification' : 'dossier_claim';
+        const payment = await client.query(
+          `select id from lc_service_purchases where id=$1 and profile_id=$2 and target_id=$3
+             and product_type=$4 and status='paid' and amount_fen = any($5::int[]) for update`,
+          [input.paymentPurchaseId, input.claimantId, input.dossierId, productType,
+            input.entityType === 'store' ? [9000] : [900,888]],
+        );
+        if (!payment.rows[0]) throw new Error('认证订单尚未支付或已退款');
+      }
       await client.query(
         `insert into lc_dm_dossier_claims
-          (id, dossier_id, claimant_id, entity_type, proof_type, claim_note, proof_files, payment_purchase_id, status)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, 'pending')`,
-        [input.claimId, input.dossierId, input.claimantId, input.entityType, input.proofType, input.claimNote, JSON.stringify(input.proofFiles), input.paymentPurchaseId],
+          (id, dossier_id, claimant_id, entity_type, proof_type, claim_note, proof_files, payment_purchase_id, store_code_id, status)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, 'pending')`,
+        [input.claimId, input.dossierId, input.claimantId, input.entityType, input.proofType, input.claimNote, JSON.stringify(input.proofFiles), code ? null : input.paymentPurchaseId, code?.id || null],
       );
       const updatedResult = await client.query(
         `update lc_dm_dossiers
@@ -17774,6 +17862,7 @@ async function createDossierClaimRecord(input: {
     }
   }
 
+  if (input.entityType === 'store' || input.useStoreCode) throw new Error('店家认证功能需要 PostgreSQL 服务');
   const { error: claimErr } = await supabase.from('lc_dm_dossier_claims').insert({
     id: input.claimId,
     dossier_id: input.dossierId,
@@ -17811,6 +17900,7 @@ async function finalizeDossierClaimReview(input: {
     const client = await tencentPgPool.connect();
     try {
       await client.query('BEGIN');
+      await lockStoreEntitlements(client);
       const dossierResult = await client.query(
         `select * from lc_dm_dossiers where id = $1 for update`,
         [input.dossierId],
@@ -17829,6 +17919,26 @@ async function finalizeDossierClaimReview(input: {
       const claim = claimResult.rows[0] || null;
       const claimantId = claim?.claimant_id || dossier.claimed_by || null;
       const entityType = claim?.entity_type || dossier.entity_type || 'dm';
+      if (input.outcome === 'approved' && entityType === 'store') {
+        if (!claimantId || !claim?.payment_purchase_id) throw new Error('缺少店家90元认证订单，请核对');
+        await grantStoreCertification(client, {
+          storeId: input.dossierId, profileId: claimantId,
+          purchaseId: claim.payment_purchase_id, reviewerId: input.reviewerId,
+        });
+      }
+      if (input.outcome === 'approved' && claim?.store_code_id) {
+        await consumeStoreCode(client, {
+          codeId: claim.store_code_id, profileId: claimantId, dossierId: input.dossierId, reviewerId: input.reviewerId,
+        });
+      }
+      if (input.outcome === 'approved' && entityType === 'dm' && claim?.payment_purchase_id && !claim.store_code_id) {
+        const paid = await client.query(
+          `select id from lc_service_purchases where id=$1 and profile_id=$2 and target_id=$3
+            and product_type='dossier_claim' and status='paid' and amount_fen in (900,888) for update`,
+          [claim.payment_purchase_id,claimantId,input.dossierId],
+        );
+        if (!paid.rows[0]) throw new Error('本人认领订单已退款或不匹配，不能批准');
+      }
       if (claim) {
         await client.query(
           `update lc_dm_dossier_claims
@@ -17892,6 +18002,7 @@ async function finalizeDossierClaimReview(input: {
     .maybeSingle();
   if (claimResult.error && !isMissingRelation(claimResult.error, 'lc_dm_dossier_claims')) throw claimResult.error;
   const claim = claimResult.error ? null : claimResult.data;
+  if (claim?.entity_type === 'store' || claim?.store_code_id) throw new Error('店家认证功能需要 PostgreSQL 服务');
   if (claim) {
     const claimUpdate = await supabase.from('lc_dm_dossier_claims').update({
       status: input.outcome,
@@ -18352,6 +18463,9 @@ app.get('/api/lc/dm-dossiers/:id/my-claim', authMiddleware, async (req, res) => 
   try {
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
+    const dossier = await supabase.from('lc_dm_dossiers').select('entity_type').eq('id', req.params.id).single();
+    if (dossier.error) throw dossier.error;
+    const productType = dossier.data.entity_type === 'store' ? 'store_certification' : 'dossier_claim';
     const [result, purchase] = await Promise.all([
       supabase.from('lc_dm_dossier_claims')
         .select('id, dossier_id, proof_type, claim_note, status, reject_reason, created_at, reviewed_at')
@@ -18360,17 +18474,25 @@ app.get('/api/lc/dm-dossiers/:id/my-claim', authMiddleware, async (req, res) => 
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
-      findServicePurchase(profile.id, 'dossier_claim', req.params.id),
+      findServicePurchase(profile.id, productType, req.params.id),
     ]);
     if (result.error && isMissingRelation(result.error, 'lc_dm_dossier_claims')) return res.json(ok(null));
     if (result.error) throw result.error;
+    const reservation = useTencentPg ? await tencentPgPool.query(
+      `select d.dm_name as store_name from lc_store_certification_codes c
+        join lc_store_certification_code_batches b on b.id=c.batch_id
+        join lc_dm_dossiers d on d.id=b.store_dossier_id
+        where c.claimant_id=$1 and c.dm_dossier_id=$2 and c.status='reserved'`, [profile.id,req.params.id],
+    ) : null;
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json(ok({
       claim: result.data || null,
+      store_code: reservation?.rows[0] || null,
       payment: purchase ? await servicePurchaseStatusPayload(purchase) : {
         paid: false,
-        amount_fen: SERVICE_FEE_FEN,
-        amount_yuan: SERVICE_FEE_YUAN,
-        product_type: 'dossier_claim',
+        amount_fen: serviceProductPriceFen(productType),
+        amount_yuan: serviceProductPriceYuan(productType),
+        product_type: productType,
         target_id: req.params.id,
       },
     }));
@@ -18432,15 +18554,24 @@ app.post(
     if (!dossier || dossier.status !== 'approved') return res.status(404).json(err(new Error('档案不存在或尚未公开')));
     if (dossier.claim_status === 'approved') return res.status(400).json(err(new Error('这个档案已经被认领')));
     if (dossier.claim_status === 'pending') return res.status(409).json(err(new Error('这份档案已经有认领申请正在审核')));
-    const paidPurchase = await paidServicePurchase(profile.id, 'dossier_claim', dossier.id);
-    if (!paidPurchase) {
+    const entityType = dossier.entity_type === 'store' ? 'store' : 'dm';
+    const productType = entityType === 'store' ? 'store_certification' : 'dossier_claim';
+    const storeCode = cleanText(req.body?.storeCode, 40);
+    const useStoreCode = entityType === 'dm' && (Boolean(storeCode) || String(req.body?.useStoreCode) === 'true');
+    if ((useStoreCode || entityType === 'store') && (!profile.phone_verified_at || !profile.wechat_mini_openid)) {
+      return res.status(403).json(err(new Error('请先在微信小程序登录并完成手机号验证')));
+    }
+    if (useStoreCode && String(req.body?.storeAffiliationConfirmed) !== 'true') {
+      return res.status(400).json(err(new Error('请确认审核通过后自动绑定发码店家关系')));
+    }
+    const paidPurchase = useStoreCode ? null : await paidServicePurchase(profile.id, productType, dossier.id);
+    if (!useStoreCode && !paidPurchase) {
       return res.status(402).json(codedErr(
-        new Error(`提交本人认领前需在微信小程序支付 ${SERVICE_FEE_YUAN} 元认证审核服务费`),
+        new Error(`提交认领前需在微信小程序支付 ${serviceProductPriceYuan(productType)} 元认证审核服务费`),
         'SERVICE_PAYMENT_REQUIRED',
-        { product_type: 'dossier_claim', target_id: dossier.id, amount_fen: SERVICE_FEE_FEN },
+        { product_type: productType, target_id: dossier.id, amount_fen: serviceProductPriceFen(productType) },
       ));
     }
-    const entityType = dossier.entity_type === 'store' ? 'store' : 'dm';
     const proofType = normalizeDossierClaimProofType(entityType, req.body?.proofType ?? req.body?.proof_type);
     if (!proofType) return res.status(400).json(err(new Error('请选择有效的证明类型')));
     if (claimNote.length < 6) return res.status(400).json(err(new Error('请至少写6个字说明你与这份档案的关系')));
@@ -18469,7 +18600,9 @@ app.post(
       proofType,
       claimNote,
       proofFiles: savedProofs,
-      paymentPurchaseId: paidPurchase.id,
+      paymentPurchaseId: paidPurchase?.id || null,
+      storeCode,
+      useStoreCode,
     });
     claimCommitted = true;
 
@@ -21748,6 +21881,9 @@ app.post('/api/lc/certifications', authMiddleware, wechatMiniTextSafetyMiddlewar
     if (!type || !CERTIFICATION_TYPES.includes(type)) {
       return res.status(400).json(err(new Error('请选择认证类型')));
     }
+    if (type === 'shop' || type === 'dm') {
+      return res.status(409).json(err(new Error('请在微信小程序的店家或DM档案中提交认领认证；店家90元，DM9元或使用店家认证码')));
+    }
     if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json(err(new Error('请上传认证材料')));
     }
@@ -21811,6 +21947,9 @@ app.put('/api/lc/admin/certifications/:id/approve', authMiddleware, adminMiddlew
       .single();
 
     if (!cert) return res.status(404).json(err(new Error('认证记录不存在')));
+    if (cert.type === 'shop' || cert.type === 'dm') {
+      return res.status(409).json(err(new Error('旧身份认证不能直接批准，请改走档案认领审核以核验费用和店家权益')));
+    }
 
     await supabase.from('lc_certifications')
       .update({ status: 'approved', updated_at: new Date().toISOString() })
@@ -21867,6 +22006,16 @@ app.put('/api/lc/admin/certifications/:id/reject', authMiddleware, adminMiddlewa
     });
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
+});
+
+if (useTencentPg) registerStoreCertificationRoutes(app, {
+  pool: tencentPgPool,
+  auth: authMiddleware,
+  admin: adminMiddleware,
+  rateLimit: createRateLimiter('store-certification', 15 * 60 * 1000, 30),
+  getProfile: getAuthedProfile,
+  audit: logSecurityEvent,
+  error: err,
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {

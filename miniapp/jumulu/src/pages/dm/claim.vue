@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import AuthFormGate from '../../components/AuthFormGate.vue'
 import PageIntro from '../../components/PageIntro.vue'
 import { apiRequest, decoded, encoded, readAuth, requestServicePayment, submitDossierClaim } from '../../utils/api'
@@ -15,6 +15,7 @@ type ClaimState = {
     proof_type?: string | null
   } | null
   payment: { paid: boolean; amount_yuan: string }
+  store_code?: { store_name: string } | null
 }
 
 const id = ref('')
@@ -28,17 +29,27 @@ const paying = ref(false)
 const submitting = ref(false)
 const loading = ref(true)
 const error = ref('')
+const storeCode = ref('')
+const issuer = ref('')
+const affiliationConfirmed = ref(false)
+const truthConfirmed = ref(false)
+const fee = computed(() => entityType.value === 'store' ? '90' : '9')
+const codeMode = computed(() => entityType.value === 'dm' && Boolean(storeCode.value.trim() || state.value?.store_code))
+const description = computed(() => entityType.value === 'store'
+  ? '90元永久认证（暂行）。人工审核通过后赠送11个一次性DM认证码；每90元可加购11个。'
+  : '本人认领9元，或使用店家认证码免付。均需人工审核；用码认证通过后自动绑定发码店家。')
+function openAccount() { uni.navigateTo({ url: '/pages/mine/account' }) }
 
 const options = computed(() => entityType.value === 'store'
   ? [
       { value: 'business_license', label: '营业执照' },
       { value: 'store_backend', label: '店铺后台' },
-      { value: 'other_store_proof', label: '其他经营证明' },
+      { value: 'other', label: '其他经营证明' },
     ]
   : [
       { value: 'social_account', label: '本人社交账号' },
-      { value: 'employment_proof', label: '任职证明' },
-      { value: 'other_dm_proof', label: '其他身份证明' },
+      { value: 'employment', label: '任职证明' },
+      { value: 'other', label: '其他身份证明' },
     ])
 
 async function load() {
@@ -46,9 +57,10 @@ async function load() {
   error.value = ''
   try {
     state.value = await apiRequest<ClaimState>(`/lc/dm-dossiers/${encoded(id.value)}/my-claim`)
+    issuer.value = state.value.store_code?.store_name || ''
     if (state.value.claim?.status === 'rejected') {
-      claimNote.value = state.value.claim.claim_note || ''
-      proofType.value = state.value.claim.proof_type || options.value[0].value
+      if (!claimNote.value) claimNote.value = state.value.claim.claim_note || ''
+      if (!proofType.value) proofType.value = state.value.claim.proof_type || options.value[0].value
     }
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '认领状态加载失败'
@@ -69,32 +81,40 @@ async function chooseProof() {
   }
 }
 
-async function pay() {
-  if (paying.value) return
-  paying.value = true
+async function previewCode() {
+  affiliationConfirmed.value = false
   try {
-    await requestServicePayment('dossier_claim', id.value)
-    state.value = { ...(state.value || { claim: null, payment: { paid: false, amount_yuan: '9.00' } }), payment: { paid: true, amount_yuan: '9.00' } }
-    uni.showToast({ title: '支付成功', icon: 'success' })
+    const result = await apiRequest<{ store_name: string } | null>(`/lc/dm-dossiers/${encoded(id.value)}/store-code-preview`, { method: 'POST', data: { code: storeCode.value.trim() } })
+    issuer.value = result?.store_name || ''
   } catch (reason) {
+    issuer.value = ''
     uni.showToast({ title: (reason as Error).message, icon: 'none' })
-  } finally {
-    paying.value = false
   }
 }
 
 async function submit() {
-  if (!state.value?.payment.paid) return void pay()
+  if (submitting.value || paying.value || !state.value) return
   if (!proofType.value) return uni.showToast({ title: '请选择证明类型', icon: 'none' })
   if (claimNote.value.trim().length < 6) return uni.showToast({ title: '请至少填写 6 个字', icon: 'none' })
   if (!proofFilePath.value) return uni.showToast({ title: '请上传一张证明截图', icon: 'none' })
+  if (!truthConfirmed.value) return uni.showToast({ title: '请确认材料真实且有权提交', icon: 'none' })
+  if (codeMode.value && (!issuer.value || !affiliationConfirmed.value)) return uni.showToast({ title: '请核验认证码并确认店家关系', icon: 'none' })
   submitting.value = true
   try {
+    if (!codeMode.value && !state.value.payment.paid) {
+      paying.value = true
+      await requestServicePayment(entityType.value === 'store' ? 'store_certification' : 'dossier_claim', id.value)
+      state.value.payment.paid = true
+      paying.value = false
+    }
     await submitDossierClaim({
       dossierId: id.value,
       proofType: proofType.value,
       claimNote: claimNote.value.trim(),
       proofFilePath: proofFilePath.value,
+      storeCode: storeCode.value.trim(),
+      useStoreCode: codeMode.value,
+      storeAffiliationConfirmed: affiliationConfirmed.value,
     })
     uni.showModal({
       title: '认领申请已提交',
@@ -106,6 +126,7 @@ async function submit() {
     uni.showToast({ title: (reason as Error).message, icon: 'none' })
   } finally {
     submitting.value = false
+    paying.value = false
   }
 }
 
@@ -114,22 +135,33 @@ onLoad(optionsValue => {
   name.value = decoded(optionsValue?.name || '相关档案')
   entityType.value = optionsValue?.entityType === 'store' ? 'store' : 'dm'
   proofType.value = options.value[0].value
-  if (readAuth()?.token) void load()
 })
+onShow(() => { if (id.value && readAuth()?.token && !submitting.value) void load() })
 </script>
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="本人认证" nav-title="认领档案" :title="`认领「${name}」`" description="认领费 9 元用于资料真实性核验。认领成功后可以持续修改资料，修改免费但仍需审核。" />
+    <PageIntro eyebrow="人工认证" nav-title="认领档案" :title="`认领「${name}」`" :description="description" />
     <AuthFormGate message="登录后才能认领档案">
     <view v-if="loading" class="surface loading">正在读取认领状态…</view>
+    <view v-else-if="error && !state" class="surface loading" @tap="load">{{ error }} · 点击重试</view>
     <view v-else class="form-surface">
       <view v-if="state?.claim?.status === 'pending'" class="status">这份认领申请正在审核，无需重复提交。</view>
       <view v-else-if="state?.claim?.status === 'rejected'" class="status rejected">上次申请未通过：{{ state.claim.reject_reason || '请补充更清楚的证明后重新提交' }}</view>
-      <template v-if="state?.claim?.status !== 'pending'">
+      <view v-if="state?.claim?.status === 'approved'" class="status">认证已通过。店家可在“我的 → 店家认证与名额”管理认证码。</view>
+      <template v-if="state?.claim?.status !== 'pending' && state?.claim?.status !== 'approved'">
         <view class="fee-row">
-          <view><strong>认领审核服务费</strong><text>{{ state?.payment.paid ? '已经支付，不会重复收费' : '支付后再提交证明材料' }}</text></view>
-          <strong>{{ state?.payment.paid ? '已支付' : '¥9' }}</strong>
+          <view><strong>{{ entityType === 'store' ? '店家永久认证（含11码）' : '本人认领审核' }}</strong><text>{{ codeMode ? '用码免付9元，仍需人工审核' : state?.payment.paid ? '已经支付，补材料不重复收费' : '填好材料后支付并提交审核' }}</text></view>
+          <strong>{{ codeMode ? '¥0' : state?.payment.paid ? '已支付' : '¥' + fee }}</strong>
+        </view>
+        <view v-if="entityType === 'dm' && !state?.payment.paid">
+          <text class="field-label">店家认证码（选填）</text>
+          <text v-if="state?.store_code" class="privacy">已预留认证码给本账号、本档案，补材料可直接重提。</text>
+          <input v-else v-model="storeCode" class="code-input" maxlength="13" placeholder="JML-XXXX-XXXX" @input="issuer = ''; affiliationConfirmed = false" />
+          <button v-if="codeMode" class="secondary-button" @tap="previewCode">核验发码店家</button>
+          <view v-if="issuer" class="status">发码店家：{{ issuer }}
+            <view @tap="affiliationConfirmed = !affiliationConfirmed">{{ affiliationConfirmed ? '☑' : '☐' }} 我同意审核通过后自动绑定该店家关系</view>
+          </view>
         </view>
         <text class="field-label">证明类型</text>
         <view class="proof-options">
@@ -143,10 +175,12 @@ onLoad(optionsValue => {
           <text v-else>上传 1 张能够证明身份的截图</text>
         </view>
         <text class="privacy">材料仅供管理员核验，不会公开。请遮住身份证号、手机号、聊天对象等无关信息。</text>
+        <view class="privacy" @tap="truthConfirmed = !truthConfirmed">{{ truthConfirmed ? '☑' : '☐' }} 我确认材料真实且有权提交，理解付款或用码不代表审核通过。</view>
+        <text class="privacy" @tap="openAccount">店家认证及用码前请完成手机号验证</text>
         <text v-if="error" class="form-error">{{ error }}</text>
         <view class="sticky-submit">
           <button class="primary-button submit" :loading="paying || submitting" :disabled="paying || submitting" @tap="submit">
-            {{ state?.payment.paid ? '提交认领审核' : '支付 9 元' }}
+            {{ codeMode || state?.payment.paid ? '提交认领审核' : '支付 ' + fee + ' 元并提交审核' }}
           </button>
         </view>
       </template>
@@ -172,4 +206,5 @@ onLoad(optionsValue => {
 .privacy { display: block; margin-top: 12rpx; color: #64748b; font-size: 21rpx; line-height: 1.55; }
 .form-error { display: block; margin-top: 12rpx; color: #a53232; font-size: 22rpx; }
 .submit { width: 100%; }
+.code-input { margin: 12rpx 0; padding: 20rpx; border: 1rpx solid #d9dde4; border-radius: 8rpx; font-size: 28rpx; }
 </style>

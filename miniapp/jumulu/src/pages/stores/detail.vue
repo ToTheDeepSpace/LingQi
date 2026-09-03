@@ -72,6 +72,7 @@ function openClaim() {
   if (!dossier) return
   void requireLogin().then(() => uni.navigateTo({ url: `/pages/dm/claim?id=${encoded(dossier.id)}&name=${encoded(dossier.name)}&entityType=store` })).catch(() => undefined)
 }
+function openManage() { uni.navigateTo({ url: '/pages/stores/manage' }) }
 function openProfile(profileId?: string | null) { if (profileId) uni.navigateTo({ url: `/pages/profile/detail?id=${encoded(profileId)}` }) }
 function openDm(dmId: string) { uni.navigateTo({ url: `/pages/dm/detail?id=${encoded(dmId)}` }) }
 async function toggleFollow() {
@@ -137,7 +138,8 @@ onShareTimeline(() => timelineSharePayload(`${data.value?.dossier.name || '店�
           <view class="page-actions hero-actions">
             <button class="primary-button" @tap="openRate">评价这家店</button>
             <button class="secondary-button" @tap="createRanking">发布红黑榜</button>
-            <button v-if="data.dossier.claim_status !== 'approved'" class="secondary-button claim-action" @tap="openClaim">经营者认领</button>
+            <button v-if="data.dossier.claim_status !== 'approved'" class="secondary-button claim-action" @tap="openClaim">经营者认证 ¥90</button>
+            <button v-if="data.dossier.claimed_by === readAuth()?.id && data.dossier.claim_status === 'approved'" class="secondary-button claim-action" @tap="openManage">认证码与名额</button>
           </view>
         </view>
       </view>

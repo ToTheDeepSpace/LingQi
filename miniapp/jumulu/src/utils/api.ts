@@ -149,7 +149,7 @@ export async function uploadPrivateEvidence(filePath: string, kind: 'report' | '
   return body.data.file
 }
 
-export type ServiceProductType = 'dossier_claim' | 'provider_listing' | 'provider_contact'
+export type ServiceProductType = 'dossier_claim' | 'provider_listing' | 'provider_contact' | 'store_certification' | 'store_code_pack'
 
 export type ServicePurchase = {
   id: string
@@ -286,6 +286,9 @@ export async function submitDossierClaim(input: {
   proofType: string
   claimNote: string
   proofFilePath: string
+  storeCode?: string
+  useStoreCode?: boolean
+  storeAffiliationConfirmed?: boolean
 }) {
   const auth = await requireLogin()
   const response = await new Promise<UniApp.UploadFileSuccessCallbackResult>((resolve, reject) => {
@@ -297,6 +300,9 @@ export async function submitDossierClaim(input: {
         proofType: input.proofType,
         claimNote: input.claimNote,
         truthConfirmed: 'true',
+        storeCode: input.storeCode || '',
+        useStoreCode: String(Boolean(input.useStoreCode)),
+        storeAffiliationConfirmed: String(Boolean(input.storeAffiliationConfirmed)),
       },
       header: { Authorization: `Bearer ${auth.token}`, 'X-LC-Client': 'wechat-miniapp' },
       success: resolve,

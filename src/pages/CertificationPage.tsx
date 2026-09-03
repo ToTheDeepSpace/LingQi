@@ -345,6 +345,16 @@ export default function CertificationPage() {
                 继续提交
               </button>
             </div>
+          ) : type !== 'realname' ? (
+            <div style={card}>
+              <h3>{type === 'shop' ? '店家永久认证（暂行）· 90元' : 'DM本人认领 · 9元或店家认证码'}</h3>
+              <p style={{ color: MUTED, lineHeight: 1.8 }}>
+                {type === 'shop'
+                  ? '请在剧幕录微信小程序找到店家档案，点击“经营者认证”，提交证明并支付90元。人工审核通过后获得11个一次性DM认证码；每90元可加购11个。'
+                  : '请在剧幕录微信小程序的DM档案提交本人认领。支付9元或使用店家认证码免付，均需人工审核；用码通过后自动绑定发码店家。'}
+              </p>
+              <p style={{ color: MUTED }}>原身份认证入口已统一到档案认领，历史认证记录仍保留。</p>
+            </div>
           ) : (
             <div style={card}>
               <h3 style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: 16, color: INK }}>

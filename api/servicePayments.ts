@@ -7,6 +7,8 @@ export const SERVICE_PRODUCT_TYPES = [
   'dossier_claim',
   'provider_listing',
   'provider_contact',
+  'store_certification',
+  'store_code_pack',
 ] as const;
 
 export type ServiceProductType = typeof SERVICE_PRODUCT_TYPES[number];
@@ -15,7 +17,17 @@ const PRODUCT_DESCRIPTIONS: Record<ServiceProductType, string> = {
   dossier_claim: '剧幕录档案认领审核服务',
   provider_listing: '剧幕录委托条上架服务',
   provider_contact: '剧幕录委托师联系方式解锁',
+  store_certification: '剧幕录店家永久认证（含11个DM认证码）',
+  store_code_pack: '剧幕录11个DM认证码加购包',
 };
+
+export function serviceProductPriceFen(productType: ServiceProductType) {
+  return productType === 'store_certification' || productType === 'store_code_pack' ? 9000 : SERVICE_FEE_FEN;
+}
+
+export function serviceProductPriceYuan(productType: ServiceProductType) {
+  return (serviceProductPriceFen(productType) / 100).toFixed(2);
+}
 
 function normalizePemBlock(raw: string) {
   const value = String(raw || '').trim().replace(/\\n/g, '\n');
@@ -56,8 +68,11 @@ export function assertServicePaymentOwnership(input: {
   attemptAmountFen: number;
   payerOpenid: string;
   expectedPayerOpenid: string | null;
+  productType?: ServiceProductType;
 }) {
-  if (input.totalFee !== SERVICE_FEE_FEN || input.attemptAmountFen !== SERVICE_FEE_FEN) {
+  const expected = serviceProductPriceFen(input.productType || 'dossier_claim');
+  const legacy = expected === 900 && input.attemptAmountFen === 888;
+  if (input.totalFee !== input.attemptAmountFen || (!legacy && input.attemptAmountFen !== expected)) {
     throw new Error('付费服务通知金额不匹配');
   }
   if (!input.expectedPayerOpenid || input.expectedPayerOpenid !== input.payerOpenid) {

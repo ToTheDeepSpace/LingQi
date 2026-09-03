@@ -23,6 +23,7 @@ type ServerWriteRoute = {
 };
 
 const EXEMPTIONS = new Map<string, ExemptionClass>([
+  ['POST /api/lc/dm-dossiers/:id/store-code-preview', 'private-credential'],
   ['POST /api/lc/auth/bind-phone', 'private-credential'],
   ['POST /api/lc/auth/set-password', 'private-credential'],
   ['POST /api/lc/miniapp/content-check', 'explicit-safety-endpoint'],
@@ -48,8 +49,7 @@ const EXEMPTIONS = new Map<string, ExemptionClass>([
   ['POST /api/lc/wallet/wechat/create', 'financial'],
 ]);
 
-function discoverServerWriteRoutes(): ServerWriteRoute[] {
-  const filePath = 'api/index.ts';
+function discoverFileRoutes(filePath: string): ServerWriteRoute[] {
   const sourceText = readFileSync(filePath, 'utf8');
   const source = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const routes: ServerWriteRoute[] = [];
@@ -68,8 +68,8 @@ function discoverServerWriteRoutes(): ServerWriteRoute[] {
         routes.push({
           key: `${method} ${route}`,
           line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
-          authenticated: middleware.some(value => /\bauthMiddleware\b|\baccountStateMiddleware\b/.test(value)),
-          adminOnly: middleware.some(value => /\badminMiddleware\b/.test(value)),
+          authenticated: middleware.some(value => /\bauthMiddleware\b|\baccountStateMiddleware\b|\bdeps\.auth\b/.test(value)),
+          adminOnly: middleware.some(value => /\badminMiddleware\b|\bdeps\.admin\b/.test(value)),
           wechatTextChecked: middleware.some(value => /\bwechatMiniTextSafetyMiddleware\b/.test(value)),
           wechatImageChecked: /\b(?:start|ensure)WechatMiniImageSafetyCheck(?:s)?\s*\(/.test(handler),
           acceptsInput: /req\.body|rankingRequestBody\(req\)|req\.file|req\.files/.test(handler),
@@ -81,6 +81,17 @@ function discoverServerWriteRoutes(): ServerWriteRoute[] {
   visit(source);
   return routes;
 }
+
+function discoverServerWriteRoutes(): ServerWriteRoute[] {
+  return ['api/index.ts','api/storeCertificationRoutes.ts'].flatMap(discoverFileRoutes);
+}
+
+test('store entitlement routes remain authenticated and revocation admin-only', () => {
+  const routes = discoverFileRoutes('api/storeCertificationRoutes.ts');
+  assert.equal(routes.length,5);
+  assert.ok(routes.every(route => route.authenticated));
+  assert.ok(routes.find(route => route.key.endsWith('/:id/revoke'))?.adminOnly);
+});
 
 test('every authenticated non-admin server write with input is checked or explicitly classified', () => {
   const routes = discoverServerWriteRoutes();

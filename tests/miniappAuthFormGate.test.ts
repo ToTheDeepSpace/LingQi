@@ -43,7 +43,7 @@ test('private form pages do not request account data before login', () => {
 
   assert.match(feedback, /if \(readAuth\(\)\?\.token\) void load\(\)/);
   assert.match(provider, /onShow\(\(\) => \{[\s\S]*?if \(readAuth\(\)\?\.token\) void load\(\)/);
-  assert.match(claim, /if \(readAuth\(\)\?\.token\) void load\(\)/);
+  assert.match(claim, /onShow\(\(\) => \{ if \(id\.value && readAuth\(\)\?\.token && !submitting\.value\) void load\(\)/);
 });
 
 test('public discovery pages require login before opening write flows', () => {

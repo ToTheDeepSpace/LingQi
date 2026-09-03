@@ -8,6 +8,7 @@
     { "path": "pages/stores/index", "style": { "navigationBarTitleText": "店家档案", "enablePullDownRefresh": true } },
     { "path": "pages/stores/detail", "style": { "navigationBarTitleText": "店家详情", "enablePullDownRefresh": true } },
     { "path": "pages/stores/rate", "style": { "navigationBarTitleText": "评价店家" } },
+    { "path": "pages/stores/manage", "style": { "navigationBarTitleText": "店家认证与名额" } },
     { "path": "pages/roles/index", "style": { "navigationBarTitleText": "角色点评", "enablePullDownRefresh": true } },
     { "path": "pages/roles/script-detail", "style": { "navigationBarTitleText": "剧本详情", "enablePullDownRefresh": true } },
     { "path": "pages/roles/detail", "style": { "navigationBarTitleText": "角色点评" } },

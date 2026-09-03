@@ -230,6 +230,7 @@ onShareAppMessage(() => inviteSharePayload())
         <view class="menu__item" @tap="go('/pages/feedback/index')"><view><strong>问题反馈</strong><text>功能故障、资料纠错、联系方式和支付问题</text></view><text>›</text></view>
       </view>
       <view v-if="auth.role === 'admin'" class="admin surface"><view><strong>平台管理后台</strong><text>审核、账号治理和证据处理继续在网站完成。</text></view><button class="secondary-button" @tap="copyAdmin">复制网站后台地址</button></view>
+      <button class="secondary-button" @tap="go('/pages/stores/manage')">店家认证与名额</button>
       <button class="secondary-button logout" @tap="signOut">退出登录</button>
     </template>
     </template>

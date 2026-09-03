@@ -32,10 +32,11 @@ test('only unpaid legacy purchases are refreshed to the current service fee', ()
     source.indexOf('async function paidServicePurchase'),
   );
   assert.match(ensurePurchase, /existing\.status !== 'unpaid'/);
-  assert.match(ensurePurchase, /amount_fen:\s*SERVICE_FEE_FEN/);
+  assert.match(ensurePurchase, /amount_fen:\s*amount/);
+  assert.match(ensurePurchase, /serviceProductPriceFen\(productType\)/);
   assert.match(ensurePurchase, /\.eq\('status', 'unpaid'\)/);
 
-  const refundedResets = source.match(/status:\s*'unpaid',\s*amount_fen:\s*SERVICE_FEE_FEN/g) || [];
+  const refundedResets = source.match(/status:\s*'unpaid',\s*amount_fen:\s*(?:SERVICE_FEE_FEN|serviceProductPriceFen\(productType\))/g) || [];
   assert.equal(refundedResets.length, 2);
 });
 

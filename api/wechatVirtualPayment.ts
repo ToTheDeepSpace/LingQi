@@ -39,6 +39,18 @@ export const WECHAT_VIRTUAL_GOODS: Readonly<Record<ServiceProductType, WechatVir
     price: SERVICE_FEE_FEN,
     remark: '剧幕录服务者联系方式解锁',
   },
+  store_certification: {
+    id: 'store_certification',
+    name: '店家永久认证',
+    price: 9000,
+    remark: '店家人工认证审核，含11个DM认证码',
+  },
+  store_code_pack: {
+    id: 'store_code_pack',
+    name: '11个DM认证码',
+    price: 9000,
+    remark: '认证店家加购11个一次性DM认证名额',
+  },
 };
 
 export function normalizeWechatVirtualPayEnv(value: unknown): WechatVirtualPayEnv {

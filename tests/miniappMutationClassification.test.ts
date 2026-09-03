@@ -14,6 +14,10 @@ type MutationPolicy = {
 };
 
 const MUTATION_POLICIES: MutationPolicy[] = [
+  { method: 'POST', route: '/lc/dm-dossiers/:param/store-code-preview', class: 'state-only' },
+  { method: 'POST', route: '/lc/store-certifications/:param/code-packs', class: 'state-only' },
+  { method: 'POST', route: '/lc/store-code-batches/:param/reveal', class: 'state-only' },
+  { method: 'POST', route: '/lc/store-codes/:param/regenerate', class: 'state-only' },
   { method: 'POST', route: '/lc/account/appeals', class: 'private-content', serverRoute: '/api/lc/account/appeals' },
   { method: 'PUT', route: '/lc/account/notifications/read-all', class: 'state-only' },
   { method: 'PUT', route: '/lc/account/notifications/:param/read', class: 'state-only' },

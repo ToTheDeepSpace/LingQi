@@ -275,6 +275,7 @@ type RankingAuthorEditRequest = {
 };
 
 type DossierOption = {
+  store_certification_status?: 'approved' | 'revoked' | null;
   id: string;
   entity_type: 'dm' | 'store';
   dm_name: string;
@@ -423,7 +424,7 @@ type ServicePurchaseAudit = {
   id: string;
   profile_id: string;
   profile_name?: string | null;
-  product_type: 'dossier_claim' | 'provider_listing' | 'provider_contact';
+  product_type: 'dossier_claim' | 'provider_listing' | 'provider_contact' | 'store_certification' | 'store_code_pack';
   target_id: string;
   target_name?: string | null;
   target_entity_type?: 'dm' | 'store' | null;
@@ -433,7 +434,7 @@ type ServicePurchaseAudit = {
   paid_at?: string | null;
   refunded_at?: string | null;
   refund_reason?: string | null;
-  submission_status: 'not_submitted' | 'pending' | 'approved' | 'rejected' | 'access_granted';
+  submission_status: 'not_submitted' | 'pending' | 'approved' | 'rejected' | 'access_granted' | 'codes_issued' | 'revoked';
   submission_id?: string | null;
   created_at: string;
   updated_at?: string | null;
@@ -619,6 +620,9 @@ type DossierClaimSubmission = {
   claim_note: string;
   proof_files: DossierClaimProof[];
   created_at: string;
+  store_code_id?: string | null;
+  issuing_store_name?: string | null;
+  payment_purchase_id?: string | null;
 };
 
 type DmDossierReview = {
@@ -824,6 +828,8 @@ function siteMessageCategoryLabel(category?: string | null) {
 }
 
 function serviceProductLabel(productType: ServicePurchaseAudit['product_type']) {
+  if (productType === 'store_certification') return '店家永久认证 · 90元';
+  if (productType === 'store_code_pack') return '11个DM认证码加购 · 90元';
   if (productType === 'dossier_claim') return '本人认领';
   if (productType === 'provider_listing') return '委托条上架';
   if (productType === 'provider_contact') return '联系方式解锁';
@@ -837,6 +843,8 @@ function servicePurchaseStatusLabel(status: ServicePurchaseAudit['status']) {
 }
 
 function serviceSubmissionStatusLabel(status: ServicePurchaseAudit['submission_status']) {
+  if (status === 'codes_issued') return '11个认证码名额已发放';
+  if (status === 'revoked') return '认证码权益已撤销';
   if (status === 'pending') return '资料待审';
   if (status === 'approved') return '已审核通过';
   if (status === 'rejected') return '资料被驳回';
@@ -1688,6 +1696,22 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
     void loadData();
   };
 
+  const revokeStoreCertification = async (id: string, name: string) => {
+    const reason = window.prompt(`撤销「${name}」的店家认证及全部未使用／预留名额。已用名额不退回。请填写至少6字原因：`);
+    if (reason === null) return;
+    if (reason.trim().length < 6) return setError('撤销原因至少6字');
+    if (!window.confirm('此操作会停止店家认证权益，但不会自动发起退款。确认继续？')) return;
+    try {
+      const response = await fetch(`${API}/lc/admin/store-certifications/${encodeURIComponent(id)}/revoke`, {
+        method: 'PUT', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(typeof payload.error === 'string' ? payload.error : payload.error?.message || '撤销失败');
+      void loadData();
+    } catch (error) { setError(error instanceof Error ? error.message : '撤销失败'); }
+  };
+
   const mergeDmDossier = async (sourceId: string, target: NonNullable<DmDossierReview['similar_candidates']>[number]) => {
     if (!window.confirm(`确认把这条待审档案合并到“${target.dm_name}”吗？关联评分也会一并转移。`)) return;
     const response = await fetch(`${API}/lc/admin/dm-dossiers/${sourceId}/merge`, {
@@ -2016,7 +2040,12 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
   };
 
   const approveCert = async (id: string) => {
-    await fetch(`${API}/lc/admin/certifications/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    const response = await fetch(`${API}/lc/admin/certifications/${id}/approve`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+      setError(typeof payload.error === 'string' ? payload.error : payload.error?.message || '认证审核失败');
+      return;
+    }
     void loadData();
   };
 
@@ -2621,6 +2650,7 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                       </div>
                       <Actions>
                         <Link to={href} target="_blank" style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${LINE}`, background: SURFACE, color: INK, fontSize: '0.82rem', textDecoration: 'none', fontWeight: 800 }}>查看档案</Link>
+                        {isStore && item.store_certification_status === 'approved' && <ActionButton onClick={() => revokeStoreCertification(item.id, item.dm_name)}>撤销店家认证</ActionButton>}
                       </Actions>
                     </Row>
                   );
@@ -3227,6 +3257,9 @@ const [transactionMsg, setTransactionMsg] = useState<{ text: string; ok: boolean
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 8 }}>
                             <AdminDetail label="申请账号" value={profileAccountById(profiles, item.claim_submission?.claimant_id || item.claimed_by)} />
                             <AdminDetail label="证明类型" value={item.claim_submission ? DOSSIER_CLAIM_PROOF_LABEL[item.claim_submission.proof_type] : '旧版认领申请'} />
+                            <AdminDetail label="费用与权益" value={item.claim_submission?.store_code_id
+                              ? `店家认证码免付 · 通过后绑定：${item.claim_submission.issuing_store_name || '发码店家'}`
+                              : entityType === 'store' ? '90元店家认证 · 通过后发11码' : '9元本人认领'} />
                             <AdminDetail label="申请时间" value={item.claim_submission?.created_at ? item.claim_submission.created_at.slice(0, 19).replace('T', ' ') : item.created_at?.slice(0, 19).replace('T', ' ') || '未知'} />
                           </div>
                           <div style={{ fontSize: '0.78rem', fontWeight: 900, color: INK }}>关系说明</div>

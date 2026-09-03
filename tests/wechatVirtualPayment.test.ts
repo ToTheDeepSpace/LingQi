@@ -14,10 +14,10 @@ import {
   wechatVirtualOrderStatus,
 } from '../api/wechatVirtualPayment.js';
 
-test('formal virtual goods keep stable ids and the configured 9 yuan price', () => {
+test('formal virtual goods keep stable ids and product-specific prices', () => {
   for (const good of Object.values(WECHAT_VIRTUAL_GOODS)) {
     assert.match(good.id, /^[A-Za-z0-9_-]{1,20}$/);
-    assert.equal(good.price, 900);
+    assert.equal(good.price, good.id.startsWith('store_') ? 9000 : 900);
     assert.ok(good.name.length > 0);
   }
 });
