@@ -13,6 +13,7 @@ const { pgcrypto } = await import(process.env.JUMULU_TEST_PGLITE_MODULE
   : '@electric-sql/pglite/contrib/pgcrypto');
 const journalMigration = readFileSync(new URL('../supabase/migrations/20260721120000_critical_change_journal.sql', import.meta.url),'utf8');
 const migration = readFileSync(new URL('../supabase/migrations/20260904090000_store_certification_codes.sql', import.meta.url), 'utf8');
+const privilegesMigration = readFileSync(new URL('../supabase/migrations/20260905100000_store_certification_privileges.sql', import.meta.url), 'utf8');
 const legacyStore = '64946687-714e-40f8-9c00-614f282e7221';
 const legacyOwner = '19577ab6-28ee-46c5-9b4b-9551d2702bef';
 
@@ -20,6 +21,9 @@ async function setup() {
   const db = new PGlite({ extensions:{ pgcrypto } });
   await db.exec(`
     create role anon; create role authenticated; create role lingqi_app bypassrls;
+    create role jusichen_app; create role service_role;
+    alter default privileges in schema public grant select,insert,update,delete,truncate on tables to lingqi_app;
+    alter default privileges in schema public grant select,insert,update,delete on tables to jusichen_app;
     create table lc_profiles(id uuid primary key, identity_roles text[] default '{}',
       verified_shop boolean default false, is_banned boolean default false, merged_into uuid, updated_at timestamptz,
       role text,ban_reason text,is_realname boolean default false,verified_dm boolean default false);
@@ -46,6 +50,7 @@ async function setup() {
   `);
   await db.exec(journalMigration);
   await db.exec(migration);
+  await db.exec(privilegesMigration);
   return db;
 }
 async function count(db, table) { return Number((await db.query('select count(*) as n from ' + table)).rows[0].n); }
@@ -75,6 +80,17 @@ test('migration is idempotent, legacy grant is exact, no fake payment, protected
   const db = await setup();
   try {
     await db.exec(migration);
+    await db.exec(privilegesMigration);
+    for (const table of ['lc_store_certifications','lc_store_certification_code_batches','lc_store_certification_codes']) {
+      const { rows:[acl] } = await db.query(`select
+        has_table_privilege('lingqi_app',$1,'SELECT') as readable,
+        has_table_privilege('lingqi_app',$1,'INSERT') as insertable,
+        has_table_privilege('lingqi_app',$1,'UPDATE') as updatable,
+        has_table_privilege('lingqi_app',$1,'DELETE') as deletable,
+        has_table_privilege('lingqi_app',$1,'TRUNCATE') as truncatable,
+        has_table_privilege('jusichen_app',$1,'SELECT') as cross_app_readable`,[table]);
+      assert.deepEqual(acl,{readable:true,insertable:true,updatable:true,deletable:false,truncatable:false,cross_app_readable:false});
+    }
     assert.equal(await count(db,'lc_store_certifications'),1);
     assert.equal(await count(db,'lc_store_certification_code_batches'),1);
     assert.equal(await count(db,'lc_store_certification_codes'),11);
