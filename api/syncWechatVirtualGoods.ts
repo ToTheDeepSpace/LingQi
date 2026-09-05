@@ -147,7 +147,11 @@ async function main() {
   const goods = env === 1
     ? [WECHAT_VIRTUAL_SANDBOX_GOOD]
     : Object.values(WECHAT_VIRTUAL_GOODS);
-  for (const good of goods) {
+  const requested = process.argv.find(arg => arg.startsWith('--products='))?.slice('--products='.length).split(',').filter(Boolean);
+  if (requested?.some(id => !goods.some(good => good.id === id))) throw new Error('指定了当前环境不存在的虚拟商品');
+  const selectedGoods = requested ? goods.filter(good => requested.includes(good.id)) : goods;
+  if (!selectedGoods.length) throw new Error('没有待同步的虚拟商品');
+  for (const good of selectedGoods) {
     await syncGood(accessToken, good, env);
     await sleep(2_000);
   }

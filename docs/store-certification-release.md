@@ -45,10 +45,17 @@ JUMULU_TEST_PGLITE_MODULE=/absolute/temp/node_modules/@electric-sql/pglite/dist/
 一次展示、重置、用码抢占后的拒绝、预留重提、人工批准绑定、事务失败回滚、批次重复履约、退款与撤销时到账。
 PGlite不模拟真实多连接争锁；不得把这组测试当成生产多连接并发或微信真机支付已验收。
 
+2026-09-05 补充：在腾讯云另起一次性 PostgreSQL 16 实例（独立临时目录，仅Unix套接字、不连生产主库），
+执行真实多连接同码预留、重复批准、码旋转与预留、四个并行重复付款履约、退款与批准并发测试，全部通过。
+实际加载本次迁移和既有审计迁移，审计无明文码。测试脚本为 `tests/storeCertification.postgres.mjs`，
+要求 `JML_TEST_SOCKET=/tmp/jumulu-release-<id>/pgsocket`、端口55448、全新空白数据库实例；不得指向生产。
+实例已停止，未删除测试目录。微信真机支付仍未验收。
+
 ## 发布门槛（尚未执行）
 
 1. 经确认后发布；先备份并只读核对腾讯云实际主库、现有角色与表结构、两条精确历史ID及店家归属。不是Supabase线上迁移。
 2. 微信后台发布/审核两个正式9000分商品：`store_certification`、`store_code_pack`。现有同步脚本自动包含新商品，但本次未运行远程商品同步。
+   只同步新商品可用 `node dist-server/api/syncWechatVirtualGoods.js --env=0 --products=store_certification,store_code_pack`。
 3. 生产事务执行迁移，验证目标店家恰好1份历史认证、1批11码、没有新增伪造支付订单；核对 `lingqi_app` 的实际权限与BYPASSRLS。
 4. 部署后端和网页并健康检查，确认生产虚拟支付 `env=0`。先更新后端再上传小程序0.1.48。
 5. 真机验证：90元店家付款→提交→人工审核→领11码；DM用码→证明审核→身份+关系；加购90元→11码；普通9元业务回归。人工审核、微信商品审核、小程序版本审核均不可由本地构建替代。
