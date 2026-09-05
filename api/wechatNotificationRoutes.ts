@@ -1,5 +1,5 @@
 import type { Express, Request, RequestHandler, Response } from 'express';
-import { recipientHash, type NotifyConfig, type NotifyPool, type NotifySql } from './wechatNotifications.js';
+import { notificationScopes, parseNotificationScopes, recipientHash, type NotifyConfig, type NotifyPool, type NotifySql } from './wechatNotifications.js';
 
 type Identity = { id: string; miniapp: boolean; merged: boolean };
 type Dependencies = {
@@ -36,21 +36,23 @@ export function registerWechatNotificationRoutes(app: Express, deps: Dependencie
     const user = identity(req);
     if (!deps.config.enabled) return res.json({ success: true, data: { available: false, state: 'unconfigured' } });
     const hash = await binding(deps.pool, user.id);
-    const row = (await deps.pool.query(`select state,authorized_at,updated_at from lc_wechat_notification_subscriptions
+    const row = (await deps.pool.query(`select state,scopes,authorized_at,updated_at from lc_wechat_notification_subscriptions
       where profile_id=$1 and template_id=$2 and recipient_hash=$3`, [user.id, deps.config.templateId, hash])).rows[0];
     const latest = (await deps.pool.query(`select state,reason,completed_at from lc_wechat_notification_deliveries
       where profile_id=$1 and template_id=$2 and recipient_hash=$3 and attempts>0 order by created_at desc limit 1`, [user.id, deps.config.templateId, hash])).rows[0];
-    return res.json({ success: true, data: { available: true, state: row?.state || 'none', authorizedAt: row?.authorized_at || null, latest: latest || null } });
+    return res.json({ success: true, data: { available: true, state: row?.state || 'none', scopes: row?.scopes || notificationScopes, authorizedAt: row?.authorized_at || null, latest: latest || null } });
   }));
   app.post('/api/lc/account/wechat-notifications/requests', deps.auth, deps.rateLimit, handle(async (req, res) => {
     const user = identity(req, true);
     configured();
+    const scopes = parseNotificationScopes(req.body?.scopes === undefined ? [...notificationScopes] : req.body.scopes);
+    if (!scopes) throw fail('请至少选择一个有效提醒模块', 400);
     const hash = await binding(deps.pool, user.id);
-    const existing = (await deps.pool.query(`select id,template_id,expires_at from lc_wechat_notification_requests
-      where profile_id=$1 and template_id=$2 and recipient_hash=$3 and consumed_at is null and expires_at>now()+interval '30 seconds'
-      order by created_at desc limit 1`, [user.id, deps.config.templateId, hash])).rows[0];
-    const request = existing || (await deps.pool.query(`insert into lc_wechat_notification_requests(profile_id,template_id,recipient_hash)
-      values($1,$2,$3) returning id,template_id,expires_at`, [user.id, deps.config.templateId, hash])).rows[0];
+    const existing = (await deps.pool.query(`select id,template_id,scopes,expires_at from lc_wechat_notification_requests
+      where profile_id=$1 and template_id=$2 and recipient_hash=$3 and scopes=$4::text[] and consumed_at is null and expires_at>now()+interval '30 seconds'
+      order by created_at desc limit 1`, [user.id, deps.config.templateId, hash, scopes])).rows[0];
+    const request = existing || (await deps.pool.query(`insert into lc_wechat_notification_requests(profile_id,template_id,recipient_hash,scopes)
+      values($1,$2,$3,$4) returning id,template_id,scopes,expires_at`, [user.id, deps.config.templateId, hash, scopes])).rows[0];
     return res.json({ success: true, data: request });
   }));
   app.post('/api/lc/account/wechat-notifications/confirm', deps.auth, deps.rateLimit, handle(async (req, res) => {
@@ -63,7 +65,7 @@ export function registerWechatNotificationRoutes(app: Express, deps: Dependencie
       await db.query('begin');
       const hash = await binding(db, user.id);
       const used = await db.query(`update lc_wechat_notification_requests set consumed_at=now(),result=$5
-        where id=$1 and profile_id=$2 and template_id=$3 and recipient_hash=$4 and consumed_at is null and expires_at>now() returning id`,
+        where id=$1 and profile_id=$2 and template_id=$3 and recipient_hash=$4 and consumed_at is null and expires_at>now() returning id,scopes`,
       [requestId, user.id, deps.config.templateId, hash, result]);
       if (!used.rows[0]) {
         const saved = (await db.query(`select id from lc_wechat_notification_requests where id=$1 and profile_id=$2
@@ -75,11 +77,11 @@ export function registerWechatNotificationRoutes(app: Express, deps: Dependencie
         return res.json({ success: true, data: { recorded: true } });
       }
       // The client callback is only a preference hint. WeChat, not this record, enforces actual grants.
-      await db.query(`insert into lc_wechat_notification_subscriptions(profile_id,template_id,recipient_hash,state,authorized_at)
-        values($1,$2,$3,$4,case when $4='accepted' then now() else null end)
+      await db.query(`insert into lc_wechat_notification_subscriptions(profile_id,template_id,recipient_hash,state,scopes,authorized_at)
+        values($1,$2,$3,$4,$5,case when $4='accepted' then now() else null end)
         on conflict(profile_id) do update set template_id=excluded.template_id,recipient_hash=excluded.recipient_hash,
-          state=excluded.state,authorized_at=excluded.authorized_at,version=lc_wechat_notification_subscriptions.version+1,updated_at=now()`,
-      [user.id, deps.config.templateId, hash, result === 'accept' ? 'accepted' : 'rejected']);
+          state=excluded.state,scopes=excluded.scopes,authorized_at=excluded.authorized_at,version=lc_wechat_notification_subscriptions.version+1,updated_at=now()`,
+      [user.id, deps.config.templateId, hash, result === 'accept' ? 'accepted' : 'rejected', used.rows[0].scopes]);
       await db.query('commit');
       return res.json({ success: true, data: { state: result === 'accept' ? 'accepted' : 'rejected' } });
     } catch (error) { await db.query('rollback'); throw error; }

@@ -8,6 +8,21 @@ export function notifyConfig(env: Record<string,string|undefined>): NotifyConfig
   return {enabled:env.LINGQI_WECHAT_NOTIFY_ENABLED==='true' && /^[A-Za-z0-9_-]{20,128}$/.test(templateId),templateId,pageState:state as NotifyConfig['pageState']};
 }
 export const recipientHash = (openid: string) => createHash('sha256').update(openid).digest('hex');
+export const notificationScopes = ['commission', 'account', 'service'] as const;
+export type NotificationScope = typeof notificationScopes[number];
+export function parseNotificationScopes(value: unknown): NotificationScope[] | null {
+  if (!Array.isArray(value) || !value.length || value.length > notificationScopes.length
+    || value.some(scope => !notificationScopes.includes(scope))) return null;
+  return notificationScopes.filter(scope => value.includes(scope));
+}
+export function notificationScope(type: string): NotificationScope | null {
+  if (type.startsWith('commission_') || type.startsWith('provider_')) return 'commission';
+  if (type.startsWith('restriction_') || type.startsWith('appeal_')) return 'account';
+  if (type === 'service_payment_succeeded' || type === 'site_message_resolved') return 'service';
+  return null;
+}
+const includesScope = (scopes: unknown, type: unknown) =>
+  Array.isArray(scopes) && scopes.includes(notificationScope(String(type || '')));
 export const notificationPage = (id: string) => {
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error('Invalid notification id');
   return 'pages/mine/account-status?notice='+encodeURIComponent(id);
@@ -61,7 +76,7 @@ export async function drainWechatNotifications(input:{pool:NotifyPool;config:Not
       const finish=async(state:string,reason:string,code:number|null=null)=>db.query(
         "update lc_wechat_notification_deliveries set state=$2,reason=$3,error_code=$4,completed_at=now() where notification_id=$1 and state='processing'",[job.notification_id,state,reason,code]);
       const row=(await db.query(`select n.type,n.created_at,n.read_at,p.wechat_mini_openid,p.merged_into,
-        s.state as subscription_state,s.version,s.template_id as current_template,s.recipient_hash as current_recipient,
+        s.state as subscription_state,s.scopes,s.version,s.template_id as current_template,s.recipient_hash as current_recipient,
         n.created_at < now()-interval '24 hours' as expired
         from lc_account_notifications n join lc_profiles p on p.id=n.profile_id
         left join lc_wechat_notification_subscriptions s on s.profile_id=n.profile_id
@@ -70,6 +85,7 @@ export async function drainWechatNotifications(input:{pool:NotifyPool;config:Not
       const openid=String(row.wechat_mini_openid||'');
       if(row.merged_into || !openid || recipientHash(openid)!==job.recipient_hash || row.current_recipient!==job.recipient_hash) {await finish('skipped','account_changed');continue;}
       if(row.subscription_state!=='accepted') {await finish('skipped','subscription_inactive');continue;}
+      if(!includesScope(row.scopes,row.type)) {await finish('skipped','module_disabled');continue;}
       if(job.template_id!==input.config.templateId || row.current_template!==job.template_id) {await finish('failed','template_changed');continue;}
       let token:string;
       try { token=await input.getAccessToken(); }
@@ -78,12 +94,13 @@ export async function drainWechatNotifications(input:{pool:NotifyPool;config:Not
         continue;
       }
       // Consent might have been revoked while acquiring a token. Recheck just before dispatch.
-      const current=(await db.query(`select s.state,s.recipient_hash,s.version,s.template_id,p.wechat_mini_openid,p.merged_into,
+      const current=(await db.query(`select s.state,s.scopes,s.recipient_hash,s.version,s.template_id,p.wechat_mini_openid,p.merged_into,
         n.read_at,n.created_at<s.authorized_at as predates_consent from lc_wechat_notification_subscriptions s
         join lc_profiles p on p.id=s.profile_id join lc_account_notifications n on n.profile_id=p.id
         where s.profile_id=$1 and n.id=$2`,[job.profile_id,job.notification_id])).rows[0];
       if(current?.state!=='accepted' || current.recipient_hash!==job.recipient_hash || current.predates_consent || current.read_at){await finish('skipped','subscription_inactive');continue;}
       if(current.merged_into || current.wechat_mini_openid!==openid || current.template_id!==job.template_id){await finish('skipped','account_changed');continue;}
+      if(!includesScope(current.scopes,row.type)){await finish('skipped','module_disabled');continue;}
       let response:Response;
       let payload:{errcode?:number};
       try {

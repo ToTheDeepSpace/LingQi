@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { notificationPage, notificationSummary, notifyConfig, recipientHash, sendOutcome, wechatNotificationPayload } from '../api/wechatNotifications.js';
+import { notificationPage, notificationScope, notificationSummary, notifyConfig, parseNotificationScopes, recipientHash, sendOutcome, wechatNotificationPayload } from '../api/wechatNotifications.js';
 
 const templateId = 'b36niF4nvnAF3k4K7ju4J1joO2jzpsEhqfOQMhKrcyU';
 test('notification configuration is explicitly enabled and validates the template', () => {
@@ -36,11 +36,29 @@ test('definitive provider errors only retry a bounded number of times', () => {
   }
   for (const code of [43101, 43107, 40003, 40037, 47003, 45168]) assert.equal(sendOutcome(code, 1).retry, false);
 });
+test('business scopes use an explicit allowlist and stable ordering', () => {
+  assert.deepEqual(parseNotificationScopes(['service', 'commission']), ['commission', 'service']);
+  assert.deepEqual(parseNotificationScopes(['commission', 'commission']), ['commission']);
+  for (const scopes of [null, [], 'commission', ['marketing'], ['account', null], [1], ['account', 'account', 'account', 'account']]) {
+    assert.equal(parseNotificationScopes(scopes), null);
+  }
+  assert.equal(notificationScope('commission_application_received'), 'commission');
+  assert.equal(notificationScope('provider_inquiry'), 'commission');
+  assert.equal(notificationScope('restriction_started'), 'account');
+  assert.equal(notificationScope('appeal_approved'), 'account');
+  assert.equal(notificationScope('site_message_resolved'), 'service');
+  assert.equal(notificationScope('service_payment_succeeded'), 'service');
+  assert.equal(notificationScope('carpool_applied'), null);
+  assert.equal(notificationScope('unknown'), null);
+});
 test('miniapp uses an explicit gesture, describes one-time permission, and retains notification failures', () => {
   const ui = readFileSync('miniapp/jumulu/src/components/WechatNotificationPanel.vue', 'utf8');
   const tap = ui.slice(ui.indexOf('function subscribe()'), ui.indexOf('async function pause()'));
   assert.ok(!tap.slice(0, tap.indexOf('uni.requestSubscribeMessage({')).includes('await '));
   assert.match(ui, /一次订阅对应一条提醒/);
+  assert.match(ui, /所选模块共用一次订阅额度/);
+  assert.match(ui, /本次允许订阅后生效/);
+  assert.match(ui, /订阅一次提醒/);
   assert.match(ui, /重试保存订阅/);
   assert.match(ui, /微信订阅未完成/);
   const routes = readFileSync('api/index.ts', 'utf8');

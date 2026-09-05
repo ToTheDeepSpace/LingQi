@@ -3,14 +3,24 @@ import { computed, onMounted, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { apiRequest, readAuth } from '../utils/api'
 
-type Status = { available: boolean; state: string; latest?: { state: string; reason: string } | null }
-type SubscriptionRequest = { id: string; template_id: string; expires_at: string }
+const modules = [
+  { id: 'commission', label: '委托消息' },
+  { id: 'account', label: '账号通知' },
+  { id: 'service', label: '服务与反馈' },
+] as const
+type Scope = typeof modules[number]['id']
+type Status = { available: boolean; state: string; scopes?: Scope[]; latest?: { state: string; reason: string } | null }
+type SubscriptionRequest = { id: string; template_id: string; scopes: Scope[]; expires_at: string }
 const status = ref<Status | null>(null)
+const scopes = ref<Scope[]>(modules.map(module => module.id))
 const request = ref<SubscriptionRequest | null>(null)
 const pending = ref<{ requestId: string; result: string } | null>(null)
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
+const scopeChanged = computed(() => status.value?.state === 'accepted'
+  && modules.some(module => scopes.value.includes(module.id) !== status.value?.scopes?.includes(module.id)))
+const savedScopeLabel = computed(() => modules.filter(module => status.value?.scopes?.includes(module.id)).map(module => module.label).join('、'))
 const stateLabel = computed(() => ({
   none: '尚未订阅', accepted: '已记录订阅', rejected: '未允许提醒', off: '已暂停',
   exhausted: '需要再次订阅', unconfigured: '暂未配置完成',
@@ -30,9 +40,30 @@ async function refresh() {
   try {
     status.value = await apiRequest<Status>('/lc/account/wechat-notifications')
     if (status.value.available && !pending.value) {
-      request.value = await apiRequest<SubscriptionRequest>('/lc/account/wechat-notifications/requests', { method: 'POST' })
+      scopes.value = status.value.scopes || modules.map(module => module.id)
+      await prepare()
     }
   } catch (reason) { error.value = reason instanceof Error ? reason.message : '微信提醒状态加载失败' }
+  finally { loading.value = false }
+}
+
+async function prepare() {
+  request.value = await apiRequest<SubscriptionRequest>('/lc/account/wechat-notifications/requests', {
+    method: 'POST', data: { scopes: scopes.value },
+  })
+}
+async function toggleScope(scope: Scope) {
+  if (loading.value || busy.value || pending.value) return
+  if (scopes.value.includes(scope) && scopes.value.length === 1) {
+    uni.showToast({ title: '至少选择一个提醒模块', icon: 'none' })
+    return
+  }
+  scopes.value = modules.map(module => module.id).filter(id => id === scope ? !scopes.value.includes(id) : scopes.value.includes(id))
+  request.value = null
+  loading.value = true
+  error.value = ''
+  try { await prepare() }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : '提醒范围准备失败，请重新检查' }
   finally { loading.value = false }
 }
 
@@ -92,7 +123,7 @@ function subscribe() {
   })
 }
 async function pause() {
-  if (busy.value) return
+  if (busy.value || loading.value) return
   busy.value = true
   try {
     await apiRequest('/lc/account/wechat-notifications/pause', { method: 'PUT' })
@@ -113,11 +144,19 @@ onShow(() => void refresh())
   <view class="wechat-reminder">
     <view class="reminder-heading"><strong>微信提醒</strong><text>{{ stateLabel }}</text></view>
     <text class="reminder-description">退出小程序，也可在微信「服务通知」查看新消息。一次订阅对应一条提醒，不是永久开启。</text>
+    <view v-if="status?.available" class="reminder-modules">
+      <text class="reminder-description">选择提醒范围（本次允许订阅后生效）</text>
+      <view class="module-options">
+        <button v-for="module in modules" :key="module.id" :class="{ selected: scopes.includes(module.id) }" :disabled="busy || loading || !!pending" :aria-pressed="scopes.includes(module.id)" @tap="toggleScope(module.id)">{{ scopes.includes(module.id) ? '✓ ' : '' }}{{ module.label }}</button>
+      </view>
+      <text class="reminder-description">所选模块共用一次订阅额度，不是每个模块各一条。未选模块仍保留站内通知。</text>
+      <text v-if="scopeChanged" class="reminder-description">当前仍提醒：{{ savedScopeLabel }}。新范围在订阅成功后生效。</text>
+    </view>
     <text v-if="deliveryHint" class="reminder-description">{{ deliveryHint }}</text>
     <text v-if="error" class="reminder-error">{{ error }}</text>
     <view class="reminder-actions">
-      <button v-if="status?.available" class="subscribe" :loading="busy" :disabled="busy || loading || (!request && !pending)" @tap="subscribe">{{ pending ? '重试保存订阅' : '接收下一条提醒' }}</button>
-      <button v-if="status?.state === 'accepted' || pending" :disabled="busy" @tap="pause">暂停提醒</button>
+      <button v-if="status?.available" class="subscribe" :loading="busy" :disabled="busy || loading || (!request && !pending)" @tap="subscribe">{{ pending ? '重试保存订阅' : '订阅一次提醒' }}</button>
+      <button v-if="status?.state === 'accepted' || pending" :disabled="busy || loading" @tap="pause">暂停提醒</button>
       <button v-if="status?.state === 'rejected' || error" :disabled="busy" @tap="openSettings">提醒设置</button>
       <button v-if="error || !status?.available" :disabled="busy || loading" @tap="refresh">重新检查</button>
     </view>
@@ -131,6 +170,11 @@ onShow(() => void refresh())
 .reminder-heading text { color: #64706a; font-size: 21rpx; }
 .reminder-description, .reminder-error { display: block; margin-top: 10rpx; color: #64706a; font-size: 22rpx; line-height: 1.6; }
 .reminder-error { color: #b64238; }
+.module-options { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 12rpx; }
+.module-options button { margin: 0; padding: 0 14rpx; border-radius: 8rpx; background: #edf0ed; color: #526057; font-size: 22rpx; line-height: 62rpx; }
+.module-options button::after { border: 0; }
+.module-options button.selected { background: #deeee3; color: #1c683c; }
+.module-options button[disabled] { opacity: .6; }
 .reminder-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16rpx; margin-top: 16rpx; }
 .reminder-actions button { margin: 0; padding: 0 6rpx; border: 0; background: transparent; color: #2d568f; font-size: 23rpx; line-height: 68rpx; }
 .reminder-actions .subscribe { padding: 0 24rpx; border-radius: 10rpx; background: #227346; color: #fff; }

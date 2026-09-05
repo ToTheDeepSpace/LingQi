@@ -23,6 +23,7 @@ type ServerWriteRoute = {
 };
 
 const EXEMPTIONS = new Map<string, ExemptionClass>([
+  ['POST /api/lc/account/wechat-notifications/requests', 'state-only'],
   ['POST /api/lc/account/wechat-notifications/confirm', 'state-only'],
   ['POST /api/lc/dm-dossiers/:id/store-code-preview', 'private-credential'],
   ['POST /api/lc/auth/bind-phone', 'private-credential'],

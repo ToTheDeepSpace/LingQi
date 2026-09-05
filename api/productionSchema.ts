@@ -11,8 +11,8 @@ type SchemaQueryClient = {
 };
 
 export const REQUIRED_PRODUCTION_SCHEMA_COLUMNS: Record<string, readonly string[]> = {
-  lc_wechat_notification_subscriptions: ['profile_id', 'template_id', 'recipient_hash', 'state', 'version', 'authorized_at', 'updated_at'],
-  lc_wechat_notification_requests: ['id', 'profile_id', 'template_id', 'recipient_hash', 'created_at', 'expires_at', 'consumed_at', 'result'],
+  lc_wechat_notification_subscriptions: ['profile_id', 'template_id', 'recipient_hash', 'state', 'scopes', 'version', 'authorized_at', 'updated_at'],
+  lc_wechat_notification_requests: ['id', 'profile_id', 'template_id', 'recipient_hash', 'scopes', 'created_at', 'expires_at', 'consumed_at', 'result'],
   lc_wechat_notification_deliveries: ['notification_id', 'profile_id', 'template_id', 'recipient_hash', 'subscription_version', 'state', 'reason', 'error_code', 'attempts', 'available_at', 'started_at', 'completed_at', 'created_at'],
   lc_reports: [
     'id',

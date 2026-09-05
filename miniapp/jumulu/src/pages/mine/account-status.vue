@@ -306,7 +306,6 @@ onPullDownRefresh(load)
     <MiniNavBar title="消息中心" fallback="/pages/mine/index" />
     <AuthFormGate message="登录后才能查看消息和提交记录">
     <StatePanel :loading="loading" :error="error" :empty="false" @retry="load" />
-    <WechatNotificationPanel v-if="status && status.state !== 'merged'" />
     <view v-if="focusedNotice" class="focused-notice" @tap="markRead(focusedNotice)">
       <text class="focused-label">来自微信提醒 · 点击查看相关事项</text>
       <strong>{{ focusedNotice.title }}</strong>
@@ -314,6 +313,7 @@ onPullDownRefresh(load)
       <text>{{ formatDate(focusedNotice.created_at) }}</text>
     </view>
     <view v-if="focusedError" class="focused-notice">{{ focusedError }}</view>
+    <WechatNotificationPanel v-if="status && status.state !== 'merged'" />
 
     <view v-if="status && status.state !== 'merged'" class="status-strip" :class="{ restricted: status.state === 'restricted' }">
       <view class="status-dot" />
