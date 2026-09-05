@@ -4,6 +4,8 @@ import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { createTencentPgClient, tencentPgPool } from './tencentPgSupabase.js';
+import { notifyConfig, drainWechatNotifications } from './wechatNotifications.js';
+import { registerWechatNotificationRoutes, applyWechatNotificationRejection } from './wechatNotificationRoutes.js';
 import { summarizeDmRatingRows } from './dmRatingSummary.js';
 import { normalizeRoleReviewLane, summarizeRoleReviewLanes, summarizeRoleReviewRows } from './roleReviewPolicy.js';
 import {
@@ -624,6 +626,10 @@ async function handleWechatMiniMediaCallback(req: express.Request, res: express.
       return res.status(403).type('text/plain').send('invalid appid');
     }
     const event = String(payload.Event || payload.event || '').toLowerCase();
+    if (useTencentPg && event === 'subscribe_msg_change_event') {
+      await applyWechatNotificationRejection(tencentPgPool, parsedBody, rawBody, wechatNotificationConfig.templateId);
+      return res.status(200).type('text/plain').send('success');
+    }
     if (event.startsWith('xpay_')) {
       return handleWechatVirtualPaymentCallback(req, res, parsedBody);
     }
@@ -727,6 +733,7 @@ function assertWechatVirtualPayConfigured(env = LINGQI_WECHAT_VIRTUAL_PAY_ENV) {
 }
 
 const wechatMiniAccessTokenCache = new WechatAccessTokenCache();
+const wechatNotificationConfig = notifyConfig(process.env);
 const WECHAT_MINI_API_TIMEOUT_MS = 8_000;
 const WECHAT_MINI_USER_RISK_CACHE_TTL_MS = 5 * 60 * 1000;
 const wechatMiniUserRiskCache = new Map<string, {
@@ -22007,6 +22014,38 @@ app.put('/api/lc/admin/certifications/:id/reject', authMiddleware, adminMiddlewa
     res.json(ok());
   } catch (e) { res.status(500).json(err(e)); }
 });
+
+if (useTencentPg) {
+  registerWechatNotificationRoutes(app, {
+    pool: tencentPgPool,
+    config: wechatNotificationConfig,
+    auth: accountStateMiddleware,
+    rateLimit: createRateLimiter('wechat-notifications', 15 * 60 * 1000, 60),
+    getIdentity: req => {
+      const profile = accountProfileFromRequest(req);
+      return profile ? {
+        id: profile.id,
+        miniapp: (req as Record<string, unknown>).authClient === 'wechat-miniapp',
+        merged: Boolean(profile.merged_into),
+      } : null;
+    },
+    error: err,
+  });
+  if (wechatNotificationConfig.enabled) {
+    let running = false;
+    const timer = setInterval(() => {
+      if (running) return;
+      running = true;
+      void drainWechatNotifications({
+        pool: tencentPgPool, config: wechatNotificationConfig,
+        getAccessToken: getWechatMiniAccessToken,
+        invalidateToken: token => wechatMiniAccessTokenCache.invalidate(token),
+      }).catch(() => console.error('[wechat-notifications] worker failed; inspect delivery states'))
+        .finally(() => { running = false; });
+    }, 15_000);
+    timer.unref();
+  }
+}
 
 if (useTencentPg) registerStoreCertificationRoutes(app, {
   pool: tencentPgPool,

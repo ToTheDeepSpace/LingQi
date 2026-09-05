@@ -23,6 +23,7 @@ type ServerWriteRoute = {
 };
 
 const EXEMPTIONS = new Map<string, ExemptionClass>([
+  ['POST /api/lc/account/wechat-notifications/confirm', 'state-only'],
   ['POST /api/lc/dm-dossiers/:id/store-code-preview', 'private-credential'],
   ['POST /api/lc/auth/bind-phone', 'private-credential'],
   ['POST /api/lc/auth/set-password', 'private-credential'],
@@ -83,7 +84,7 @@ function discoverFileRoutes(filePath: string): ServerWriteRoute[] {
 }
 
 function discoverServerWriteRoutes(): ServerWriteRoute[] {
-  return ['api/index.ts','api/storeCertificationRoutes.ts'].flatMap(discoverFileRoutes);
+  return ['api/index.ts','api/storeCertificationRoutes.ts','api/wechatNotificationRoutes.ts'].flatMap(discoverFileRoutes);
 }
 
 test('store entitlement routes remain authenticated and revocation admin-only', () => {
@@ -91,6 +92,12 @@ test('store entitlement routes remain authenticated and revocation admin-only', 
   assert.equal(routes.length,5);
   assert.ok(routes.every(route => route.authenticated));
   assert.ok(routes.find(route => route.key.endsWith('/:id/revoke'))?.adminOnly);
+});
+
+test('notification preference writes remain authenticated', () => {
+  const routes = discoverFileRoutes('api/wechatNotificationRoutes.ts');
+  assert.equal(routes.length, 3);
+  assert.ok(routes.every(route => route.authenticated));
 });
 
 test('every authenticated non-admin server write with input is checked or explicitly classified', () => {

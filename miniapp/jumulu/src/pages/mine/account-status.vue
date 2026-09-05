@@ -4,6 +4,7 @@ import { onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import AuthFormGate from '../../components/AuthFormGate.vue'
 import MiniNavBar from '../../components/MiniNavBar.vue'
 import StatePanel from '../../components/StatePanel.vue'
+import WechatNotificationPanel from '../../components/WechatNotificationPanel.vue'
 import type { AccountStatus } from '../../types'
 import { apiRequest, encoded, readAuth } from '../../utils/api'
 
@@ -61,6 +62,9 @@ const evidenceText = ref('')
 const loading = ref(false)
 const submitting = ref(false)
 const error = ref('')
+const focusedNoticeId = ref('')
+const focusedNotice = ref<Notice | null>(null)
+const focusedError = ref('')
 
 const unreadCount = computed(() => notices.value.filter(item => !item.read_at).length)
 const visibleSubmissions = computed(() => stateFilter.value === 'all'
@@ -139,6 +143,16 @@ async function load() {
     ])
     status.value = nextStatus
     notices.value = nextNotices
+    if (focusedNoticeId.value) {
+      focusedError.value = ''
+      try {
+        focusedNotice.value = nextNotices.find(item => item.id === focusedNoticeId.value)
+          || await apiRequest<Notice>(`/lc/account/notifications/${encoded(focusedNoticeId.value)}`)
+      } catch (reason) {
+        focusedNotice.value = null
+        focusedError.value = reason instanceof Error ? reason.message : '这条通知暂时无法查看'
+      }
+    }
     submissions.value = nextSubmissions || emptySubmissions()
     noticeLimit.value = ACCOUNT_LIST_BATCH
     submissionLimit.value = ACCOUNT_LIST_BATCH
@@ -278,6 +292,10 @@ async function markRead(item: Notice) {
 
 onLoad((options) => {
   if (options?.tab === 'submissions') activeTab.value = 'submissions'
+  if (options?.notice) {
+    focusedNoticeId.value = String(options.notice)
+    activeTab.value = 'notices'
+  }
 })
 onShow(() => void load())
 onPullDownRefresh(load)
@@ -288,6 +306,14 @@ onPullDownRefresh(load)
     <MiniNavBar title="消息中心" fallback="/pages/mine/index" />
     <AuthFormGate message="登录后才能查看消息和提交记录">
     <StatePanel :loading="loading" :error="error" :empty="false" @retry="load" />
+    <WechatNotificationPanel v-if="status && status.state !== 'merged'" />
+    <view v-if="focusedNotice" class="focused-notice" @tap="markRead(focusedNotice)">
+      <text class="focused-label">来自微信提醒 · 点击查看相关事项</text>
+      <strong>{{ focusedNotice.title }}</strong>
+      <text>{{ focusedNotice.content }}</text>
+      <text>{{ formatDate(focusedNotice.created_at) }}</text>
+    </view>
+    <view v-if="focusedError" class="focused-notice">{{ focusedError }}</view>
 
     <view v-if="status && status.state !== 'merged'" class="status-strip" :class="{ restricted: status.state === 'restricted' }">
       <view class="status-dot" />
@@ -373,6 +399,10 @@ onPullDownRefresh(load)
 </template>
 
 <style scoped>
+.focused-notice { margin-top: 14rpx; padding: 22rpx; border: 1rpx solid #d7dde6; border-radius: 12rpx; background: #fff; color: #64748b; font-size: 23rpx; line-height: 1.6; }
+.focused-notice strong, .focused-notice text { display: block; margin-top: 6rpx; }
+.focused-notice strong { color: #27364a; font-size: 27rpx; }
+.focused-notice .focused-label { color: #2d568f; font-size: 21rpx; }
 .status-strip { display: flex; min-height: 76rpx; align-items: center; gap: 12rpx; margin-top: 14rpx; padding: 12rpx 16rpx; border: 1rpx solid #dfe7df; border-radius: 10rpx; background: #f7fbf8; color: #64706a; font-size: 22rpx; }
 .status-strip.restricted { border-color: #ead3ae; background: #fff9ef; color: #7b6240; }
 .status-dot { width: 14rpx; height: 14rpx; flex: 0 0 14rpx; border-radius: 50%; background: #3f8b5e; }
