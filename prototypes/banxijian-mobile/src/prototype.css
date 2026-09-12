@@ -153,3 +153,53 @@
 .bx-home-brand { display:flex;align-items:center;gap:12px;margin:4px 0 24px; }
 .bx-home-brand img { width:39px;height:39px; }
 .bx-home-brand h1 { font-size:16px;font-family:"Songti SC",serif; }
+.bx-tabs svg { width:22px;height:22px; }
+.bx-category-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:10px 0 12px; }
+.bx-category-grid button { min-height:40px;border:1px solid #d8dee8;border-radius:6px;background:#fff;color:#275389;font-size:12px; }
+.bx-section-action { border:0;background:none;padding:6px 0;color:#275389;font-size:11px!important;white-space:nowrap; }
+.bx-dossier-card { display:flex;align-items:center;gap:12px;width:100%;padding:13px 10px;text-align:left;border:1px solid #e8e4dc;border-radius:6px;background:#fff;color:inherit;margin:8px 0; }
+.bx-dossier-card>img { width:45px;height:55px;object-fit:cover;object-position:center 22%;border-radius:4px;flex-shrink:0; }
+.bx-dossier-card>svg:first-child { width:30px;height:30px;margin:0 7px;color:#7e8a9d; }
+.bx-dossier-card>div { flex:1;min-width:0; }
+.bx-dossier-card strong { font-size:14px;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap; }
+.bx-dossier-card small { color:#717c88;font-size:10px;font-weight:400; }
+.bx-dossier-card p { color:#5e6875;font-size:11px;line-height:1.6;margin-top:4px; }
+.bx-dossier-card div>span { color:#8a7660;font-size:10px;display:block;margin-top:6px; }
+.bx-dossier-card>svg:last-child { color:#a7adb5;width:14px; }
+.bx-dossier-card.compact { padding:8px 10px; }
+.bx-dossier-card.compact>img { height:45px; }
+.bx-community-filters { display:flex;gap:6px;margin:16px 0; }
+.bx-community-filters button { flex:1;min-height:39px;border:1px solid #dddfe4;border-radius:5px;background:#fff;color:#657184;font-size:12px; }
+.bx-community-filters [aria-pressed=true] { background:#edf3fb;border-color:#a7bfdc;color:#275389;font-weight:700; }
+.bx-event-card { display:block;width:100%;text-align:left;border:1px solid #e8e4dc;border-radius:6px;background:#fff;color:inherit;padding:13px;margin:10px 0; }
+.bx-event-kind { display:inline-block;border-radius:3px;padding:1px 5px;font-size:10px;margin-bottom:7px; }
+.bx-event-kind.red { background:#f9e9e5;color:#a0463b; }
+.bx-event-kind.black { background:#eaecef;color:#4c5664; }
+.bx-event-kind.white { background:#edf3fb;color:#42668e; }
+.bx-event-card h3 { font-size:14px; }
+.bx-event-card>p { font-size:11px;color:#737c88;margin-top:4px; }
+.bx-event-card.compact { display:flex;align-items:center;gap:9px;min-height:58px; }
+.bx-event-card.compact .bx-event-kind { flex-shrink:0;margin:0; }
+.bx-event-card.compact h3 { font-size:13px; }
+.bx-event-card.compact>p,.bx-event-card.compact .bx-event-tags { display:none; }
+.bx-event-tags { display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:9px; }
+.bx-event-tags span { color:#737c88;background:#f3f4f5;border-radius:3px;padding:2px 5px;font-size:10px; }
+.bx-event-tags small { color:#8a7660;font-size:10px;margin-left:auto; }
+.bx-home-services { margin-bottom:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px; }
+.bx-home-services button { min-width:0;display:flex;align-items:center;gap:8px;background:white;border:1px solid #e8e4dc;border-radius:6px;padding:8px;text-align:left;color:inherit; }
+.bx-home-services img { width:48px;height:72px;object-fit:cover;object-position:center 22%;border-radius:4px; }
+.bx-home-services button>div { flex:1; }
+.bx-home-services strong { font-size:14px; }
+.bx-home-services small { font-size:10px;color:#747d88;font-weight:400;margin-left:7px; }
+.bx-home-services p { font-size:11px;color:#69717c;margin:4px 0; }
+.bx-home-services span { font-size:17px;font-weight:700;color:#9a651e; }
+.bx-home-services svg { display:none; }
+.bx-dossier-heading h1 { font-size:26px;margin:14px 0 5px; }
+.bx-dossier-heading h1 small { font-size:12px;color:#737c88;margin-left:12px;font-weight:400; }
+.bx-dossier-heading p,.bx-event-heading p { color:#737c88;font-size:12px; }
+.bx-event-heading h1 { font-size:22px;margin:15px 0 8px; }
+.bx-response { padding:14px;background:#f1f5fa;border-radius:6px;margin:20px 0;color:#3b5573; }
+.bx-response strong { font-size:13px; }
+.bx-response p { font-size:12px;line-height:1.8;margin:8px 0; }
+.bx-response small { font-size:10px;color:#6c7b8b; }
+.bx-home-content .bx-section-title { margin:14px 0 8px; }

@@ -1,5 +1,9 @@
 # Mobile Prototype Agent Guide
 
+## 剧幕录产品方向（2026-09-13）
+
+用户确认保留委托预览的方向，但百科和红黑榜不能被弱化。百科是独立资料库，不是委托师商品列表；红黑榜保留公共事件、进展、回应和讨论，不等于订单评价、不受保证金影响。首页同时展示百科与委托实体内容，并给红黑榜明显位置。本轮实现首页／百科／委托／红黑榜／我的五个独立入口；这是当前预览方案，不是已发布的小程序导航。所有人物、资料、事件、评论及交易仍属本地虚构示例，禁止混入正式数据或发布为可真实交易的功能。
+
 ## Prototype Instructions
 
 In ChatGPT Work Mode, run `sites-preview start "$PWD"`, open `http://terminal.local:4173/` in the cloud browser, and verify the rendered app and its primary interactions. Keep that preview open and tell the user to inspect it in the cloud browser; do not present the local URL as a user-facing chat link. In Codex Desktop, run the local server yourself, open the preview in the in-app browser, and provide the clickable local URL. Do not deploy to Sites unless the user explicitly asks to share, publish, or deploy. Do not give the user server-start instructions when you can run it.

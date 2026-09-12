@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useState, type Dispatch, type SetStateAction, type ReactNode } from 'react';
-import { ChevronLeftIcon, ChevronRightIcon, ChatBubbleIcon, CalendarIcon, CheckCircledIcon, MagnifyingGlassIcon, MixerHorizontalIcon } from '@radix-ui/react-icons';
+import { ChevronLeftIcon, ChevronRightIcon, ChatBubbleIcon, CalendarIcon, CheckCircledIcon, MagnifyingGlassIcon, MixerHorizontalIcon, HomeIcon, ReaderIcon, PersonIcon, ArchiveIcon } from '@radix-ui/react-icons';
 import { BottomSheet, FlowStack, KeyboardInput, KeyboardTextarea, MobileScroll, useFlow, useKeyboard, type FlowScreen } from './mobile';
 import { calculateBanxijianQuote, evaluateDepositReturn, type SellerDepositTierFen } from '../../../api/banxijianRules';
+import { demoDossiers, demoEvents, filterDossiers, type DemoDossier, type DemoEvent, type DossierKind } from './communityDemo';
 
 type ProviderId = 'lin' | 'yue';
-type Page = 'market' | 'detail' | 'booking' | 'chat' | 'orders' | 'order' | 'mine' | 'seller' | 'deposit' | 'listing' | 'home' | 'reputation' | 'demands' | 'demand-create';
+type Page = 'market' | 'detail' | 'booking' | 'chat' | 'orders' | 'order' | 'mine' | 'seller' | 'deposit' | 'listing' | 'home' | 'encyclopedia' | 'dossier' | 'event' | 'reputation' | 'demands' | 'demand-create';
 type OrderStatus = 'requested' | 'confirmed' | 'reserved' | 'started' | 'completed' | 'aftersales';
 type Order = { id: string; provider: ProviderId; date: string; place: string; script: string; note: string; serviceFen: number; travelFen: number; status: OrderStatus };
 const providers = {
@@ -21,23 +22,28 @@ type DemoState = {
   dates: number[]; priceFen: number; listingPending: boolean;
   chats: { provider: ProviderId; text: string }[];
   demand: { title: string; date: string; budget: string } | null;
+  dossierKind: DossierKind | '全部';
+  reactions: Record<string, { stance?: '同意' | '反对'; joy?: boolean }>;
+  comments: Record<string, string[]>;
 };
 const initialState: DemoState = {
   city: '西安', budget: 0, date: '', selected: 'lin',
   booking: { place: '', script: '', note: '' }, order: null,
   accepting: true, deposit: 50_000, dates: [...providers.lin.dates], priceFen: 100_000,
   listingPending: false, chats: [], demand: null,
+  dossierKind: '全部', reactions: {}, comments: {},
 };
 const DemoContext = createContext<{ state: DemoState; setState: Dispatch<SetStateAction<DemoState>> } | null>(null);
 const useDemo = () => { const context = useContext(DemoContext); if (!context) throw new Error('Demo provider missing'); return context; };
-const titles: Record<Page, string> = { market: '委托·伴戏间', detail: '委托师主页', booking: '预约确认', chat: '委托咨询', orders: '我的订单', order: '订单详情', mine: '我的剧幕录', seller: '卖家工作台', deposit: '我的保证金', listing: '编辑委托条', home: '剧幕录', reputation: '红黑榜', demands: '委托需求', 'demand-create': '发布委托需求' };
+const titles: Record<Page, string> = { market: '委托·伴戏间', detail: '委托师主页', booking: '预约确认', chat: '委托咨询', orders: '我的订单', order: '订单详情', mine: '我的剧幕录', seller: '卖家工作台', deposit: '我的保证金', listing: '编辑委托条', home: '剧幕录', encyclopedia: '剧幕录百科', dossier: '百科档案', event: '口碑事件', reputation: '红黑榜', demands: '委托需求', 'demand-create': '发布委托需求' };
 
-function screen(page: Page, provider: ProviderId = 'lin'): FlowScreen {
+function screen(page: Page, provider: ProviderId = 'lin', recordId = ''): FlowScreen {
+  const id = `${page}-${recordId || provider}`;
   return {
-    id: `${page}-${provider}`, headerHeight: 66, footerHeight: ['detail','booking'].includes(page) ? 88 : 76,
+    id, headerHeight: 66, footerHeight: ['detail','booking'].includes(page) ? 88 : 76,
     header: () => <Header page={page} provider={provider} />,
-    footer: () => page === 'detail' ? <DetailActions provider={provider} /> : page === 'booking' ? <BookingActions provider={provider} /> : ['market','mine','home','reputation'].includes(page) ? <Tabs page={page} /> : null,
-    render: flow => <div inert={flow.current.id !== `${page}-${provider}`} aria-hidden={flow.current.id !== `${page}-${provider}`}><PageContent page={page} provider={provider} /></div>,
+    footer: () => page === 'detail' ? <DetailActions provider={provider} /> : page === 'booking' ? <BookingActions provider={provider} /> : ['market','mine','home','encyclopedia','reputation'].includes(page) ? <Tabs page={page} /> : null,
+    render: flow => <div inert={flow.current.id !== id} aria-hidden={flow.current.id !== id}><PageContent page={page} provider={provider} recordId={recordId} /></div>,
   };
 }
 function Header({page,provider}: {page: Page;provider: ProviderId}) {
@@ -49,11 +55,11 @@ function Header({page,provider}: {page: Page;provider: ProviderId}) {
 }
 function Tabs({page}: {page: Page}) {
   const flow = useFlow();
-  const tabs: [Page,string,string][] = [['home','百科','books'],['reputation','红黑榜','message-star'],['market','委托','briefcase'],['mine','我的','user-circle']];
-  return <nav className="bx-tabs" aria-label="主导航">{tabs.map(([id,label,icon]) => <button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => page !== id && flow.replace(screen(id))}><img src={`/assets/jumulu/tab-${icon}${page === id ? '-active' : ''}.png`} alt="" /><span>{label}</span></button>)}</nav>;
+  const tabs: [Page,string,string][] = [['home','首页','home'],['encyclopedia','百科','books'],['market','委托','briefcase'],['reputation','红黑榜','message-star'],['mine','我的','user-circle']];
+  return <nav className="bx-tabs" aria-label="主导航">{tabs.map(([id,label,icon]) => <button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => page !== id && flow.replace(screen(id))}>{id === 'home' ? <HomeIcon /> : <img src={`/assets/jumulu/tab-${icon}${page === id ? '-active' : ''}.png`} alt="" />}<span>{label}</span></button>)}</nav>;
 }
-function Content({children}: {children: ReactNode}) { return <MobileScroll className="bx-scroll"><main className="bx-content">{children}</main></MobileScroll>; }
-function PageContent({page,provider}: {page: Page;provider: ProviderId}) {
+function Content({children,className=''}: {children: ReactNode;className?:string}) { return <MobileScroll className="bx-scroll"><main className={`bx-content ${className}`}>{children}</main></MobileScroll>; }
+function PageContent({page,provider,recordId}: {page: Page;provider: ProviderId;recordId:string}) {
   switch(page) {
     case 'market': return <Market />;
     case 'detail': return <Detail provider={provider} />;
@@ -66,6 +72,9 @@ function PageContent({page,provider}: {page: Page;provider: ProviderId}) {
     case 'deposit': return <Deposit />;
     case 'listing': return <Listing />;
     case 'home': return <Home />;
+    case 'encyclopedia': return <Encyclopedia />;
+    case 'dossier': return <Dossier id={recordId} />;
+    case 'event': return <EventDetail id={recordId} />;
     case 'reputation': return <Reputation />;
     case 'demands': return <Demands />;
     case 'demand-create': return <CreateDemand />;
@@ -117,6 +126,7 @@ function Detail({provider}: {provider:ProviderId}) {
     <div className="bx-detail-name"><div><h1>{p.name}<span>{p.city}</span></h1><p>{p.tags.join(' · ')}</p></div><div className="bx-price">{money(provider==='lin'?state.priceFen:p.priceFen)}<small>/场</small></div></div>
     <div className="bx-inline-info"><span>8小时 / 场</span><span>报价可协商</span><span>车马费单列</span></div>
     <div className="bx-trust"><CheckCircledIcon /><span>保证金 {money(provider==='lin'?state.deposit:p.deposit)} <small>· 仅演示缴存状态</small></span></div>
+    <button className="bx-secondary bx-wide" onClick={()=>flow.push(screen('dossier','lin',provider))}>查看{p.name}的百科档案</button>
     <div className="bx-segments">{['介绍','档期','评价'].map(t=><button className={tab===t?'selected':''} key={t} onClick={()=>setTab(t)}>{t}</button>)}</div>
     {tab==='介绍'?<><SectionTitle>{p.headline}</SectionTitle><p className="bx-body">{p.intro}</p><div className="bx-panel"><Row label="可接方向">情感本 / 角色演绎</Row><Row label="服务范围">线下 · {p.city}</Row><Row label="加时与夜场">先沟通，双方确认后计入</Row></div><SectionTitle>相处边界</SectionTitle><p className="bx-body">服务内容、肢体接触范围与额外费用都需要提前确认；任何时候都可以明确表达拒绝。</p><button className="bx-link-card" onClick={()=>flow.push(screen('reputation'))}><div><strong>查看百科与社区口碑</strong><span>社区记录与平台成交评价分开展示</span></div><ChevronRightIcon /></button></>:tab==='档期'?<><Calendar selected={state.date} available={provider==='lin'?state.dates:p.dates} onSelect={date=>setState(s=>({...s,date}))} /><Notice>提交预约不会立即锁档。委托师确认后才锁定，预计24小时内答复。</Notice></>:<><SectionTitle>成交评价 <small>演示</small></SectionTitle><div className="bx-review"><strong>{p.score} / 5 <small>· {p.count}条示例</small></strong><p>沟通很清楚，也尊重角色与相处边界。</p><span>示例用户 · 已完成订单</span></div><Notice>这些是虚构展示数据，不代表真实口碑。</Notice></>}
   </Content>;
@@ -188,8 +198,86 @@ function Listing() {
   const {state,setState}=useDemo();const [price,setPrice]=useState(String(state.priceFen/100));const [intro,setIntro]=useState<string>(providers.lin.intro);const [sent,setSent]=useState(false);const [error,setError]=useState('');
   return <Content><SectionTitle>修改委托条</SectionTitle><label className="bx-field">每场报价（元）<KeyboardInput inputMode="decimal" value={price} onChange={e=>setPrice(e.target.value)}/></label><label className="bx-field">服务介绍<KeyboardTextarea rows={5} value={intro} onChange={e=>setIntro(e.target.value)}/></label><Notice>首次发布与修改均需人工审核。提交不会立即替换已公开版本，也不会改变历史订单。</Notice><button className="bx-primary bx-wide" onClick={()=>{if(!/^\d+(\.\d{1,2})?$/.test(price)||Number(price)<=0||!intro.trim())return setError('请填写有效报价与服务介绍');setState(s=>({...s,listingPending:true}));setSent(true);setError('');}}>提交审核 · 演示</button>{error&&<p role="alert" className="bx-error">{error}</p>}{sent&&<div className="bx-success"><CheckCircledIcon/><strong>修改已进入演示审核队列</strong><p>当前公开报价仍为 {money(state.priceFen)}，等待人工审核。</p></div>}</Content>;
 }
-function Home() {const flow=useFlow();return <Content><div className="bx-home-brand"><img src="/assets/jumulu/logo.png" alt="剧幕录"/><h1>幕前有演绎，幕后有记录。</h1></div><SectionTitle>查资料，也查口碑</SectionTitle><div className="bx-panel"><strong>DM / 店家 / 剧本百科</strong><p className="bx-body">百科是剧幕录的基础资料入口，与委托师主页互通。</p><button className="bx-secondary bx-wide" onClick={()=>flow.push(screen('detail','lin'))}>查看林川的示例档案</button></div><SectionTitle>委托·伴戏间 <small>找合适的委托师</small></SectionTitle><div className="bx-provider-grid"><ProviderCard id="lin"/><ProviderCard id="yue"/></div><button className="bx-text-button" onClick={()=>flow.replace(screen('market'))}>进入委托专区</button></Content>;}
-function Reputation() {const flow=useFlow();return <Content><SectionTitle>社区记录，独立于成交评价</SectionTitle><div className="bx-panel"><span className="bx-label">示例红榜记录</span><h3>一次被认真对待的角色体验</h3><p className="bx-body">这里演示社区口碑入口与委托师档案的连接，不使用真实用户的评价。</p><button className="bx-text-button" onClick={()=>flow.push(screen('detail','lin'))}>查看关联委托师</button></div><Notice>保证金不改变红黑榜口碑，也不能购买好评。原产品红黑榜完整功能仍保留。</Notice></Content>;}
+function DossierCard({item,compact=false}: {item:DemoDossier;compact?:boolean}) {
+  const flow=useFlow();
+  const Icon=item.kind==='DM'?PersonIcon:item.kind==='店家'?HomeIcon:item.kind==='剧本'?ReaderIcon:ArchiveIcon;
+  return <button className={`bx-dossier-card ${compact?'compact':''}`} onClick={()=>flow.push(screen('dossier','lin',item.id))}>
+    {item.provider?<img src={providers[item.provider].photo} alt={`${item.name}的AI虚构剧照`}/>:<Icon/>}
+    <div><strong>{item.name}<small>{item.kind} · {item.city}</small></strong><p>{item.summary}</p>{!compact&&<span>{item.source}</span>}</div><ChevronRightIcon/>
+  </button>;
+}
+function EventCard({item,compact=false}: {item:DemoEvent;compact?:boolean}) {
+  const flow=useFlow();
+  return <button className={`bx-event-card ${compact?'compact':''}`} onClick={()=>flow.push(screen('event','lin',item.id))}>
+    <span className={`bx-event-kind ${item.kind==='红榜'?'red':item.kind==='黑榜'?'black':'white'}`}>{item.kind}</span>
+    <h3>{item.title}</h3><p>{item.subject}</p><div className="bx-event-tags">{item.tags.map(tag=><span key={tag}>{tag}</span>)}<small>示例 · 查看进展</small></div>
+  </button>;
+}
+function Home() {
+  const flow=useFlow();const {state,setState}=useDemo();
+  const browse=(kind:DossierKind|'全部')=>{setState(s=>({...s,dossierKind:kind}));flow.replace(screen('encyclopedia'));};
+  return <Content className="bx-home-content">
+    <div className="bx-heading"><div><h1>好故事，也值得好记录。</h1><p>查档案、看口碑，找到合拍的演绎。</p></div></div>
+    <button className="bx-search bx-wide" onClick={()=>browse('全部')}><MagnifyingGlassIcon/><span>搜 DM、店家、剧本或角色</span></button>
+    <div className="bx-category-grid">{(['DM','店家','剧本','角色'] as DossierKind[]).map(kind=><button key={kind} onClick={()=>browse(kind)}>{kind}百科</button>)}</div>
+    <SectionTitle action={<button className="bx-section-action" onClick={()=>browse('全部')}>查看全部</button>}>百科 · 人与故事</SectionTitle>
+    <DossierCard item={demoDossiers[0]} compact/><DossierCard item={demoDossiers[3]} compact/>
+    <SectionTitle action={<button className="bx-section-action" onClick={()=>flow.replace(screen('reputation'))}>进入红黑榜</button>}>口碑 · 最近进展</SectionTitle>
+    <EventCard item={demoEvents[0]} compact/>
+    <SectionTitle action={<button className="bx-section-action" onClick={()=>flow.replace(screen('market'))}>找委托师</button>}>委托 · 伴戏间</SectionTitle>
+    <div className="bx-home-services">{(['lin','yue'] as ProviderId[]).filter(id=>id!=='lin'||state.accepting).map(id=><button key={id} onClick={()=>flow.push(screen('detail',id))}><img src={providers[id].photo} alt="AI虚构剧照"/><div><strong>{providers[id].name}<small>{providers[id].city}</small></strong><p>{providers[id].tags[0]}</p><span>{money(id==='lin'?state.priceFen:providers[id].priceFen)}<small> / 场</small></span></div><ChevronRightIcon/></button>)}</div>
+    <button className="bx-secondary bx-wide" onClick={()=>flow.push(screen('demands'))}>有明确期待？发布委托需求</button>
+  </Content>;
+}
+function Encyclopedia() {
+  const {state,setState}=useDemo();const [query,setQuery]=useState('');const keyboard=useKeyboard();
+  const items=filterDossiers(query,state.dossierKind);
+  return <Content><div className="bx-heading"><div><h1>每个人与故事，都有来处。</h1><p>资料、关系与社区体验，放在一起查。</p></div></div>
+    <label className="bx-search"><MagnifyingGlassIcon/><KeyboardInput aria-label="搜索百科" value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜名称、城市或擅长方向"/></label>
+    <div className="bx-community-filters" aria-label="百科分类">{(['全部','DM','店家','剧本','角色'] as const).map(kind=><button key={kind} aria-pressed={state.dossierKind===kind} onClick={()=>{keyboard.hide();setState(s=>({...s,dossierKind:kind}));}}>{kind}</button>)}</div>
+    <SectionTitle>百科档案 <small>{items.length}份虚构示例</small></SectionTitle>
+    {items.map(item=><DossierCard key={item.id} item={item}/>)}
+    {!items.length&&<Empty title="没有找到相关档案"><p>试试其他名称，或清除分类和关键词。</p><button className="bx-secondary" onClick={()=>{keyboard.hide();setQuery('');setState(s=>({...s,dossierKind:'全部'}));}}>清除百科筛选</button></Empty>}
+    <Notice>百科收录不等于本人认领，也不等于开通委托。示例来源与身份标识只演示展示方式。</Notice>
+  </Content>;
+}
+function Dossier({id}: {id:string}) {
+  const flow=useFlow();const [tab,setTab]=useState('资料');
+  const item=demoDossiers.find(d=>d.id===id)!;
+  const events=demoEvents.filter(event=>event.dossier===item.id);
+  return <Content>
+    <div className="bx-dossier-heading"><span className="bx-label">{item.kind}百科 · 虚构示例</span><h1>{item.name}<small>{item.city}</small></h1><p>{item.summary}</p></div>
+    <div className="bx-segments">{['资料','关联档案','社区记录'].map(label=><button key={label} className={tab===label?'selected':''} onClick={()=>setTab(label)}>{label}</button>)}</div>
+    {tab==='资料'?<><div className="bx-panel">{item.facts.map(([label,value])=><Row key={label} label={label}>{value}</Row>)}<Row label="资料来源">{item.source}</Row></div><Notice>这是百科档案，不是商品页。资料来源、本人身份和店家任职关系分别核实。</Notice></>:tab==='关联档案'?<>{item.related.map(id=><DossierCard key={id} item={demoDossiers.find(d=>d.id===id)!}/>)}</>:<>{events.length?events.map(event=><EventCard key={event.id} item={event}/>):<div className="bx-panel"><strong>暂无关联社区记录</strong><p className="bx-body">没有记录不等于好评，也不代表风险已排除。</p></div>}<Notice>红黑榜记录具体事件，独立于订单评价与保证金排序。</Notice></>}
+    {item.provider&&<button className="bx-link-card" onClick={()=>flow.push(screen('detail',item.provider))}><div><strong>找{item.name}委托</strong><span>本人已开通的服务入口 · 演示</span></div><ChevronRightIcon/></button>}
+  </Content>;
+}
+function Reputation() {
+  const [kind,setKind]=useState('全部');const [publish,setPublish]=useState(false);const [draft,setDraft]=useState('');const [sent,setSent]=useState(false);
+  return <><Content><div className="bx-heading"><div><h1>让体验有记录，让回应被看见。</h1><p>公开事件、后续进展与行业讨论。</p></div></div>
+    <div className="bx-community-filters" aria-label="榜单分类">{['全部','红榜','黑榜','白榜'].map(label=><button key={label} aria-pressed={kind===label} onClick={()=>setKind(label)}>{label}</button>)}</div>
+    <SectionTitle action={<button className="bx-section-action" onClick={()=>setPublish(true)}>写一条记录</button>}>最近进展 <small>虚构事件流</small></SectionTitle>
+    {demoEvents.filter(item=>kind==='全部'||item.kind===kind).map(item=><EventCard key={item.id} item={item}/>)}
+    {sent&&<div className="bx-panel" role="status"><strong>我的演示记录 · 待人工审核</strong><p className="bx-body">{draft}</p><small>仅保存在当前预览，未公开、未外发。</small></div>}
+    <Notice>口碑不随保证金加权，不以付费改变。审核决定内容是否适合公开，不替代责任认定。</Notice>
+  </Content><BottomSheet open={publish} onOpenChange={setPublish} title="写一条记录 · 本地演示" description="描述具体体验，不公开私密材料。正式发布仍需审核。" snap={0.72}><div className="bx-sheet-content"><label className="bx-field">事件经过<KeyboardTextarea rows={5} value={draft} onChange={e=>{setDraft(e.target.value);setSent(false);}} placeholder="仅填写虚构内容用于体验…" maxLength={600}/></label><button className="bx-primary bx-wide" disabled={!draft.trim()} onClick={()=>{setSent(true);setPublish(false);}}>提交演示审核 · 不公开</button></div></BottomSheet></>;
+}
+function EventDetail({id}: {id:string}) {
+  const {state,setState}=useDemo();const [comment,setComment]=useState('');const [notice,setNotice]=useState('');const flow=useFlow();
+  const event=demoEvents.find(item=>item.id===id)!;const reaction=state.reactions[event.id]||{};
+  function react(value:'同意'|'反对'|'欢乐') {setState(s=>{const previous=s.reactions[event.id]||{};return {...s,reactions:{...s.reactions,[event.id]:value==='欢乐'?{...previous,joy:!previous.joy}:{...previous,stance:previous.stance===value?undefined:value}}};});}
+  return <Content><span className="bx-label">{event.kind} · 虚构事件</span><div className="bx-event-heading"><h1>{event.title}</h1><p>{event.subject}</p></div><div className="bx-event-tags">{event.tags.map(tag=><span key={tag}>{tag}</span>)}</div>
+    <SectionTitle>事件记录</SectionTitle><p className="bx-body">{event.summary}</p>
+    <div className="bx-response"><strong>相关方回应 / 当前进展</strong><p>{event.response}</p><small>示例更新时间：2026年9月13日 · 以详情页最新状态为准</small></div>
+    {event.dossier&&<button className="bx-secondary bx-wide" onClick={()=>flow.push(screen('dossier','lin',event.dossier))}>查看关联百科档案</button>}
+    <div className="bx-community-filters" aria-label="事件互动">{(['同意','反对','欢乐'] as const).map(label=><button key={label} aria-pressed={label==='欢乐'?!!reaction.joy:reaction.stance===label} onClick={()=>react(label)}>{label}{(label==='欢乐'?reaction.joy:reaction.stance===label)?' · 已选':''}</button>)}</div>
+    <Notice>立场票同意 / 反对二选一，欢乐独立。这里仅演示交互，未产生真实投票。</Notice>
+    <SectionTitle>讨论与补充</SectionTitle><p className="bx-body">围绕具体体验讨论，不公开他人的隐私。</p>
+    {(state.comments[event.id]||[]).map((text,index)=><div className="bx-panel" key={index}><small>我的补充 · 演示待审核</small><p className="bx-body">{text}</p></div>)}
+    <form onSubmit={e=>{e.preventDefault();if(!comment.trim())return;setState(s=>({...s,comments:{...s.comments,[event.id]:[...(s.comments[event.id]||[]),comment.trim()]}}));setComment('');}}><label className="bx-field">补充讨论<KeyboardTextarea rows={2} value={comment} onChange={e=>setComment(e.target.value)} placeholder="仅填写虚构演示内容" maxLength={500}/></label><button className="bx-secondary bx-wide" disabled={!comment.trim()}>提交演示补充</button></form>
+    <button className="bx-text-button" onClick={()=>setNotice('已演示进入举报流程，没有向平台提交真实举报。')}>举报此记录 · 演示</button>{notice&&<p role="status" className="bx-notice">{notice}</p>}
+  </Content>;
+}
 function Demands() {const flow=useFlow();const {state}=useDemo();const [open,setOpen]=useState(false);return <><Content><div className="bx-heading"><div><h1>让合适的人找到你</h1><p>买家发布需求，委托师自主应征。</p></div></div><button className="bx-primary bx-wide" onClick={()=>flow.push(screen('demand-create'))}>发布我的需求</button><SectionTitle>西安 · 示例需求</SectionTitle><div className="bx-panel"><span className="bx-label">9月19日 · 情感演绎</span><h3>想约一场细腻自然的角色演绎</h3><p className="bx-body">希望提前沟通角色理解，预算800—1200元，车马费另议。</p><button className="bx-secondary bx-wide" onClick={()=>setOpen(true)}>我要应征 · 演示</button></div>{state.demand&&<div className="bx-panel"><span className="bx-label">我的需求 · 演示待审核</span><h3>{state.demand.title}</h3><p>{state.demand.date} · {state.demand.budget}</p></div>}</Content><BottomSheet open={open} onOpenChange={setOpen} title="应征演示已记录" description="没有向真实用户发送申请。正式功能会记录申请内容、审核状态和站内消息。" snap={0.35}><button className="bx-primary bx-wide" onClick={()=>setOpen(false)}>知道了</button></BottomSheet></>;}
 function CreateDemand(){const {setState}=useDemo();const flow=useFlow();const [title,setTitle]=useState('');const [budget,setBudget]=useState('');const [error,setError]=useState('');return <Content><label className="bx-field">你想要怎样的委托<KeyboardTextarea rows={4} value={title} onChange={e=>setTitle(e.target.value)} placeholder="写下日期、剧本、角色与期待…"/></label><label className="bx-field">预算范围<KeyboardInput value={budget} onChange={e=>setBudget(e.target.value)} placeholder="例如800—1200元，车马费另议"/></label><Notice>本次提交只保存在演示内存，正式发布需要审核。</Notice><button className="bx-primary bx-wide" onClick={()=>{if(!title.trim()||!budget.trim())return setError('请填写需求与预算');setState(s=>({...s,demand:{title:title.trim(),date:'日期见需求说明',budget:budget.trim()}}));flow.pop();}}>提交需求审核 · 演示</button>{error&&<p className="bx-error" role="alert">{error}</p>}</Content>;}
 function useKeepFieldAboveActions() {
@@ -212,4 +300,4 @@ function useKeepFieldAboveActions() {
     return()=>observer.disconnect();
   },[keyboard.visible,keyboard.focusedElement]);
 }
-export default function Prototype() { const [state,setState]=useState<DemoState>(initialState);useKeepFieldAboveActions();useEffect(()=>{document.title='委托·伴戏间｜剧幕录交互预览';},[]);return <DemoContext.Provider value={{state,setState}}><div className="bx-app"><FlowStack initial={screen('market')}/></div></DemoContext.Provider>; }
+export default function Prototype() { const [state,setState]=useState<DemoState>(initialState);useKeepFieldAboveActions();useEffect(()=>{document.title='剧幕录｜百科、口碑与委托交互预览';},[]);return <DemoContext.Provider value={{state,setState}}><div className="bx-app"><FlowStack initial={screen('home')}/></div></DemoContext.Provider>; }
