@@ -15,6 +15,8 @@ alter table public.lc_provider_listing_free_grants enable row level security;
 revoke all on public.lc_provider_listing_free_grants from public;
 do $$ begin
   if exists(select 1 from pg_roles where rolname='lingqi_app') then
+    -- Production may have broad DEFAULT PRIVILEGES; override them for immutable grants.
+    revoke all on public.lc_provider_listing_free_grants from lingqi_app;
     grant select, insert on public.lc_provider_listing_free_grants to lingqi_app;
     if not exists(select 1 from pg_policies where schemaname='public' and tablename='lc_provider_listing_free_grants' and policyname='listing_grants_backend') then
       create policy listing_grants_backend on public.lc_provider_listing_free_grants to lingqi_app using(true) with check(true);
