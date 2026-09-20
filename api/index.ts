@@ -9039,10 +9039,10 @@ async function notifyProfile(input: {
 
 app.get('/api/lc/provider-listings/promotion', async (_req, res) => {
   try {
-    if (!useTencentPg || !listingPromotionEnabled()) return res.json(ok({ limit: 100, days: 365, remaining: 0, available: false }));
+    if (!useTencentPg) return res.json(ok({ limit: 100, days: 365, remaining: 0, available: false }));
     const result = await tencentPgPool.query('select count(*)::int as used from lc_provider_listing_free_grants');
     const remaining = Math.max(0, 100 - Number(result.rows[0].used));
-    res.json(ok({ limit: 100, days: 365, remaining, available: remaining > 0 }));
+    res.json(ok({ limit: 100, days: 365, remaining, available: listingPromotionEnabled() && remaining > 0 }));
   } catch (error) { res.status(503).json(err(error)); }
 });
 

@@ -35,6 +35,8 @@ try {
     create table lc_provider_listings(profile_id uuid primary key,poster_url text,headline text,description text,height_cm smallint,weight_kg smallint,role_types text[],is_active boolean,initial_purchase_id uuid,updated_at timestamptz);
     create table lc_provider_contacts(profile_id uuid primary key,business_contact text,is_available boolean,reviewed_at timestamptz,updated_at timestamptz);
     grant select,insert,update on lc_profiles,lc_public_reviews,lc_service_purchases,lc_provider_listings,lc_provider_contacts to lingqi_app;`);
+  // Model production DEFAULT PRIVILEGES: the migration must still forbid updates/deletes.
+  await pool.query('alter default privileges in schema public grant all on tables to lingqi_app');
   const migration = await readFile(process.env.PROMOTION_MIGRATION || 'supabase/migrations/20260920120946_provider_listing_first_100_year.sql','utf8');
   await pool.query(migration);
   await pool.query(migration); // migration is safely repeatable.
