@@ -293,6 +293,7 @@ type ProviderListingDraft = {
 
 type ProviderListingDashboardData = {
   listing: ProviderListing | null;
+  promotion?: { eligible: boolean; remaining: number; expires_at: string | null } | null;
   latest_review?: {
     id: string;
     status: 'pending' | 'approved' | 'rejected';
@@ -2402,6 +2403,8 @@ export default function Dashboard() {
                     <div>
                       <h2 style={{ color: INK, fontSize: 15, fontWeight: 900, marginBottom: 4 }}>委托师委托条</h2>
                       <p style={{ color: MUTED, fontSize: 13, lineHeight: 1.6 }}>一张主图加必要资料，审核通过后进入委托师列表。</p>
+                      {providerListingData.promotion?.eligible && <p style={{ color: '#275389', fontSize: 13, lineHeight: 1.6 }}>全平台前 100 位审核通过的委托师，每人 1 条免费上架 365 天；当前剩余 {providerListingData.promotion.remaining} 个名额，以审核通过时为准。</p>}
+                      {providerListingData.promotion?.expires_at && <p style={{ color: MUTED, fontSize: 13, lineHeight: 1.6 }}>免费期至 {new Date(providerListingData.promotion.expires_at).toLocaleDateString('zh-CN')}；修改或重新上架不重计时，到期不自动扣费。</p>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       {providerListingData.latest_review?.status === 'pending' && <span style={{ color: '#925f18', fontSize: 12, fontWeight: 850 }}>新版本审核中</span>}

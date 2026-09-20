@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import MiniNavBar from '../../components/MiniNavBar.vue'
+import DossierScoreBoard from '../../components/DossierScoreBoard.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Dossier, PublicProfile, Ranking, Script } from '../../types'
 import { apiRequest, encoded, readAuth } from '../../utils/api'
@@ -31,10 +32,10 @@ const tabPages = new Set([
 type EncyclopediaCategory = 'experience' | 'scripts' | 'people' | 'venues'
 
 const categories: Array<{ key: EncyclopediaCategory; label: string; icon: string }> = [
-  { key: 'experience', label: '体验', icon: '/static/icons/ui-sparkles.png' },
-  { key: 'scripts', label: '剧本', icon: '/static/icons/ui-book-2.png' },
-  { key: 'people', label: '人物', icon: '/static/icons/ui-user.png' },
-  { key: 'venues', label: '场馆', icon: '/static/icons/ui-building-store.png' },
+  { key: 'people', label: 'DM 档案', icon: '/static/icons/ui-user.png' },
+  { key: 'venues', label: '店家档案', icon: '/static/icons/ui-building-store.png' },
+  { key: 'experience', label: '口碑事件', icon: '/static/icons/ui-sparkles.png' },
+  { key: 'scripts', label: '剧本资料', icon: '/static/icons/ui-book-2.png' },
 ]
 
 const dmItems = ref<Dossier[]>([])
@@ -325,7 +326,8 @@ onShareTimeline(() => timelineSharePayload('来剧幕录查 DM 口碑，一起�
 
 <template>
   <view class="page home">
-    <MiniNavBar title="剧幕录" subtitle="沉浸式娱乐百科" home :back="false" />
+    <MiniNavBar :title="activeCategory ? activeCategoryMeta.title : '剧幕录'" subtitle="店家与 DM 口碑" :home="!activeCategory" :back="Boolean(activeCategory)" :inline-back="Boolean(activeCategory)" @back="leaveCategory" />
+    <view v-if="!activeCategory" class="home-motto"><text>散场后，那段没说完的事</text><text>查店家、评 DM，留下真实体验。</text></view>
 
     <view class="search-box">
       <image class="search-box__icon" src="/static/icons/ui-search.png" mode="aspectFit" />
@@ -341,6 +343,7 @@ onShareTimeline(() => timelineSharePayload('来剧幕录查 DM 口碑，一起�
     </view>
 
     <StatePanel v-if="loading || error" :loading="loading" :error="error" @retry="load" />
+    <DossierScoreBoard v-if="!activeCategory && !query.trim()" />
 
     <template v-if="!loading && !error && activeCategory">
       <view class="category-head">
@@ -435,6 +438,9 @@ onShareTimeline(() => timelineSharePayload('来剧幕录查 DM 口碑，一起�
 </template>
 
 <style scoped>
+.home-motto { padding: 24rpx 0 12rpx; }
+.home-motto text { display: block; font-size: 34rpx; font-weight: 750; }
+.home-motto text + text { margin-top: 8rpx; font-size: 25rpx; font-weight: 400; color: #64748b; }
 .home { padding-bottom: calc(34rpx + env(safe-area-inset-bottom)); }
 .search-box { display: flex; align-items: center; height: 74rpx; margin: 18rpx 0 4rpx; padding: 0 20rpx; border: 1rpx solid #cfd8e4; border-radius: 8rpx; background: #fff; }
 .search-box__icon { width: 34rpx; height: 34rpx; flex: 0 0 34rpx; margin-right: 14rpx; }

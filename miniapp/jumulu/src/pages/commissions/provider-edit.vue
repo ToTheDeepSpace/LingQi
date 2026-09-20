@@ -19,6 +19,8 @@ type ListingState = {
   contact_available?: boolean
   initial_fee_paid?: boolean
   initial_fee_yuan?: string
+  can_submit_without_payment?: boolean
+  promotion?: { eligible: boolean; remaining: number; days: number; expires_at: string | null; identity_used: boolean } | null
   profile_defaults?: {
     headline?: string | null
     description?: string | null
@@ -184,7 +186,7 @@ async function submit() {
   try {
     const draft = currentDraft()
     if (!draft.businessContact.trim()) throw new Error('请填写用于付费解锁的业务联系方式')
-    if (!state.value?.listing && !state.value?.initial_fee_paid) {
+    if (!(state.value?.can_submit_without_payment ?? (state.value?.listing || state.value?.initial_fee_paid))) {
       const auth = readAuth()
       if (!auth?.id) throw new Error('请先登录')
       await requestServicePayment('provider_listing', auth.id)
@@ -215,6 +217,19 @@ async function submit() {
   } finally {
     submitting.value = false
   }
+}
+
+async function payPending() {
+  if (submitting.value) return
+  const auth = readAuth()
+  if (!auth?.id) return
+  submitting.value = true
+  try {
+    await requestServicePayment('provider_listing', auth.id)
+    await load()
+    uni.showToast({ title: '支付已确认，等待人工审核', icon: 'none' })
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : '支付未完成' }
+  finally { submitting.value = false }
 }
 
 async function toggleActive() {
@@ -268,9 +283,18 @@ onShow(() => {
       <view v-else-if="state.latest_review?.status === 'rejected'" class="review-status rejected">
         上次提交未通过：{{ state.latest_review.review_note || '请调整公开内容后重新提交' }}
       </view>
-      <view v-if="!state.listing && !state.initial_fee_paid" class="fee-notice">
-        <strong>首次上架 9 元</strong>
-        <text>提交时唤起微信支付，审核通过后公开。以后修改委托条不再收费，但每次修改仍需审核。</text>
+      <view v-if="state.promotion?.expires_at" class="fee-notice">
+        <strong>首批委托师免费上架一年</strong>
+        <text>免费期至 {{ state.promotion.expires_at.slice(0, 10) }}。修改或下架重上不重新计时，到期不会自动扣费。已另行付费的权益不受影响。</text>
+      </view>
+      <view v-else-if="state.promotion?.eligible && !state.initial_fee_paid" class="fee-notice">
+        <strong>前 100 位委托师，免费上架 365 天</strong>
+        <text>当前剩余 {{ state.promotion.remaining }} 个名额，每人一个。以人工审核通过顺序为准，通过后开始计时；提交不锁定名额。名额用完会提示你自行确认是否支付，不会自动扣费。</text>
+      </view>
+      <view v-if="!state.can_submit_without_payment && !state.initial_fee_paid" class="fee-notice">
+        <strong>上架服务费 {{ state.initial_fee_yuan || '9' }} 元</strong>
+        <text>仅在你确认后发起微信支付，人工审核通过后公开。已有付费权益不会因活动到期失效。</text>
+        <button v-if="pending" class="secondary-button" @tap="payPending">确认支付上架费，继续等待审核</button>
       </view>
 
       <view class="poster-field" @tap="choosePoster">
@@ -316,7 +340,7 @@ onShow(() => {
         <button class="secondary-button" :loading="toggling" @tap="toggleContactAvailable">{{ contactAvailable ? '暂停联系' : '重新开放' }}</button>
       </view>
       <text v-if="error" class="form-error">{{ error }}</text>
-      <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting || pending" @tap="submit">{{ pending ? '等待审核' : !state.listing && !state.initial_fee_paid ? '支付 9 元并提交' : '提交审核' }}</button></view>
+      <view class="sticky-submit"><button class="primary-button submit" :loading="submitting" :disabled="submitting || pending" @tap="submit">{{ pending ? '等待审核' : state.can_submit_without_payment ? '免上架费提交审核' : state.initial_fee_paid ? '提交审核' : `支付 ${state.initial_fee_yuan || '9'} 元并提交` }}</button></view>
     </template>
     </AuthFormGate>
   </view>

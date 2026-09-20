@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { onPullDownRefresh, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import PageIntro from '../../components/PageIntro.vue'
+import DossierScoreBoard from '../../components/DossierScoreBoard.vue'
 import RankingCard from '../../components/RankingCard.vue'
 import StatePanel from '../../components/StatePanel.vue'
 import type { Ranking } from '../../types'
@@ -55,7 +56,8 @@ onShareTimeline(() => timelineSharePayload('来剧幕录看沉浸式娱乐口碑
 
 <template>
   <view class="page">
-    <PageIntro eyebrow="口碑事件" title="红黑榜" description="红榜记录好体验，黑榜记录风险，白榜收纳趣闻和中性故事。" />
+    <PageIntro eyebrow="店家与 DM 口碑" title="红黑榜" description="先看评分，再看具体体验、事件进展与相关方回应。" />
+    <DossierScoreBoard :city="city" />
     <view class="page-tools">
       <view class="type-tabs">
         <text v-for="option in typeOptions" :key="option.v" class="type-tab" :class="{ active: type === option.v }" @tap="selectType(option.v)">{{ option.l }}</text>

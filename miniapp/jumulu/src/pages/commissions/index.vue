@@ -16,6 +16,7 @@ type DiscoverScope = 'local' | 'expedition'
 const CITY_KEY = 'jumulu:commissions:last-city'
 const VIEW_KEY = 'jumulu:commissions:open-view'
 const view = ref<PageView>('demands')
+const promotion = ref<{ remaining: number; available: boolean } | null>(null)
 const commissions = ref<Commission[]>([])
 const providerListings = ref<ProviderListing[]>([])
 const received = ref<CommissionApplication[]>([])
@@ -60,6 +61,8 @@ const visibleProviders = computed(() => {
 async function load() {
   loading.value = true
   error.value = ''
+  void apiRequest<{ remaining: number; available: boolean }>('/lc/provider-listings/promotion')
+    .then(value => { promotion.value = value }).catch(() => { promotion.value = null })
   try {
     if (!uni.getStorageSync(CITY_KEY) && readAuth()?.token) {
       const follows = await apiRequest<{ cities: string[] }>('/lc/follows')
@@ -260,6 +263,10 @@ onShareTimeline(() => timelineSharePayload('来剧幕录找沉浸式娱乐委托
         <button class="secondary-button" @tap="editProviderListing">我的委托条</button>
       </view>
     </PageIntro>
+    <button v-if="promotion?.available" class="promotion-banner" @tap="editProviderListing">
+      <text>首批 100 位委托师 · 免费上架一年</text>
+      <text>剩余 {{ promotion.remaining }} 个名额，以人工审核通过顺序为准 ›</text>
+    </button>
     <view class="view-tabs">
       <button :class="{ active: view === 'demands' }" @tap="view = 'demands'">委托需求</button>
       <button :class="{ active: view === 'providers' }" @tap="view = 'providers'">找委托师</button>
@@ -373,6 +380,9 @@ onShareTimeline(() => timelineSharePayload('来剧幕录找沉浸式娱乐委托
 </template>
 
 <style scoped>
+.promotion-banner { display: block; width: 100%; margin: 12rpx 0 20rpx; padding: 20rpx; min-height: 44px; background: #f7eddb; border-radius: 10rpx; color: #785018; text-align: left; line-height: 1.6; }
+.promotion-banner text { display: block; font-size: 27rpx; font-weight: 750; }
+.promotion-banner text + text { font-size: 23rpx; font-weight: 400; }
 .intro-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10rpx; }
 .intro-actions button { width: 100%; min-height: 66rpx; margin: 0; font-size: 23rpx; line-height: 66rpx; }
 .view-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8rpx; margin: 0 0 14rpx; }

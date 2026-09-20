@@ -18,7 +18,8 @@ const barHeight = ref(44)
 const rightReserve = ref(96)
 const unreadCount = ref(Math.max(0, Number(uni.getStorageSync('jumulu:notifications:unread') || 0)))
 const showMessageEntry = ref(true)
-const showBack = ref(props.back)
+const currentRoute = ref(getCurrentPages().at(-1)?.route || '')
+const showBack = computed(() => props.back && (props.inlineBack || !tabPages.has(currentRoute.value)))
 const tabPages = new Set(['pages/index/index', 'pages/rankings/index', 'pages/commissions/index', 'pages/carpools/index', 'pages/mine/index'])
 const navStyle = computed(() => `padding-top:${statusBarHeight.value}px`)
 const innerStyle = computed(() => `height:${barHeight.value}px;padding-right:${rightReserve.value}px`)
@@ -34,9 +35,8 @@ function updateUnread(value: unknown) {
 
 onMounted(() => {
   const pages = getCurrentPages()
-  const currentRoute = pages[pages.length - 1]?.route || ''
-  showMessageEntry.value = props.message && currentRoute !== 'pages/mine/account-status'
-  showBack.value = props.back && (props.inlineBack || !tabPages.has(currentRoute))
+  currentRoute.value = pages[pages.length - 1]?.route || ''
+  showMessageEntry.value = props.message && currentRoute.value !== 'pages/mine/account-status'
   const windowInfo = uni.getWindowInfo()
   statusBarHeight.value = Number(windowInfo.statusBarHeight || 20)
   try {
@@ -93,15 +93,16 @@ function goBack() {
 <style scoped>
 .mini-nav { position: sticky; z-index: 700; top: 0; margin: 0 -24rpx; border-bottom: 1rpx solid #e8e4dc; background: rgba(255, 253, 248, 0.98); }
 .mini-nav__inner { position: relative; display: flex; align-items: center; min-height: 44px; padding-left: 12rpx; }
-.mini-nav__back, .mini-nav__back-spacer { width: 124rpx; height: 68rpx; flex: 0 0 124rpx; margin: 0; padding: 0; }
+.mini-nav__back, .mini-nav__back-spacer { width: 124rpx; min-width: 44px; height: 44px; flex: 0 0 124rpx; margin: 0; padding: 0; }
 .mini-nav__back { display: flex; align-items: center; border: 0; background: transparent; color: #275389; font-size: 26rpx; line-height: 68rpx; }
+.mini-nav__back::after, .mini-nav__message::after { border: 0; }
 .mini-nav__chevron { margin-right: 4rpx; font-size: 46rpx; font-weight: 400; line-height: 1; }
 .mini-nav__back-label { font-size: 25rpx; font-weight: 750; }
 .mini-nav__title { position: absolute; overflow: hidden; color: #202938; font-size: 28rpx; font-weight: 850; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .mini-nav__brand { position: absolute; left: 24rpx; display: flex; align-items: baseline; min-width: 0; gap: 12rpx; overflow: hidden; }
 .mini-nav__brand-name { flex: 0 0 auto; color: #172033; font-family: serif; font-size: 38rpx; font-weight: 900; line-height: 1; }
 .mini-nav__brand-subtitle { min-width: 0; overflow: hidden; color: #596579; font-size: 21rpx; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.mini-nav__message { position: absolute; top: 50%; display: flex; width: 34px; height: 32px; align-items: center; justify-content: center; margin: 0 4px 0 0; padding: 0; transform: translateY(-50%); border: 1rpx solid #d8dee8; border-radius: 8px; background: #fff; line-height: 32px; }
+.mini-nav__message { position: absolute; top: 50%; display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; margin: 0; padding: 0; transform: translateY(-50%); border: 0; border-radius: 8px; background: transparent; line-height: 44px; }
 .mini-nav__message image { width: 18px; height: 18px; }
 .mini-nav__badge { position: absolute; top: -5px; right: -6px; min-width: 17px; height: 17px; padding: 0 4px; border: 1px solid #fff; border-radius: 9px; background: #c83939; color: #fff; font-size: 9px; font-weight: 850; line-height: 15px; text-align: center; }
 </style>

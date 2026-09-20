@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { onPullDownRefresh, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
 import DossierCard from '../../components/DossierCard.vue'
@@ -84,6 +84,7 @@ function created() {
 }
 function loadMore() { displayLimit.value += PAGE_SIZE }
 
+onLoad(options => { if (options?.sort === 'rating') { sortMode.value = 'rating'; chantoFirst.value = false } })
 onShow(() => { if (!items.value.length) void load() })
 onPullDownRefresh(load)
 onShareAppMessage(() => pageSharePayload('来剧幕录查 DM 口碑', '/pages/dm/index'))

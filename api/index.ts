@@ -4,6 +4,7 @@ import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { createTencentPgClient, tencentPgPool } from './tencentPgSupabase.js';
+import { approveProviderListing, getListingPromotion, listingEntitlementActive, listingPromotionEnabled } from './providerListingPromotion.js';
 import { notifyConfig, drainWechatNotifications } from './wechatNotifications.js';
 import { registerWechatNotificationRoutes, applyWechatNotificationRejection } from './wechatNotificationRoutes.js';
 import { summarizeDmRatingRows } from './dmRatingSummary.js';
@@ -3048,7 +3049,18 @@ async function servicePurchaseStatusPayload(purchase: ServicePurchaseRow) {
 }
 
 async function validateServicePurchaseTarget(profile: AuthedProfile, productType: ServiceProductType, requestedTargetId: string) {
-  if (productType === 'provider_listing') return profile.id;
+  if (productType === 'provider_listing') {
+    if (useTencentPg) {
+      const [promotion, listing] = await Promise.all([
+        getListingPromotion(tencentPgPool, { ...profile }),
+        tencentPgPool.query('select * from lc_provider_listings where profile_id=$1', [profile.id]),
+      ]);
+      if (promotion.eligible || listingEntitlementActive(listing.rows[0])) {
+        throw Object.assign(new Error('当前可免上架费提交审核，请更新小程序后进入“我的委托条”；不要重复付款'), { statusCode: 409 });
+      }
+    }
+    return profile.id;
+  }
   if (!/^[0-9a-f-]{36}$/i.test(requestedTargetId)) throw Object.assign(new Error('付费服务对象不正确'), { statusCode: 400 });
   if (productType === 'store_code_pack') {
     if (!useTencentPg) throw Object.assign(new Error('店家认证需要当前生产数据库'), { statusCode: 503 });
@@ -3085,14 +3097,14 @@ async function validateServicePurchaseTarget(profile: AuthedProfile, productType
   if (requestedTargetId === profile.id) throw Object.assign(new Error('不能付费解锁自己的联系方式'), { statusCode: 400 });
   const [listingResult, contact] = await Promise.all([
     supabase.from('lc_provider_listings')
-      .select('profile_id, is_active')
+      .select('profile_id, is_active, free_listing_expires_at')
       .eq('profile_id', requestedTargetId)
       .eq('is_active', true)
       .maybeSingle(),
     providerBusinessContact(requestedTargetId),
   ]);
   if (listingResult.error) throw listingResult.error;
-  if (!listingResult.data) throw Object.assign(new Error('这位委托师当前没有公开委托条'), { statusCode: 404 });
+  if (!listingResult.data || !listingEntitlementActive(listingResult.data)) throw Object.assign(new Error('这位委托师当前没有有效公开委托条'), { statusCode: 404 });
   if (!contact?.is_available || !cleanText(contact.business_contact, 300)) {
     throw Object.assign(new Error('这位委托师暂未开放联系方式'), { statusCode: 409 });
   }
@@ -4762,6 +4774,23 @@ async function applyPublicReview(review: PublicReviewRecord, reviewerId: string 
     const initialPurchaseId = cleanText(payload.initial_purchase_id, 80) || null;
     if (!profileId) throw new Error('审核记录缺少委托师账号');
     if (!businessContact) throw new Error('审核记录缺少委托师业务联系方式');
+    if (useTencentPg) {
+      const client = await tencentPgPool.connect();
+      try {
+        await client.query('begin');
+        await client.query("set local statement_timeout = '10s'");
+        await approveProviderListing(client, {
+          profileId, reviewId: review.id, draft, businessContact,
+          contactAvailable: payload.contact_available !== false, active: payload.is_active !== false,
+        });
+        await client.query('commit');
+      } catch (error) {
+        await client.query('rollback');
+        throw error;
+      } finally { client.release(); }
+      await addProfileIdentityRoles(profileId, ['creator']);
+      return;
+    }
     const { error: upsertErr } = await supabase.from('lc_provider_listings').upsert({
       profile_id: profileId,
       ...draft,
@@ -9008,6 +9037,15 @@ async function notifyProfile(input: {
   }
 }
 
+app.get('/api/lc/provider-listings/promotion', async (_req, res) => {
+  try {
+    if (!useTencentPg || !listingPromotionEnabled()) return res.json(ok({ limit: 100, days: 365, remaining: 0, available: false }));
+    const result = await tencentPgPool.query('select count(*)::int as used from lc_provider_listing_free_grants');
+    const remaining = Math.max(0, 100 - Number(result.rows[0].used));
+    res.json(ok({ limit: 100, days: 365, remaining, available: remaining > 0 }));
+  } catch (error) { res.status(503).json(err(error)); }
+});
+
 app.get('/api/lc/provider-listings', async (req, res) => {
   try {
     const city = cleanText(req.query.city, 60);
@@ -9026,6 +9064,7 @@ app.get('/api/lc/provider-listings', async (req, res) => {
     if (profileResult.error) throw profileResult.error;
     const profileMap = new Map((profileResult.data || []).map(profile => [String(profile.id), profile as Record<string, unknown>]));
     const items = (listingResult.data || []).flatMap(row => {
+      if (!listingEntitlementActive(row)) return [];
       const profile = profileMap.get(String(row.profile_id));
       if (!profile) return [];
       const availableCities = publicStringArray(profile.available_cities);
@@ -9091,7 +9130,9 @@ app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
     if (contactResult.error && !isMissingRelation(contactResult.error, 'lc_provider_contacts')) throw contactResult.error;
     if (dossierDefaultsResult.error && !isMissingRelation(dossierDefaultsResult.error, 'lc_dm_dossiers')) throw dossierDefaultsResult.error;
     if (servicesResult.error && !isMissingRelation(servicesResult.error, 'lc_services')) throw servicesResult.error;
-    const feePaid = Boolean(listingResult.data || (purchase && servicePurchaseGrantsAccess(purchase.status)));
+    const promotion = useTencentPg ? await getListingPromotion(tencentPgPool, { ...profile }) : null;
+    const feePaid = Boolean((listingResult.data && !listingResult.data.free_listing_expires_at) || (purchase && servicePurchaseGrantsAccess(purchase.status)));
+    const canSubmitWithoutPayment = feePaid || listingEntitlementActive(listingResult.data) || Boolean(promotion?.eligible);
     const dossierDefaults = dossierDefaultsResult.error ? null : dossierDefaultsResult.data;
     const serviceRows = servicesResult.error ? [] : servicesResult.data || [];
     res.json(ok({
@@ -9100,6 +9141,8 @@ app.get('/api/lc/provider-listings/mine', authMiddleware, async (req, res) => {
       business_contact: contactResult.error ? null : contactResult.data?.business_contact || null,
       contact_available: contactResult.error ? false : contactResult.data?.is_available !== false,
       initial_fee_paid: feePaid,
+      can_submit_without_payment: canSubmitWithoutPayment,
+      promotion,
       initial_fee_yuan: SERVICE_FEE_YUAN,
       profile_defaults: {
         headline: cleanText(dossierDefaults?.bio || profile.bio, 80) || null,
@@ -9149,13 +9192,14 @@ app.post(
         .eq('profile_id', profile.id)
         .eq('status', 'pending')
         .maybeSingle(),
-      supabase.from('lc_provider_listings').select('profile_id').eq('profile_id', profile.id).maybeSingle(),
+      supabase.from('lc_provider_listings').select('*').eq('profile_id', profile.id).maybeSingle(),
       paidServicePurchase(profile.id, 'provider_listing', profile.id),
     ]);
     if (pendingResult.error && !isMissingRelation(pendingResult.error, 'lc_public_reviews')) throw pendingResult.error;
     if (pendingResult.data) return res.status(409).json(err(new Error('你已有一版委托条正在审核，请等待处理后再修改')));
     if (listingResult.error && !isMissingRelation(listingResult.error, 'lc_provider_listings')) throw listingResult.error;
-    if (!listingResult.data && !paidPurchase) {
+    const promotion = useTencentPg ? await getListingPromotion(tencentPgPool, { ...profile }) : null;
+    if (!listingEntitlementActive(listingResult.data) && !paidPurchase && !promotion?.eligible) {
       return res.status(402).json(codedErr(
         new Error(`首次上架委托条需在微信小程序支付 ${SERVICE_FEE_YUAN} 元，后续修改不再收费但仍需审核`),
         'SERVICE_PAYMENT_REQUIRED',
@@ -9212,6 +9256,12 @@ app.put('/api/lc/provider-listings/mine/active', authMiddleware, async (req, res
     const profile = await getAuthedProfile(req);
     if (!profile) return res.status(401).json(err(new Error('用户不存在')));
     const active = req.body?.active !== false;
+    if (active && useTencentPg) {
+      const entitlement = await tencentPgPool.query('select * from lc_provider_listings where profile_id=$1', [profile.id]);
+      if (entitlement.rows[0] && !listingEntitlementActive(entitlement.rows[0])) {
+        return res.status(409).json(err(new Error('免费上架已到期，请自行确认续费并重新提交审核；不会自动扣费')));
+      }
+    }
     const { data, error: updateErr } = await supabase.from('lc_provider_listings')
       .update({ is_active: active, updated_at: new Date().toISOString() })
       .eq('profile_id', profile.id)
@@ -9462,7 +9512,7 @@ app.get('/api/lc/creators', async (req, res) => {
     if (!providerListingResult.error) {
       for (const row of (providerListingResult.data || []) as Array<Record<string, unknown>>) {
         const creatorId = cleanText(row.profile_id, 80);
-        if (creatorId) providerListingsByCreator.set(creatorId, publicProviderListing(row));
+        if (creatorId && listingEntitlementActive(row)) providerListingsByCreator.set(creatorId, publicProviderListing(row));
       }
     }
 
@@ -9544,7 +9594,7 @@ app.get('/api/lc/creators/:id', async (req, res) => {
       services: services || [],
       portfolio: portfolio || [],
       role_preferences: rolePreferences || [],
-      provider_listing: providerListingResult.error || !providerListingResult.data
+      provider_listing: providerListingResult.error || !listingEntitlementActive(providerListingResult.data)
         ? null
         : publicProviderListing(providerListingResult.data as Record<string, unknown>),
       has_pending_shop_cert: hasPendingShopCert,

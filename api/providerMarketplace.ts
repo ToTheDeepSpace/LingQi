@@ -1,3 +1,5 @@
+import { listingEntitlementActive } from './providerListingPromotion.js';
+
 export const PROVIDER_ROLE_TYPE_LIMIT = 12;
 
 export type ProviderListingDraft = {
@@ -62,7 +64,8 @@ export function publicProviderListing(row: Record<string, unknown>) {
     height_cm: optionalInteger(row.height_cm, 100, 250, '身高'),
     weight_kg: optionalInteger(row.weight_kg, 30, 300, '体重'),
     role_types: normalizeProviderRoleTypes(row.role_types),
-    is_active: row.is_active !== false,
+    is_active: row.is_active !== false && listingEntitlementActive(row),
+    free_listing_expires_at: row.free_listing_expires_at == null ? null : String(row.free_listing_expires_at),
     created_at: cleanText(row.created_at, 80) || null,
     updated_at: cleanText(row.updated_at, 80) || null,
   };

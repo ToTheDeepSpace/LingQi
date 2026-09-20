@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { onPullDownRefresh, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShareAppMessage, onShareTimeline, onShow } from '@dcloudio/uni-app'
 import CitySearchPicker from '../../components/CitySearchPicker.vue'
 import DossierCreateSheet from '../../components/DossierCreateSheet.vue'
 import DossierCard from '../../components/DossierCard.vue'
@@ -20,11 +20,18 @@ const createOpen = ref(false)
 const createInitialName = ref('')
 const PAGE_SIZE = 20
 const displayLimit = ref(PAGE_SIZE)
+const scoreFirst = ref(false)
 const visible = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   return items.value
     .filter(item => (city.value === '全部城市' || item.city === city.value) && (!keyword || [item.dm_name, item.city, item.workplace, item.note, ...(item.tags || [])].join(' ').toLocaleLowerCase('zh-CN').includes(keyword)))
     .sort((left, right) => {
+      if (scoreFirst.value) {
+        const rated = Number(Number(right.rating_summary?.player_count || 0) > 0) - Number(Number(left.rating_summary?.player_count || 0) > 0)
+        if (rated) return rated
+        const score = Number(right.rating_summary?.avg || 0) - Number(left.rating_summary?.avg || 0)
+        if (score) return score
+      }
       const players = Number(right.rating_summary?.player_count || 0) - Number(left.rating_summary?.player_count || 0)
       if (players) return players
       const reviews = Number(right.rating_summary?.review_count || 0) - Number(left.rating_summary?.review_count || 0)
@@ -36,7 +43,7 @@ const visible = computed(() => {
 })
 const displayedItems = computed(() => visible.value.slice(0, displayLimit.value))
 
-watch([query, city], () => { displayLimit.value = PAGE_SIZE })
+watch([query, city, scoreFirst], () => { displayLimit.value = PAGE_SIZE })
 
 async function load() {
   loading.value = true; error.value = ''
@@ -54,6 +61,7 @@ function created() {
   uni.showModal({ title: '档案已提交', content: '这份资料已标注为社区提供，后台审核通过后会出现在店家列表。', showCancel: false })
 }
 function loadMore() { displayLimit.value += PAGE_SIZE }
+onLoad(options => { scoreFirst.value = options?.sort === 'rating' })
 onShow(() => { if (!items.value.length) void load() })
 onPullDownRefresh(load)
 onShareAppMessage(() => pageSharePayload('来剧幕录查店家口碑', '/pages/stores/index'))
@@ -69,6 +77,7 @@ onShareTimeline(() => timelineSharePayload('来剧幕录查店家口碑'))
         <input v-model="query" class="input" placeholder="搜索店名、城市或地址" />
       </view>
       <view class="page-actions">
+        <button class="secondary-button" @tap="scoreFirst = !scoreFirst">{{ scoreFirst ? '评分最高' : '评价人数优先' }} ↕</button>
         <button class="primary-button" @tap="openRate">评价店家</button>
         <button class="secondary-button" @tap="create(query.trim())">新建店家档案</button>
       </view>
